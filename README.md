@@ -16,6 +16,30 @@ A Meteor Client addon for Minecraft 1.21.1 with two modules:
 The jar is written to `build/libs/logvex-addon-3.0.0.jar`. Drop it into `.minecraft/mods`
 alongside Meteor Client 0.5.8.
 
+### Java 21 is required for the Gradle daemon
+
+Gradle 8.12 ships Groovy 3.0.22, whose bundled ASM cannot read class files newer than Java 24.
+If the Gradle daemon runs on Java 25 or later, build-script compilation fails with:
+
+```
+BUG! exception in phase 'semantic analysis' in source unit '_BuildScript_'
+Unsupported class file major version 69
+```
+
+`gradle/gradle-daemon-jvm.properties` pins the daemon (and the compile/test toolchain) to Java
+21, so `./gradlew clean build` works even when a newer JDK is first on `PATH` — no
+machine-specific paths and no `org.gradle.java.home`. The build only needs *a* Java 21
+installation discoverable by Gradle (e.g. `/usr/lib/jvm/java-21-openjdk-amd64` on Debian/Kali,
+or an auto-provisioned toolchain). If Gradle reports `Cannot find a Java installation ...
+matching: Compatible with Java 21`, install one:
+
+```bash
+sudo apt install openjdk-21-jdk        # Debian / Kali
+```
+
+Then verify with `./gradlew --version` — the `Daemon JVM` line should read
+`Compatible with Java 21, any vendor (from gradle/gradle-daemon-jvm.properties)`.
+
 ## Schematic Dropper
 
 The module drives a small state machine
