@@ -1,0 +1,81 @@
+package com.logvex.addon.chatlog.modules;
+
+import com.logvex.addon.LogAddon;
+import com.logvex.addon.chatlog.core.PlayerActivity;
+import com.logvex.addon.chatlog.mc.LogService;
+import meteordevelopment.meteorclient.gui.GuiTheme;
+import meteordevelopment.meteorclient.gui.widgets.WWidget;
+import meteordevelopment.meteorclient.gui.widgets.containers.WVerticalList;
+import meteordevelopment.meteorclient.gui.widgets.pressable.WButton;
+import meteordevelopment.meteorclient.settings.BoolSetting;
+import meteordevelopment.meteorclient.settings.IntSetting;
+import meteordevelopment.meteorclient.settings.Setting;
+import meteordevelopment.meteorclient.settings.SettingGroup;
+import meteordevelopment.meteorclient.systems.modules.Module;
+import meteordevelopment.meteorclient.systems.modules.Modules;
+
+import java.util.List;
+
+/**
+ * Per-player activity overview: joins, leaves, deaths and message counts, rebuilt from the stored
+ * logs on demand. Only events a client can observe are counted.
+ */
+public class PlayerActivityModule extends Module {
+    private final SettingGroup sgGeneral = settings.getDefaultGroup();
+
+    private final Setting<Boolean> rebuildOnActivate = sgGeneral.add(new BoolSetting.Builder()
+        .name("rebuild-on-activate")
+        .description("Rebuild the player index from stored logs when the module is enabled.")
+        .defaultValue(true)
+        .build()
+    );
+
+    private final Setting<Integer> minMessages = sgGeneral.add(new IntSetting.Builder()
+        .name("min-messages")
+        .description("Hide players below this message count in the overview.")
+        .defaultValue(0)
+        .min(0)
+        .sliderRange(0, 100)
+        .build()
+    );
+
+    private final LogService service = LogService.get();
+
+    public PlayerActivityModule() {
+        super(LogAddon.CATEGORY, "player-activity", "Tracks and displays per-player chat activity.");
+    }
+
+    @Override
+    public void onActivate() {
+        if (!rebuildOnActivate.get()) return;
+        ChatLoggerModule logger = Modules.get().get(ChatLoggerModule.class);
+        if (logger == null || logger.storage() == null) return;
+        logger.storage().rebuildPlayersAsync(service.players(), () -> info("Player activity index rebuilt."));
+    }
+
+    /** Players matching the filter, honouring the minimum-message setting. */
+    public List<PlayerActivity> players(String filter) {
+        int min = minMessages.get();
+        return service.players().search(filter).stream()
+            .filter(activity -> activity.messageCount() >= min)
+            .toList();
+    }
+
+    @Override
+    public WWidget getWidget(GuiTheme theme) {
+        WVerticalList list = theme.verticalList();
+        WButton open = list.add(theme.button("Open Player Activity")).expandX().widget();
+        open.action = () -> {
+            ChatLoggerModule logger = Modules.get().get(ChatLoggerModule.class);
+            if (logger != null) mc.setScreen(new com.logvex.addon.chatlog.gui.LogDashboardScreen(logger, 2));
+        };
+        WButton rebuild = list.add(theme.button("Rebuild Index")).expandX().widget();
+        rebuild.action = () -> {
+            ChatLoggerModule logger = Modules.get().get(ChatLoggerModule.class);
+            if (logger != null && logger.storage() != null) {
+                logger.storage().rebuildPlayersAsync(service.players(), () -> info("Player activity index rebuilt."));
+            }
+        };
+        return list;
+    }
+}

@@ -1,6 +1,6 @@
 package com.logvex.addon.schematicdropper;
 
-import com.logvex.addon.LogvexAddon;
+import com.logvex.addon.LogAddon;
 import com.logvex.addon.schematicdropper.core.MaterialProgress;
 import com.logvex.addon.schematicdropper.core.ProgressSnapshot;
 import com.logvex.addon.schematicdropper.core.State;
@@ -28,7 +28,7 @@ import net.minecraft.util.Identifier;
  */
 public class SchematicProgressHud extends HudElement {
     public static final HudElementInfo<SchematicProgressHud> INFO =
-        new HudElementInfo<>(LogvexAddon.HUD_GROUP, "schematic-progress", "Schematic dropper progress.", SchematicProgressHud::new);
+        new HudElementInfo<>(LogAddon.HUD_GROUP, "schematic-progress", "Schematic dropper progress.", SchematicProgressHud::new);
 
     private static final Color TEXT = new Color(255, 255, 255);
     private static final Color MUTED = new Color(160, 160, 160);
