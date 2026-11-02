@@ -1,6 +1,6 @@
 package com.logvex.addon.schematicdropper;
 
-import com.logvex.addon.LogvexAddon;
+import com.logvex.addon.LogAddon;
 import com.logvex.addon.schematicdropper.core.DropAction;
 import com.logvex.addon.schematicdropper.core.DropConfig;
 import com.logvex.addon.schematicdropper.core.DropEngine;
@@ -286,7 +286,7 @@ public class SchematicDropperModule extends Module {
     private long lastRotationDebug;
 
     public SchematicDropperModule() {
-        super(LogvexAddon.CATEGORY, "schematic-dropper", "Automated schematic material dropping.");
+        super(LogAddon.CATEGORY, "schematic-dropper", "Automated schematic material dropping.");
 
         this.env = new MinecraftEnv(targetMode::get, (float) (double) dropPitch.get());
         this.engine = new DropEngine(env, rotationPort, dropController, tracker, new Listener());

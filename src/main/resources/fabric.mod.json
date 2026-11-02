@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "id": "logvex-addon",
   "version": "${version}",
-  "name": "Logvex Addon",
-  "description": "Logvex Meteor addon: SchematicDropper (automated schematic material dropping) and LiveChatRelay (compressed chat report archive + webhook delivery).",
+  "name": "Log Addon",
+  "description": "Log Addon: a chat logging, monitoring, search and notification toolkit for Meteor Client. Records chat to compressed searchable logs, tracks player activity and session statistics, raises keyword alerts, and can forward notifications to a webhook. Also includes SchematicDropper for automated schematic material dropping.",
   "authors": [
     "logvex"
   ],
@@ -13,7 +13,7 @@
   "environment": "client",
   "entrypoints": {
     "meteor": [
-      "com.logvex.addon.LogvexAddon"
+      "com.logvex.addon.LogAddon"
     ]
   },
   "custom": {
