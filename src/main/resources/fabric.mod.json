@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "id": "logvex-addon",
+  "version": "${version}",
+  "name": "Logvex Addon",
+  "description": "Logvex Meteor addon: SchematicDropper (automated schematic material dropping) and LiveChatRelay (compressed chat report archive + webhook delivery).",
+  "authors": [
+    "logvex"
+  ],
+  "contact": {
+    "sources": "https://github.com/logvex-sg/ChatRecordingAddon-meteor"
+  },
+  "environment": "client",
+  "entrypoints": {
+    "meteor": [
+      "com.logvex.addon.LogvexAddon"
+    ]
+  },
+  "custom": {
+    "meteor-client:color": "120,200,255",
+    "modmenu": {
+      "parent": {
+        "id": "meteor-client"
+      }
+    }
+  },
+  "depends": {
+    "java": ">=${jdk_version}",
+    "minecraft": "${minecraft_version}",
+    "meteor-client": "*"
+  }
+}
