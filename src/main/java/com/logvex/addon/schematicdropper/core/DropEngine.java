@@ -154,6 +154,7 @@ public final class DropEngine {
         originalRotation = null;
         tracker.clearCurrentStack();
         tracker.setCurrentMaterial(null);
+        tracker.clearInventory();
         if (tracker.state() != State.IDLE) transition(State.IDLE);
     }
 
