@@ -7,6 +7,8 @@ import com.logvex.addon.schematicdropper.core.AcquisitionEngine;
 import com.logvex.addon.schematicdropper.core.AcquisitionListener;
 import com.logvex.addon.schematicdropper.core.AcquisitionSnapshot;
 import com.logvex.addon.schematicdropper.core.AcquisitionState;
+import com.logvex.addon.schematicdropper.core.BlockPos3;
+import com.logvex.addon.schematicdropper.core.ConflictPolicy;
 import com.logvex.addon.schematicdropper.core.DropAction;
 import com.logvex.addon.schematicdropper.core.DropConfig;
 import com.logvex.addon.schematicdropper.core.DropEngine;
@@ -18,16 +20,19 @@ import com.logvex.addon.schematicdropper.core.MaterialListImporter;
 import com.logvex.addon.schematicdropper.core.MaterialListParser;
 import com.logvex.addon.schematicdropper.core.MaterialPlan;
 import com.logvex.addon.schematicdropper.core.OrderingMode;
+import com.logvex.addon.schematicdropper.core.PlacementConfig;
 import com.logvex.addon.schematicdropper.core.ProgressSnapshot;
 import com.logvex.addon.schematicdropper.core.ProgressTracker;
 import com.logvex.addon.schematicdropper.core.RecoveryMode;
 import com.logvex.addon.schematicdropper.core.Requirement;
 import com.logvex.addon.schematicdropper.core.Rotation;
 import com.logvex.addon.schematicdropper.core.RotationMode;
+import com.logvex.addon.schematicdropper.core.SchematicFormat;
 import com.logvex.addon.schematicdropper.core.StackStrategy;
 import com.logvex.addon.schematicdropper.core.State;
 import com.logvex.addon.schematicdropper.core.TargetMode;
 import com.logvex.addon.schematicdropper.gui.AcquisitionScreen;
+import com.logvex.addon.schematicdropper.gui.BuildScreen;
 import com.logvex.addon.schematicdropper.gui.MaterialOverviewScreen;
 import com.logvex.addon.schematicdropper.mc.CreativeInventoryController;
 import com.logvex.addon.schematicdropper.mc.CreativeMinecraftEnv;
@@ -81,6 +86,7 @@ public class SchematicDropperModule extends Module {
     private final SettingGroup sgTargeting = settings.createGroup("Targeting");
     private final SettingGroup sgProgress = settings.createGroup("Progress");
     private final SettingGroup sgAcquisition = settings.createGroup("Creative Acquisition");
+    private final SettingGroup sgBuild = settings.createGroup("Schematic Building");
 
     // General
 
@@ -344,6 +350,88 @@ public class SchematicDropperModule extends Module {
         .build()
     );
 
+    // Schematic building
+
+    private final Setting<Boolean> buildEnabled = sgBuild.add(new BoolSetting.Builder()
+        .name("build-enabled")
+        .description("Place a loaded schematic block by block, verifying every placement.")
+        .defaultValue(false)
+        .build()
+    );
+
+    private final Setting<BuildOriginMode> buildOriginMode = sgBuild.add(new EnumSetting.Builder<BuildOriginMode>()
+        .name("origin")
+        .description("Where the schematic is anchored.")
+        .defaultValue(BuildOriginMode.PLAYER)
+        .build()
+    );
+
+    private final Setting<Integer> buildOriginX = sgBuild.add(new IntSetting.Builder()
+        .name("origin-x")
+        .description("X coordinate used when Origin is set to Custom.")
+        .defaultValue(0)
+        .sliderRange(-30000000, 30000000)
+        .visible(() -> buildOriginMode.get() == BuildOriginMode.CUSTOM)
+        .build()
+    );
+
+    private final Setting<Integer> buildOriginY = sgBuild.add(new IntSetting.Builder()
+        .name("origin-y")
+        .description("Y coordinate used when Origin is set to Custom.")
+        .defaultValue(64)
+        .sliderRange(-64, 320)
+        .visible(() -> buildOriginMode.get() == BuildOriginMode.CUSTOM)
+        .build()
+    );
+
+    private final Setting<Integer> buildOriginZ = sgBuild.add(new IntSetting.Builder()
+        .name("origin-z")
+        .description("Z coordinate used when Origin is set to Custom.")
+        .defaultValue(0)
+        .sliderRange(-30000000, 30000000)
+        .visible(() -> buildOriginMode.get() == BuildOriginMode.CUSTOM)
+        .build()
+    );
+
+    private final Setting<ConflictPolicy> conflictPolicy = sgBuild.add(new EnumSetting.Builder<ConflictPolicy>()
+        .name("conflicts")
+        .description("What to do when a block that is not part of the schematic is in the way.")
+        .defaultValue(ConflictPolicy.SKIP)
+        .build()
+    );
+
+    private final Setting<Integer> blocksPerTick = sgBuild.add(new IntSetting.Builder()
+        .name("blocks-per-tick")
+        .description("How many placements to attempt per tick.")
+        .defaultValue(1)
+        .min(1)
+        .sliderRange(1, 8)
+        .build()
+    );
+
+    private final Setting<Integer> buildRange = sgBuild.add(new IntSetting.Builder()
+        .name("range")
+        .description("Maximum distance in blocks the player may place from.")
+        .defaultValue(5)
+        .min(1)
+        .sliderRange(1, 6)
+        .build()
+    );
+
+    private final Setting<Boolean> buildCheckpoints = sgBuild.add(new BoolSetting.Builder()
+        .name("checkpoints")
+        .description("Save progress so an interrupted build can resume safely.")
+        .defaultValue(true)
+        .build()
+    );
+
+    private final Setting<Boolean> notifyBuild = sgBuild.add(new BoolSetting.Builder()
+        .name("notify-build")
+        .description("Report build progress and completion in chat.")
+        .defaultValue(true)
+        .build()
+    );
+
     // Runtime
 
     private final ServerInventoryTracker serverTracker = new ServerInventoryTracker();
@@ -357,8 +445,10 @@ public class SchematicDropperModule extends Module {
     private final CreativeInventoryController creativeController = new CreativeInventoryController();
     private final DropBridge dropBridge;
     private final AcquisitionEngine acquisition;
+    private final SchematicBuildController build;
 
     private MaterialPlan plan = new MaterialPlan();
+    private int lastSchematicGeneration;
     private String lastFailure;
     private long lastRotationDebug;
 
@@ -383,6 +473,8 @@ public class SchematicDropperModule extends Module {
             this::startDropBatch, this::stopRun);
         this.acquisition = new AcquisitionEngine(acquisitionEnv, creativeController, dropBridge,
             new AcquisitionListenerImpl());
+        this.build = new SchematicBuildController(new BuildFeedback(),
+            MeteorClient.FOLDER.toPath().resolve("schematicdropper").resolve("checkpoints"));
     }
 
     @Override
@@ -400,6 +492,9 @@ public class SchematicDropperModule extends Module {
         acquisition.setConfig(acquisitionConfig());
 
         if (hudEnabled.get()) SchematicProgressHud.enable();
+        build.activate();
+        build.setConfig(buildConfig());
+        build.setOrigin(currentBuildOrigin());
         if (autoAcquire.get()) {
             // Acquisition owns the pipeline; the drop engine is started by the drains it requests.
             acquisition.start(System.currentTimeMillis());
@@ -412,6 +507,8 @@ public class SchematicDropperModule extends Module {
     public void onDeactivate() {
         engine.stop();
         acquisition.stop();
+        build.saveCheckpointNow();
+        build.deactivate();
         SchematicProgressHud.disable();
         cancelImport();
         MeteorClient.EVENT_BUS.unsubscribe(creativeController);
@@ -432,6 +529,11 @@ public class SchematicDropperModule extends Module {
         acquisition.setPlan(plan);
         acquisition.tick(System.currentTimeMillis());
 
+        build.setConfig(buildConfig());
+        build.setOrigin(currentBuildOrigin());
+        build.tick(System.currentTimeMillis());
+        syncSchematicMaterials();
+
         if (pendingImport != null) stepImport();
 
         if (rotationDebug.get()) debugRotation();
@@ -443,12 +545,14 @@ public class SchematicDropperModule extends Module {
         creativeController.reset();
         engine.onWorldChanged();
         acquisition.onWorldChanged();
+        build.onWorldChanged();
     }
 
     @EventHandler
     private void onGameLeft(GameLeftEvent event) {
         engine.onWorldChanged();
         acquisition.onWorldChanged();
+        build.onWorldChanged();
     }
 
     @Override
@@ -482,6 +586,23 @@ public class SchematicDropperModule extends Module {
 
         WButton overview = list.add(theme.button("Material Overview")).expandX().widget();
         overview.action = this::openMaterialOverview;
+
+        WHorizontalList buildRow = list.add(theme.horizontalList()).expandX().widget();
+        WButton loadSchematic = buildRow.add(theme.button("Load Schematic...")).expandX().widget();
+        loadSchematic.action = this::loadSchematicFile;
+        WButton startBuild = buildRow.add(theme.button("Start Build")).expandX().widget();
+        startBuild.action = this::startBuild;
+
+        WHorizontalList buildRow2 = list.add(theme.horizontalList()).expandX().widget();
+        WButton pauseBuild = buildRow2.add(theme.button("Pause")).expandX().widget();
+        pauseBuild.action = this::pauseBuild;
+        WButton resumeBuild = buildRow2.add(theme.button("Resume")).expandX().widget();
+        resumeBuild.action = this::resumeBuild;
+        WButton stopBuild = buildRow2.add(theme.button("Stop")).expandX().widget();
+        stopBuild.action = this::stopBuild;
+
+        WButton buildScreen = list.add(theme.button("Schematic Builder...")).expandX().widget();
+        buildScreen.action = this::openBuildScreen;
 
         return list;
     }
@@ -536,6 +657,161 @@ public class SchematicDropperModule extends Module {
         if (!dropBridge.prepare(plan)) return false;
         engine.start(System.currentTimeMillis());
         return true;
+    }
+
+    // ------------------------------------------------------------ schematic build
+
+    private PlacementConfig buildConfig() {
+        return new PlacementConfig(
+            blocksPerTick.get(),
+            120,
+            retryLimit.get(),
+            retryBackoff.get(),
+            1500,
+            rescanInterval.get(),
+            buildRange.get(),
+            conflictPolicy.get(),
+            true,
+            true,
+            1
+        );
+    }
+
+    /** Resolves the configured origin to an absolute position. */
+    private BlockPos3 currentBuildOrigin() {
+        return switch (buildOriginMode.get()) {
+            case PLAYER -> {
+                if (mc.player == null) yield new BlockPos3(0, 0, 0);
+                yield new BlockPos3((int) Math.floor(mc.player.getX()),
+                    (int) Math.floor(mc.player.getY()), (int) Math.floor(mc.player.getZ()));
+            }
+            case CUSTOM -> new BlockPos3(buildOriginX.get(), buildOriginY.get(), buildOriginZ.get());
+        };
+    }
+
+    /** Opens the file picker and loads the chosen schematic asynchronously. */
+    public void loadSchematicFile() {
+        String path = chooseSchematicFile();
+        if (path == null) return;
+        File file = new File(path);
+        if (!file.isFile()) {
+            error("That file could not be read.");
+            return;
+        }
+        build.loadAsync(file.toPath());
+        info("Loading " + file.getName() + "...");
+    }
+
+    public void startBuild() {
+        if (!isActive()) {
+            error("Enable the module before starting a build.");
+            return;
+        }
+        if (!buildEnabled.get()) {
+            error("Enable \"build-enabled\" in Schematic Building first.");
+            return;
+        }
+        if (!build.hasSchematic()) {
+            error("Load a schematic file first.");
+            return;
+        }
+        build.setOrigin(currentBuildOrigin());
+        build.startBuild(System.currentTimeMillis());
+    }
+
+    public void pauseBuild() {
+        build.pause();
+    }
+
+    public void resumeBuild() {
+        build.resume(System.currentTimeMillis());
+    }
+
+    public void stopBuild() {
+        build.stop(System.currentTimeMillis());
+    }
+
+    public void retryFailedBlocks() {
+        build.retryFailed();
+    }
+
+    public SchematicBuildController buildController() {
+        return build;
+    }
+
+    /**
+     * Mirrors a freshly loaded schematic into the material list exactly once per load, so the same
+     * materials can be dropped or acquired through the existing workflows. It never runs on a quiet
+     * tick, so an imported material list is left alone.
+     */
+    private void syncSchematicMaterials() {
+        if (!build.hasSchematic()) return;
+        if (build.loadGeneration() == lastSchematicGeneration) return;
+        lastSchematicGeneration = build.loadGeneration();
+
+        List<Requirement> derived = build.schematic().toMaterialPlan().requirements();
+        List<String> entries = new ArrayList<>(derived.size());
+        for (Requirement r : derived) entries.add(r.itemId() + " " + r.required());
+        materialList.set(entries);
+        rebuildPlan();
+        info("Material list updated from " + build.schematic().name() + ": "
+            + Messages.plural(derived.size(), "material") + ".");
+    }
+
+    private String chooseSchematicFile() {
+        PointerBuffer filters = MemoryUtil.memAllocPointer(3);
+        filters.put(MemoryUtil.memUTF8("*.schem"));
+        filters.put(MemoryUtil.memUTF8("*.schematic"));
+        filters.put(MemoryUtil.memUTF8("*.litematic"));
+        filters.flip();
+        try {
+            return TinyFileDialogs.tinyfd_openFileDialog(
+                "Select schematic",
+                new File(MeteorClient.FOLDER, "schematicdropper").getAbsolutePath(),
+                filters,
+                null,
+                false
+            );
+        } finally {
+            MemoryUtil.memFree(filters);
+        }
+    }
+
+    /** Routes the build controller's output through the module's chat formatting. */
+    private final class BuildFeedback implements SchematicBuildController.Feedback {
+        @Override
+        public void info(String message) {
+            if (notifyBuild.get()) SchematicDropperModule.this.info(message);
+        }
+
+        @Override
+        public void warn(String message) {
+            if (notifyBuild.get()) warning("%s", Formatting.YELLOW + Messages.PREFIX + message);
+        }
+
+        @Override
+        public void error(String message) {
+            SchematicDropperModule.this.error(message);
+        }
+
+        @Override
+        public void debug(String message) {
+            SchematicDropperModule.this.debug(message);
+        }
+    }
+
+    /** Where a schematic build is anchored. */
+    public enum BuildOriginMode {
+        PLAYER,
+        CUSTOM;
+
+        @Override
+        public String toString() {
+            return switch (this) {
+                case PLAYER -> "Player position";
+                case CUSTOM -> "Custom coordinates";
+            };
+        }
     }
 
     // ---------------------------------------------------------------- controls
@@ -636,10 +912,24 @@ public class SchematicDropperModule extends Module {
             return;
         }
 
+        // A schematic is imported by loading it: the block counts become the material list, so the
+        // same file can drive dropping, acquisition and building.
+        if (isSchematicFile(file.getName())) {
+            build.loadAsync(file.toPath());
+            info("Importing " + file.getName() + "...");
+            return;
+        }
+
         cancelImport();
         pendingImport = new SchematicFileImport(file.toPath(), new RegistryItemResolver());
         lastImportName = file.getName();
         info("Importing " + file.getName() + "...");
+    }
+
+    private static boolean isSchematicFile(String fileName) {
+        SchematicFormat format = SchematicFormat.fromFileName(fileName);
+        return format == SchematicFormat.SPONGE || format == SchematicFormat.MCEDIT
+            || format == SchematicFormat.LITEMATIC;
     }
 
     /** Releases any in-progress import reader. */
@@ -706,14 +996,17 @@ public class SchematicDropperModule extends Module {
     }
 
     private String chooseFile() {
-        PointerBuffer filters = MemoryUtil.memAllocPointer(3);
+        PointerBuffer filters = MemoryUtil.memAllocPointer(6);
         filters.put(MemoryUtil.memUTF8("*.txt"));
         filters.put(MemoryUtil.memUTF8("*.md"));
         filters.put(MemoryUtil.memUTF8("*.csv"));
+        filters.put(MemoryUtil.memUTF8("*.schem"));
+        filters.put(MemoryUtil.memUTF8("*.schematic"));
+        filters.put(MemoryUtil.memUTF8("*.litematic"));
         filters.flip();
         try {
             return TinyFileDialogs.tinyfd_openFileDialog(
-                "Select material list",
+                "Select material list or schematic",
                 new File(MeteorClient.FOLDER, "schematicdropper").getAbsolutePath(),
                 filters,
                 null,
@@ -759,6 +1052,10 @@ public class SchematicDropperModule extends Module {
 
     public void openAcquisitionScreen() {
         mc.setScreen(new AcquisitionScreen(this));
+    }
+
+    public void openBuildScreen() {
+        mc.setScreen(new BuildScreen(this));
     }
 
     public ProgressSnapshot snapshot() {

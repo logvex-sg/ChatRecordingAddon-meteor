@@ -1,11 +1,15 @@
 # Logvex Addon (Meteor Client)
 
-A Meteor Client addon for Minecraft 1.21.1 with two modules:
+A Meteor Client addon for Minecraft 1.21.1.
 
-- **Schematic Dropper** — drops the materials of a loaded schematic, one *server-confirmed*
-  transfer at a time, with automatic head rotation and live progress tracking.
-- **Live Chat Relay** — records chat, relays it to a Discord webhook on a timer, and keeps a
-  compressed, searchable local archive of every report.
+**Chat toolkit** — `chat-logger` (records chat to compressed, searchable logs),
+`chat-monitor` (live feed with filters and highlighting), `keyword-alerts` (keyword alerts with
+sound and optional webhook), `player-activity` (per-player activity tracking) and
+`session-stats` (session statistics), with matching HUD elements.
+
+**Schematic Dropper** — imports a material report or a schematic, acquires missing materials in
+Creative mode, drops them one *server-confirmed* transfer at a time, and can place a schematic
+block by block into the world with verified placements and resumable checkpoints.
 
 ## Building
 
@@ -13,7 +17,7 @@ A Meteor Client addon for Minecraft 1.21.1 with two modules:
 ./gradlew clean test build
 ```
 
-The jar is written to `build/libs/logvex-addon-3.0.0.jar`. Drop it into `.minecraft/mods`
+The jar is written to `build/libs/log-addon-5.0.0.jar`. Drop it into `.minecraft/mods`
 alongside Meteor Client 0.5.8.
 
 ### Java 21 is required for the Gradle daemon
@@ -62,7 +66,11 @@ cannot report progress for a drop the server rejected or that only existed as a 
 | Material Overview | Opens the material overview screen. |
 | Acquire Materials | Starts automatic Creative acquisition from the imported list. |
 | Acquisition... | Opens the acquisition screen (progress, per-material status, controls). |
-| Import Material List... | Opens a file picker and imports a whole material report. |
+| Import Material List... | Opens a file picker and imports a whole material report (or a schematic). |
+| Load Schematic... | Opens a file picker and loads a `.schem` / `.schematic` / `.litematic` build. |
+| Start Build | Places the loaded schematic block by block, verifying each placement. |
+| Pause / Resume / Stop (build row) | Controls a schematic build. |
+| Schematic Builder... | Opens the build screen (progress, problems, history, checkpoints). |
 
 ### Importing a material list
 
@@ -115,6 +123,34 @@ materials to the normal drop workflow:
 - **Pause**, **Resume**, **Stop**, **Retry Failed** and **Restart Current** are available from the
   acquisition screen.
 
+### Building a schematic
+
+With **build-enabled** turned on, the module can place a schematic file into the world block by
+block. The pipeline is:
+
+`LOAD FILE → COMPARE WITH WORLD → ORDER BY DEPENDENCY → PLACE → VERIFY → CHECKPOINT → NEXT BLOCK`
+
+- **Load Schematic...** reads `.schem` (Sponge v2/v3), `.schematic` (MCEdit) and `.litematic`
+  files. Loading happens on a background worker and the result is applied on the next tick, so a
+  large file never blocks the game thread.
+- The loaded file's block counts are copied into the material list once per load, so the same
+  schematic can also be dropped or acquired through the existing workflows.
+- The world is compared first: blocks that already match are skipped, blocks that are merely
+  replaceable (grass, water, snow) count as missing, and an unrelated block in the way is reported
+  as a conflict according to the **conflicts** setting.
+- Placement order comes from the dependency solver: gravity-affected blocks are placed after their
+  support, attached blocks after the block they hang from, and multi-cell blocks (doors, beds, tall
+  plants) as a unit.
+- Every placement is confirmed from the world, never from the fact that a click was sent. A
+  placement that does not appear is retried up to the retry limit and then recorded in the failure
+  log.
+- Progress is checkpointed to `<config>/schematicdropper/checkpoints/<name>.json` after each
+  confirmed block, written atomically (temp file + move). On resume the checkpoint is
+  **re-validated against the world**, so a build can never skip a block that was changed while the
+  game was closed.
+- **Schematic Builder...** shows progress, the active queue, recorded problems, session history and
+  the saved checkpoints.
+
 ### Settings
 
 - **General** — auto-continue, operation delay, retry limit/backoff, recovery mode
@@ -128,6 +164,8 @@ materials to the normal drop workflow:
 - **Progress** — HUD enable, compact/expanded, scale, and per-field visibility.
 - **Creative Acquisition** — auto-acquire, auto-drop, acquisition delay, retry limit, sync
   timeout, scan interval.
+- **Schematic Building** — build-enabled, origin (player/custom), custom coordinates, conflict
+  policy, blocks per tick, range, checkpoints, build notifications.
 
 ### Rotation
 
@@ -184,6 +222,14 @@ archive with in-memory doubles (no Minecraft runtime required):
   CRLF handling, unreadable-file errors, ordering and the import summary line.
 - `AcquisitionEngineTest` — the Creative acquisition state machine driven through fakes: partial
   quantities, stack limits, full inventories, drains, retries, blocked materials and snapshots.
+- `WorldComparisonTest`, `PlacementEngineTest`, `DependencySolverTest`, `RecoveryManagerTest`,
+  `MaterialManagementTest`, `SchematicReaderTest`, `NewFakes` — the schematic build pipeline:
+  world diffing, the placement state machine (including server rejection and retry), dependency
+  ordering, checkpoint re-validation on resume, material accounting and the Sponge/MCEdit/Litematic
+  readers, all driven by in-memory doubles.
+- `FileCheckpointStoreTest` — checkpoint round-trip, newest-first listing, corrupt-file recovery,
+  deletion and path-name sanitisation.
+- `LegacyBlockIdTableTest` — legacy id/metadata resolution and honest refusal of unknown ids.
 - `ChatRelayCoreTest` — buffer concurrency, gzip round-trip, corruption detection, archive
   persistence, index rebuild, search, cleanup, deletion and payload safety.
 
@@ -193,9 +239,16 @@ archive with in-memory doubles (no Minecraft runtime required):
   load rather than blocking; the list is never truncated.
 - Creative acquisition needs genuine Creative mode with server-side permission. On a server that
   refuses creative inventory changes the module reports that instead of faking items.
-- In-game behaviour (the acquisition screen, HUD and file picker) has not been verified in a live
-  Minecraft session from this environment; the core engines and the importer are covered by unit
-  tests that use fakes and the real 1.21.1 item registry.
+- Schematic building uses Meteor's `BlockUtils.place` (rotate, select the item, click a face,
+  restore), so it is bound by normal survival-style placement rules: the player must be in range
+  and a support face must exist. It does not teleport, fly or bypass reach limits.
+- The legacy (`.schematic`) id table covers the ids that appear in practice; anything outside it is
+  reported as unresolved rather than guessed, and the item form of a legacy block is not always
+  recoverable.
+- In-game behaviour (the acquisition/build screens, HUD and file picker) has not been verified in a
+  live Minecraft session from this environment; the core engines, the importer, the readers, the
+  checkpoint store and the legacy id table are covered by unit tests that use fakes and the real
+  1.21.1 registries.
 
 ## License
 
