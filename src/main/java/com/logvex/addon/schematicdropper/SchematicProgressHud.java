@@ -1,6 +1,10 @@
 package com.logvex.addon.schematicdropper;
 
 import com.logvex.addon.LogAddon;
+import com.logvex.addon.common.Messages;
+import com.logvex.addon.schematicdropper.core.AcquisitionSnapshot;
+import com.logvex.addon.schematicdropper.core.AcquisitionState;
+import com.logvex.addon.schematicdropper.core.MaterialAcquisition;
 import com.logvex.addon.schematicdropper.core.MaterialProgress;
 import com.logvex.addon.schematicdropper.core.ProgressSnapshot;
 import com.logvex.addon.schematicdropper.core.State;
@@ -21,6 +25,9 @@ import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.registry.Registries;
 import net.minecraft.util.Identifier;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Progress HUD for the dropper. Every value comes from {@link ProgressSnapshot}, which is itself
@@ -83,6 +90,13 @@ public class SchematicProgressHud extends HudElement {
     private final Setting<Boolean> showMissing = sgInfo.add(new BoolSetting.Builder()
         .name("show-missing")
         .description("Show how many materials are missing.")
+        .defaultValue(true)
+        .build()
+    );
+
+    private final Setting<Boolean> trackAcquisition = sgInfo.add(new BoolSetting.Builder()
+        .name("track-acquisition")
+        .description("Show Creative acquisition progress while an acquisition is running.")
         .defaultValue(true)
         .build()
     );
@@ -158,14 +172,96 @@ public class SchematicProgressHud extends HudElement {
         return customScale.get() ? scale.get() : -1;
     }
 
-    private ProgressSnapshot snapshot() {
+    /** Normalised view so the HUD can render either workflow with the same code. */
+    private record HudData(
+        double percent,
+        long confirmed,
+        long required,
+        long remaining,
+        String currentMaterial,
+        int currentCount,
+        int completedTypes,
+        int totalTypes,
+        int missingTypes,
+        String status,
+        Color statusColor,
+        List<Row> rows
+    ) {
+    }
+
+    private record Row(String text, boolean warn) {
+    }
+
+    private static final Color TEXT_COLOR = TEXT;
+    private static final Color MUTED_COLOR = MUTED;
+    private static final Color WARN = new Color(255, 190, 120);
+
+    private HudData data() {
         SchematicDropperModule module = Modules.get().get(SchematicDropperModule.class);
-        return module == null ? ProgressSnapshot.idle() : module.snapshot();
+        if (module == null) return fromDrops(ProgressSnapshot.idle());
+
+        if (trackAcquisition.get() && module.isAcquiring()) return fromAcquisition(module.acquisitionSnapshot());
+        return fromDrops(module.snapshot());
+    }
+
+    private HudData fromDrops(ProgressSnapshot snap) {
+        List<Row> rows = new ArrayList<>();
+        for (MaterialProgress m : snap.materials()) {
+            if (m.complete()) continue;
+            rows.add(new Row(m.displayName() + "  " + m.confirmed() + "/" + m.required()
+                + (m.missing() > 0 ? "  (missing " + m.missing() + ")" : ""), m.missing() > 0));
+        }
+        return new HudData(
+            snap.percent(),
+            snap.confirmedDropped(),
+            snap.totalRequired(),
+            snap.remaining(),
+            snap.currentMaterial(),
+            snap.currentStackCount(),
+            snap.completedTypes(),
+            snap.totalTypes(),
+            snap.missingTypes(),
+            snap.state().toString(),
+            statusColor(snap.state()),
+            rows
+        );
+    }
+
+    private HudData fromAcquisition(AcquisitionSnapshot snap) {
+        List<Row> rows = new ArrayList<>();
+        for (MaterialAcquisition m : snap.materials()) {
+            if (m.complete()) continue;
+            rows.add(new Row(Messages.prettyId(m.itemId()) + "  " + m.acquired() + "/" + m.required(), false));
+        }
+        return new HudData(
+            snap.percent(),
+            snap.totalAcquired(),
+            snap.totalRequired(),
+            snap.totalRemaining(),
+            snap.currentMaterial(),
+            snap.currentAmount(),
+            snap.materialsComplete(),
+            snap.materialsTotal(),
+            0,
+            snap.state().toString(),
+            acquisitionColor(snap.state()),
+            rows
+        );
+    }
+
+    private static Color acquisitionColor(AcquisitionState state) {
+        return switch (state) {
+            case COMPLETED -> new Color(140, 235, 140);
+            case ERROR -> new Color(255, 120, 120);
+            case WAITING_FOR_SPACE -> new Color(255, 200, 120);
+            case PAUSED -> new Color(200, 200, 120);
+            default -> TEXT_COLOR;
+        };
     }
 
     @Override
     public void tick(HudRenderer renderer) {
-        ProgressSnapshot snap = snapshot();
+        HudData snap = data();
         double target = snap.percent();
         double factor = Math.min(1.0, Math.max(0.05, renderer.delta * 8.0));
         animatedPercent += (target - animatedPercent) * factor;
@@ -206,9 +302,8 @@ public class SchematicProgressHud extends HudElement {
 
         if (mode.get() == Mode.Expanded) {
             h += 2;
-            for (MaterialProgress m : snap.materials()) {
-                if (m.complete()) continue;
-                w = Math.max(w, renderer.textWidth(m.displayName(), true, getScale()) + 40);
+            for (Row row : snap.rows()) {
+                w = Math.max(w, renderer.textWidth(row.text(), true, getScale()) + 40);
                 h += renderer.textHeight(true, getScale()) + 1;
                 if (h > 160) break;
             }
@@ -219,7 +314,7 @@ public class SchematicProgressHud extends HudElement {
 
     @Override
     public void render(HudRenderer renderer) {
-        ProgressSnapshot snap = snapshot();
+        HudData snap = data();
         double scaleValue = getScale();
         double lineH = renderer.textHeight(true, scaleValue) + 2;
         double left = x + 3;
@@ -250,9 +345,10 @@ public class SchematicProgressHud extends HudElement {
         }
 
         if (showCounts.get()) {
-            renderer.text(snap.confirmedDropped() + " / " + snap.totalRequired() + " items", left, cursor, TEXT, true, scaleValue);
+            renderer.text(Messages.number(snap.confirmed()) + " / " + Messages.number(snap.required()) + " items",
+                left, cursor, TEXT, true, scaleValue);
             cursor += lineH;
-            renderer.text(snap.remaining() + " remaining", left, cursor, MUTED, true, scaleValue);
+            renderer.text(Messages.number(snap.remaining()) + " remaining", left, cursor, MUTED, true, scaleValue);
             cursor += lineH;
         }
 
@@ -269,7 +365,7 @@ public class SchematicProgressHud extends HudElement {
                         textX = left + 18;
                     }
                 }
-                renderer.text("Current: " + shortName(name) + " x" + snap.currentStackCount(), textX, cursor, TEXT, true, scaleValue);
+                renderer.text("Current: " + shortName(name) + " x" + snap.currentCount(), textX, cursor, TEXT, true, scaleValue);
             }
             cursor += lineH;
         }
@@ -281,24 +377,20 @@ public class SchematicProgressHud extends HudElement {
         }
 
         if (showMissing.get()) {
-            renderer.text("Missing: " + snap.missingTypes() + " material(s)", left, cursor,
-                snap.missingTypes() > 0 ? new Color(255, 190, 120) : MUTED, true, scaleValue);
+            renderer.text("Missing: " + snap.missingTypes() + " materials", left, cursor,
+                snap.missingTypes() > 0 ? WARN : MUTED, true, scaleValue);
             cursor += lineH;
         }
 
         if (showStatus.get()) {
-            State state = snap.state();
-            renderer.text("Status: " + state, left, cursor, statusColor(state), true, scaleValue);
+            renderer.text("Status: " + snap.status(), left, cursor, snap.statusColor(), true, scaleValue);
             cursor += lineH;
         }
 
         if (mode.get() == Mode.Expanded) {
             cursor += 2;
-            for (MaterialProgress m : snap.materials()) {
-                if (m.complete()) continue;
-                String text = m.displayName() + "  " + m.confirmed() + "/" + m.required()
-                    + (m.missing() > 0 ? "  (missing " + m.missing() + ")" : "");
-                renderer.text(text, left, cursor, m.missing() > 0 ? new Color(255, 160, 160) : MUTED, true, scaleValue);
+            for (Row row : snap.rows()) {
+                renderer.text(row.text(), left, cursor, row.warn() ? new Color(255, 160, 160) : MUTED, true, scaleValue);
                 cursor += lineH - 1;
                 if (cursor > y + getHeight()) break;
             }

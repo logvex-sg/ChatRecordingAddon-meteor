@@ -1,0 +1,389 @@
+# Material Report
+
+## Material List
+
+| Material | Quantity |
+|---|---|
+| quartz pillar | 64 (1 stacks) |
+| spruce planks | 201 (3 stacks + 9) |
+| polished blackstone brick stairs | 338 (5 stacks + 18) |
+| stripped spruce log | 475 (7 stacks + 27) |
+| stone bricks | 612 (9 stacks + 36) |
+| oak planks | 749 (11 stacks + 45) |
+| cobblestone | 886 (13 stacks + 54) |
+| deepslate tiles | 1,023 (15 stacks + 63) |
+| polished deepslate | 1,160 (18 stacks + 8) |
+| blackstone | 1,297 (20 stacks + 17) |
+| polished blackstone | 1,434 (22 stacks + 26) |
+| nether bricks | 1,571 (24 stacks + 35) |
+| sandstone | 1,708 (26 stacks + 44) |
+| bricks | 1,845 (28 stacks + 53) |
+| glass | 1,982 (30 stacks + 62) |
+| white concrete | 2,119 (33 stacks + 7) |
+| gray concrete | 2,256 (35 stacks + 16) |
+| black concrete | 2,393 (37 stacks + 25) |
+| oak log | 2,530 (39 stacks + 34) |
+| spruce log | 2,667 (41 stacks + 43) |
+| birch log | 2,804 (43 stacks + 52) |
+| acacia boat | 2,941 (45 stacks + 61) |
+| acacia button | 3,078 (48 stacks + 6) |
+| acacia chest boat | 3,215 (50 stacks + 15) |
+| acacia door | 3,352 (52 stacks + 24) |
+| acacia fence | 3,489 (54 stacks + 33) |
+| acacia fence gate | 3,626 (56 stacks + 42) |
+| acacia hanging sign | 3,763 (58 stacks + 51) |
+| acacia leaves | 3,900 (60 stacks + 60) |
+| acacia log | 137 (2 stacks + 9) |
+| acacia planks | 274 (4 stacks + 18) |
+| acacia pressure plate | 411 (6 stacks + 27) |
+| acacia sapling | 548 (8 stacks + 36) |
+| acacia sign | 685 (10 stacks + 45) |
+| acacia slab | 822 (12 stacks + 54) |
+| acacia stairs | 959 (14 stacks + 63) |
+| acacia trapdoor | 1,096 (17 stacks + 8) |
+| acacia wood | 1,233 (19 stacks + 17) |
+| activator rail | 1,370 (21 stacks + 26) |
+| air | 1,507 (23 stacks + 35) |
+| allay spawn egg | 1,644 (25 stacks + 44) |
+| allium | 1,781 (27 stacks + 53) |
+| amethyst block | 1,918 (29 stacks + 62) |
+| amethyst cluster | 2,055 (32 stacks + 7) |
+| amethyst shard | 2,192 (34 stacks + 16) |
+| ancient debris | 2,329 (36 stacks + 25) |
+| andesite | 2,466 (38 stacks + 34) |
+| andesite slab | 2,603 (40 stacks + 43) |
+| andesite stairs | 2,740 (42 stacks + 52) |
+| andesite wall | 2,877 (44 stacks + 61) |
+| angler pottery sherd | 3,014 (47 stacks + 6) |
+| anvil | 3,151 (49 stacks + 15) |
+| apple | 3,288 (51 stacks + 24) |
+| archer pottery sherd | 3,425 (53 stacks + 33) |
+| armadillo scute | 3,562 (55 stacks + 42) |
+| armadillo spawn egg | 3,699 (57 stacks + 51) |
+| armor stand | 3,836 (59 stacks + 60) |
+| arms up pottery sherd | 73 (1 stacks + 9) |
+| arrow | 210 (3 stacks + 18) |
+| axolotl bucket | 347 (5 stacks + 27) |
+| axolotl spawn egg | 484 (7 stacks + 36) |
+| azalea | 621 (9 stacks + 45) |
+| azalea leaves | 758 (11 stacks + 54) |
+| azure bluet | 895 (13 stacks + 63) |
+| baked potato | 1,032 (16 stacks + 8) |
+| bamboo | 1,169 (18 stacks + 17) |
+| bamboo block | 1,306 (20 stacks + 26) |
+| bamboo button | 1,443 (22 stacks + 35) |
+| bamboo chest raft | 1,580 (24 stacks + 44) |
+| bamboo door | 1,717 (26 stacks + 53) |
+| bamboo fence | 1,854 (28 stacks + 62) |
+| bamboo fence gate | 1,991 (31 stacks + 7) |
+| bamboo hanging sign | 2,128 (33 stacks + 16) |
+| bamboo mosaic | 2,265 (35 stacks + 25) |
+| bamboo mosaic slab | 2,402 (37 stacks + 34) |
+| bamboo mosaic stairs | 2,539 (39 stacks + 43) |
+| bamboo planks | 2,676 (41 stacks + 52) |
+| bamboo pressure plate | 2,813 (43 stacks + 61) |
+| bamboo raft | 2,950 (46 stacks + 6) |
+| bamboo sign | 3,087 (48 stacks + 15) |
+| bamboo slab | 3,224 (50 stacks + 24) |
+| bamboo stairs | 3,361 (52 stacks + 33) |
+| bamboo trapdoor | 3,498 (54 stacks + 42) |
+| barrel | 3,635 (56 stacks + 51) |
+| barrier | 3,772 (58 stacks + 60) |
+| basalt | 3,909 (61 stacks + 5) |
+| bat spawn egg | 146 (2 stacks + 18) |
+| beacon | 283 (4 stacks + 27) |
+| bedrock | 420 (6 stacks + 36) |
+| bee nest | 557 (8 stacks + 45) |
+| bee spawn egg | 694 (10 stacks + 54) |
+| beef | 831 (12 stacks + 63) |
+| beehive | 968 (15 stacks + 8) |
+| beetroot | 1,105 (17 stacks + 17) |
+| beetroot seeds | 1,242 (19 stacks + 26) |
+| beetroot soup | 1,379 (21 stacks + 35) |
+| bell | 1,516 (23 stacks + 44) |
+| big dripleaf | 1,653 (25 stacks + 53) |
+| birch boat | 1,790 (27 stacks + 62) |
+| birch button | 1,927 (30 stacks + 7) |
+| birch chest boat | 2,064 (32 stacks + 16) |
+| birch door | 2,201 (34 stacks + 25) |
+| birch fence | 2,338 (36 stacks + 34) |
+| birch fence gate | 2,475 (38 stacks + 43) |
+| birch hanging sign | 2,612 (40 stacks + 52) |
+| birch leaves | 2,749 (42 stacks + 61) |
+| birch planks | 2,886 (45 stacks + 6) |
+| birch pressure plate | 3,023 (47 stacks + 15) |
+| birch sapling | 3,160 (49 stacks + 24) |
+| birch sign | 3,297 (51 stacks + 33) |
+| birch slab | 3,434 (53 stacks + 42) |
+| birch stairs | 3,571 (55 stacks + 51) |
+| birch trapdoor | 3,708 (57 stacks + 60) |
+| birch wood | 3,845 (60 stacks + 5) |
+| black banner | 82 (1 stacks + 18) |
+| black bed | 219 (3 stacks + 27) |
+| black candle | 356 (5 stacks + 36) |
+| black carpet | 493 (7 stacks + 45) |
+| black concrete powder | 630 (9 stacks + 54) |
+| black dye | 767 (11 stacks + 63) |
+| black glazed terracotta | 904 (14 stacks + 8) |
+| black shulker box | 1,041 (16 stacks + 17) |
+| black stained glass | 1,178 (18 stacks + 26) |
+| black stained glass pane | 1,315 (20 stacks + 35) |
+| black terracotta | 1,452 (22 stacks + 44) |
+| black wool | 1,589 (24 stacks + 53) |
+| blackstone slab | 1,726 (26 stacks + 62) |
+| blackstone stairs | 1,863 (29 stacks + 7) |
+| blackstone wall | 2,000 (31 stacks + 16) |
+| blade pottery sherd | 2,137 (33 stacks + 25) |
+| blast furnace | 2,274 (35 stacks + 34) |
+| blaze powder | 2,411 (37 stacks + 43) |
+| blaze rod | 2,548 (39 stacks + 52) |
+| blaze spawn egg | 2,685 (41 stacks + 61) |
+| blue banner | 2,822 (44 stacks + 6) |
+| blue bed | 2,959 (46 stacks + 15) |
+| blue candle | 3,096 (48 stacks + 24) |
+| blue carpet | 3,233 (50 stacks + 33) |
+| blue concrete | 3,370 (52 stacks + 42) |
+| blue concrete powder | 3,507 (54 stacks + 51) |
+| blue dye | 3,644 (56 stacks + 60) |
+| blue glazed terracotta | 3,781 (59 stacks + 5) |
+| blue ice | 3,918 (61 stacks + 14) |
+| blue orchid | 155 (2 stacks + 27) |
+| blue shulker box | 292 (4 stacks + 36) |
+| blue stained glass | 429 (6 stacks + 45) |
+| blue stained glass pane | 566 (8 stacks + 54) |
+| blue terracotta | 703 (10 stacks + 63) |
+| blue wool | 840 (13 stacks + 8) |
+| bogged spawn egg | 977 (15 stacks + 17) |
+| bolt armor trim smithing template | 1,114 (17 stacks + 26) |
+| bone | 1,251 (19 stacks + 35) |
+| bone block | 1,388 (21 stacks + 44) |
+| bone meal | 1,525 (23 stacks + 53) |
+| book | 1,662 (25 stacks + 62) |
+| bookshelf | 1,799 (28 stacks + 7) |
+| bow | 1,936 (30 stacks + 16) |
+| bowl | 2,073 (32 stacks + 25) |
+| brain coral | 2,210 (34 stacks + 34) |
+| brain coral block | 2,347 (36 stacks + 43) |
+| brain coral fan | 2,484 (38 stacks + 52) |
+| bread | 2,621 (40 stacks + 61) |
+| breeze rod | 2,758 (43 stacks + 6) |
+| breeze spawn egg | 2,895 (45 stacks + 15) |
+| brewer pottery sherd | 3,032 (47 stacks + 24) |
+| brewing stand | 3,169 (49 stacks + 33) |
+| brick | 3,306 (51 stacks + 42) |
+| brick slab | 3,443 (53 stacks + 51) |
+| brick stairs | 3,580 (55 stacks + 60) |
+| brick wall | 3,717 (58 stacks + 5) |
+| brown banner | 3,854 (60 stacks + 14) |
+| brown bed | 91 (1 stacks + 27) |
+| brown candle | 228 (3 stacks + 36) |
+| brown carpet | 365 (5 stacks + 45) |
+| brown concrete | 502 (7 stacks + 54) |
+| brown concrete powder | 639 (9 stacks + 63) |
+| brown dye | 776 (12 stacks + 8) |
+| brown glazed terracotta | 913 (14 stacks + 17) |
+| brown mushroom | 1,050 (16 stacks + 26) |
+| brown mushroom block | 1,187 (18 stacks + 35) |
+| brown shulker box | 1,324 (20 stacks + 44) |
+| brown stained glass | 1,461 (22 stacks + 53) |
+| brown stained glass pane | 1,598 (24 stacks + 62) |
+| brown terracotta | 1,735 (27 stacks + 7) |
+| brown wool | 1,872 (29 stacks + 16) |
+| brush | 2,009 (31 stacks + 25) |
+| bubble coral | 2,146 (33 stacks + 34) |
+| bubble coral block | 2,283 (35 stacks + 43) |
+| bubble coral fan | 2,420 (37 stacks + 52) |
+| bucket | 2,557 (39 stacks + 61) |
+| budding amethyst | 2,694 (42 stacks + 6) |
+| bundle | 2,831 (44 stacks + 15) |
+| burn pottery sherd | 2,968 (46 stacks + 24) |
+| cactus | 3,105 (48 stacks + 33) |
+| cake | 3,242 (50 stacks + 42) |
+| calcite | 3,379 (52 stacks + 51) |
+| calibrated sculk sensor | 3,516 (54 stacks + 60) |
+| camel spawn egg | 3,653 (57 stacks + 5) |
+| campfire | 3,790 (59 stacks + 14) |
+| candle | 3,927 (61 stacks + 23) |
+| carrot | 164 (2 stacks + 36) |
+| carrot on a stick | 301 (4 stacks + 45) |
+| cartography table | 438 (6 stacks + 54) |
+| carved pumpkin | 575 (8 stacks + 63) |
+| cat spawn egg | 712 (11 stacks + 8) |
+| cauldron | 849 (13 stacks + 17) |
+| cave spider spawn egg | 986 (15 stacks + 26) |
+| chain | 1,123 (17 stacks + 35) |
+| chain command block | 1,260 (19 stacks + 44) |
+| chainmail boots | 1,397 (21 stacks + 53) |
+| chainmail chestplate | 1,534 (23 stacks + 62) |
+| chainmail helmet | 1,671 (26 stacks + 7) |
+| chainmail leggings | 1,808 (28 stacks + 16) |
+| charcoal | 1,945 (30 stacks + 25) |
+| cherry boat | 2,082 (32 stacks + 34) |
+| cherry button | 2,219 (34 stacks + 43) |
+| cherry chest boat | 2,356 (36 stacks + 52) |
+| cherry door | 2,493 (38 stacks + 61) |
+| cherry fence | 2,630 (41 stacks + 6) |
+| cherry fence gate | 2,767 (43 stacks + 15) |
+| cherry hanging sign | 2,904 (45 stacks + 24) |
+| cherry leaves | 3,041 (47 stacks + 33) |
+| cherry log | 3,178 (49 stacks + 42) |
+| cherry planks | 3,315 (51 stacks + 51) |
+| cherry pressure plate | 3,452 (53 stacks + 60) |
+| cherry sapling | 3,589 (56 stacks + 5) |
+| cherry sign | 3,726 (58 stacks + 14) |
+| cherry slab | 3,863 (60 stacks + 23) |
+| cherry stairs | 100 (1 stacks + 36) |
+| cherry trapdoor | 237 (3 stacks + 45) |
+| cherry wood | 374 (5 stacks + 54) |
+| chest | 511 (7 stacks + 63) |
+| chest minecart | 648 (10 stacks + 8) |
+| chicken | 785 (12 stacks + 17) |
+| chicken spawn egg | 922 (14 stacks + 26) |
+| chipped anvil | 1,059 (16 stacks + 35) |
+| chiseled bookshelf | 1,196 (18 stacks + 44) |
+| chiseled copper | 1,333 (20 stacks + 53) |
+| chiseled deepslate | 1,470 (22 stacks + 62) |
+| chiseled nether bricks | 1,607 (25 stacks + 7) |
+| chiseled polished blackstone | 1,744 (27 stacks + 16) |
+| chiseled quartz block | 1,881 (29 stacks + 25) |
+| chiseled red sandstone | 2,018 (31 stacks + 34) |
+| chiseled sandstone | 2,155 (33 stacks + 43) |
+| chiseled stone bricks | 2,292 (35 stacks + 52) |
+| chiseled tuff | 2,429 (37 stacks + 61) |
+| chiseled tuff bricks | 2,566 (40 stacks + 6) |
+| chorus flower | 2,703 (42 stacks + 15) |
+| chorus fruit | 2,840 (44 stacks + 24) |
+| chorus plant | 2,977 (46 stacks + 33) |
+| clay | 3,114 (48 stacks + 42) |
+| clay ball | 3,251 (50 stacks + 51) |
+| clock | 3,388 (52 stacks + 60) |
+| coal | 3,525 (55 stacks + 5) |
+| coal block | 3,662 (57 stacks + 14) |
+| coal ore | 3,799 (59 stacks + 23) |
+| coarse dirt | 3,936 (61 stacks + 32) |
+| coast armor trim smithing template | 173 (2 stacks + 45) |
+| cobbled deepslate | 310 (4 stacks + 54) |
+| cobbled deepslate slab | 447 (6 stacks + 63) |
+| cobbled deepslate stairs | 584 (9 stacks + 8) |
+| cobbled deepslate wall | 721 (11 stacks + 17) |
+| cobblestone slab | 858 (13 stacks + 26) |
+| cobblestone stairs | 995 (15 stacks + 35) |
+| cobblestone wall | 1,132 (17 stacks + 44) |
+| cobweb | 1,269 (19 stacks + 53) |
+| cocoa beans | 1,406 (21 stacks + 62) |
+| cod | 1,543 (24 stacks + 7) |
+| cod bucket | 1,680 (26 stacks + 16) |
+| cod spawn egg | 1,817 (28 stacks + 25) |
+| command block | 1,954 (30 stacks + 34) |
+| command block minecart | 2,091 (32 stacks + 43) |
+| comparator | 2,228 (34 stacks + 52) |
+| compass | 2,365 (36 stacks + 61) |
+| composter | 2,502 (39 stacks + 6) |
+| conduit | 2,639 (41 stacks + 15) |
+| cooked beef | 2,776 (43 stacks + 24) |
+| cooked chicken | 2,913 (45 stacks + 33) |
+| cooked cod | 3,050 (47 stacks + 42) |
+| cooked mutton | 3,187 (49 stacks + 51) |
+| cooked porkchop | 3,324 (51 stacks + 60) |
+| cooked rabbit | 3,461 (54 stacks + 5) |
+| cooked salmon | 3,598 (56 stacks + 14) |
+| cookie | 3,735 (58 stacks + 23) |
+| copper block | 3,872 (60 stacks + 32) |
+| copper bulb | 109 (1 stacks + 45) |
+| copper door | 246 (3 stacks + 54) |
+| copper grate | 383 (5 stacks + 63) |
+| copper ingot | 520 (8 stacks + 8) |
+| copper ore | 657 (10 stacks + 17) |
+| copper trapdoor | 794 (12 stacks + 26) |
+| cornflower | 931 (14 stacks + 35) |
+| cow spawn egg | 1,068 (16 stacks + 44) |
+| cracked deepslate bricks | 1,205 (18 stacks + 53) |
+| cracked deepslate tiles | 1,342 (20 stacks + 62) |
+| cracked nether bricks | 1,479 (23 stacks + 7) |
+| cracked polished blackstone bricks | 1,616 (25 stacks + 16) |
+| cracked stone bricks | 1,753 (27 stacks + 25) |
+| crafter | 1,890 (29 stacks + 34) |
+| crafting table | 2,027 (31 stacks + 43) |
+| creeper banner pattern | 2,164 (33 stacks + 52) |
+| creeper head | 2,301 (35 stacks + 61) |
+| creeper spawn egg | 2,438 (38 stacks + 6) |
+| crimson button | 2,575 (40 stacks + 15) |
+| crimson door | 2,712 (42 stacks + 24) |
+| crimson fence | 2,849 (44 stacks + 33) |
+| crimson fence gate | 2,986 (46 stacks + 42) |
+| crimson fungus | 3,123 (48 stacks + 51) |
+| crimson hanging sign | 3,260 (50 stacks + 60) |
+| crimson hyphae | 3,397 (53 stacks + 5) |
+| crimson nylium | 3,534 (55 stacks + 14) |
+| crimson planks | 3,671 (57 stacks + 23) |
+| crimson pressure plate | 3,808 (59 stacks + 32) |
+| crimson roots | 3,945 (61 stacks + 41) |
+| crimson sign | 182 (2 stacks + 54) |
+| crimson slab | 319 (4 stacks + 63) |
+| crimson stairs | 456 (7 stacks + 8) |
+| crimson stem | 593 (9 stacks + 17) |
+| crimson trapdoor | 730 (11 stacks + 26) |
+| crossbow | 867 (13 stacks + 35) |
+| crying obsidian | 1,004 (15 stacks + 44) |
+| cut copper | 1,141 (17 stacks + 53) |
+| cut copper slab | 1,278 (19 stacks + 62) |
+| cut copper stairs | 1,415 (22 stacks + 7) |
+| cut red sandstone | 1,552 (24 stacks + 16) |
+| cut red sandstone slab | 1,689 (26 stacks + 25) |
+| cut sandstone | 1,826 (28 stacks + 34) |
+| cut sandstone slab | 1,963 (30 stacks + 43) |
+| cyan banner | 2,100 (32 stacks + 52) |
+| cyan bed | 2,237 (34 stacks + 61) |
+| cyan candle | 2,374 (37 stacks + 6) |
+| cyan carpet | 2,511 (39 stacks + 15) |
+| cyan concrete | 2,648 (41 stacks + 24) |
+| cyan concrete powder | 2,785 (43 stacks + 33) |
+| cyan dye | 2,922 (45 stacks + 42) |
+| cyan glazed terracotta | 3,059 (47 stacks + 51) |
+| cyan shulker box | 3,196 (49 stacks + 60) |
+| cyan stained glass | 3,333 (52 stacks + 5) |
+| cyan stained glass pane | 3,470 (54 stacks + 14) |
+| cyan terracotta | 3,607 (56 stacks + 23) |
+| cyan wool | 3,744 (58 stacks + 32) |
+| damaged anvil | 3,881 (60 stacks + 41) |
+| dandelion | 118 (1 stacks + 54) |
+| danger pottery sherd | 255 (3 stacks + 63) |
+| dark oak boat | 392 (6 stacks + 8) |
+| dark oak button | 529 (8 stacks + 17) |
+| dark oak chest boat | 666 (10 stacks + 26) |
+| dark oak door | 803 (12 stacks + 35) |
+| dark oak fence | 940 (14 stacks + 44) |
+| dark oak fence gate | 1,077 (16 stacks + 53) |
+| dark oak hanging sign | 1,214 (18 stacks + 62) |
+| dark oak leaves | 1,351 (21 stacks + 7) |
+| dark oak log | 1,488 (23 stacks + 16) |
+| dark oak planks | 1,625 (25 stacks + 25) |
+| dark oak pressure plate | 1,762 (27 stacks + 34) |
+| dark oak sapling | 1,899 (29 stacks + 43) |
+| dark oak sign | 2,036 (31 stacks + 52) |
+| dark oak slab | 2,173 (33 stacks + 61) |
+| dark oak stairs | 2,310 (36 stacks + 6) |
+| dark oak trapdoor | 2,447 (38 stacks + 15) |
+| dark oak wood | 2,584 (40 stacks + 24) |
+| dark prismarine | 2,721 (42 stacks + 33) |
+| dark prismarine slab | 2,858 (44 stacks + 42) |
+| dark prismarine stairs | 2,995 (46 stacks + 51) |
+| daylight detector | 3,132 (48 stacks + 60) |
+| dead brain coral | 3,269 (51 stacks + 5) |
+| dead brain coral block | 3,406 (53 stacks + 14) |
+
+## Raw Resources Required
+
+| Material | Quantity |
+|---|---|
+| oak log | 1,024 (16 stacks) |
+| iron ingot | 512 (8 stacks) |
+| cobblestone | 64 (1 stacks) |
+
+## Choice Requirements
+
+| Material | Quantity |
+|---|---|
+| stone | 128 |
+| bricks | 256 |
+

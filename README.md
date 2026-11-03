@@ -60,6 +60,60 @@ cannot report progress for a drop the server rejected or that only existed as a 
 | Reset Progress | Clears confirmed counters without touching the plan or the inventory. |
 | Rescan Inventory | Forces a fresh inventory scan. |
 | Material Overview | Opens the material overview screen. |
+| Acquire Materials | Starts automatic Creative acquisition from the imported list. |
+| Acquisition... | Opens the acquisition screen (progress, per-material status, controls). |
+| Import Material List... | Opens a file picker and imports a whole material report. |
+
+### Importing a material list
+
+**Import Material List...** opens the native file picker (`.txt`, `.md`, `.csv`) and parses the
+**entire** file: the importer never stops at a fixed entry count and never silently truncates.
+Two input formats are supported.
+
+*Simplified Log Addon format* — `minecraft:<id> <quantity>`, one per line:
+
+```text
+minecraft:quartz_pillar 3861
+minecraft:spruce_planks 3420
+```
+
+Tabs, variable whitespace, Windows/Unix line endings and blank lines are all accepted, quantities
+larger than 64 are kept, and the original order is preserved.
+
+*Original material table format* — the markdown table produced by schematic sites:
+
+```text
+| Material | Quantity |
+| quartz pillar | 3861 (60 stacks + 21) |
+```
+
+The stack breakdown is ignored, thousands separators are handled, and only the rows under the
+`Material List` heading are imported. `Raw Resources Required` and `Choice Requirements` are
+skipped, so crafting ingredients never enter the queue.
+
+Duplicate item ids are aggregated onto their first occurrence. Every entry is validated against
+the Minecraft 1.21.1 item registry and anything unknown is reported as an invalid entry (capped in
+chat, with the full list in the debug log). The imported list replaces the module's material list,
+so both the drop workflow and the acquisition workflow operate on exactly what was imported.
+
+### Automatic Creative acquisition
+
+With **auto-acquire** enabled, the module creates the missing quantity of every imported material
+through the Creative inventory, verifies each give against the server, then hands the acquired
+materials to the normal drop workflow:
+
+`IMPORT → VALIDATE → CALCULATE → ACQUIRE → VERIFY → DROP → VERIFY DROP → NEXT MATERIAL`
+
+- Only the missing quantity is created; existing inventory is reused.
+- Quantities larger than one stack and larger than the whole inventory are handled: with
+  **auto-drop** the acquired batch is dropped through the ordinary workflow before the next batch,
+  so a 367-material list does not have to fit in 36 slots.
+- A give is confirmed only when the server's own slot correction arrives *and* the slot really
+  holds the requested item. A rejected or unconfirmed give is never reported as success.
+- Failures are classified and surfaced in plain language: not in Creative mode, no creative
+  permission, unknown item id, full inventory, invalid quantity, or disconnected.
+- **Pause**, **Resume**, **Stop**, **Retry Failed** and **Restart Current** are available from the
+  acquisition screen.
 
 ### Settings
 
@@ -72,6 +126,8 @@ cannot report progress for a drop the server rejected or that only existed as a 
   rescan interval, sync timeout.
 - **Targeting** — player position or looked-at entity.
 - **Progress** — HUD enable, compact/expanded, scale, and per-field visibility.
+- **Creative Acquisition** — auto-acquire, auto-drop, acquisition delay, retry limit, sync
+  timeout, scan interval.
 
 ### Rotation
 
@@ -122,8 +178,24 @@ archive with in-memory doubles (no Minecraft runtime required):
   completion, safe zero-requirement handling.
 - `RotationMathTest` — yaw/pitch conventions, wrapping, shortest-path stepping, interpolation.
 - `MaterialListParserTest` — material list parsing and validation.
+- `MaterialListImporterTest` — both import formats, section filtering, duplicate aggregation,
+  registry validation, and the full 367-entry acceptance fixtures.
+- `SchematicFileImportTest` — whole-file reading from disk, 5,000-entry files with no truncation,
+  CRLF handling, unreadable-file errors, ordering and the import summary line.
+- `AcquisitionEngineTest` — the Creative acquisition state machine driven through fakes: partial
+  quantities, stack limits, full inventories, drains, retries, blocked materials and snapshots.
 - `ChatRelayCoreTest` — buffer concurrency, gzip round-trip, corruption detection, archive
   persistence, index rebuild, search, cleanup, deletion and payload safety.
+
+## Known limitations
+
+- Import reads the file in chunks on the client tick, so a very large report takes a few ticks to
+  load rather than blocking; the list is never truncated.
+- Creative acquisition needs genuine Creative mode with server-side permission. On a server that
+  refuses creative inventory changes the module reports that instead of faking items.
+- In-game behaviour (the acquisition screen, HUD and file picker) has not been verified in a live
+  Minecraft session from this environment; the core engines and the importer are covered by unit
+  tests that use fakes and the real 1.21.1 item registry.
 
 ## License
 

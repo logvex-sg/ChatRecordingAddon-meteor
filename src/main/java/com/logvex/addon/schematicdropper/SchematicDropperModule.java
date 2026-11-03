@@ -1,6 +1,12 @@
 package com.logvex.addon.schematicdropper;
 
 import com.logvex.addon.LogAddon;
+import com.logvex.addon.common.Messages;
+import com.logvex.addon.schematicdropper.core.AcquisitionConfig;
+import com.logvex.addon.schematicdropper.core.AcquisitionEngine;
+import com.logvex.addon.schematicdropper.core.AcquisitionListener;
+import com.logvex.addon.schematicdropper.core.AcquisitionSnapshot;
+import com.logvex.addon.schematicdropper.core.AcquisitionState;
 import com.logvex.addon.schematicdropper.core.DropAction;
 import com.logvex.addon.schematicdropper.core.DropConfig;
 import com.logvex.addon.schematicdropper.core.DropEngine;
@@ -8,6 +14,7 @@ import com.logvex.addon.schematicdropper.core.EngineListener;
 import com.logvex.addon.schematicdropper.core.EnvPort;
 import com.logvex.addon.schematicdropper.core.FailureType;
 import com.logvex.addon.schematicdropper.core.InventoryMode;
+import com.logvex.addon.schematicdropper.core.MaterialListImporter;
 import com.logvex.addon.schematicdropper.core.MaterialListParser;
 import com.logvex.addon.schematicdropper.core.MaterialPlan;
 import com.logvex.addon.schematicdropper.core.OrderingMode;
@@ -20,10 +27,16 @@ import com.logvex.addon.schematicdropper.core.RotationMode;
 import com.logvex.addon.schematicdropper.core.StackStrategy;
 import com.logvex.addon.schematicdropper.core.State;
 import com.logvex.addon.schematicdropper.core.TargetMode;
+import com.logvex.addon.schematicdropper.gui.AcquisitionScreen;
 import com.logvex.addon.schematicdropper.gui.MaterialOverviewScreen;
+import com.logvex.addon.schematicdropper.mc.CreativeInventoryController;
+import com.logvex.addon.schematicdropper.mc.CreativeMinecraftEnv;
+import com.logvex.addon.schematicdropper.mc.DropBridge;
 import com.logvex.addon.schematicdropper.mc.DropController;
 import com.logvex.addon.schematicdropper.mc.MeteorRotationPort;
 import com.logvex.addon.schematicdropper.mc.MinecraftEnv;
+import com.logvex.addon.schematicdropper.mc.RegistryItemResolver;
+import com.logvex.addon.schematicdropper.mc.SchematicFileImport;
 import com.logvex.addon.schematicdropper.mc.ServerInventoryTracker;
 import meteordevelopment.meteorclient.MeteorClient;
 import meteordevelopment.meteorclient.events.game.GameJoinedEvent;
@@ -44,8 +57,14 @@ import meteordevelopment.meteorclient.settings.StringListSetting;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.util.Formatting;
+import org.lwjgl.PointerBuffer;
+import org.lwjgl.system.MemoryUtil;
+import org.lwjgl.util.tinyfd.TinyFileDialogs;
 
+import java.io.File;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Drops the materials of a loaded schematic, one confirmed transfer at a time.
@@ -61,6 +80,7 @@ public class SchematicDropperModule extends Module {
     private final SettingGroup sgInventory = settings.createGroup("Inventory");
     private final SettingGroup sgTargeting = settings.createGroup("Targeting");
     private final SettingGroup sgProgress = settings.createGroup("Progress");
+    private final SettingGroup sgAcquisition = settings.createGroup("Creative Acquisition");
 
     // General
 
@@ -272,6 +292,58 @@ public class SchematicDropperModule extends Module {
         .build()
     );
 
+    // Creative Acquisition
+
+    private final Setting<Boolean> autoAcquire = sgAcquisition.add(new BoolSetting.Builder()
+        .name("auto-acquire")
+        .description("Create missing materials automatically while in Creative mode.")
+        .defaultValue(false)
+        .build()
+    );
+
+    private final Setting<Boolean> autoDrop = sgAcquisition.add(new BoolSetting.Builder()
+        .name("auto-drop")
+        .description("Drop acquired batches through the normal dropping workflow so large lists fit.")
+        .defaultValue(true)
+        .build()
+    );
+
+    private final Setting<Integer> acquireDelay = sgAcquisition.add(new IntSetting.Builder()
+        .name("acquire-delay")
+        .description("Milliseconds between two creative gives.")
+        .defaultValue(80)
+        .min(0)
+        .sliderRange(0, 500)
+        .build()
+    );
+
+    private final Setting<Integer> acquireRetryLimit = sgAcquisition.add(new IntSetting.Builder()
+        .name("acquire-retry-limit")
+        .description("How many times a rejected creative give is retried before the material waits.")
+        .defaultValue(3)
+        .min(1)
+        .sliderRange(1, 10)
+        .build()
+    );
+
+    private final Setting<Integer> acquireSyncTimeout = sgAcquisition.add(new IntSetting.Builder()
+        .name("acquire-sync-timeout")
+        .description("Milliseconds to wait for the server to confirm a creative give.")
+        .defaultValue(1500)
+        .min(100)
+        .sliderRange(100, 10000)
+        .build()
+    );
+
+    private final Setting<Integer> acquireScanInterval = sgAcquisition.add(new IntSetting.Builder()
+        .name("acquire-scan-interval")
+        .description("Milliseconds between inventory re-scans while waiting for space.")
+        .defaultValue(500)
+        .min(50)
+        .sliderRange(50, 5000)
+        .build()
+    );
+
     // Runtime
 
     private final ServerInventoryTracker serverTracker = new ServerInventoryTracker();
@@ -281,35 +353,68 @@ public class SchematicDropperModule extends Module {
     private final EnvPort env;
     private final DropEngine engine;
 
+    private final CreativeMinecraftEnv acquisitionEnv = new CreativeMinecraftEnv();
+    private final CreativeInventoryController creativeController = new CreativeInventoryController();
+    private final DropBridge dropBridge;
+    private final AcquisitionEngine acquisition;
+
     private MaterialPlan plan = new MaterialPlan();
     private String lastFailure;
     private long lastRotationDebug;
+
+    /** Maximum invalid entries listed in chat; the rest go to the debug log. */
+    private static final int MAX_INVALID_REPORTED = 10;
+
+    private SchematicFileImport pendingImport;
+    private MaterialListImporter.Result lastImport;
+    private String lastImportName = "material list";
+    private int lastImportInvalid;
 
     public SchematicDropperModule() {
         super(LogAddon.CATEGORY, "schematic-dropper", "Automated schematic material dropping.");
 
         this.env = new MinecraftEnv(targetMode::get, (float) (double) dropPitch.get());
         this.engine = new DropEngine(env, rotationPort, dropController, tracker, new Listener());
+
+        // A drain temporarily takes over the shared tracker: the bridge loads the batch, starts
+        // the drop engine, and reports back the quantities it confirmed. Rotation is restored
+        // normally because the drain ends through the engine's own completion path.
+        this.dropBridge = new DropBridge(tracker, acquisitionEnv::countOf,
+            this::startDropBatch, this::stopRun);
+        this.acquisition = new AcquisitionEngine(acquisitionEnv, creativeController, dropBridge,
+            new AcquisitionListenerImpl());
     }
 
     @Override
     public void onActivate() {
         MeteorClient.EVENT_BUS.subscribe(serverTracker);
+        MeteorClient.EVENT_BUS.subscribe(creativeController);
 
         rebuildPlan();
         serverTracker.reset();
         rotationPort.reset();
+        creativeController.reset();
         engine.setConfig(config());
         engine.setStackStrategy(stackStrategy.get());
+        acquisition.setPlan(plan);
+        acquisition.setConfig(acquisitionConfig());
 
         if (hudEnabled.get()) SchematicProgressHud.enable();
-        engine.start(System.currentTimeMillis());
+        if (autoAcquire.get()) {
+            // Acquisition owns the pipeline; the drop engine is started by the drains it requests.
+            acquisition.start(System.currentTimeMillis());
+        } else {
+            engine.start(System.currentTimeMillis());
+        }
     }
 
     @Override
     public void onDeactivate() {
         engine.stop();
+        acquisition.stop();
         SchematicProgressHud.disable();
+        cancelImport();
+        MeteorClient.EVENT_BUS.unsubscribe(creativeController);
         MeteorClient.EVENT_BUS.unsubscribe(serverTracker);
     }
 
@@ -321,18 +426,29 @@ public class SchematicDropperModule extends Module {
         engine.setStackStrategy(stackStrategy.get());
         engine.tick(System.currentTimeMillis());
 
+        if (dropBridge.isActive() && !engine.state().isRunning()) dropBridge.finish();
+
+        acquisition.setConfig(acquisitionConfig());
+        acquisition.setPlan(plan);
+        acquisition.tick(System.currentTimeMillis());
+
+        if (pendingImport != null) stepImport();
+
         if (rotationDebug.get()) debugRotation();
     }
 
     @EventHandler
     private void onGameJoined(GameJoinedEvent event) {
         serverTracker.reset();
+        creativeController.reset();
         engine.onWorldChanged();
+        acquisition.onWorldChanged();
     }
 
     @EventHandler
     private void onGameLeft(GameLeftEvent event) {
         engine.onWorldChanged();
+        acquisition.onWorldChanged();
     }
 
     @Override
@@ -354,6 +470,15 @@ public class SchematicDropperModule extends Module {
         reset.action = this::resetProgress;
         WButton rescan = run2.add(theme.button("Rescan")).expandX().widget();
         rescan.action = this::rescanInventory;
+
+        WHorizontalList run3 = list.add(theme.horizontalList()).expandX().widget();
+        WButton acquire = run3.add(theme.button("Acquire Materials")).expandX().widget();
+        acquire.action = this::startAcquisition;
+        WButton acquisitionScreen = run3.add(theme.button("Acquisition...")).expandX().widget();
+        acquisitionScreen.action = this::openAcquisitionScreen;
+
+        WButton importFile = list.add(theme.button("Import Material List...")).expandX().widget();
+        importFile.action = this::importMaterialFile;
 
         WButton overview = list.add(theme.button("Material Overview")).expandX().widget();
         overview.action = this::openMaterialOverview;
@@ -392,11 +517,36 @@ public class SchematicDropperModule extends Module {
         tracker.setPlan(plan);
     }
 
+    // ---------------------------------------------------------------- config
+
+    private AcquisitionConfig acquisitionConfig() {
+        return new AcquisitionConfig(
+            autoAcquire.get(),
+            autoDrop.get(),
+            acquireDelay.get(),
+            acquireRetryLimit.get(),
+            retryBackoff.get(),
+            acquireSyncTimeout.get(),
+            acquireScanInterval.get()
+        );
+    }
+
+    /** Starts a drop batch for the acquisition workflow. @return false when nothing can be dropped. */
+    private boolean startDropBatch() {
+        if (!dropBridge.prepare(plan)) return false;
+        engine.start(System.currentTimeMillis());
+        return true;
+    }
+
     // ---------------------------------------------------------------- controls
 
     public void startRun() {
         if (!isActive()) {
             error("Enable the module before starting a run.");
+            return;
+        }
+        if (acquisition.state().isRunning()) {
+            error("Acquisition is running. Stop it before starting a drop run.");
             return;
         }
         if (engine.state().isRunning()) {
@@ -409,6 +559,176 @@ public class SchematicDropperModule extends Module {
             return;
         }
         engine.start(System.currentTimeMillis());
+    }
+
+    // ---------------------------------------------------------------- acquisition
+
+    /** Starts automatic Creative acquisition from the current material list. */
+    public void startAcquisition() {
+        if (!isActive()) {
+            error("Enable the module before starting acquisition.");
+            return;
+        }
+        rebuildPlan();
+        if (plan.isEmpty()) {
+            error("No materials imported. Import a material list first.");
+            return;
+        }
+        engine.stop();
+        acquisition.setPlan(plan);
+        acquisition.setConfig(acquisitionConfig());
+        acquisition.start(System.currentTimeMillis());
+    }
+
+    public void pauseAcquisition() {
+        acquisition.pause();
+    }
+
+    public void resumeAcquisition() {
+        acquisition.resume(System.currentTimeMillis());
+    }
+
+    public void stopAcquisition() {
+        acquisition.stop();
+    }
+
+    public void retryAcquisition() {
+        acquisition.retryFailed();
+    }
+
+    public void restartCurrentAcquisition() {
+        acquisition.restartCurrent();
+    }
+
+    public AcquisitionSnapshot acquisitionSnapshot() {
+        return acquisition.snapshot();
+    }
+
+    public AcquisitionState acquisitionState() {
+        return acquisition.state();
+    }
+
+    /** True when the module is currently acquiring materials. */
+    public boolean isAcquiring() {
+        return acquisition.state().isRunning();
+    }
+
+    public MaterialListImporter.Result lastImport() {
+        return lastImport;
+    }
+
+    public String lastImportName() {
+        return lastImportName;
+    }
+
+    public int lastImportInvalid() {
+        return lastImportInvalid;
+    }
+
+    /** Opens the native file picker and starts a progressive import of the chosen file. */
+    public void importMaterialFile() {
+        String path = chooseFile();
+        if (path == null) return;
+
+        File file = new File(path);
+        if (!file.isFile()) {
+            error("That file could not be read.");
+            return;
+        }
+
+        cancelImport();
+        pendingImport = new SchematicFileImport(file.toPath(), new RegistryItemResolver());
+        lastImportName = file.getName();
+        info("Importing " + file.getName() + "...");
+    }
+
+    /** Releases any in-progress import reader. */
+    private void cancelImport() {
+        if (pendingImport != null) {
+            pendingImport.close();
+            pendingImport = null;
+        }
+    }
+
+    /** Advances a progressive import by one chunk; called from the client tick. */
+    private void stepImport() {
+        SchematicFileImport importTask = pendingImport;
+        if (importTask == null) return;
+
+        try {
+            if (importTask.step()) return;
+        } catch (Exception e) {
+            pendingImport = null;
+            importTask.close();
+            error("Import failed: " + shortReason(e));
+            return;
+        }
+
+        pendingImport = null;
+        importTask.close();
+        applyImport(importTask.result());
+    }
+
+    private void applyImport(MaterialListImporter.Result result) {
+        lastImport = result;
+        lastImportInvalid = result.invalid().size();
+
+        if (result.isEmpty()) {
+            error("No usable materials found in " + lastImportName + ".");
+            return;
+        }
+
+        // The imported list replaces the module's material list so the existing drop workflow and
+        // the acquisition workflow both operate on exactly what was imported, in file order.
+        List<String> entries = new ArrayList<>(result.requirements().size());
+        for (Requirement r : result.requirements()) {
+            entries.add(r.itemId() + " " + r.required());
+        }
+        materialList.set(entries);
+        rebuildPlan();
+
+        info(SchematicFileImport.describe(result, lastImportName));
+
+        // Invalid entries are worth showing, but a file full of them must not flood chat.
+        int shown = 0;
+        for (MaterialListImporter.InvalidEntry entry : result.invalid()) {
+            if (shown++ >= MAX_INVALID_REPORTED) break;
+            warning("%s", Formatting.YELLOW + Messages.PREFIX + lastImportName + " " + entry);
+        }
+        if (result.invalid().size() > MAX_INVALID_REPORTED) {
+            warning("%s", Formatting.YELLOW + Messages.PREFIX
+                + "Skipped " + Messages.number(result.invalid().size() - MAX_INVALID_REPORTED)
+                + " more invalid entries; see the debug log.");
+            for (MaterialListImporter.InvalidEntry entry : result.invalid()) {
+                debug(lastImportName + " " + entry);
+            }
+        }
+    }
+
+    private String chooseFile() {
+        PointerBuffer filters = MemoryUtil.memAllocPointer(3);
+        filters.put(MemoryUtil.memUTF8("*.txt"));
+        filters.put(MemoryUtil.memUTF8("*.md"));
+        filters.put(MemoryUtil.memUTF8("*.csv"));
+        filters.flip();
+        try {
+            return TinyFileDialogs.tinyfd_openFileDialog(
+                "Select material list",
+                new File(MeteorClient.FOLDER, "schematicdropper").getAbsolutePath(),
+                filters,
+                null,
+                false
+            );
+        } finally {
+            MemoryUtil.memFree(filters);
+        }
+    }
+
+    private String shortReason(Exception e) {
+        String message = e.getMessage();
+        if (message == null || message.isBlank()) return e.getClass().getSimpleName();
+        int newline = message.indexOf('\n');
+        return newline < 0 ? message : message.substring(0, newline);
     }
 
     public void pauseRun() {
@@ -435,6 +755,10 @@ public class SchematicDropperModule extends Module {
     public void openMaterialOverview() {
         rebuildPlan();
         mc.setScreen(new MaterialOverviewScreen(this, tracker));
+    }
+
+    public void openAcquisitionScreen() {
+        mc.setScreen(new AcquisitionScreen(this));
     }
 
     public ProgressSnapshot snapshot() {
@@ -471,51 +795,129 @@ public class SchematicDropperModule extends Module {
         Rotation target = env.desiredRotation();
         Rotation current = env.currentRotation();
         if (target == null) {
-            info("rotation: no valid target");
+            debug("Rotation has no valid target.");
             return;
         }
-        info(String.format("rotation: target %.1f/%.1f current %.1f/%.1f",
+        debug(String.format(Locale.ROOT, "Rotation target %.1f/%.1f, current %.1f/%.1f",
             target.yaw(), target.pitch(), current.yaw(), current.pitch()));
-    }
-
-    private void error(String message) {
-        warning("%s", Formatting.RED + "[SchematicDropper] " + message);
-    }
-
-    private void info(String message) {
-        warning("%s", "[SchematicDropper] " + message);
     }
 
     private final class Listener implements EngineListener {
         @Override
         public void onStateChanged(State state) {
-            if (notifyProgress.get()) info("state: " + state);
+            if (notifyProgress.get()) info("Dropper state: " + state + ".");
         }
 
         @Override
         public void onConfirmed(String itemId, int amount, int remaining) {
-            if (notifyProgress.get()) {
-                info(String.format("dropped %d x %s (%d remaining)", amount, itemId, remaining));
-            }
+            if (!notifyProgress.get()) return;
+            info(Messages.format("Dropped %s. %s left for %s.",
+                Messages.plural(amount, "item"),
+                Messages.number(remaining),
+                Messages.prettyId(itemId)));
         }
 
         @Override
         public void onFailure(FailureType type, String detail) {
             lastFailure = type + ": " + detail;
-            if (notifyProgress.get()) error(type + " - " + detail);
+            // Recoverable failures are normal operation (a stack moved, a scan was stale); they
+            // must not spam chat. Only genuine problems are surfaced.
+            if (type.recoverable()) {
+                debug("Dropper recovered from " + type + ": " + detail);
+                return;
+            }
+            error(describeFailure(type, detail));
         }
 
         @Override
         public void onCompleted(long totalDropped, long elapsedMs) {
-            if (completionNotification.get()) {
-                warning(Formatting.GREEN + "[SchematicDropper] Complete: " + totalDropped
-                    + " items in " + String.format("%.1f", elapsedMs / 1000.0) + "s");
+            // A batch dropped for the acquisition workflow is an internal step, not a finished
+            // run; announcing every batch would flood chat.
+            if (acquisition.state().isRunning()) {
+                debug("Dropped a batch of " + totalDropped + " items for acquisition.");
+                return;
             }
+            if (!completionNotification.get()) return;
+            info(Messages.format("Dropping complete. %s in %s.",
+                Messages.plural(totalDropped, "item"),
+                Messages.duration(elapsedMs)));
         }
 
         @Override
         public void onFeedback(String message) {
             if (notifyProgress.get()) info(message);
         }
+    }
+
+    private final class AcquisitionListenerImpl implements AcquisitionListener {
+        @Override
+        public void onStateChanged(AcquisitionState state) {
+            if (notifyProgress.get()) info("Acquisition state: " + state + ".");
+        }
+
+        @Override
+        public void onAcquired(String itemId, int amount) {
+            if (!notifyProgress.get()) return;
+            info(Messages.format("Acquired %s of %s.",
+                Messages.plural(amount, "item"),
+                Messages.prettyId(itemId)));
+        }
+
+        @Override
+        public void onFailure(FailureType type, String detail, boolean fatal) {
+            lastFailure = type + ": " + detail;
+            if (!fatal && type.recoverable()) {
+                debug("Acquisition recovered from " + type + ": " + detail);
+                return;
+            }
+            error(describeFailure(type, detail));
+        }
+
+        @Override
+        public void onCompleted(int materials, long totalAcquired, long elapsedMs) {
+            if (!completionNotification.get()) return;
+            info(Messages.format("Acquisition complete. %s across %s in %s.",
+                Messages.plural(totalAcquired, "item"),
+                Messages.plural(materials, "material"),
+                Messages.duration(elapsedMs)));
+        }
+
+        @Override
+        public void onFeedback(String message) {
+            if (notifyProgress.get()) info(message);
+        }
+    }
+
+    // ---------------------------------------------------------------- output
+
+    /**
+     * Turns a failure classification into one actionable sentence. Technical detail stays in the
+     * debug log; chat gets what the user can act on.
+     */
+    private String describeFailure(FailureType type, String detail) {
+        return switch (type) {
+            case NOT_CREATIVE -> "Creative mode is required to acquire materials.";
+            case NO_CREATIVE_PERMISSION ->
+                "The server refused creative inventory changes. You need creative permissions.";
+            case UNKNOWN_ITEM -> "Unknown item id: " + detail;
+            case INVENTORY_FULL -> "The inventory is full; waiting for space.";
+            case INVALID_QUANTITY -> "Invalid material quantity: " + detail;
+            case NOT_READY -> "Not ready yet; retrying.";
+            case TARGET_INVALID -> "No valid target to drop toward.";
+            case SCREEN_INVALID -> "An inventory screen is blocking the operation.";
+            default -> type + ": " + detail;
+        };
+    }
+
+    private void error(String message) {
+        warning("%s", Formatting.RED + Messages.PREFIX + message);
+    }
+
+    private void info(String message) {
+        warning("%s", Messages.PREFIX + message);
+    }
+
+    private void debug(String message) {
+        LogAddon.LOG.debug("[SchematicDropper] {}", message);
     }
 }

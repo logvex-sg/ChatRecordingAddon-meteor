@@ -89,6 +89,11 @@ public final class ProgressTracker {
         else missing.put(itemId, quantity);
     }
 
+    /** Drops every measured inventory count, e.g. after a disconnect or world change. */
+    public void clearInventory() {
+        inventory.clear();
+    }
+
     public void clearMissing() {
         missing.clear();
     }
