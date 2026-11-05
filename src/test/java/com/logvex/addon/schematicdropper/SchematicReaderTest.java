@@ -13,6 +13,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayOutputStream;
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -110,6 +112,29 @@ class SchematicReaderTest {
 
         assertThrows(SchematicParseException.class,
             () -> new SpongeSchematicReader().read("bad", SchematicFormat.SPONGE, root));
+    }
+
+    @Test
+    @DisplayName("Sponge v3 blocks live under the Blocks container")
+    void spongeV3BlocksContainer() throws Exception {
+        NbtNode root = NbtNode.compound();
+        root.put("Version", NbtNode.number(NbtNode.Type.INT, 3));
+        root.put("Size", NbtNode.intArray(new int[]{3, 1, 1}));
+        NbtNode blocks = NbtNode.compound();
+        NbtNode palette = NbtNode.compound();
+        palette.put("minecraft:stone", NbtNode.number(NbtNode.Type.INT, 0));
+        palette.put("minecraft:oak_planks", NbtNode.number(NbtNode.Type.INT, 1));
+        blocks.put("Palette", palette);
+        blocks.put("Data", NbtNode.byteArray(varint(new int[]{0, 1, 0})));
+        root.put("Blocks", blocks);
+
+        Schematic s = new SpongeSchematicReader().read("v3", SchematicFormat.SPONGE, root);
+
+        assertEquals(3, s.sizeX());
+        assertEquals(3, s.blockCount());
+        assertEquals("minecraft:stone", s.at(new BlockPos3(0, 0, 0)).id());
+        assertEquals("minecraft:oak_planks", s.at(new BlockPos3(1, 0, 0)).id());
+        assertEquals("minecraft:stone", s.at(new BlockPos3(2, 0, 0)).id());
     }
 
     @Test
@@ -256,5 +281,29 @@ class SchematicReaderTest {
         assertEquals(2, plan.get("minecraft:stone").required());
         assertEquals(1, plan.get("minecraft:dirt").required());
         assertFalse(plan.isEmpty());
+    }
+
+    @Test
+    @DisplayName("a schematic's material plan survives the material-list round trip")
+    void schematicMaterialsRoundTrip() throws Exception {
+        // This is exactly what the module does when a schematic is loaded: derive the plan, write
+        // "id quantity" lines, then re-read them with the material-list parser. Order and
+        // quantities must survive both directions or the drop/acquisition queue is wrong.
+        NbtNode root = spongeRoot(4, 1, 1,
+            new String[]{"minecraft:stone", "minecraft:oak_planks"}, new int[]{0, 1, 1, 0});
+        Schematic s = new SpongeSchematicReader().read("mix", SchematicFormat.SPONGE, root);
+
+        List<String> entries = new ArrayList<>();
+        for (var r : s.toMaterialPlan().requirements()) {
+            entries.add(r.itemId() + " " + r.required());
+        }
+
+        var reparsed = com.logvex.addon.schematicdropper.core.MaterialListParser.parse(entries);
+
+        assertEquals(2, reparsed.size());
+        assertEquals("minecraft:stone", reparsed.get(0).itemId());
+        assertEquals(2, reparsed.get(0).required());
+        assertEquals("minecraft:oak_planks", reparsed.get(1).itemId());
+        assertEquals(2, reparsed.get(1).required());
     }
 }

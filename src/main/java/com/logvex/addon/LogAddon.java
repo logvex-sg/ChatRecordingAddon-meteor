@@ -48,6 +48,10 @@ public class LogAddon extends MeteorAddon {
         Modules.get().add(new com.logvex.addon.schematicdropper.SchematicDropperModule());
         Hud.get().register(com.logvex.addon.schematicdropper.SchematicProgressHud.INFO);
 
+        // Autonomous bot: the core is Minecraft-free, this is its Meteor shell.
+        Modules.get().add(new com.logvex.addon.bot.BotModule());
+        Hud.get().register(com.logvex.addon.bot.hud.BotStatusHud.INFO);
+
         Hud.get().register(ChatLogHud.INFO);
         Hud.get().register(ActivityHud.INFO);
         Hud.get().register(StatsHud.INFO);

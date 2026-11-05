@@ -132,9 +132,12 @@ block. The pipeline is:
 
 - **Load Schematic...** reads `.schem` (Sponge v2/v3), `.schematic` (MCEdit) and `.litematic`
   files. Loading happens on a background worker and the result is applied on the next tick, so a
-  large file never blocks the game thread.
+  large file never blocks the game thread. Both the legacy top-level `Palette`/`BlockData` layout
+  and the Sponge v3 `Blocks` container (WorldEdit 7.3+ default) are read.
 - The loaded file's block counts are copied into the material list once per load, so the same
-  schematic can also be dropped or acquired through the existing workflows.
+  schematic can also be dropped or acquired through the existing workflows. Blocks that have no
+  item form (water, lava, fire and similar) are skipped, since they can neither be dropped nor
+  acquired.
 - The world is compared first: blocks that already match are skipped, blocks that are merely
   replaceable (grass, water, snow) count as missing, and an unrelated block in the way is reported
   as a conflict according to the **conflicts** setting.
