@@ -35,4 +35,12 @@ public interface NavPort {
 
     /** How far the player can travel in the current world before the bot gives up. */
     double maxDistance();
+
+    /**
+     * The navigation backend in use, for display. Meteor exposes Baritone (or Voyager) through its
+     * path-manager abstraction; when neither is installed this reports the built-in walker.
+     */
+    default String backendName() {
+        return "unknown";
+    }
 }

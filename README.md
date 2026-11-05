@@ -179,6 +179,29 @@ is applied through Meteor's `Rotations` helper, which restores the client's own 
 after the movement packet — so the port keeps its own interpolated state instead of reading
 `player.getYaw()`.
 
+## Autonomous bot
+
+The `auto-bot` module runs a Minecraft-free planning core (`com.logvex.addon.bot.core`) behind a
+thin Meteor shell (`BotModule` plus the `bot.mc` adapters). Objectives are turned into tasks,
+tasks run through executors (navigate, gather, craft, build, …) one per tick, and every action is
+confirmed from the world or the server before it is treated as done.
+
+### Navigation and Baritone
+
+Navigation goes through Meteor's own path-manager abstraction (`PathManagers`), so **no separate
+Baritone mod jar is bundled or required**. When Baritone (or Voyager) is installed, Meteor selects
+it automatically and the bot drives it via `IPathManager.moveTo(...)`; when neither is present,
+Meteor's path manager is the `none` backend and the bot falls back to a bounded built-in walker
+that walks toward the target and gives up when it stops making progress. The active backend is
+shown on the bot dashboard (`Navigation: Baritone` / `built-in walker`) and, optionally, in the
+HUD (`show-navigation`).
+
+The Navigation settings group exposes Meteor's path-manager options — `walk-on-water`,
+`walk-on-lava`, `path-step` and `path-no-fall`. These are written into Meteor's own path-manager
+settings, so Baritone and the bot agree on how the player may move; they have no effect with the
+built-in walker. Movement is never teleported or otherwise faked: success requires the player's
+actual position to be within the arrival tolerance.
+
 ## Live Chat Relay
 
 - Buffers chat (player chat and, optionally, game messages).
@@ -252,6 +275,10 @@ archive with in-memory doubles (no Minecraft runtime required):
   live Minecraft session from this environment; the core engines, the importer, the readers, the
   checkpoint store and the legacy id table are covered by unit tests that use fakes and the real
   1.21.1 registries.
+- The bot uses Baritone only when the user has installed it (Meteor detects it automatically). The
+  addon bundles no pathfinder of its own beyond the bounded fallback walker, and navigation quality
+  with the fallback is limited — it walks in a straight line and stops when blocked rather than
+  solving complex terrain.
 
 ## License
 

@@ -48,6 +48,9 @@ public class BotStatusHud extends HudElement {
         .name("show-events").description("Show the most recent bot event.").defaultValue(false).build());
     private final Setting<Boolean> showObjectives = sgGeneral.add(new BoolSetting.Builder()
         .name("show-objectives").description("Show how many objectives are queued.").defaultValue(true).build());
+    private final Setting<Boolean> showNavigation = sgGeneral.add(new BoolSetting.Builder()
+        .name("show-navigation").description("Show which navigation backend is driving the bot.")
+        .defaultValue(false).build());
 
     private final Setting<Boolean> background = sgStyle.add(new BoolSetting.Builder()
         .name("background").description("Draw a background behind the HUD.").defaultValue(true).build());
@@ -132,6 +135,9 @@ public class BotStatusHud extends HudElement {
         if (showEvents.get()) {
             List<BotEvent> events = module.controller().events();
             out.add(events.isEmpty() ? "No recent events" : events.get(0).message());
+        }
+        if (showNavigation.get()) {
+            out.add("Nav: " + module.navigation().backendName());
         }
         return out;
     }

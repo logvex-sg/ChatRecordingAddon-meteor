@@ -138,6 +138,8 @@ public class BotDashboardScreen extends WindowScreen {
             module.controller().performance().averageTickMicros(),
             module.controller().performance().actionsPerSecond()))).expandCellX();
         overview.row();
+        overview.add(theme.label("Navigation: " + module.navigation().backendName())).expandCellX();
+        overview.row();
 
         if (queueTable != null) {
             queueTable.clear();

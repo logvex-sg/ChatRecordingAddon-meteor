@@ -178,11 +178,47 @@ public final class MinecraftNavPort implements NavPort {
     }
 
     /** The name of the active navigation backend, for the dashboard. */
+    @Override
     public String backendName() {
         if (usingPathManager) {
             IPathManager manager = PathManagers.get();
             return manager == null ? "none" : manager.getName();
         }
         return "built-in walker";
+    }
+
+    /**
+     * The path manager Meteor selected. {@code "none"} means neither Baritone nor Voyager is
+     * installed and the built-in walker is being used.
+     */
+    public static String activeManagerName() {
+        IPathManager manager = PathManagers.get();
+        return manager == null ? "none" : manager.getName();
+    }
+
+    /** True when a real path manager (Baritone or Voyager) is available to drive navigation. */
+    public static boolean pathManagerAvailable() {
+        return !"none".equals(activeManagerName());
+    }
+
+    /**
+     * Applies Meteor's path-manager settings. Baritone's walk-on-water/lava/step/no-fall options are
+     * surfaced as Meteor settings, so the bot should respect the user's configuration instead of
+     * forcing its own. No-ops when no path manager is installed.
+     */
+    public static void applyPathSettings(boolean walkOnWater, boolean walkOnLava, boolean step, boolean noFall) {
+        IPathManager manager = PathManagers.get();
+        if (manager == null || "none".equals(manager.getName())) return;
+        IPathManager.ISettings settings = manager.getSettings();
+        if (settings == null) return;
+        set(settings.getWalkOnWater(), walkOnWater);
+        set(settings.getWalkOnLava(), walkOnLava);
+        set(settings.getStep(), step);
+        set(settings.getNoFall(), noFall);
+        settings.save();
+    }
+
+    private static <T> void set(meteordevelopment.meteorclient.settings.Setting<T> setting, T value) {
+        if (setting != null && value != null) setting.set(value);
     }
 }
