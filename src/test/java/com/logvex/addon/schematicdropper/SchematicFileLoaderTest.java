@@ -1,0 +1,90 @@
+package com.logvex.addon.schematicdropper;
+
+import com.logvex.addon.schematicdropper.core.BlockPos3;
+import com.logvex.addon.schematicdropper.core.Schematic;
+import com.logvex.addon.schematicdropper.mc.SchematicFileLoader;
+import net.minecraft.nbt.NbtCompound;
+import net.minecraft.nbt.NbtInt;
+import net.minecraft.nbt.NbtIntArray;
+import net.minecraft.nbt.NbtList;
+import net.minecraft.nbt.NbtShort;
+import net.minecraft.nbt.NbtString;
+import net.minecraft.nbt.NbtIo;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import java.io.ByteArrayOutputStream;
+import java.io.DataOutputStream;
+import java.io.OutputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.zip.GZIPOutputStream;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+class SchematicFileLoaderTest {
+    private static NbtCompound sponge() {
+        NbtCompound root = new NbtCompound();
+        root.putInt("Version", 2);
+        NbtCompound palette = new NbtCompound();
+        palette.putInt("minecraft:stone", 0);
+        palette.putInt("minecraft:dirt", 1);
+        root.put("Palette", palette);
+        root.putInt("PaletteMax", 2);
+        root.putShort("Width", (short) 3);
+        root.putShort("Height", (short) 1);
+        root.putShort("Length", (short) 1);
+        root.putByteArray("BlockData", new byte[]{0, 1, 0});
+        return root;
+    }
+
+    private static byte[] gzip(NbtCompound c) throws Exception {
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        try (OutputStream gz = new GZIPOutputStream(bos); DataOutputStream out = new DataOutputStream(gz)) {
+            NbtIo.writeCompound(c, out);
+        }
+        return bos.toByteArray();
+    }
+
+    @Test
+    @DisplayName("a gzipped sponge .schem loads through the real loader")
+    void loadsSponge(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("build.schem");
+        Files.write(file, gzip(sponge()));
+
+        Schematic s = new SchematicFileLoader().load(file);
+
+        assertEquals(3, s.sizeX());
+        assertEquals(3, s.blockCount());
+        assertEquals("minecraft:stone", s.at(new BlockPos3(0, 0, 0)).id());
+        assertEquals("minecraft:dirt", s.at(new BlockPos3(1, 0, 0)).id());
+    }
+
+    @Test
+    @DisplayName("a Sponge v3 .schem with the Blocks container loads from disk")
+    void loadsSpongeV3(@TempDir Path dir) throws Exception {
+        NbtCompound root = new NbtCompound();
+        root.putInt("Version", 3);
+        root.putInt("DataVersion", 3953);
+        root.putIntArray("Size", new int[]{3, 1, 1});
+        NbtCompound blocks = new NbtCompound();
+        NbtCompound palette = new NbtCompound();
+        palette.putInt("minecraft:quartz_pillar", 0);
+        palette.putInt("minecraft:spruce_planks", 1);
+        blocks.put("Palette", palette);
+        blocks.putByteArray("Data", new byte[]{0, 1, 0});
+        root.put("Blocks", blocks);
+
+        Path file = dir.resolve("modern.schem");
+        Files.write(file, gzip(root));
+
+        Schematic s = new SchematicFileLoader().load(file);
+
+        assertEquals(3, s.sizeX());
+        assertEquals("minecraft:quartz_pillar", s.at(new BlockPos3(0, 0, 0)).id());
+        assertEquals("minecraft:spruce_planks", s.at(new BlockPos3(1, 0, 0)).id());
+        assertEquals(2, s.toMaterialPlan().size());
+    }
+}

@@ -459,6 +459,13 @@ public class SchematicDropperModule extends Module {
     private MaterialListImporter.Result lastImport;
     private String lastImportName = "material list";
     private int lastImportInvalid;
+    /** Registry-backed item lookup, created lazily so it is never built before registries exist. */
+    private RegistryItemResolver itemResolver;
+
+    private RegistryItemResolver itemResolver() {
+        if (itemResolver == null) itemResolver = new RegistryItemResolver();
+        return itemResolver;
+    }
 
     public SchematicDropperModule() {
         super(LogAddon.CATEGORY, "schematic-dropper", "Automated schematic material dropping.");
@@ -481,6 +488,8 @@ public class SchematicDropperModule extends Module {
     public void onActivate() {
         MeteorClient.EVENT_BUS.subscribe(serverTracker);
         MeteorClient.EVENT_BUS.subscribe(creativeController);
+
+        ensureDataDirectory();
 
         rebuildPlan();
         serverTracker.reset();
@@ -638,6 +647,18 @@ public class SchematicDropperModule extends Module {
         tracker.setPlan(plan);
     }
 
+    /** The folder the file pickers open in, created up front so the dialog never starts nowhere. */
+    private static File dataDirectory() {
+        return new File(MeteorClient.FOLDER, "schematicdropper");
+    }
+
+    private static void ensureDataDirectory() {
+        File dir = dataDirectory();
+        if (!dir.isDirectory() && !dir.mkdirs() && !dir.isDirectory()) {
+            LogAddon.LOG.warn("Could not create the schematic folder at {}", dir);
+        }
+    }
+
     // ---------------------------------------------------------------- config
 
     private AcquisitionConfig acquisitionConfig() {
@@ -750,12 +771,27 @@ public class SchematicDropperModule extends Module {
         lastSchematicGeneration = build.loadGeneration();
 
         List<Requirement> derived = build.schematic().toMaterialPlan().requirements();
+        // A schematic can reference blocks that have no item form (water, lava, fire, ...). Those
+        // cannot be dropped or acquired, so they are filtered out here rather than entering the
+        // queue as entries that can never complete.
         List<String> entries = new ArrayList<>(derived.size());
-        for (Requirement r : derived) entries.add(r.itemId() + " " + r.required());
+        int skipped = 0;
+        for (Requirement r : derived) {
+            if (!itemResolver().isValidId(r.itemId())) {
+                skipped++;
+                continue;
+            }
+            entries.add(r.itemId() + " " + r.required());
+        }
         materialList.set(entries);
         rebuildPlan();
-        info("Material list updated from " + build.schematic().name() + ": "
-            + Messages.plural(derived.size(), "material") + ".");
+
+        String message = "Material list updated from " + build.schematic().name() + ": "
+            + Messages.plural(entries.size(), "material") + ".";
+        if (skipped > 0) {
+            message += " Skipped " + Messages.plural(skipped, "block") + " with no item form.";
+        }
+        info(message);
     }
 
     private String chooseSchematicFile() {
@@ -767,7 +803,7 @@ public class SchematicDropperModule extends Module {
         try {
             return TinyFileDialogs.tinyfd_openFileDialog(
                 "Select schematic",
-                new File(MeteorClient.FOLDER, "schematicdropper").getAbsolutePath(),
+                dataDirectory().getAbsolutePath(),
                 filters,
                 null,
                 false
@@ -921,7 +957,7 @@ public class SchematicDropperModule extends Module {
         }
 
         cancelImport();
-        pendingImport = new SchematicFileImport(file.toPath(), new RegistryItemResolver());
+        pendingImport = new SchematicFileImport(file.toPath(), itemResolver());
         lastImportName = file.getName();
         info("Importing " + file.getName() + "...");
     }
@@ -1007,7 +1043,7 @@ public class SchematicDropperModule extends Module {
         try {
             return TinyFileDialogs.tinyfd_openFileDialog(
                 "Select material list or schematic",
-                new File(MeteorClient.FOLDER, "schematicdropper").getAbsolutePath(),
+                dataDirectory().getAbsolutePath(),
                 filters,
                 null,
                 false

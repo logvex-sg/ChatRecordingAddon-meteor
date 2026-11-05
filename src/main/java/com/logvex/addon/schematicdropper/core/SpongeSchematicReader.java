@@ -42,6 +42,27 @@ public final class SpongeSchematicReader implements SchematicImporter {
 
         NbtNode paletteNode = root.getCompound("Palette");
         if (paletteNode == null) paletteNode = root.getCompound("palette");
+        if (paletteNode == null) paletteNode = root.getCompound("BlockPalette");
+
+        byte[] data = root.getByteArray("BlockData");
+        if (data.length == 0) data = root.getByteArray("Data");
+
+        // Sponge format v3 (WorldEdit 7.3+ default) moves the palette and the varint array into a
+        // "Blocks" container. Without this, every v3 file reports an empty palette and refuses to
+        // load, which is what makes modern .schem files appear to be unsupported.
+        NbtNode blocksContainer = root.getCompound("Blocks");
+        if (blocksContainer != null) {
+            if (paletteNode == null) {
+                paletteNode = blocksContainer.getCompound("Palette");
+                if (paletteNode == null) paletteNode = blocksContainer.getCompound("palette");
+                if (paletteNode == null) paletteNode = blocksContainer.getCompound("BlockPalette");
+            }
+            if (data.length == 0) {
+                data = blocksContainer.getByteArray("Data");
+                if (data.length == 0) data = blocksContainer.getByteArray("BlockData");
+            }
+        }
+
         if (paletteNode == null) throw new SchematicParseException("The schematic has no block palette.");
 
         Map<Integer, BlockStateSpec> palette = new LinkedHashMap<>();
@@ -51,7 +72,6 @@ public final class SpongeSchematicReader implements SchematicImporter {
         }
         if (palette.isEmpty()) throw new SchematicParseException("The block palette is empty.");
 
-        byte[] data = root.getByteArray("BlockData");
         if (data.length == 0) throw new SchematicParseException("The schematic has no block data.");
 
         long volume = (long) width * height * length;
