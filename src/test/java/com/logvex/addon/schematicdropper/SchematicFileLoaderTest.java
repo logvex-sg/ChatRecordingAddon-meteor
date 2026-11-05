@@ -87,4 +87,40 @@ class SchematicFileLoaderTest {
         assertEquals("minecraft:spruce_planks", s.at(new BlockPos3(1, 0, 0)).id());
         assertEquals(2, s.toMaterialPlan().size());
     }
+
+    @Test
+    @DisplayName("a realistic WorldEdit v3 file with block states and multiple layers loads")
+    void loadsRealisticWorldEditV3(@TempDir Path dir) throws Exception {
+        // 2x2x2: air, a block state with properties, and blocks on both y layers. This mirrors the
+        // shape WorldEdit writes (dimensions in "Size", everything else under "Blocks").
+        NbtCompound root = new NbtCompound();
+        root.putInt("Version", 3);
+        root.putInt("DataVersion", 3953);
+        root.putIntArray("Size", new int[]{2, 2, 2});
+
+        NbtCompound blocks = new NbtCompound();
+        NbtCompound palette = new NbtCompound();
+        palette.putInt("minecraft:air", 0);
+        palette.putInt("minecraft:oak_stairs[facing=east,half=bottom]", 1);
+        palette.putInt("minecraft:stone", 2);
+        blocks.put("Palette", palette);
+        // Index order is y*length*width + z*width + x: (0,0,0),(1,0,0),(0,0,1),(1,0,1),(0,1,0)...
+        blocks.putByteArray("Data", new byte[]{1, 2, 0, 2, 2, 2, 2, 2});
+        root.put("Blocks", blocks);
+
+        Path file = dir.resolve("house.schem");
+        Files.write(file, gzip(root));
+
+        Schematic s = new SchematicFileLoader().load(file);
+
+        assertEquals(2, s.sizeX());
+        assertEquals(2, s.sizeY());
+        assertEquals(2, s.sizeZ());
+        // Air is dropped, so 7 of the 8 cells are real blocks.
+        assertEquals(7, s.blockCount());
+        assertEquals("minecraft:oak_stairs", s.at(new BlockPos3(0, 0, 0)).id());
+        assertTrue(s.at(new BlockPos3(0, 0, 0)).hasProperties());
+        assertEquals("minecraft:stone", s.at(new BlockPos3(0, 1, 0)).id());
+        assertEquals("minecraft:stone", s.at(new BlockPos3(1, 1, 1)).id());
+    }
 }

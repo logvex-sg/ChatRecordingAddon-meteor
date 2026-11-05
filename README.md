@@ -134,6 +134,10 @@ block. The pipeline is:
   files. Loading happens on a background worker and the result is applied on the next tick, so a
   large file never blocks the game thread. Both the legacy top-level `Palette`/`BlockData` layout
   and the Sponge v3 `Blocks` container (WorldEdit 7.3+ default) are read.
+- If the native file dialog does not open (some Linux desktops and headless setups return nothing,
+  which looks like "import does nothing"), set **schematic-file** in the *Schematic Building*
+  settings group to the full path and press **Load Path**. This reads the same file through the
+  same loader without touching the dialog.
 - The loaded file's block counts are copied into the material list once per load, so the same
   schematic can also be dropped or acquired through the existing workflows. Blocks that have no
   item form (water, lava, fire and similar) are skipped, since they can neither be dropped nor
