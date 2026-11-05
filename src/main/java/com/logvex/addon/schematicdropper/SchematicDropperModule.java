@@ -59,6 +59,7 @@ import meteordevelopment.meteorclient.settings.IntSetting;
 import meteordevelopment.meteorclient.settings.Setting;
 import meteordevelopment.meteorclient.settings.SettingGroup;
 import meteordevelopment.meteorclient.settings.StringListSetting;
+import meteordevelopment.meteorclient.settings.StringSetting;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.util.Formatting;
@@ -432,6 +433,15 @@ public class SchematicDropperModule extends Module {
         .build()
     );
 
+    // A typed path is the reliable fallback when the native file dialog cannot open (some Linux
+    // desktops and headless setups return nothing), which otherwise looks like "import does nothing".
+    private final Setting<String> schematicPath = sgBuild.add(new StringSetting.Builder()
+        .name("schematic-file")
+        .description("Full path to a .schem/.schematic/.litematic file, used by \"Load Path\".")
+        .defaultValue("")
+        .build()
+    );
+
     // Runtime
 
     private final ServerInventoryTracker serverTracker = new ServerInventoryTracker();
@@ -599,6 +609,8 @@ public class SchematicDropperModule extends Module {
         WHorizontalList buildRow = list.add(theme.horizontalList()).expandX().widget();
         WButton loadSchematic = buildRow.add(theme.button("Load Schematic...")).expandX().widget();
         loadSchematic.action = this::loadSchematicFile;
+        WButton loadPath = buildRow.add(theme.button("Load Path")).expandX().widget();
+        loadPath.action = this::loadSchematicPath;
         WButton startBuild = buildRow.add(theme.button("Start Build")).expandX().widget();
         startBuild.action = this::startBuild;
 
@@ -714,6 +726,20 @@ public class SchematicDropperModule extends Module {
     public void loadSchematicFile() {
         String path = chooseSchematicFile();
         if (path == null) return;
+        loadSchematicFrom(path);
+    }
+
+    /** Loads the schematic named by the {@code schematic-file} setting, for dialog-less setups. */
+    public void loadSchematicPath() {
+        String path = schematicPath.get();
+        if (path == null || path.isBlank()) {
+            error("Set \"schematic-file\" in Schematic Building to the full path first.");
+            return;
+        }
+        loadSchematicFrom(path.trim());
+    }
+
+    private void loadSchematicFrom(String path) {
         File file = new File(path);
         if (!file.isFile()) {
             error("That file could not be read.");
