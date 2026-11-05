@@ -130,6 +130,11 @@ public class KeywordAlertsModule extends Module {
             newest = Math.max(newest, entry.timestamp());
             for (KeywordRule rule : KeywordMatcher.matches(parsed, entry)) {
                 service.stats().recordKeyword(rule.pattern());
+                com.logvex.addon.notify.mc.NotificationService.get().notify(
+                    com.logvex.addon.notify.core.NotificationType.IMPORTANT_CHAT,
+                    com.logvex.addon.notify.core.NotificationPriority.HIGH,
+                    "keyword-alerts", rule.pattern(),
+                    entry.sender().isBlank() ? entry.content() : entry.sender() + ": " + entry.content());
                 if (rule.sound()) playAlert();
                 if (rule.webhook()) service.notifyKeyword(webhookUrl.get(), webhookUsername.get(), rule, entry);
                 if (chatFeedback.get()) {

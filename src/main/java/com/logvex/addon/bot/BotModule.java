@@ -24,6 +24,9 @@ import com.logvex.addon.bot.mc.MinecraftNavPort;
 import com.logvex.addon.bot.mc.MinecraftPlayerPort;
 import com.logvex.addon.bot.mc.MinecraftRecipeSource;
 import com.logvex.addon.bot.mc.MinecraftWorldPort;
+import com.logvex.addon.notify.core.NotificationPriority;
+import com.logvex.addon.notify.core.NotificationType;
+import com.logvex.addon.notify.mc.NotificationService;
 import com.logvex.addon.schematicdropper.SchematicBuildController;
 import com.logvex.addon.schematicdropper.SchematicDropperModule;
 import meteordevelopment.meteorclient.MeteorClient;
@@ -433,6 +436,11 @@ public class BotModule extends Module {
         return memory;
     }
 
+    /** Persists the bot memory immediately, e.g. after a command adds a waypoint. */
+    public void persistMemory() {
+        saveMemory();
+    }
+
     public MinecraftNavPort navigation() {
         return navPort;
     }
@@ -499,6 +507,16 @@ public class BotModule extends Module {
     private final class ChatListener implements BotListener {
         @Override
         public void onStateChanged(BotState state, String reason) {
+            switch (state) {
+                case COMPLETED -> publish(NotificationType.TASK_COMPLETED, NotificationPriority.NORMAL,
+                    "Objective complete");
+                case FAILED -> publish(NotificationType.TASK_FAILED, NotificationPriority.HIGH,
+                    "Automation stopped: " + (reason == null || reason.isBlank() ? "unknown reason" : reason));
+                case PAUSED -> publish(NotificationType.GENERAL, NotificationPriority.LOW,
+                    "Automation paused: " + (reason == null || reason.isBlank() ? "user" : reason));
+                default -> { }
+            }
+
             if (!chatFeedback.get()) return;
             switch (state) {
                 case COMPLETED -> info("Objective complete.");
@@ -526,6 +544,8 @@ public class BotModule extends Module {
 
         @Override
         public void onObjectiveCompleted(boolean success, String summary) {
+            publish(success ? NotificationType.TASK_COMPLETED : NotificationType.TASK_FAILED,
+                success ? NotificationPriority.NORMAL : NotificationPriority.HIGH, summary);
             if (!chatFeedback.get()) return;
             if (success) info("Done: %s", summary);
             else warning("Could not complete: %s", summary);
@@ -539,6 +559,7 @@ public class BotModule extends Module {
 
         @Override
         public void onFailure(String message) {
+            publish(NotificationType.TASK_FAILED, NotificationPriority.HIGH, message);
             if (!chatFeedback.get()) return;
             BotModule.this.error("%s", message);
         }
@@ -551,6 +572,16 @@ public class BotModule extends Module {
     }
 
     // ------------------------------------------------------------------ diagnostics
+
+    /**
+     * Publishes an automation event to the shared notification centre.
+     *
+     * <p>The centre applies its own filters, rate limiting and de-duplication, so a repeated failure
+     * never floods the history, the HUD or chat.
+     */
+    private void publish(NotificationType type, NotificationPriority priority, String message) {
+        NotificationService.get().notify(type, priority, "automation", "", message);
+    }
 
     /** A one-line status for the HUD and the dashboard header. */
     public String statusLine() {
