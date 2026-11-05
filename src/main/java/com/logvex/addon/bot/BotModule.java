@@ -165,6 +165,37 @@ public class BotModule extends Module {
         .build()
     );
 
+    // These mirror Meteor's path-manager settings. They only take effect when Baritone (or Voyager)
+    // is installed; with the built-in walker they are ignored. Meteor owns the real settings object,
+    // so the bot writes the user's choice into it rather than inventing a parallel configuration.
+    private final Setting<Boolean> walkOnWater = sgNavigation.add(new BoolSetting.Builder()
+        .name("walk-on-water")
+        .description("Allow the path manager to cross water. Ignored without Baritone or Voyager.")
+        .defaultValue(false)
+        .build()
+    );
+
+    private final Setting<Boolean> walkOnLava = sgNavigation.add(new BoolSetting.Builder()
+        .name("walk-on-lava")
+        .description("Allow the path manager to cross lava. Ignored without Baritone or Voyager.")
+        .defaultValue(false)
+        .build()
+    );
+
+    private final Setting<Boolean> pathStep = sgNavigation.add(new BoolSetting.Builder()
+        .name("path-step")
+        .description("Allow the path manager to step up single blocks. Ignored without Baritone or Voyager.")
+        .defaultValue(true)
+        .build()
+    );
+
+    private final Setting<Boolean> pathNoFall = sgNavigation.add(new BoolSetting.Builder()
+        .name("path-no-fall")
+        .description("Allow the path manager to fall safely. Ignored without Baritone or Voyager.")
+        .defaultValue(true)
+        .build()
+    );
+
     // Safety
 
     private final Setting<Boolean> stopOnLowHealth = sgSafety.add(new BoolSetting.Builder()
@@ -361,6 +392,10 @@ public class BotModule extends Module {
         controller.setAutoStart(autoStart.get());
         worldPort.setMaxResults(config.maxScanResults());
         navPort.setMaxDistance(config.maxTravelDistance());
+        // Push the user's navigation choices into Meteor's path manager so Baritone/Voyager and the
+        // built-in walker agree on how the bot may move. No-op when no path manager is installed.
+        MinecraftNavPort.applyPathSettings(
+            walkOnWater.get(), walkOnLava.get(), pathStep.get(), pathNoFall.get());
     }
 
     private TaskContext buildContext() {
