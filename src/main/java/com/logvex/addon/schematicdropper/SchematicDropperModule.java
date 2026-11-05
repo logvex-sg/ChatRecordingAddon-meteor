@@ -155,6 +155,15 @@ public class SchematicDropperModule extends Module {
         .build()
     );
 
+    // Typed-path fallback for environments where the native file dialog cannot open (some Linux
+    // desktops and headless setups return nothing), which otherwise looks like "import does nothing".
+    private final Setting<String> materialFilePath = sgMaterials.add(new StringSetting.Builder()
+        .name("material-file")
+        .description("Full path to a material list (.txt/.md/.csv) or schematic, used by \"Import Path\".")
+        .defaultValue("")
+        .build()
+    );
+
     private final Setting<OrderingMode> orderingMode = sgMaterials.add(new EnumSetting.Builder<OrderingMode>()
         .name("ordering-mode")
         .description("Order in which materials are processed. Stays fixed for the whole run.")
@@ -603,6 +612,9 @@ public class SchematicDropperModule extends Module {
         WButton importFile = list.add(theme.button("Import Material List...")).expandX().widget();
         importFile.action = this::importMaterialFile;
 
+        WButton importPath = list.add(theme.button("Import Material Path")).expandX().widget();
+        importPath.action = this::importMaterialPath;
+
         WButton overview = list.add(theme.button("Material Overview")).expandX().widget();
         overview.action = this::openMaterialOverview;
 
@@ -725,7 +737,13 @@ public class SchematicDropperModule extends Module {
     /** Opens the file picker and loads the chosen schematic asynchronously. */
     public void loadSchematicFile() {
         String path = chooseSchematicFile();
-        if (path == null) return;
+        if (path == null) {
+            // The native dialog returns null both when the user cancels and when it cannot open at
+            // all (common on Linux and headless setups). Point at the reliable fallback rather than
+            // failing silently, which is what makes loading look broken.
+            info("No file chosen. If the dialog does not open, set \"schematic-file\" and press Load Path.");
+            return;
+        }
         loadSchematicFrom(path);
     }
 
@@ -736,17 +754,57 @@ public class SchematicDropperModule extends Module {
             error("Set \"schematic-file\" in Schematic Building to the full path first.");
             return;
         }
-        loadSchematicFrom(path.trim());
+        loadSchematicFromPath(path);
+    }
+
+    /**
+     * Loads a schematic from an explicit path and remembers it in the {@code schematic-file}
+     * setting, so a path typed at the command line is also the one the module retries later.
+     */
+    public void loadSchematicFromPath(String path) {
+        if (path == null || path.isBlank()) {
+            error("No schematic path given.");
+            return;
+        }
+        String trimmed = path.trim();
+        schematicPath.set(trimmed);
+        loadSchematicFrom(trimmed);
     }
 
     private void loadSchematicFrom(String path) {
         File file = new File(path);
         if (!file.isFile()) {
-            error("That file could not be read.");
+            error("That file could not be read: " + file.getName());
             return;
         }
+        // The load is applied on the module's client tick, so the module has to be running or the
+        // schematic would never appear. Enable it for the user rather than failing silently.
+        if (!ensureActiveForWork("load a schematic")) return;
         build.loadAsync(file.toPath());
         info("Loading " + file.getName() + "...");
+    }
+
+    /**
+     * Makes sure the module is enabled and in a world before an action that depends on the client
+     * tick. Loading and importing are driven from {@code onTick}, so without this the work would be
+     * queued and then never applied, which looks exactly like the button doing nothing.
+     *
+     * @return {@code true} when the module is active and ready
+     */
+    private boolean ensureActiveForWork(String what) {
+        if (mc.player == null || mc.world == null) {
+            error("Join a world before you " + what + ".");
+            return false;
+        }
+        if (!isActive()) {
+            toggle();
+            if (isActive()) info("Enabled SchematicDropper to " + what + ".");
+        }
+        if (!isActive()) {
+            error("Enable the SchematicDropper module to " + what + ".");
+            return false;
+        }
+        return true;
     }
 
     public void startBuild() {
@@ -966,13 +1024,41 @@ public class SchematicDropperModule extends Module {
     /** Opens the native file picker and starts a progressive import of the chosen file. */
     public void importMaterialFile() {
         String path = chooseFile();
-        if (path == null) return;
-
-        File file = new File(path);
-        if (!file.isFile()) {
-            error("That file could not be read.");
+        if (path == null) {
+            info("No file chosen. If the dialog does not open, set \"material-file\" and press Import Path.");
             return;
         }
+        importMaterialFromPath(path);
+    }
+
+    /** Imports the material list named by the {@code material-file} setting, for dialog-less setups. */
+    public void importMaterialPath() {
+        String path = materialFilePath.get();
+        if (path == null || path.isBlank()) {
+            error("Set \"material-file\" in Materials to the full path first.");
+            return;
+        }
+        importMaterialFromPath(path);
+    }
+
+    /**
+     * Imports a material list or schematic from an explicit path, remembering it in the
+     * {@code material-file} setting so a path typed at the command line is retried later.
+     */
+    public void importMaterialFromPath(String path) {
+        if (path == null || path.isBlank()) {
+            error("No file path given.");
+            return;
+        }
+        String trimmed = path.trim();
+        materialFilePath.set(trimmed);
+
+        File file = new File(trimmed);
+        if (!file.isFile()) {
+            error("That file could not be read: " + file.getName());
+            return;
+        }
+        if (!ensureActiveForWork("import a material list")) return;
 
         // A schematic is imported by loading it: the block counts become the material list, so the
         // same file can drive dropping, acquisition and building.
@@ -1185,6 +1271,7 @@ public class SchematicDropperModule extends Module {
                 debug("Dropper recovered from " + type + ": " + detail);
                 return;
             }
+            notifyFailure(type, detail);
             error(describeFailure(type, detail));
         }
 
@@ -1229,6 +1316,7 @@ public class SchematicDropperModule extends Module {
                 debug("Acquisition recovered from " + type + ": " + detail);
                 return;
             }
+            notifyFailure(type, detail);
             error(describeFailure(type, detail));
         }
 
@@ -1270,6 +1358,24 @@ public class SchematicDropperModule extends Module {
 
     private void error(String message) {
         warning("%s", Formatting.RED + Messages.PREFIX + message);
+    }
+
+    /**
+     * Reports a genuine (non-recoverable) failure to the shared notification centre.
+     *
+     * <p>The centre rate limits and de-duplicates, so a failure that repeats every tick produces one
+     * entry rather than a flood. A user who wants it in chat turns on the notifications module's
+     * chat output; the module's own message above stays as the immediate, contextual feedback.
+     */
+    private void notifyFailure(FailureType type, String detail) {
+        com.logvex.addon.notify.core.NotificationType kind = switch (type) {
+            case INVENTORY_FULL -> com.logvex.addon.notify.core.NotificationType.INVENTORY_FULL;
+            case UNKNOWN_ITEM, INVALID_QUANTITY -> com.logvex.addon.notify.core.NotificationType.CONFIG_ERROR;
+            default -> com.logvex.addon.notify.core.NotificationType.TASK_FAILED;
+        };
+        com.logvex.addon.notify.mc.NotificationService.get().notify(kind,
+            com.logvex.addon.notify.core.NotificationPriority.HIGH,
+            "schematic-dropper", type.toString(), detail == null ? "" : detail);
     }
 
     private void info(String message) {

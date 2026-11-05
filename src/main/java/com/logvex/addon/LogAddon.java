@@ -52,9 +52,26 @@ public class LogAddon extends MeteorAddon {
         Modules.get().add(new com.logvex.addon.bot.BotModule());
         Hud.get().register(com.logvex.addon.bot.hud.BotStatusHud.INFO);
 
+        // Notifications are the shared output bus every other feature reports through.
+        Modules.get().add(new com.logvex.addon.notify.NotificationModule());
+        Hud.get().register(com.logvex.addon.notify.hud.NotificationHud.INFO);
+
         Hud.get().register(ChatLogHud.INFO);
         Hud.get().register(ActivityHud.INFO);
         Hud.get().register(StatsHud.INFO);
+    }
+
+    /**
+     * Registers the {@code .log} command once Meteor's command dispatcher is up.
+     *
+     * <p>Meteor runs {@code onInitialize} before {@code Commands.init()}, so adding the command
+     * there would be wiped when the dispatcher is rebuilt. Declaring {@code Commands} as a
+     * dependency orders this after that init; without it the order is not defined.
+     */
+    @meteordevelopment.meteorclient.utils.PostInit(
+        dependencies = meteordevelopment.meteorclient.commands.Commands.class)
+    public static void registerCommands() {
+        meteordevelopment.meteorclient.commands.Commands.add(new com.logvex.addon.command.LogCommand());
     }
 
     @Override

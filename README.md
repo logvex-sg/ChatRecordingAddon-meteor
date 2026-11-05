@@ -11,6 +11,12 @@ sound and optional webhook), `player-activity` (per-player activity tracking) an
 Creative mode, drops them one *server-confirmed* transfer at a time, and can place a schematic
 block by block into the world with verified placements and resumable checkpoints.
 
+**Notifications** — `notifications` collects events from the other modules into one searchable
+history with a HUD and a GUI, and can echo them to chat and play a sound.
+
+**Commands** — a `.log` (alias `.la`) command tree exposes status, module list, session
+statistics, notifications, the automation task queue, waypoints and schematic control from chat.
+
 ## Building
 
 ```bash
@@ -67,7 +73,9 @@ cannot report progress for a drop the server rejected or that only existed as a 
 | Acquire Materials | Starts automatic Creative acquisition from the imported list. |
 | Acquisition... | Opens the acquisition screen (progress, per-material status, controls). |
 | Import Material List... | Opens a file picker and imports a whole material report (or a schematic). |
+| Import Material Path | Imports the file named by **material-file**, for setups where the file picker cannot open. |
 | Load Schematic... | Opens a file picker and loads a `.schem` / `.schematic` / `.litematic` build. |
+| Load Path | Loads the file named by **schematic-file**, for setups where the file picker cannot open. |
 | Start Build | Places the loaded schematic block by block, verifying each placement. |
 | Pause / Resume / Stop (build row) | Controls a schematic build. |
 | Schematic Builder... | Opens the build screen (progress, problems, history, checkpoints). |
@@ -137,7 +145,12 @@ block. The pipeline is:
 - If the native file dialog does not open (some Linux desktops and headless setups return nothing,
   which looks like "import does nothing"), set **schematic-file** in the *Schematic Building*
   settings group to the full path and press **Load Path**. This reads the same file through the
-  same loader without touching the dialog.
+  same loader without touching the dialog. **Import Material Path** does the same for the
+  **material-file** setting in the *Materials* group. Both buttons also tell you when the dialog
+  returned nothing, instead of failing silently.
+- Loading and importing complete on the module's client tick, so the module must be enabled. If it
+  is not, the buttons enable it for you (when you are in a world) rather than appearing to do
+  nothing.
 - The loaded file's block counts are copied into the material list once per load, so the same
   schematic can also be dropped or acquired through the existing workflows. Blocks that have no
   item form (water, lava, fire and similar) are skipped, since they can neither be dropped nor
@@ -233,6 +246,30 @@ the total uncompressed size, the report count and the space saved.
 
 Webhook URLs are treated as secrets: they are never written into a report, never included in
 error messages, and the Discord payload explicitly disables mentions.
+
+## Commands
+
+The addon registers a `.log` command (alias `.la`). Run `.log help` for the list.
+
+| Command | Effect |
+| --- | --- |
+| `.log status` | Chat logging state, automation state and notification counters. |
+| `.log modules` | Every Log Addon module with its on/off state and description. |
+| `.log stats` | Session statistics: messages, players, joins/leaves, deaths, keyword alerts. |
+| `.log record <on\|off>` | Starts or stops chat recording (enabling the module if needed). |
+| `.log notifications [count]` | The most recent notifications. |
+| `.log notifications clear` | Empties the notification history. |
+| `.log tasks` | The automation queue and its history counters. |
+| `.log tasks <start\|pause\|resume\|stop\|clear>` | Controls the automation. |
+| `.log tasks add <type> <item> [amount]` | Queues a task, e.g. `.log tasks add mining diamond_ore 64`. |
+| `.log waypoints [list]` | Lists saved waypoints. |
+| `.log waypoints add <name>` | Saves your current position as a waypoint. |
+| `.log schematic [status]` | The current build state and progress. |
+| `.log schematic load <path>` | Loads a schematic from a path (no file dialog). |
+| `.log schematic <start\|pause\|resume\|stop>` | Controls a build. |
+
+Commands are registered through a Meteor `PostInit` hook, because Meteor initialises its command
+dispatcher after addon `onInitialize`.
 
 ## Testing
 
