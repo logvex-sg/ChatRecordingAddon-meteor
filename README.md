@@ -309,6 +309,7 @@ The addon registers a `.log` command (alias `.la`). Run `.log help` for the list
 | `.log tasks add <type> <item> [amount]` | Queues a task, e.g. `.log tasks add mining diamond_ore 64`. |
 | `.log waypoints [list]` | Lists saved waypoints. |
 | `.log waypoints add <name>` | Saves your current position as a waypoint. |
+| `.log import <file>` | Imports a material list (or a schematic) from a path, without the file dialog. |
 | `.log schematic [status]` | The current build state and progress. |
 | `.log schematic load <path>` | Loads a schematic from a path (no file dialog). |
 | `.log schematic <start\|pause\|resume\|stop>` | Controls a build. |
