@@ -9,6 +9,7 @@ import com.logvex.addon.chatlog.core.LogQuery;
 import com.logvex.addon.chatlog.core.LogSegmentMeta;
 import com.logvex.addon.chatlog.core.LogStore;
 import com.logvex.addon.chatlog.core.PlayerTracker;
+import com.logvex.addon.chatlog.core.PlayerSessionTracker;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -246,12 +247,22 @@ public final class LogStorageService {
 
     /** Rebuilds the player activity index from the stored logs. */
     public void rebuildPlayersAsync(PlayerTracker tracker, Runnable onDone) {
+        rebuildPlayersAsync(tracker, null, onDone);
+    }
+
+    /**
+     * Rebuilds the player activity index, and optionally the session tracker, from the stored logs.
+     * Both are fed in one pass so a large archive is read once, not twice.
+     */
+    public void rebuildPlayersAsync(PlayerTracker tracker, PlayerSessionTracker sessions, Runnable onDone) {
         LogStore current = store;
         io.execute(() -> {
-            tracker.clear();
+            if (tracker != null) tracker.clear();
+            if (sessions != null) sessions.clear();
             try {
                 current.forEach(entry -> {
-                    tracker.record(entry);
+                    if (tracker != null) tracker.record(entry);
+                    if (sessions != null) sessions.record(entry);
                     return true;
                 });
             } catch (IOException e) {

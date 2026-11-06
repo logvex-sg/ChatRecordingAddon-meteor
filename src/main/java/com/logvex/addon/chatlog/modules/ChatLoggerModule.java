@@ -498,6 +498,26 @@ public class ChatLoggerModule extends Module {
             error -> feedback(false, "Export failed: " + error));
     }
 
+    /**
+     * Exports the entries matching {@code query} to a file named {@code label}.
+     *
+     * @return false when storage is unavailable and nothing was started
+     */
+    public boolean exportQuery(LogQuery query, String label, LogExporter.Format format) {
+        LogStorageService storage = service.storage();
+        if (storage == null) {
+            feedback(false, "Storage is unavailable.");
+            return false;
+        }
+        String safeLabel = label == null || label.isBlank() ? "chatlog" : label.replaceAll("[^a-zA-Z0-9._-]", "-");
+        String fileName = exportFileName(safeLabel) + "." + format.extension();
+        Path destination = storage.root().resolve("exports").resolve(fileName);
+        storage.exportAsync(query == null ? LogQuery.all() : query, destination, format,
+            count -> feedback(true, "Exported " + count + " messages to " + destination),
+            error -> feedback(false, "Export failed: " + error));
+        return true;
+    }
+
     public void openDashboard() {
         mc.setScreen(new LogDashboardScreen(this));
     }

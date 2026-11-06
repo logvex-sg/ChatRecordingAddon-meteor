@@ -51,6 +51,13 @@ public class ActivityHud extends HudElement {
         .build()
     );
 
+    private final Setting<Boolean> showOnlineTime = sgGeneral.add(new BoolSetting.Builder()
+        .name("show-online-time")
+        .description("Show each player's observed online time (a dash when unknown).")
+        .defaultValue(false)
+        .build()
+    );
+
     private final Setting<Boolean> background = sgStyle.add(new BoolSetting.Builder()
         .name("background")
         .description("Draw a background behind the HUD.")
@@ -143,6 +150,11 @@ public class ActivityHud extends HudElement {
         StringBuilder sb = new StringBuilder(activity.name());
         if (showMessages.get()) sb.append("  ").append(activity.messageCount());
         if (showLastSeen.get()) sb.append("  ").append(ReportFormatting.shortTime(activity.lastSeen()));
+        if (showOnlineTime.get()) {
+            com.logvex.addon.chatlog.core.PlayerSession session = service.sessions().get(activity.name());
+            sb.append("  ").append(session == null || !session.hasMeasuredTime()
+                ? "-" : ReportFormatting.duration(session.onlineMs(System.currentTimeMillis())));
+        }
         return sb.toString();
     }
 }

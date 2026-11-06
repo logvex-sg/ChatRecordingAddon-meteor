@@ -75,15 +75,8 @@ public class StorageScreen extends WindowScreen {
             storage.rebuildIndexAsync(() -> taskAfterRender = this::render);
             info("Rebuilding the log index.");
         };
-        WButton export = actions.add(theme.button("Export session")).widget();
-        export.action = () -> {
-            if (logger.service().session() == null) {
-                info("No active session to export.");
-                return;
-            }
-            logger.exportSession();
-            info("Export started; see the chat log for the result.");
-        };
+        WButton export = actions.add(theme.button("Export...")).widget();
+        export.action = () -> mc.setScreen(new LogExportScreen(logger));
         WButton importLog = actions.add(theme.button("Import log...")).widget();
         importLog.action = () -> mc.setScreen(new LogImportScreen(storage));
         WButton deleteAll = actions.add(theme.button("Delete all")).widget();

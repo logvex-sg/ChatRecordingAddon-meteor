@@ -229,6 +229,33 @@ class SchematicReaderTest {
     }
 
     @Test
+    @DisplayName("a litematic entry that straddles a long boundary is read, not dropped")
+    void litematicEntryCrossesLongBoundary() throws Exception {
+        // 32-entry palette -> 5 bits per index. Index 12 starts at bit 60, so its low four bits sit
+        // at the top of long 0 and its top bit continues into long 1. A reader that pads each long
+        // (64/5 = 12 entries) would read long 1 instead and see air.
+        String[] palette = new String[32];
+        palette[0] = "minecraft:air";
+        for (int i = 1; i < 32; i++) palette[i] = "minecraft:stone";
+        palette[7] = "minecraft:diamond_block";
+
+        // Index 0 is stone (anchors the origin at x=0), index 12 is diamond and straddles the longs.
+        long[] states = new long[]{1L | (0b0111L << 60), 0L};
+        NbtNode region = litematicRegion(13, 1, 1, new int[]{0, 0, 0}, palette, states);
+
+        NbtNode root = NbtNode.compound();
+        NbtNode regions = NbtNode.compound();
+        regions.put("main", region);
+        root.put("Regions", regions);
+
+        Schematic s = new LitematicSchematicReader().read("lite", SchematicFormat.LITEMATIC, root);
+
+        assertEquals(2, s.blockCount());
+        assertEquals("minecraft:stone", s.at(new BlockPos3(0, 0, 0)).id());
+        assertEquals("minecraft:diamond_block", s.at(new BlockPos3(12, 0, 0)).id());
+    }
+
+    @Test
     @DisplayName("multiple litematic regions are merged and rebased into one schematic")
     void litematicMultipleRegions() throws Exception {
         NbtNode root = NbtNode.compound();

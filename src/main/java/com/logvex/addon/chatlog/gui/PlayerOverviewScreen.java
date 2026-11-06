@@ -78,16 +78,25 @@ public class PlayerOverviewScreen extends WindowScreen {
         table.add(theme.label("Leaves")).widget().color(GuiKit.MUTED);
         table.add(theme.label("Deaths")).widget().color(GuiKit.MUTED);
         table.add(theme.label("Last seen")).widget().color(GuiKit.MUTED);
+        table.add(theme.label("Online")).widget().color(GuiKit.MUTED);
         table.add(theme.label("")).widget();
         table.row();
 
+        long now = System.currentTimeMillis();
         for (PlayerActivity activity : players) {
+            com.logvex.addon.chatlog.core.PlayerSession session =
+                com.logvex.addon.chatlog.mc.LogService.get().sessions().get(activity.name());
             table.add(theme.label(activity.name())).expandCellX().widget();
             table.add(theme.label(Long.toString(activity.messageCount()))).widget();
             table.add(theme.label(Long.toString(activity.joinCount()))).widget();
             table.add(theme.label(Long.toString(activity.leaveCount()))).widget();
             table.add(theme.label(Long.toString(activity.deathCount()))).widget();
             table.add(theme.label(ReportFormatting.time(activity.lastSeen()))).widget().color(GuiKit.MUTED);
+            // A dash, not 0, when no join/leave pair was ever observed.
+            String online = session == null || !session.hasMeasuredTime()
+                ? "-" : ReportFormatting.duration(session.onlineMs(now));
+            table.add(theme.label(online)).widget().color(
+                session != null && session.online() ? GuiKit.GOOD : GuiKit.MUTED);
             WButton view = table.add(theme.button("Chat")).widget();
             view.action = () -> {
                 if (storage != null) {
@@ -99,6 +108,7 @@ public class PlayerOverviewScreen extends WindowScreen {
             WButton forget = table.add(theme.button("Forget")).widget();
             forget.action = () -> {
                 com.logvex.addon.chatlog.mc.LogService.get().players().forget(activity.name());
+                com.logvex.addon.chatlog.mc.LogService.get().sessions().forget(activity.name());
                 info("Forgot the tracked activity for " + activity.name() + ".");
                 render();
             };

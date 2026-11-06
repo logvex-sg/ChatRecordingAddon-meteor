@@ -132,7 +132,7 @@ so both the drop workflow and the acquisition workflow operate on exactly what w
 **Import Material List...** and **Load Schematic...** open the addon's own file browser, built from
 the same widgets as the rest of the GUI. It has no native dependency, so it works on every desktop
 and on headless setups where the OS file dialog (`tinyfd`) returns nothing — which is what used to
-make loading a file look broken. The browser starts in `<gamedir>/logaddon/schematicdropper`, pages
+make loading a file look broken. The browser starts in `<gamedir>/schematicdropper`, pages
 a directory of any size, filters to the relevant extensions, and has **Up** and **Data Folder**
 buttons. The typed-path buttons (**Import Material Path**, **Load Path**) and the `.log import` /
 `.log schematic load` commands remain for scripted use.
@@ -166,7 +166,10 @@ block. The pipeline is:
 - **Load Schematic...** reads `.schem` (Sponge v2/v3), `.schematic` (MCEdit) and `.litematic`
   files. Loading happens on a background worker and the result is applied on the next tick, so a
   large file never blocks the game thread. Both the legacy top-level `Palette`/`BlockData` layout
-  and the Sponge v3 `Blocks` container (WorldEdit 7.3+ default) are read.
+  and the Sponge v3 `Blocks` container (WorldEdit 7.3+ default) are read. Litematic regions are
+  unpacked with the same tightly packed bit array Litematica writes, so an entry that straddles a
+  `long` boundary (palette widths of 5, 6, 7 … bits) is read correctly instead of coming back as
+  air.
 - If the native file dialog does not open (some Linux desktops and headless setups return nothing,
   which looks like "import does nothing"), set **schematic-file** in the *Schematic Building*
   settings group to the full path and press **Load Path**. This reads the same file through the
@@ -189,7 +192,7 @@ block. The pipeline is:
 - Every placement is confirmed from the world, never from the fact that a click was sent. A
   placement that does not appear is retried up to the retry limit and then recorded in the failure
   log.
-- Progress is checkpointed to `<config>/schematicdropper/checkpoints/<name>.json` after each
+- Progress is checkpointed to `<gamedir>/schematicdropper/checkpoints/<name>.json` after each
   confirmed block, written atomically (temp file + move). On resume the checkpoint is
   **re-validated against the world**, so a build can never skip a block that was changed while the
   game was closed.
@@ -257,7 +260,7 @@ pluralisation.
 | `session-stats` | Live session counters, and a short **session summary printed when you leave a world** (messages, unique players, duration, rate, joins/leaves, deaths, keyword alerts and the most active players). |
 | `webhook-monitor` | Watches the shared webhook queue and reports its health. Keeps a bounded delivery history, warns in chat when a delivery fails and can note a recovery. The URL is never stored or shown — only the host. |
 | `player-notes` | Your own notes about players, with the observed activity shown beside each note. A note is always explicit user input; the addon never infers one. |
-| `player-activity` | Per-player joins, leaves, deaths and message counts, rebuilt from the archive on demand. Supports an **exclude list** so bots or your own alts are never tracked. |
+| `player-activity` | Per-player joins, leaves, deaths and message counts, rebuilt from the archive on demand. Supports an **exclude list** so bots or your own alts are never tracked, and shows observed online time per player. |
 
 ### Activity graph
 
@@ -265,6 +268,38 @@ The shared runtime counts messages into per-minute buckets (a bounded ring, so m
 The **Activity Graph** HUD element draws the last 5–120 minutes as a bar graph scaled to the busiest
 minute, and shows the peak and the total for the window. Empty buckets are drawn as a baseline so a
 quiet stretch is visible rather than hidden.
+
+### Duplicate grouping
+
+Some servers and chat mods deliver the same line more than once. The **Chat Log** HUD has a
+`group-duplicates` setting that collapses *consecutive* repeats into one line with a count, e.g.
+`Alex: buying diamonds (x4)`. Only runs of identical consecutive messages (same sender and text) are
+merged, so a message that recurs later keeps its own place. It is off by default.
+
+### Player session durations
+
+Join and leave are the only online signals a client sees, so a session is opened by a join and
+closed by the matching leave. The tracker keeps the total observed online time, the number of
+completed sessions and whether the player is believed to be online right now.
+
+- A player who was **already online** when you connected never produced a join, so no duration can
+  be measured. That case is shown as a dash (`-`), never as `0`, so an unknown value and a
+  genuine zero are distinguishable.
+- The **Recent Players** HUD lists the players seen most recently, with a time-ago and an online
+  dot; the **Activity** HUD can add each player's online time; the **Player Activity** screen shows
+  an *Online* column.
+- `.log playtime [player]` prints the table in chat. Players on the activity exclude list are not
+  tracked.
+
+### Alert history
+
+Chat output is deliberately terse, so a message that scrolled past is easy to miss. Every keyword
+hit, webhook delivery failure and internal error is also written to a bounded alert log.
+
+- The dashboard **Alerts** tab shows counts by kind and the most recent entries.
+- The **Alert History** screen (`.log alerts`, or the button on that tab) is searchable by kind,
+  title or detail, and can be cleared.
+- The log never grows without bound and holds no more than the configured capacity.
 
 ### Chat filter rules
 
@@ -300,6 +335,22 @@ the total uncompressed size, the report count and the space saved.
 
 Webhook URLs are treated as secrets: they are never written into a report, never included in
 error messages, and the Discord payload explicitly disables mentions.
+
+## Exporting logs
+
+Export a chosen slice of the archive to a file. Open **Log Archive** and press **Export...**, or use
+the module's own *Export session* / *Export all* controls.
+
+The export screen lets you pick:
+
+- **Scope**: the current session, the entire archive, today, or the last seven days.
+- **Format**: text, JSON or CSV (the same three the module's `export-format` setting offers).
+- **Filters**: a player name, a keyword, and a set of message types.
+
+The match count is computed on the storage worker from exactly the query that will be written, so the
+preview never disagrees with the file. The export itself also runs on the worker, so a large archive
+does not stall the game. Files are written through a temp file and moved into place, so an
+interrupted export never replaces a good file with a partial one.
 
 ## Importing logs
 
@@ -337,7 +388,11 @@ milestone list with per-kind counts), **Chat Digest** (per-type totals and the m
 beside the note, or an explicit "not observed" when the client has none) and **Log Import** (pick a
 file, preview the parsed result, then merge it). A **Webhook Status** HUD element shows delivery
 health, queue depth and, optionally, the last failure reason; an **Activity Graph** HUD element
-draws recent chat activity as a bar graph.
+draws recent chat activity as a bar graph; and a **Recent Players** HUD element lists the players
+seen most recently with a time-ago and an online dot.
+
+The dashboard also has an **Alerts** tab: counts by kind (keyword, webhook, error) and the most
+recent entries, with a button through to the full searchable **Alert History**.
 
 Every value a module can be configured with is editable here: booleans are checkboxes, numbers are
 sliders, enums cycle on click, strings and string lists are text boxes, and colours have an R/G/B
@@ -382,6 +437,9 @@ The addon registers a `.log` command (alias `.la`). Run `.log help` for the list
 | `.log waypoints add <name>` | Saves your current position as a waypoint. |
 | `.log import <file>` | Imports a material list (or a schematic) from a path, without the file dialog. |
 | `.log importlog <file>` | Imports a chat log (.txt, .csv, .json or .log.gz) into the archive. |
+| `.log alerts [count]` | The most recent keyword, webhook and error alerts, with per-kind totals. |
+| `.log alerts clear` | Empties the alert history. |
+| `.log playtime [player]` | Observed player session durations (a dash when unknown). |
 | `.log schematic [status]` | The current build state and progress. |
 | `.log schematic load <path>` | Loads a schematic from a path (no file dialog). |
 | `.log schematic <start\|pause\|resume\|stop>` | Controls a build. |
@@ -434,6 +492,11 @@ archive with in-memory doubles (no Minecraft runtime required):
   bounding, peak/total), session-summary formatting, player-tracker exclusions (case-insensitive,
   applied only to new entries) and `forget`, and the log importer round-tripping every export format
   (native `.log.gz`, JSON, CSV, text) plus unreadable-line reporting and CSV quoting.
+- `SessionsAndAlertsTest` — player session durations from observed join/leave pairs (measured time,
+  unknown-vs-zero, an in-progress stretch, a repeated join without a leave, exclusions, forget,
+  search ordering and the player cap); duplicate grouping (consecutive-only, sender-sensitive,
+  suffixes); and the bounded alert log (newest-first reads, eviction, per-kind counts, filtering
+  and clearing).
 - `ChatRelayCoreTest` — buffer concurrency, gzip round-trip, corruption detection, archive
   persistence, index rebuild, search, cleanup, deletion and payload safety.
 - `SettingsTest` — clamping, immutability, dependency visibility, declaration order, JSON
@@ -464,6 +527,10 @@ archive with in-memory doubles (no Minecraft runtime required):
 - Log import understands the formats this addon writes (text, CSV, JSON lines and its own compressed
   segment). It is not a general chat-log parser: a foreign format is reported as unreadable rather
   than guessed at, and every line it could not parse is listed in the preview.
+- Player online time is only known for players whose join *and* leave were both observed. A player
+  already present when the client connected is reported as unknown, not as zero, and the addon never
+  invents a duration for them. Name changes are not tracked: the client is not reliably told a
+  renamed player is the same person, so a rename appears as a new name.
 - The bot uses Baritone only when the user has installed it (detected at runtime by reflection). The
   addon bundles no pathfinder of its own beyond the bounded fallback walker, and navigation quality
   with the fallback is limited — it walks in a straight line and stops when blocked rather than
