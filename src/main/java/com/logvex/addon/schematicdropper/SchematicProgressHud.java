@@ -8,19 +8,19 @@ import com.logvex.addon.schematicdropper.core.MaterialAcquisition;
 import com.logvex.addon.schematicdropper.core.MaterialProgress;
 import com.logvex.addon.schematicdropper.core.ProgressSnapshot;
 import com.logvex.addon.schematicdropper.core.State;
-import meteordevelopment.meteorclient.settings.BoolSetting;
-import meteordevelopment.meteorclient.settings.ColorSetting;
-import meteordevelopment.meteorclient.settings.DoubleSetting;
-import meteordevelopment.meteorclient.settings.EnumSetting;
-import meteordevelopment.meteorclient.settings.Setting;
-import meteordevelopment.meteorclient.settings.SettingGroup;
-import meteordevelopment.meteorclient.systems.hud.Hud;
-import meteordevelopment.meteorclient.systems.hud.HudElement;
-import meteordevelopment.meteorclient.systems.hud.HudElementInfo;
-import meteordevelopment.meteorclient.systems.hud.HudRenderer;
-import meteordevelopment.meteorclient.systems.modules.Modules;
-import meteordevelopment.meteorclient.utils.render.color.Color;
-import meteordevelopment.meteorclient.utils.render.color.SettingColor;
+import com.logvex.addon.framework.settings.BoolSetting;
+import com.logvex.addon.framework.settings.ColorSetting;
+import com.logvex.addon.framework.settings.DoubleSetting;
+import com.logvex.addon.framework.settings.EnumSetting;
+import com.logvex.addon.framework.settings.Setting;
+import com.logvex.addon.framework.settings.SettingGroup;
+import com.logvex.addon.framework.systems.hud.Hud;
+import com.logvex.addon.framework.systems.hud.HudElement;
+import com.logvex.addon.framework.systems.hud.HudElementInfo;
+import com.logvex.addon.framework.systems.hud.HudRenderer;
+import com.logvex.addon.framework.systems.modules.Modules;
+import com.logvex.addon.framework.utils.render.color.Color;
+import com.logvex.addon.framework.utils.render.color.SettingColor;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.registry.Registries;
@@ -426,33 +426,15 @@ public class SchematicProgressHud extends HudElement {
     /** Adds the element to the HUD if it is not already present. */
     public static void enable() {
         Hud hud = Hud.get();
-        SchematicProgressHud existing = find(hud);
-        if (existing != null) {
-            if (!existing.isActive()) existing.toggle();
-            instance = existing;
-            return;
-        }
         hud.add(INFO, 4, 200);
-        instance = find(hud);
+        instance = (SchematicProgressHud) hud.instance(INFO);
     }
 
     /** Removes the element from the HUD. */
     public static void disable() {
-        if (instance != null) {
-            instance.remove();
-            instance = null;
-            return;
-        }
         Hud hud = Hud.get();
-        SchematicProgressHud existing = find(hud);
-        if (existing != null) existing.remove();
-    }
-
-    private static SchematicProgressHud find(Hud hud) {
-        for (HudElement element : hud) {
-            if (element instanceof SchematicProgressHud found) return found;
-        }
-        return null;
+        hud.remove(hud.instance(INFO));
+        instance = null;
     }
 
     public enum Mode {

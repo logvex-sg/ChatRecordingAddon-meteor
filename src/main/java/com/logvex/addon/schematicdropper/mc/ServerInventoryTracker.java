@@ -1,11 +1,11 @@
 package com.logvex.addon.schematicdropper.mc;
 
-import meteordevelopment.meteorclient.events.packets.PacketEvent;
-import meteordevelopment.orbit.EventHandler;
+import com.logvex.addon.framework.events.packets.PacketEvent;
+import com.logvex.addon.framework.orbit.EventHandler;
 import net.minecraft.network.packet.s2c.play.InventoryS2CPacket;
 import net.minecraft.network.packet.s2c.play.ScreenHandlerSlotUpdateS2CPacket;
 
-import static meteordevelopment.meteorclient.MeteorClient.mc;
+import static com.logvex.addon.framework.MeteorClient.mc;
 
 /**
  * Observes the packets the server uses to correct the client's inventory.

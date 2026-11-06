@@ -1,9 +1,9 @@
 package com.logvex.addon.chatlog.gui;
 
-import meteordevelopment.meteorclient.gui.GuiTheme;
-import meteordevelopment.meteorclient.gui.GuiThemes;
-import meteordevelopment.meteorclient.gui.WindowScreen;
-import meteordevelopment.meteorclient.gui.widgets.containers.WTable;
+import com.logvex.addon.framework.gui.GuiTheme;
+import com.logvex.addon.framework.gui.GuiThemes;
+import com.logvex.addon.framework.gui.WindowScreen;
+import com.logvex.addon.framework.gui.widgets.containers.WTable;
 
 /**
  * A small modal confirmation used before destructive archive operations. Reuses Meteor's window

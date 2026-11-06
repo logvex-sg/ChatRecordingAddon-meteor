@@ -8,16 +8,16 @@ import com.logvex.addon.notify.core.NotificationType;
 import com.logvex.addon.notify.gui.NotificationCenterScreen;
 import com.logvex.addon.notify.hud.NotificationHud;
 import com.logvex.addon.notify.mc.NotificationService;
-import meteordevelopment.meteorclient.gui.GuiTheme;
-import meteordevelopment.meteorclient.gui.widgets.WWidget;
-import meteordevelopment.meteorclient.gui.widgets.containers.WVerticalList;
-import meteordevelopment.meteorclient.gui.widgets.pressable.WButton;
-import meteordevelopment.meteorclient.settings.BoolSetting;
-import meteordevelopment.meteorclient.settings.DoubleSetting;
-import meteordevelopment.meteorclient.settings.EnumSetting;
-import meteordevelopment.meteorclient.settings.Setting;
-import meteordevelopment.meteorclient.settings.SettingGroup;
-import meteordevelopment.meteorclient.systems.modules.Module;
+import com.logvex.addon.framework.gui.GuiTheme;
+import com.logvex.addon.framework.gui.widgets.WWidget;
+import com.logvex.addon.framework.gui.widgets.containers.WVerticalList;
+import com.logvex.addon.framework.gui.widgets.pressable.WButton;
+import com.logvex.addon.framework.settings.BoolSetting;
+import com.logvex.addon.framework.settings.DoubleSetting;
+import com.logvex.addon.framework.settings.EnumSetting;
+import com.logvex.addon.framework.settings.Setting;
+import com.logvex.addon.framework.settings.SettingGroup;
+import com.logvex.addon.framework.systems.modules.Module;
 import net.minecraft.sound.SoundEvents;
 
 import java.util.EnumMap;
@@ -126,19 +126,12 @@ public class NotificationModule extends Module {
      * call idempotent so repeated toggles never stack duplicate elements.
      */
     private void setHudActive(boolean enabled) {
-        meteordevelopment.meteorclient.systems.hud.Hud hudSystem =
-            meteordevelopment.meteorclient.systems.hud.Hud.get();
-        for (meteordevelopment.meteorclient.systems.hud.HudElement element : hudSystem) {
-            if (element instanceof NotificationHud) {
-                if (element.isActive() != enabled) element.toggle();
-                return;
-            }
-        }
-        if (enabled) {
-            hudSystem.add(NotificationHud.INFO, 4, 40);
-            for (meteordevelopment.meteorclient.systems.hud.HudElement element : hudSystem) {
-                if (element instanceof NotificationHud && !element.isActive()) element.toggle();
-            }
+        com.logvex.addon.framework.systems.hud.Hud hud =
+            com.logvex.addon.framework.systems.hud.Hud.get();
+        if (enabled && !hud.isActive(NotificationHud.INFO)) {
+            hud.add(NotificationHud.INFO, 4, 40);
+        } else if (!enabled && hud.isActive(NotificationHud.INFO)) {
+            hud.remove(hud.instance(NotificationHud.INFO));
         }
     }
 

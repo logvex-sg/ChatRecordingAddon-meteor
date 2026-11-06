@@ -3,16 +3,16 @@ package com.logvex.addon.chatlog.modules;
 import com.logvex.addon.LogAddon;
 import com.logvex.addon.chatlog.core.PlayerActivity;
 import com.logvex.addon.chatlog.mc.LogService;
-import meteordevelopment.meteorclient.gui.GuiTheme;
-import meteordevelopment.meteorclient.gui.widgets.WWidget;
-import meteordevelopment.meteorclient.gui.widgets.containers.WVerticalList;
-import meteordevelopment.meteorclient.gui.widgets.pressable.WButton;
-import meteordevelopment.meteorclient.settings.BoolSetting;
-import meteordevelopment.meteorclient.settings.IntSetting;
-import meteordevelopment.meteorclient.settings.Setting;
-import meteordevelopment.meteorclient.settings.SettingGroup;
-import meteordevelopment.meteorclient.systems.modules.Module;
-import meteordevelopment.meteorclient.systems.modules.Modules;
+import com.logvex.addon.framework.gui.GuiTheme;
+import com.logvex.addon.framework.gui.widgets.WWidget;
+import com.logvex.addon.framework.gui.widgets.containers.WVerticalList;
+import com.logvex.addon.framework.gui.widgets.pressable.WButton;
+import com.logvex.addon.framework.settings.BoolSetting;
+import com.logvex.addon.framework.settings.IntSetting;
+import com.logvex.addon.framework.settings.Setting;
+import com.logvex.addon.framework.settings.SettingGroup;
+import com.logvex.addon.framework.systems.modules.Module;
+import com.logvex.addon.framework.systems.modules.Modules;
 
 import java.util.List;
 

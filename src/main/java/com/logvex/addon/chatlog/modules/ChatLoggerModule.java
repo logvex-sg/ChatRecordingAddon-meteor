@@ -8,19 +8,19 @@ import com.logvex.addon.chatlog.core.ReportFormatting;
 import com.logvex.addon.chatlog.mc.LogService;
 import com.logvex.addon.chatlog.mc.LogStorageService;
 import com.logvex.addon.chatlog.gui.LogDashboardScreen;
-import meteordevelopment.meteorclient.MeteorClient;
-import meteordevelopment.meteorclient.gui.GuiTheme;
-import meteordevelopment.meteorclient.gui.widgets.WWidget;
-import meteordevelopment.meteorclient.gui.widgets.containers.WHorizontalList;
-import meteordevelopment.meteorclient.gui.widgets.containers.WVerticalList;
-import meteordevelopment.meteorclient.gui.widgets.pressable.WButton;
-import meteordevelopment.meteorclient.settings.BoolSetting;
-import meteordevelopment.meteorclient.settings.EnumSetting;
-import meteordevelopment.meteorclient.settings.IntSetting;
-import meteordevelopment.meteorclient.settings.Setting;
-import meteordevelopment.meteorclient.settings.SettingGroup;
-import meteordevelopment.meteorclient.settings.StringSetting;
-import meteordevelopment.meteorclient.systems.modules.Module;
+import com.logvex.addon.framework.MeteorClient;
+import com.logvex.addon.framework.gui.GuiTheme;
+import com.logvex.addon.framework.gui.widgets.WWidget;
+import com.logvex.addon.framework.gui.widgets.containers.WHorizontalList;
+import com.logvex.addon.framework.gui.widgets.containers.WVerticalList;
+import com.logvex.addon.framework.gui.widgets.pressable.WButton;
+import com.logvex.addon.framework.settings.BoolSetting;
+import com.logvex.addon.framework.settings.EnumSetting;
+import com.logvex.addon.framework.settings.IntSetting;
+import com.logvex.addon.framework.settings.Setting;
+import com.logvex.addon.framework.settings.SettingGroup;
+import com.logvex.addon.framework.settings.StringSetting;
+import com.logvex.addon.framework.systems.modules.Module;
 import net.minecraft.util.Formatting;
 
 import java.nio.file.Path;
@@ -119,7 +119,7 @@ public class ChatLoggerModule extends Module {
 
     private final Setting<String> storageDirectory = sgStorage.add(new StringSetting.Builder()
         .name("storage-directory")
-        .description("Folder for the logs, relative to the Meteor folder.")
+        .description("Folder for the logs, relative to the game directory.")
         .defaultValue("logaddon/logs")
         .wide()
         .visible(saveLogs::get)
@@ -274,8 +274,8 @@ public class ChatLoggerModule extends Module {
 
     private final LogService.LiveListener reportListener = reportBuffer::add;
 
-    @meteordevelopment.orbit.EventHandler
-    private void onTick(meteordevelopment.meteorclient.events.world.TickEvent.Post event) {
+    @com.logvex.addon.framework.orbit.EventHandler
+    private void onTick(com.logvex.addon.framework.events.world.TickEvent.Post event) {
         if (!autoReports.get() || reportInFlight) return;
         long interval = reportIntervalMinutes.get() * 60_000L;
         if (System.currentTimeMillis() - lastReportAt >= interval) sendReport(false);
@@ -377,7 +377,7 @@ public class ChatLoggerModule extends Module {
     public Path storagePath() {
         String configured = storageDirectory.get();
         String relative = configured == null || configured.isBlank() ? "logaddon/logs" : configured;
-        return MeteorClient.FOLDER.toPath().resolve(relative);
+        return MeteorClient.FOLDER().toPath().resolve(relative);
     }
 
     // ------------------------------------------------------------------ controls

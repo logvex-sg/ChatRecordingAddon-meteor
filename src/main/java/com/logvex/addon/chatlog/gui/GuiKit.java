@@ -1,11 +1,11 @@
 package com.logvex.addon.chatlog.gui;
 
-import meteordevelopment.meteorclient.gui.GuiTheme;
-import meteordevelopment.meteorclient.gui.widgets.WLabel;
-import meteordevelopment.meteorclient.gui.widgets.containers.WHorizontalList;
-import meteordevelopment.meteorclient.gui.widgets.containers.WVerticalList;
-import meteordevelopment.meteorclient.gui.widgets.pressable.WButton;
-import meteordevelopment.meteorclient.utils.render.color.Color;
+import com.logvex.addon.framework.gui.GuiTheme;
+import com.logvex.addon.framework.gui.widgets.WLabel;
+import com.logvex.addon.framework.gui.widgets.containers.WHorizontalList;
+import com.logvex.addon.framework.gui.widgets.containers.WVerticalList;
+import com.logvex.addon.framework.gui.widgets.pressable.WButton;
+import com.logvex.addon.framework.utils.render.color.Color;
 
 /**
  * Small helpers that keep the dashboard screens visually consistent and free of duplicated layout

@@ -6,21 +6,21 @@ import com.logvex.addon.schematicdropper.core.AcquisitionSnapshot;
 import com.logvex.addon.schematicdropper.core.AcquisitionState;
 import com.logvex.addon.schematicdropper.core.MaterialAcquisition;
 import com.logvex.addon.schematicdropper.core.MaterialListImporter;
-import meteordevelopment.meteorclient.gui.GuiTheme;
-import meteordevelopment.meteorclient.gui.GuiThemes;
-import meteordevelopment.meteorclient.gui.WindowScreen;
-import meteordevelopment.meteorclient.gui.widgets.containers.WHorizontalList;
-import meteordevelopment.meteorclient.gui.widgets.containers.WTable;
-import meteordevelopment.meteorclient.gui.widgets.input.WTextBox;
-import meteordevelopment.meteorclient.gui.widgets.pressable.WButton;
-import meteordevelopment.meteorclient.utils.render.color.Color;
+import com.logvex.addon.framework.gui.GuiTheme;
+import com.logvex.addon.framework.gui.GuiThemes;
+import com.logvex.addon.framework.gui.WindowScreen;
+import com.logvex.addon.framework.gui.widgets.containers.WHorizontalList;
+import com.logvex.addon.framework.gui.widgets.containers.WTable;
+import com.logvex.addon.framework.gui.widgets.input.WTextBox;
+import com.logvex.addon.framework.gui.widgets.pressable.WButton;
+import com.logvex.addon.framework.utils.render.color.Color;
 
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 
-import static meteordevelopment.meteorclient.MeteorClient.mc;
+import static com.logvex.addon.framework.MeteorClient.mc;
 
 /**
  * Live view of the Creative acquisition workflow.

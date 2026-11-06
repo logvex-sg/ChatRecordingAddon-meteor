@@ -5,17 +5,17 @@ import com.logvex.addon.common.Messages;
 import com.logvex.addon.notify.core.Notification;
 import com.logvex.addon.notify.core.NotificationPriority;
 import com.logvex.addon.notify.mc.NotificationService;
-import meteordevelopment.meteorclient.settings.BoolSetting;
-import meteordevelopment.meteorclient.settings.ColorSetting;
-import meteordevelopment.meteorclient.settings.DoubleSetting;
-import meteordevelopment.meteorclient.settings.IntSetting;
-import meteordevelopment.meteorclient.settings.Setting;
-import meteordevelopment.meteorclient.settings.SettingGroup;
-import meteordevelopment.meteorclient.systems.hud.HudElement;
-import meteordevelopment.meteorclient.systems.hud.HudElementInfo;
-import meteordevelopment.meteorclient.systems.hud.HudRenderer;
-import meteordevelopment.meteorclient.utils.render.color.Color;
-import meteordevelopment.meteorclient.utils.render.color.SettingColor;
+import com.logvex.addon.framework.settings.BoolSetting;
+import com.logvex.addon.framework.settings.ColorSetting;
+import com.logvex.addon.framework.settings.DoubleSetting;
+import com.logvex.addon.framework.settings.IntSetting;
+import com.logvex.addon.framework.settings.Setting;
+import com.logvex.addon.framework.settings.SettingGroup;
+import com.logvex.addon.framework.systems.hud.HudElement;
+import com.logvex.addon.framework.systems.hud.HudElementInfo;
+import com.logvex.addon.framework.systems.hud.HudRenderer;
+import com.logvex.addon.framework.utils.render.color.Color;
+import com.logvex.addon.framework.utils.render.color.SettingColor;
 
 import java.util.List;
 

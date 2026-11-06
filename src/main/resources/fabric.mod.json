@@ -3,30 +3,29 @@
   "id": "logvex-addon",
   "version": "${version}",
   "name": "Log Addon",
-  "description": "Log Addon: a chat logging, monitoring, search and notification toolkit for Meteor Client. Records chat to compressed searchable logs, tracks player activity and session statistics, raises keyword alerts, and can forward notifications to a webhook. Also includes SchematicDropper for automated schematic material dropping.",
+  "description": "Log Addon: a standalone chat logging, monitoring, search and notification toolkit for Minecraft. Records chat to compressed searchable logs, tracks player activity and session statistics, raises keyword alerts, forwards reports to a webhook, and includes SchematicDropper for automatic Creative-mode material acquisition and schematic material dropping. Baritone is used for navigation when it is installed.",
   "authors": [
     "logvex"
   ],
   "contact": {
     "sources": "https://github.com/logvex-sg/ChatRecordingAddon-meteor"
   },
+  "license": "MIT",
   "environment": "client",
   "entrypoints": {
-    "meteor": [
-      "com.logvex.addon.LogAddon"
+    "client": [
+      "com.logvex.addon.LogAddonClient"
     ]
   },
-  "custom": {
-    "meteor-client:color": "120,200,255",
-    "modmenu": {
-      "parent": {
-        "id": "meteor-client"
-      }
-    }
-  },
+  "mixins": [
+    "logaddon.mixins.json"
+  ],
   "depends": {
     "java": ">=${jdk_version}",
     "minecraft": "${minecraft_version}",
-    "meteor-client": "*"
+    "fabricloader": ">=${loader_version}"
+  },
+  "recommends": {
+    "baritone": "*"
   }
 }

@@ -2,9 +2,9 @@ package com.logvex.addon.bot.mc;
 
 import com.logvex.addon.bot.core.ActionPorts;
 import com.logvex.addon.bot.core.BlockPos3;
-import meteordevelopment.meteorclient.utils.player.FindItemResult;
-import meteordevelopment.meteorclient.utils.player.InvUtils;
-import meteordevelopment.meteorclient.utils.world.BlockUtils;
+import com.logvex.addon.framework.utils.player.FindItemResult;
+import com.logvex.addon.framework.utils.player.InvUtils;
+import com.logvex.addon.framework.utils.world.BlockUtils;
 import net.minecraft.block.BlockState;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
@@ -26,7 +26,7 @@ import net.minecraft.util.math.Vec3d;
 import java.util.ArrayList;
 import java.util.List;
 
-import static meteordevelopment.meteorclient.MeteorClient.mc;
+import static com.logvex.addon.framework.MeteorClient.mc;
 
 /**
  * {@link ActionPorts} backed by the live client.

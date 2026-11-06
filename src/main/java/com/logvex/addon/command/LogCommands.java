@@ -4,8 +4,8 @@ import com.logvex.addon.LogAddon;
 import com.logvex.addon.bot.BotModule;
 import com.logvex.addon.chatlog.modules.ChatLoggerModule;
 import com.logvex.addon.notify.NotificationModule;
-import meteordevelopment.meteorclient.systems.modules.Module;
-import meteordevelopment.meteorclient.systems.modules.Modules;
+import com.logvex.addon.framework.systems.modules.Module;
+import com.logvex.addon.framework.systems.modules.Modules;
 
 import java.util.List;
 

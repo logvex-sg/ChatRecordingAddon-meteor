@@ -2,13 +2,13 @@ package com.logvex.addon.bot.mc;
 
 import com.logvex.addon.bot.core.BlockPos3;
 import com.logvex.addon.bot.core.NavPort;
-import meteordevelopment.meteorclient.pathing.IPathManager;
-import meteordevelopment.meteorclient.pathing.PathManagers;
-import meteordevelopment.meteorclient.utils.player.CustomPlayerInput;
+import com.logvex.addon.framework.pathing.IPathManager;
+import com.logvex.addon.framework.pathing.PathManagers;
+import com.logvex.addon.framework.utils.player.CustomPlayerInput;
 import net.minecraft.client.input.Input;
 import net.minecraft.util.math.BlockPos;
 
-import static meteordevelopment.meteorclient.MeteorClient.mc;
+import static com.logvex.addon.framework.MeteorClient.mc;
 
 /**
  * {@link NavPort} that prefers a real path manager and otherwise falls back to a bounded walker.
@@ -218,7 +218,7 @@ public final class MinecraftNavPort implements NavPort {
         settings.save();
     }
 
-    private static <T> void set(meteordevelopment.meteorclient.settings.Setting<T> setting, T value) {
+    private static <T> void set(com.logvex.addon.framework.settings.Setting<T> setting, T value) {
         if (setting != null && value != null) setting.set(value);
     }
 }

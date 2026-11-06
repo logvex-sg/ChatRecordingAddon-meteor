@@ -43,25 +43,25 @@ import com.logvex.addon.schematicdropper.mc.MinecraftEnv;
 import com.logvex.addon.schematicdropper.mc.RegistryItemResolver;
 import com.logvex.addon.schematicdropper.mc.SchematicFileImport;
 import com.logvex.addon.schematicdropper.mc.ServerInventoryTracker;
-import meteordevelopment.meteorclient.MeteorClient;
-import meteordevelopment.meteorclient.events.game.GameJoinedEvent;
-import meteordevelopment.meteorclient.events.game.GameLeftEvent;
-import meteordevelopment.meteorclient.events.world.TickEvent;
-import meteordevelopment.meteorclient.gui.GuiTheme;
-import meteordevelopment.meteorclient.gui.widgets.WWidget;
-import meteordevelopment.meteorclient.gui.widgets.containers.WHorizontalList;
-import meteordevelopment.meteorclient.gui.widgets.containers.WVerticalList;
-import meteordevelopment.meteorclient.gui.widgets.pressable.WButton;
-import meteordevelopment.meteorclient.settings.BoolSetting;
-import meteordevelopment.meteorclient.settings.DoubleSetting;
-import meteordevelopment.meteorclient.settings.EnumSetting;
-import meteordevelopment.meteorclient.settings.IntSetting;
-import meteordevelopment.meteorclient.settings.Setting;
-import meteordevelopment.meteorclient.settings.SettingGroup;
-import meteordevelopment.meteorclient.settings.StringListSetting;
-import meteordevelopment.meteorclient.settings.StringSetting;
-import meteordevelopment.meteorclient.systems.modules.Module;
-import meteordevelopment.orbit.EventHandler;
+import com.logvex.addon.framework.MeteorClient;
+import com.logvex.addon.framework.events.game.GameJoinedEvent;
+import com.logvex.addon.framework.events.game.GameLeftEvent;
+import com.logvex.addon.framework.events.world.TickEvent;
+import com.logvex.addon.framework.gui.GuiTheme;
+import com.logvex.addon.framework.gui.widgets.WWidget;
+import com.logvex.addon.framework.gui.widgets.containers.WHorizontalList;
+import com.logvex.addon.framework.gui.widgets.containers.WVerticalList;
+import com.logvex.addon.framework.gui.widgets.pressable.WButton;
+import com.logvex.addon.framework.settings.BoolSetting;
+import com.logvex.addon.framework.settings.DoubleSetting;
+import com.logvex.addon.framework.settings.EnumSetting;
+import com.logvex.addon.framework.settings.IntSetting;
+import com.logvex.addon.framework.settings.Setting;
+import com.logvex.addon.framework.settings.SettingGroup;
+import com.logvex.addon.framework.settings.StringListSetting;
+import com.logvex.addon.framework.settings.StringSetting;
+import com.logvex.addon.framework.systems.modules.Module;
+import com.logvex.addon.framework.orbit.EventHandler;
 import net.minecraft.util.Formatting;
 
 import java.io.File;
@@ -497,7 +497,7 @@ public class SchematicDropperModule extends Module {
         this.acquisition = new AcquisitionEngine(acquisitionEnv, creativeController, dropBridge,
             new AcquisitionListenerImpl());
         this.build = new SchematicBuildController(new BuildFeedback(),
-            MeteorClient.FOLDER.toPath().resolve("schematicdropper").resolve("checkpoints"));
+            MeteorClient.FOLDER().toPath().resolve("schematicdropper").resolve("checkpoints"));
     }
 
     @Override
@@ -670,7 +670,7 @@ public class SchematicDropperModule extends Module {
 
     /** The folder the file pickers open in, created up front so the dialog never starts nowhere. */
     private static File dataDirectory() {
-        return new File(MeteorClient.FOLDER, "schematicdropper");
+        return new File(MeteorClient.FOLDER(), "schematicdropper");
     }
 
     private static void ensureDataDirectory() {

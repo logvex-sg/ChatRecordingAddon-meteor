@@ -6,15 +6,15 @@ import com.logvex.addon.schematicdropper.core.PendingPlacement;
 import com.logvex.addon.schematicdropper.core.PlacementAction;
 import com.logvex.addon.schematicdropper.core.PlacementFailure;
 import com.logvex.addon.schematicdropper.core.PlacementRequest;
-import meteordevelopment.meteorclient.utils.player.FindItemResult;
-import meteordevelopment.meteorclient.utils.player.InvUtils;
-import meteordevelopment.meteorclient.utils.world.BlockUtils;
+import com.logvex.addon.framework.utils.player.FindItemResult;
+import com.logvex.addon.framework.utils.player.InvUtils;
+import com.logvex.addon.framework.utils.world.BlockUtils;
 import net.minecraft.item.Item;
 import net.minecraft.registry.Registries;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 
-import static meteordevelopment.meteorclient.MeteorClient.mc;
+import static com.logvex.addon.framework.MeteorClient.mc;
 
 /**
  * Performs real block placements through Meteor's {@link BlockUtils#place}, then confirms them from

@@ -3,14 +3,14 @@ package com.logvex.addon.chatlog.modules;
 import com.logvex.addon.LogAddon;
 import com.logvex.addon.chatlog.core.StatsSnapshot;
 import com.logvex.addon.chatlog.mc.LogService;
-import meteordevelopment.meteorclient.gui.GuiTheme;
-import meteordevelopment.meteorclient.gui.widgets.WWidget;
-import meteordevelopment.meteorclient.gui.widgets.containers.WVerticalList;
-import meteordevelopment.meteorclient.gui.widgets.pressable.WButton;
-import meteordevelopment.meteorclient.settings.BoolSetting;
-import meteordevelopment.meteorclient.settings.Setting;
-import meteordevelopment.meteorclient.settings.SettingGroup;
-import meteordevelopment.meteorclient.systems.modules.Module;
+import com.logvex.addon.framework.gui.GuiTheme;
+import com.logvex.addon.framework.gui.widgets.WWidget;
+import com.logvex.addon.framework.gui.widgets.containers.WVerticalList;
+import com.logvex.addon.framework.gui.widgets.pressable.WButton;
+import com.logvex.addon.framework.settings.BoolSetting;
+import com.logvex.addon.framework.settings.Setting;
+import com.logvex.addon.framework.settings.SettingGroup;
+import com.logvex.addon.framework.systems.modules.Module;
 
 /**
  * Session statistics: message counts by type, unique players, join/leave/death totals and keyword
@@ -46,7 +46,7 @@ public class SessionStatsModule extends Module {
         WVerticalList list = theme.verticalList();
         WButton open = list.add(theme.button("Open Statistics")).expandX().widget();
         open.action = () -> {
-            ChatLoggerModule logger = meteordevelopment.meteorclient.systems.modules.Modules.get()
+            ChatLoggerModule logger = com.logvex.addon.framework.systems.modules.Modules.get()
                 .get(ChatLoggerModule.class);
             if (logger != null) mc.setScreen(new com.logvex.addon.chatlog.gui.LogDashboardScreen(logger, 4));
         };

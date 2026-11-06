@@ -2,12 +2,12 @@ package com.logvex.addon.chatlog.gui;
 
 import com.logvex.addon.chatlog.core.KeywordRule;
 import com.logvex.addon.chatlog.modules.KeywordAlertsModule;
-import meteordevelopment.meteorclient.gui.GuiThemes;
-import meteordevelopment.meteorclient.gui.WindowScreen;
-import meteordevelopment.meteorclient.gui.widgets.containers.WTable;
-import meteordevelopment.meteorclient.gui.widgets.pressable.WButton;
-import meteordevelopment.meteorclient.gui.widgets.input.WTextBox;
-import meteordevelopment.meteorclient.settings.Setting;
+import com.logvex.addon.framework.gui.GuiThemes;
+import com.logvex.addon.framework.gui.WindowScreen;
+import com.logvex.addon.framework.gui.widgets.containers.WTable;
+import com.logvex.addon.framework.gui.widgets.pressable.WButton;
+import com.logvex.addon.framework.gui.widgets.input.WTextBox;
+import com.logvex.addon.framework.settings.Setting;
 
 import java.util.ArrayList;
 import java.util.List;

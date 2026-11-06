@@ -2,7 +2,7 @@ package com.logvex.addon.bot.mc;
 
 import com.logvex.addon.bot.core.BlockPos3;
 import com.logvex.addon.bot.core.WorldPort;
-import meteordevelopment.meteorclient.utils.world.BlockIterator;
+import com.logvex.addon.framework.utils.world.BlockIterator;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.block.entity.LootableContainerBlockEntity;
@@ -19,7 +19,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static meteordevelopment.meteorclient.MeteorClient.mc;
+import static com.logvex.addon.framework.MeteorClient.mc;
 
 /**
  * {@link WorldPort} backed by the live client world.

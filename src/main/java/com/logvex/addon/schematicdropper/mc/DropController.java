@@ -5,7 +5,7 @@ import com.logvex.addon.schematicdropper.core.DropPlan;
 import com.logvex.addon.schematicdropper.core.FailureType;
 import com.logvex.addon.schematicdropper.core.InventoryMode;
 import com.logvex.addon.schematicdropper.core.PendingDrop;
-import meteordevelopment.meteorclient.utils.player.SlotUtils;
+import com.logvex.addon.framework.utils.player.SlotUtils;
 import net.minecraft.client.gui.screen.ingame.InventoryScreen;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
@@ -16,7 +16,7 @@ import net.minecraft.util.Identifier;
 
 import java.util.function.Supplier;
 
-import static meteordevelopment.meteorclient.MeteorClient.mc;
+import static com.logvex.addon.framework.MeteorClient.mc;
 
 /**
  * Performs real, server-synchronised inventory drops.

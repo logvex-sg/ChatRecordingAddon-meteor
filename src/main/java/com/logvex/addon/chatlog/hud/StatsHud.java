@@ -5,15 +5,15 @@ import com.logvex.addon.chatlog.core.MessageType;
 import com.logvex.addon.chatlog.core.ReportFormatting;
 import com.logvex.addon.chatlog.core.StatsSnapshot;
 import com.logvex.addon.chatlog.mc.LogService;
-import meteordevelopment.meteorclient.settings.BoolSetting;
-import meteordevelopment.meteorclient.settings.ColorSetting;
-import meteordevelopment.meteorclient.settings.Setting;
-import meteordevelopment.meteorclient.settings.SettingGroup;
-import meteordevelopment.meteorclient.systems.hud.HudElement;
-import meteordevelopment.meteorclient.systems.hud.HudElementInfo;
-import meteordevelopment.meteorclient.systems.hud.HudRenderer;
-import meteordevelopment.meteorclient.utils.render.color.Color;
-import meteordevelopment.meteorclient.utils.render.color.SettingColor;
+import com.logvex.addon.framework.settings.BoolSetting;
+import com.logvex.addon.framework.settings.ColorSetting;
+import com.logvex.addon.framework.settings.Setting;
+import com.logvex.addon.framework.settings.SettingGroup;
+import com.logvex.addon.framework.systems.hud.HudElement;
+import com.logvex.addon.framework.systems.hud.HudElementInfo;
+import com.logvex.addon.framework.systems.hud.HudRenderer;
+import com.logvex.addon.framework.utils.render.color.Color;
+import com.logvex.addon.framework.utils.render.color.SettingColor;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -57,7 +57,7 @@ public class StatsHud extends HudElement {
     private final Setting<Boolean> customScale = sgStyle.add(new BoolSetting.Builder()
         .name("custom-scale").description("Use a custom text scale instead of the global one.")
         .defaultValue(false).build());
-    private final Setting<Double> scale = sgStyle.add(new meteordevelopment.meteorclient.settings.DoubleSetting.Builder()
+    private final Setting<Double> scale = sgStyle.add(new com.logvex.addon.framework.settings.DoubleSetting.Builder()
         .name("scale").description("Custom scale.").defaultValue(1).min(0.5).sliderRange(0.5, 3)
         .visible(customScale::get).build());
 

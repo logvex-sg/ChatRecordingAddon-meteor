@@ -2,10 +2,10 @@ package com.logvex.addon.chatlog.mc;
 
 import com.logvex.addon.chatlog.core.ChatClassifier;
 import com.logvex.addon.chatlog.core.ChatEntry;
-import meteordevelopment.meteorclient.events.game.GameJoinedEvent;
-import meteordevelopment.meteorclient.events.game.GameLeftEvent;
-import meteordevelopment.meteorclient.events.game.ReceiveMessageEvent;
-import meteordevelopment.orbit.EventHandler;
+import com.logvex.addon.framework.events.game.GameJoinedEvent;
+import com.logvex.addon.framework.events.game.GameLeftEvent;
+import com.logvex.addon.framework.events.game.ReceiveMessageEvent;
+import com.logvex.addon.framework.orbit.EventHandler;
 
 /**
  * The single subscriber for incoming chat. Registered once by the addon, independent of which
@@ -44,7 +44,7 @@ public final class ChatRecorder {
     }
 
     private String serverAddress() {
-        var mc = meteordevelopment.meteorclient.MeteorClient.mc;
+        var mc = com.logvex.addon.framework.MeteorClient.mc;
         if (mc == null) return "unknown";
         if (mc.getCurrentServerEntry() != null) {
             String address = mc.getCurrentServerEntry().address;

@@ -14,9 +14,9 @@ import com.logvex.addon.schematicdropper.SchematicDropperModule;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
-import meteordevelopment.meteorclient.commands.Command;
-import meteordevelopment.meteorclient.systems.modules.Module;
-import meteordevelopment.meteorclient.systems.modules.Modules;
+import com.logvex.addon.framework.commands.Command;
+import com.logvex.addon.framework.systems.modules.Module;
+import com.logvex.addon.framework.systems.modules.Modules;
 import net.minecraft.command.CommandSource;
 
 import java.util.List;
@@ -49,6 +49,11 @@ public class LogCommand extends Command {
 
         builder.then(literal("status").executes(context -> {
             status();
+            return SINGLE_SUCCESS;
+        }));
+
+        builder.then(literal("gui").executes(context -> {
+            openGui();
             return SINGLE_SUCCESS;
         }));
 
@@ -416,6 +421,12 @@ public class LogCommand extends Command {
             case "stop" -> module.stopBuild();
             default -> warning("Unknown action \"%s\".", action);
         }
+    }
+
+    private void openGui() {
+        net.minecraft.client.MinecraftClient client = net.minecraft.client.MinecraftClient.getInstance();
+        client.setScreen(new com.logvex.addon.gui.ClickGuiScreen());
+        info("Opened the Log Addon window.");
     }
 
     private void recording(boolean on) {
