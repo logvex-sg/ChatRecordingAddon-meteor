@@ -35,14 +35,23 @@ public class LogAddon extends MeteorAddon {
     public void onInitialize() {
         LOG.info("Initializing Log Addon");
 
-        // Subscribe the recorder before any module so no early chat is missed.
+        // Subscribe the recorder before any module so no early chat is missed. The chat filter and
+        // the session timeline also subscribe once here: a filter that only worked while a module was
+        // enabled would leak messages on toggle, and the timeline must be complete from the first join.
         MeteorClient.EVENT_BUS.subscribe(new ChatRecorder());
+        com.logvex.addon.chatlog.mc.ChatFilterService.get().init(MeteorClient.EVENT_BUS);
+        com.logvex.addon.chatlog.mc.SessionTimelineService.get().init(MeteorClient.EVENT_BUS);
 
         Modules.get().add(new ChatLoggerModule());
         Modules.get().add(new ChatMonitorModule());
         Modules.get().add(new KeywordAlertsModule());
         Modules.get().add(new PlayerActivityModule());
         Modules.get().add(new SessionStatsModule());
+        Modules.get().add(new com.logvex.addon.chatlog.modules.ChatFilterModule());
+        Modules.get().add(new com.logvex.addon.chatlog.modules.SessionTimelineModule());
+        Modules.get().add(new com.logvex.addon.chatlog.modules.ChatDigestModule());
+        Modules.get().add(new com.logvex.addon.chatlog.modules.WebhookMonitorModule());
+        Modules.get().add(new com.logvex.addon.chatlog.modules.PlayerNotesModule());
 
         // Keep the existing Schematic Dropper module and its HUD.
         Modules.get().add(new com.logvex.addon.schematicdropper.SchematicDropperModule());
@@ -59,6 +68,7 @@ public class LogAddon extends MeteorAddon {
         Hud.get().register(ChatLogHud.INFO);
         Hud.get().register(ActivityHud.INFO);
         Hud.get().register(StatsHud.INFO);
+        Hud.get().register(com.logvex.addon.chatlog.hud.WebhookStatusHud.INFO);
     }
 
     /**
@@ -81,6 +91,7 @@ public class LogAddon extends MeteorAddon {
     public static void shutdown() {
         com.logvex.addon.framework.systems.config.ConfigManager.get().save();
         Modules.get().disableAll();
+        com.logvex.addon.chatlog.mc.SessionTimelineService.get().shutdown();
     }
 
     /** Persists the configuration when it has changed. Called periodically from the tick loop. */

@@ -12,6 +12,12 @@ detected at runtime rather than compiled against.
 sound and optional webhook), `player-activity` (per-player activity tracking) and
 `session-stats` (session statistics), with matching HUD elements.
 
+**Chat intelligence** — `chat-filter` (ordered hide/allow rules applied in the chat mixin, so a
+filtered message never reaches chat, the recorder or the log), `chat-digest` (on-demand and timed
+summaries of chat activity), `session-timeline` (a bounded timeline of joins, leaves, deaths and
+keyword hits), `webhook-monitor` (delivery health, queue depth and a bounded delivery history) and
+`player-notes` (your own notes about players, shown next to their observed activity).
+
 **Schematic Dropper** — imports a material report or a schematic, acquires missing materials in
 Creative mode, drops them one *server-confirmed* transfer at a time, and can place a schematic
 block by block into the world with verified placements and resumable checkpoints.
@@ -81,17 +87,17 @@ cannot report progress for a drop the server rejected or that only existed as a 
 | Material Overview | Opens the material overview screen. |
 | Acquire Materials | Starts automatic Creative acquisition from the imported list. |
 | Acquisition... | Opens the acquisition screen (progress, per-material status, controls). |
-| Import Material List... | Opens a file picker and imports a whole material report (or a schematic). |
-| Import Material Path | Imports the file named by **material-file**, for setups where the file picker cannot open. |
-| Load Schematic... | Opens a file picker and loads a `.schem` / `.schematic` / `.litematic` build. |
-| Load Path | Loads the file named by **schematic-file**, for setups where the file picker cannot open. |
+| Import Material List... | Opens the built-in file browser and imports a whole material report (or a schematic). |
+| Import Material Path | Imports the file named by **material-file**, for scripted or command-line use. |
+| Load Schematic... | Opens the built-in file browser and loads a `.schem` / `.schematic` / `.litematic` build. |
+| Load Path | Loads the file named by **schematic-file**, for scripted or command-line use. |
 | Start Build | Places the loaded schematic block by block, verifying each placement. |
 | Pause / Resume / Stop (build row) | Controls a schematic build. |
 | Schematic Builder... | Opens the build screen (progress, problems, history, checkpoints). |
 
 ### Importing a material list
 
-**Import Material List...** opens the native file picker (`.txt`, `.md`, `.csv`) and parses the
+**Import Material List...** opens the built-in file browser and parses the
 **entire** file: the importer never stops at a fixed entry count and never silently truncates.
 Two input formats are supported.
 
@@ -120,6 +126,16 @@ Duplicate item ids are aggregated onto their first occurrence. Every entry is va
 the Minecraft 1.21.1 item registry and anything unknown is reported as an invalid entry (capped in
 chat, with the full list in the debug log). The imported list replaces the module's material list,
 so both the drop workflow and the acquisition workflow operate on exactly what was imported.
+
+### Choosing files
+
+**Import Material List...** and **Load Schematic...** open the addon's own file browser, built from
+the same widgets as the rest of the GUI. It has no native dependency, so it works on every desktop
+and on headless setups where the OS file dialog (`tinyfd`) returns nothing — which is what used to
+make loading a file look broken. The browser starts in `<gamedir>/logaddon/schematicdropper`, pages
+a directory of any size, filters to the relevant extensions, and has **Up** and **Data Folder**
+buttons. The typed-path buttons (**Import Material Path**, **Load Path**) and the `.log import` /
+`.log schematic load` commands remain for scripted use.
 
 ### Automatic Creative acquisition
 
@@ -227,6 +243,27 @@ The Navigation settings group exposes the path-manager options — `walk-on-wate
 bot agree on how the player may move; they have no effect with the built-in walker. Movement is never teleported or otherwise faked: success requires the player's
 actual position to be within the arrival tolerance.
 
+## Chat intelligence modules
+
+Five modules extend the chat toolkit. They share the same output formatter (`com.logvex.addon.common.Messages`)
+so every line reads the same way: a `[Log]` prefix, sentence case, readable numbers and proper
+pluralisation.
+
+| Module | What it does |
+| --- | --- |
+| `chat-filter` | Ordered hide/allow rules. The first matching rule wins, so a specific `ALLOW` can punch a hole in a broad `HIDE`. A matched message is cancelled in the chat mixin, so it is removed before it reaches the chat HUD, the recorder or the log file. |
+| `chat-digest` | Summarises the last N messages: totals per message type, unique players, joins/leaves/deaths and the most active players. Run it on demand (`.log digest`) or on a timer. Optionally forwards each digest to the webhook. |
+| `session-timeline` | A bounded timeline of milestones the client can actually observe: session start/end, joins, leaves, deaths and keyword hits. Browsable in a GUI (`.log timeline`). |
+| `webhook-monitor` | Watches the shared webhook queue and reports its health. Keeps a bounded delivery history, warns in chat when a delivery fails and can note a recovery. The URL is never stored or shown — only the host. |
+| `player-notes` | Your own notes about players, with the observed activity shown beside each note. A note is always explicit user input; the addon never infers one. |
+
+### Chat filter rules
+
+A rule is one line of `pattern;sender=NAME;type=TYPE;action=hide|allow;case=true;whole=false;enabled=true`. Any part may
+be omitted: an empty pattern matches any text, an empty sender any player and a missing type any
+message type. `whole` matches whole words only. The settings page for `chat-filter` documents the
+format, and the default rule list hides `wts`/`wtb` while always allowing server announcements.
+
 ## Live Chat Relay
 
 - Buffers chat (player chat and, optionally, game messages).
@@ -267,6 +304,12 @@ ends with a **Close** button.
 - **HUD** rows toggle an element and open its own settings page.
 - Long pages scroll with the mouse wheel; the list is clipped to the screen so nothing runs off the
   bottom.
+
+The chat-intelligence modules open their own screens: **Session Timeline** (searchable, paged
+milestone list with per-kind counts), **Chat Digest** (per-type totals and the most active players)
+and **Player Notes** (add, filter and remove notes, with each player's observed activity shown
+beside the note, or an explicit "not observed" when the client has none). A **Webhook Status** HUD
+element shows delivery health, queue depth and, optionally, the last failure reason.
 
 Every value a module can be configured with is editable here: booleans are checkboxes, numbers are
 sliders, enums cycle on click, strings and string lists are text boxes, and colours have an R/G/B
@@ -313,6 +356,14 @@ The addon registers a `.log` command (alias `.la`). Run `.log help` for the list
 | `.log schematic [status]` | The current build state and progress. |
 | `.log schematic load <path>` | Loads a schematic from a path (no file dialog). |
 | `.log schematic <start\|pause\|resume\|stop>` | Controls a build. |
+| `.log digest` | Prints a summary of recent chat activity. |
+| `.log timeline [filter]` | Recent session milestones, optionally filtered. |
+| `.log filter [stats]` | Chat filter rule count, default action and how many messages were hidden. |
+| `.log filter reset` | Resets the filter counters. |
+| `.log notes [list]` | Lists saved player notes. |
+| `.log notes add <player> <text>` | Saves a note about a player. |
+| `.log notes remove <player>` | Removes a player's note. |
+| `.log notes search <filter>` | Searches notes by player or body. |
 
 Commands are registered through the addon's own `PostInit` hook, and are intercepted from the
 client's chat/command path by a mixin before vanilla handles them.
@@ -343,6 +394,13 @@ archive with in-memory doubles (no Minecraft runtime required):
 - `FileCheckpointStoreTest` — checkpoint round-trip, newest-first listing, corrupt-file recovery,
   deletion and path-name sanitisation.
 - `LegacyBlockIdTableTest` — legacy id/metadata resolution and honest refusal of unknown ids.
+- `ChatFilterTest` — the ordered rule set: first-match-wins, default action, player and message-type
+  matching, whole-word and case-sensitive modes, disabled rules, and the encode/decode round-trip
+  including forward compatibility with unknown keys.
+- `DigestAndTimelineTest` — digest counts, top-player ordering, pluralised lines and empty-state
+  handling; the bounded session timeline, newest-first reads, search and event formatting.
+- `NotesAndWebhookLogTest` — player-note store add/update/remove/search and its bound; the bounded
+  webhook delivery log, runtime capacity changes, and `hostOf` never returning a URL's secret path.
 - `ChatRelayCoreTest` — buffer concurrency, gzip round-trip, corruption detection, archive
   persistence, index rebuild, search, cleanup, deletion and payload safety.
 - `SettingsTest` — clamping, immutability, dependency visibility, declaration order, JSON
@@ -362,10 +420,13 @@ archive with in-memory doubles (no Minecraft runtime required):
 - The legacy (`.schematic`) id table covers the ids that appear in practice; anything outside it is
   reported as unresolved rather than guessed, and the item form of a legacy block is not always
   recoverable.
-- In-game behaviour (the acquisition/build screens, HUD and file picker) has not been verified in a
-  live Minecraft session from this environment; the core engines, the importer, the readers, the
-  checkpoint store and the legacy id table are covered by unit tests that use fakes and the real
-  1.21.1 registries.
+- In-game behaviour (the acquisition/build screens, the file browser, HUD and chat filter) has not
+  been verified in a live Minecraft session from this environment; the core engines, the importer,
+  the readers, the checkpoint store, the filter rules, the digest, the timeline and the notes store
+  are covered by unit tests that use fakes and the real 1.21.1 registries.
+- The chat filter cancels a message in `ChatHud.addMessage`. A server that sends the same message
+  through a path this mixin does not cover (for example a custom chat mod that renders its own
+  overlay) is outside its reach; the vanilla chat HUD is what it targets.
 - The bot uses Baritone only when the user has installed it (detected at runtime by reflection). The
   addon bundles no pathfinder of its own beyond the bounded fallback walker, and navigation quality
   with the fallback is limited — it walks in a straight line and stops when blocked rather than

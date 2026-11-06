@@ -733,15 +733,13 @@ public class SchematicDropperModule extends Module {
 
     /** Opens the file picker and loads the chosen schematic asynchronously. */
     public void loadSchematicFile() {
-        String path = chooseSchematicFile();
-        if (path == null) {
-            // The native dialog returns null both when the user cancels and when it cannot open at
-            // all (common on Linux and headless setups). Point at the reliable fallback rather than
-            // failing silently, which is what makes loading look broken.
-            info("No file chosen. If the dialog does not open, set \"schematic-file\" and press Load Path.");
-            return;
-        }
-        loadSchematicFrom(path);
+        // Use the built-in browser rather than the native tinyfd dialog: the native dialog returns
+        // null on some Linux desktops and headless setups, which made "Load Schematic" look broken.
+        ensureDataDirectory();
+        mc.setScreen(new com.logvex.addon.schematicdropper.gui.FileBrowserScreen(
+            dataDirectory(), "Select Schematic",
+            java.util.List.of(".schem", ".schematic", ".litematic"),
+            file -> loadSchematicFromPath(file.getAbsolutePath())));
     }
 
     /** Loads the schematic named by the {@code schematic-file} setting, for dialog-less setups. */
@@ -875,14 +873,6 @@ public class SchematicDropperModule extends Module {
         info(message);
     }
 
-    private String chooseSchematicFile() {
-        return com.logvex.addon.schematicdropper.mc.FileDialogs.openFile(
-            "Select schematic",
-            dataDirectory().getAbsolutePath(),
-            "*.schem", "*.schematic", "*.litematic"
-        );
-    }
-
     /** Routes the build controller's output through the module's chat formatting. */
     private final class BuildFeedback implements SchematicBuildController.Feedback {
         @Override
@@ -1007,14 +997,13 @@ public class SchematicDropperModule extends Module {
         return lastImportInvalid;
     }
 
-    /** Opens the native file picker and starts a progressive import of the chosen file. */
+    /** Opens the built-in file browser and starts a progressive import of the chosen file. */
     public void importMaterialFile() {
-        String path = chooseFile();
-        if (path == null) {
-            info("No file chosen. If the dialog does not open, set \"material-file\" and press Import Path.");
-            return;
-        }
-        importMaterialFromPath(path);
+        ensureDataDirectory();
+        mc.setScreen(new com.logvex.addon.schematicdropper.gui.FileBrowserScreen(
+            dataDirectory(), "Select Material List or Schematic",
+            java.util.List.of(".txt", ".md", ".csv", ".schem", ".schematic", ".litematic"),
+            file -> importMaterialFromPath(file.getAbsolutePath())));
     }
 
     /** Imports the material list named by the {@code material-file} setting, for dialog-less setups. */
@@ -1127,14 +1116,6 @@ public class SchematicDropperModule extends Module {
                 debug(lastImportName + " " + entry);
             }
         }
-    }
-
-    private String chooseFile() {
-        return com.logvex.addon.schematicdropper.mc.FileDialogs.openFile(
-            "Select material list or schematic",
-            dataDirectory().getAbsolutePath(),
-            "*.txt", "*.md", "*.csv", "*.schem", "*.schematic", "*.litematic"
-        );
     }
 
     private String shortReason(Exception e) {
