@@ -4,13 +4,13 @@ import com.logvex.addon.common.Messages;
 import com.logvex.addon.notify.NotificationModule;
 import com.logvex.addon.notify.core.Notification;
 import com.logvex.addon.notify.core.NotificationPriority;
-import meteordevelopment.meteorclient.gui.GuiThemes;
-import meteordevelopment.meteorclient.gui.WindowScreen;
-import meteordevelopment.meteorclient.gui.widgets.containers.WTable;
-import meteordevelopment.meteorclient.gui.widgets.containers.WVerticalList;
-import meteordevelopment.meteorclient.gui.widgets.input.WTextBox;
-import meteordevelopment.meteorclient.gui.widgets.pressable.WButton;
-import meteordevelopment.meteorclient.utils.render.color.Color;
+import com.logvex.addon.framework.gui.GuiThemes;
+import com.logvex.addon.framework.gui.WindowScreen;
+import com.logvex.addon.framework.gui.widgets.containers.WTable;
+import com.logvex.addon.framework.gui.widgets.containers.WVerticalList;
+import com.logvex.addon.framework.gui.widgets.input.WTextBox;
+import com.logvex.addon.framework.gui.widgets.pressable.WButton;
+import com.logvex.addon.framework.utils.render.color.Color;
 
 import java.util.List;
 

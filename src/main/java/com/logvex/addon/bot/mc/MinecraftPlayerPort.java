@@ -1,11 +1,11 @@
 package com.logvex.addon.bot.mc;
 
 import com.logvex.addon.bot.core.PlayerPort;
-import meteordevelopment.meteorclient.utils.player.PlayerUtils;
+import com.logvex.addon.framework.utils.player.PlayerUtils;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.world.GameMode;
 
-import static meteordevelopment.meteorclient.MeteorClient.mc;
+import static com.logvex.addon.framework.MeteorClient.mc;
 
 /** {@link PlayerPort} backed by the live client player. Read-only. */
 public final class MinecraftPlayerPort implements PlayerPort {

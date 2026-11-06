@@ -10,13 +10,13 @@ import com.logvex.addon.chatlog.modules.KeywordAlertsModule;
 import com.logvex.addon.chatlog.modules.PlayerActivityModule;
 import com.logvex.addon.chatlog.modules.SessionStatsModule;
 import com.mojang.logging.LogUtils;
-import meteordevelopment.meteorclient.MeteorClient;
-import meteordevelopment.meteorclient.addons.GithubRepo;
-import meteordevelopment.meteorclient.addons.MeteorAddon;
-import meteordevelopment.meteorclient.systems.hud.Hud;
-import meteordevelopment.meteorclient.systems.hud.HudGroup;
-import meteordevelopment.meteorclient.systems.modules.Category;
-import meteordevelopment.meteorclient.systems.modules.Modules;
+import com.logvex.addon.framework.MeteorClient;
+import com.logvex.addon.framework.addons.GithubRepo;
+import com.logvex.addon.framework.addons.MeteorAddon;
+import com.logvex.addon.framework.systems.hud.Hud;
+import com.logvex.addon.framework.systems.hud.HudGroup;
+import com.logvex.addon.framework.systems.modules.Category;
+import com.logvex.addon.framework.systems.modules.Modules;
 import org.slf4j.Logger;
 
 /**
@@ -62,21 +62,35 @@ public class LogAddon extends MeteorAddon {
     }
 
     /**
-     * Registers the {@code .log} command once Meteor's command dispatcher is up.
-     *
-     * <p>Meteor runs {@code onInitialize} before {@code Commands.init()}, so adding the command
-     * there would be wiped when the dispatcher is rebuilt. Declaring {@code Commands} as a
-     * dependency orders this after that init; without it the order is not defined.
+     * Runs the whole addon bootstrap: modules, HUD elements, the pathing backend and the command
+     * tree. Called once from the client entrypoint.
      */
-    @meteordevelopment.meteorclient.utils.PostInit(
-        dependencies = meteordevelopment.meteorclient.commands.Commands.class)
-    public static void registerCommands() {
-        meteordevelopment.meteorclient.commands.Commands.add(new com.logvex.addon.command.LogCommand());
+    public static void initialize() {
+        LogAddon addon = new LogAddon();
+        addon.onInitialize();
+        addon.onRegisterCategories();
+
+        com.logvex.addon.framework.pathing.PathManagers.init();
+        com.logvex.addon.framework.commands.Commands.init();
+
+        // Restore the saved configuration only after every module and HUD element exists.
+        com.logvex.addon.framework.systems.config.ConfigManager.get().load();
+    }
+
+    /** Releases every module's resources and flushes the configuration. */
+    public static void shutdown() {
+        com.logvex.addon.framework.systems.config.ConfigManager.get().save();
+        Modules.get().disableAll();
+    }
+
+    /** Persists the configuration when it has changed. Called periodically from the tick loop. */
+    public static void tick() {
+        com.logvex.addon.framework.systems.config.ConfigManager.get().saveIfDirty();
     }
 
     @Override
     public void onRegisterCategories() {
-        Modules.registerCategory(CATEGORY);
+        Modules.get().registerCategory(CATEGORY);
     }
 
     @Override

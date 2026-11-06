@@ -3,17 +3,17 @@ package com.logvex.addon.bot.gui;
 import com.logvex.addon.bot.BotModule;
 import com.logvex.addon.bot.core.BotMemory;
 import com.logvex.addon.common.Messages;
-import meteordevelopment.meteorclient.gui.GuiTheme;
-import meteordevelopment.meteorclient.gui.GuiThemes;
-import meteordevelopment.meteorclient.gui.WindowScreen;
-import meteordevelopment.meteorclient.gui.widgets.containers.WHorizontalList;
-import meteordevelopment.meteorclient.gui.widgets.containers.WTable;
-import meteordevelopment.meteorclient.gui.widgets.pressable.WButton;
-import meteordevelopment.meteorclient.utils.render.color.Color;
+import com.logvex.addon.framework.gui.GuiTheme;
+import com.logvex.addon.framework.gui.GuiThemes;
+import com.logvex.addon.framework.gui.WindowScreen;
+import com.logvex.addon.framework.gui.widgets.containers.WHorizontalList;
+import com.logvex.addon.framework.gui.widgets.containers.WTable;
+import com.logvex.addon.framework.gui.widgets.pressable.WButton;
+import com.logvex.addon.framework.utils.render.color.Color;
 
 import java.util.List;
 
-import static meteordevelopment.meteorclient.MeteorClient.mc;
+import static com.logvex.addon.framework.MeteorClient.mc;
 
 /**
  * Shows the bot's stored knowledge: waypoints, known places and past objectives.

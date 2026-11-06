@@ -4,8 +4,8 @@ import com.logvex.addon.schematicdropper.core.AcquisitionAction;
 import com.logvex.addon.schematicdropper.core.FailureType;
 import com.logvex.addon.schematicdropper.core.GivePlan;
 import com.logvex.addon.schematicdropper.core.PendingGive;
-import meteordevelopment.meteorclient.events.packets.PacketEvent;
-import meteordevelopment.orbit.EventHandler;
+import com.logvex.addon.framework.events.packets.PacketEvent;
+import com.logvex.addon.framework.orbit.EventHandler;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.network.packet.s2c.play.InventoryS2CPacket;
@@ -14,7 +14,7 @@ import net.minecraft.registry.Registries;
 import net.minecraft.screen.ScreenHandler;
 import net.minecraft.util.Identifier;
 
-import static meteordevelopment.meteorclient.MeteorClient.mc;
+import static com.logvex.addon.framework.MeteorClient.mc;
 
 /**
  * Performs real, server-synchronised Creative inventory gives.

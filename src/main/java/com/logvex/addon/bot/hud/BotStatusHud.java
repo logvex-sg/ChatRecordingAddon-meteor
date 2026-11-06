@@ -4,17 +4,17 @@ import com.logvex.addon.LogAddon;
 import com.logvex.addon.bot.BotModule;
 import com.logvex.addon.bot.core.BotEvent;
 import com.logvex.addon.bot.core.BotTask;
-import meteordevelopment.meteorclient.settings.BoolSetting;
-import meteordevelopment.meteorclient.settings.ColorSetting;
-import meteordevelopment.meteorclient.settings.DoubleSetting;
-import meteordevelopment.meteorclient.settings.Setting;
-import meteordevelopment.meteorclient.settings.SettingGroup;
-import meteordevelopment.meteorclient.systems.hud.HudElement;
-import meteordevelopment.meteorclient.systems.hud.HudElementInfo;
-import meteordevelopment.meteorclient.systems.hud.HudRenderer;
-import meteordevelopment.meteorclient.systems.modules.Modules;
-import meteordevelopment.meteorclient.utils.render.color.Color;
-import meteordevelopment.meteorclient.utils.render.color.SettingColor;
+import com.logvex.addon.framework.settings.BoolSetting;
+import com.logvex.addon.framework.settings.ColorSetting;
+import com.logvex.addon.framework.settings.DoubleSetting;
+import com.logvex.addon.framework.settings.Setting;
+import com.logvex.addon.framework.settings.SettingGroup;
+import com.logvex.addon.framework.systems.hud.HudElement;
+import com.logvex.addon.framework.systems.hud.HudElementInfo;
+import com.logvex.addon.framework.systems.hud.HudRenderer;
+import com.logvex.addon.framework.systems.modules.Modules;
+import com.logvex.addon.framework.utils.render.color.Color;
+import com.logvex.addon.framework.utils.render.color.SettingColor;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -75,34 +75,16 @@ public class BotStatusHud extends HudElement {
 
     /** Adds the element to the HUD if it is not already present. */
     public static void enable() {
-        var hud = meteordevelopment.meteorclient.systems.hud.Hud.get();
-        BotStatusHud existing = find(hud);
-        if (existing != null) {
-            if (!existing.isActive()) existing.toggle();
-            instance = existing;
-            return;
-        }
+        var hud = com.logvex.addon.framework.systems.hud.Hud.get();
         hud.add(INFO, 4, 260);
-        instance = find(hud);
+        instance = (BotStatusHud) hud.instance(INFO);
     }
 
     /** Removes the element from the HUD. */
     public static void disable() {
-        if (instance != null) {
-            instance.remove();
-            instance = null;
-            return;
-        }
-        var hud = meteordevelopment.meteorclient.systems.hud.Hud.get();
-        BotStatusHud existing = find(hud);
-        if (existing != null) existing.remove();
-    }
-
-    private static BotStatusHud find(meteordevelopment.meteorclient.systems.hud.Hud hud) {
-        for (var element : hud) {
-            if (element instanceof BotStatusHud found) return found;
-        }
-        return null;
+        var hud = com.logvex.addon.framework.systems.hud.Hud.get();
+        hud.remove(hud.instance(INFO));
+        instance = null;
     }
 
     private double getScale() {

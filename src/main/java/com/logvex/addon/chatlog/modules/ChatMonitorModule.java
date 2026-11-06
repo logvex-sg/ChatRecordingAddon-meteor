@@ -4,18 +4,18 @@ import com.logvex.addon.LogAddon;
 import com.logvex.addon.chatlog.core.ChatEntry;
 import com.logvex.addon.chatlog.core.MessageType;
 import com.logvex.addon.chatlog.mc.LogService;
-import meteordevelopment.meteorclient.events.world.TickEvent;
-import meteordevelopment.meteorclient.gui.GuiTheme;
-import meteordevelopment.meteorclient.gui.widgets.WWidget;
-import meteordevelopment.meteorclient.gui.widgets.containers.WVerticalList;
-import meteordevelopment.meteorclient.gui.widgets.pressable.WButton;
-import meteordevelopment.meteorclient.settings.BoolSetting;
-import meteordevelopment.meteorclient.settings.IntSetting;
-import meteordevelopment.meteorclient.settings.Setting;
-import meteordevelopment.meteorclient.settings.SettingGroup;
-import meteordevelopment.meteorclient.settings.StringListSetting;
-import meteordevelopment.meteorclient.systems.modules.Module;
-import meteordevelopment.orbit.EventHandler;
+import com.logvex.addon.framework.events.world.TickEvent;
+import com.logvex.addon.framework.gui.GuiTheme;
+import com.logvex.addon.framework.gui.widgets.WWidget;
+import com.logvex.addon.framework.gui.widgets.containers.WVerticalList;
+import com.logvex.addon.framework.gui.widgets.pressable.WButton;
+import com.logvex.addon.framework.settings.BoolSetting;
+import com.logvex.addon.framework.settings.IntSetting;
+import com.logvex.addon.framework.settings.Setting;
+import com.logvex.addon.framework.settings.SettingGroup;
+import com.logvex.addon.framework.settings.StringListSetting;
+import com.logvex.addon.framework.systems.modules.Module;
+import com.logvex.addon.framework.orbit.EventHandler;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -190,7 +190,7 @@ public class ChatMonitorModule extends Module {
         WVerticalList list = theme.verticalList();
         WButton open = list.add(theme.button("Open Live Logs")).expandX().widget();
         open.action = () -> {
-            ChatLoggerModule logger = meteordevelopment.meteorclient.systems.modules.Modules.get()
+            ChatLoggerModule logger = com.logvex.addon.framework.systems.modules.Modules.get()
                 .get(ChatLoggerModule.class);
             if (logger != null) mc.setScreen(new com.logvex.addon.chatlog.gui.LogDashboardScreen(logger, 1));
         };

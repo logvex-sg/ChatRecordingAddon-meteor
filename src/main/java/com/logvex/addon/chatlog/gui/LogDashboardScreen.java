@@ -14,13 +14,13 @@ import com.logvex.addon.chatlog.modules.ChatMonitorModule;
 import com.logvex.addon.chatlog.modules.KeywordAlertsModule;
 import com.logvex.addon.chatlog.modules.PlayerActivityModule;
 import com.logvex.addon.chatlog.modules.SessionStatsModule;
-import meteordevelopment.meteorclient.gui.GuiThemes;
-import meteordevelopment.meteorclient.gui.WindowScreen;
-import meteordevelopment.meteorclient.gui.widgets.containers.WTable;
-import meteordevelopment.meteorclient.gui.widgets.containers.WVerticalList;
-import meteordevelopment.meteorclient.gui.widgets.pressable.WButton;
-import meteordevelopment.meteorclient.gui.widgets.input.WTextBox;
-import meteordevelopment.meteorclient.systems.modules.Modules;
+import com.logvex.addon.framework.gui.GuiThemes;
+import com.logvex.addon.framework.gui.WindowScreen;
+import com.logvex.addon.framework.gui.widgets.containers.WTable;
+import com.logvex.addon.framework.gui.widgets.containers.WVerticalList;
+import com.logvex.addon.framework.gui.widgets.pressable.WButton;
+import com.logvex.addon.framework.gui.widgets.input.WTextBox;
+import com.logvex.addon.framework.systems.modules.Modules;
 
 import java.util.EnumSet;
 import java.util.List;
@@ -364,7 +364,7 @@ public class LogDashboardScreen extends WindowScreen {
 
     // ------------------------------------------------------------------ helpers
 
-    private static meteordevelopment.meteorclient.utils.render.color.Color typeColor(ChatEntry entry) {
+    private static com.logvex.addon.framework.utils.render.color.Color typeColor(ChatEntry entry) {
         return switch (entry.type()) {
             case PUBLIC_CHAT, PLAYER_MESSAGE -> GuiKit.ACCENT;
             case JOIN -> GuiKit.GOOD;

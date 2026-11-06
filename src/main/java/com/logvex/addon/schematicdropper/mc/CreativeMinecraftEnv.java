@@ -12,7 +12,7 @@ import net.minecraft.world.GameMode;
 import java.util.ArrayList;
 import java.util.List;
 
-import static meteordevelopment.meteorclient.MeteorClient.mc;
+import static com.logvex.addon.framework.MeteorClient.mc;
 
 /**
  * Reads the live client for the acquisition workflow: creative state, held quantities and the

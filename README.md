@@ -1,6 +1,11 @@
-# Logvex Addon (Meteor Client)
+# Logvex Addon
 
-A Meteor Client addon for Minecraft 1.21.1.
+A standalone Fabric addon for Minecraft 1.21.1.
+
+It runs on Fabric Loader alone: the event bus, HUD system, module registry, GUI kit, command
+dispatcher and mixins all live inside the addon (`com.logvex.addon.framework`), so **Meteor Client
+is not required**. Baritone is used for navigation only when it happens to be installed, and is
+detected at runtime rather than compiled against.
 
 **Chat toolkit** — `chat-logger` (records chat to compressed, searchable logs),
 `chat-monitor` (live feed with filters and highlighting), `keyword-alerts` (keyword alerts with
@@ -14,7 +19,11 @@ block by block into the world with verified placements and resumable checkpoints
 **Notifications** — `notifications` collects events from the other modules into one searchable
 history with a HUD and a GUI, and can echo them to chat and play a sound.
 
-**Commands** — a `.log` (alias `.la`) command tree exposes status, module list, session
+**GUI** — Right Shift (or `.log gui`) opens the addon window: every module and HUD element with a
+toggle, a search box and a settings page. Module settings are grouped and searchable, and every
+value is persisted to `<gamedir>/logaddon/config.json`.
+
+**Commands** — a `.log` (alias `.la`) command tree exposes status, the module list, session
 statistics, notifications, the automation task queue, waypoints and schematic control from chat.
 
 ## Building
@@ -23,8 +32,8 @@ statistics, notifications, the automation task queue, waypoints and schematic co
 ./gradlew clean test build
 ```
 
-The jar is written to `build/libs/log-addon-5.0.0.jar`. Drop it into `.minecraft/mods`
-alongside Meteor Client 0.5.8.
+The jar is written to `build/libs/log-addon-5.0.0.jar`. Drop it into `.minecraft/mods`. No other
+mod is required; Baritone is optional and only affects bot navigation.
 
 ### Java 21 is required for the Gradle daemon
 
@@ -192,31 +201,30 @@ block. The pipeline is:
 `RotationMath` is pure maths (no Minecraft types) so it is unit tested directly. Yaw is computed
 from the horizontal direction and pitch from the vertical offset; the result is normalised and
 clamped, and invalid (non-finite) targets are rejected before any rotation is applied. Rotation
-is applied through Meteor's `Rotations` helper, which restores the client's own rotation right
-after the movement packet — so the port keeps its own interpolated state instead of reading
+is applied through the addon's own `Rotations` helper, which sends a look packet and then restores
+the client's own rotation — so the port keeps its own interpolated state instead of reading
 `player.getYaw()`.
 
 ## Autonomous bot
 
 The `auto-bot` module runs a Minecraft-free planning core (`com.logvex.addon.bot.core`) behind a
-thin Meteor shell (`BotModule` plus the `bot.mc` adapters). Objectives are turned into tasks,
+thin Minecraft shell (`BotModule` plus the `bot.mc` adapters). Objectives are turned into tasks,
 tasks run through executors (navigate, gather, craft, build, …) one per tick, and every action is
 confirmed from the world or the server before it is treated as done.
 
 ### Navigation and Baritone
 
-Navigation goes through Meteor's own path-manager abstraction (`PathManagers`), so **no separate
-Baritone mod jar is bundled or required**. When Baritone (or Voyager) is installed, Meteor selects
-it automatically and the bot drives it via `IPathManager.moveTo(...)`; when neither is present,
-Meteor's path manager is the `none` backend and the bot falls back to a bounded built-in walker
+Navigation goes through the addon's own path-manager abstraction (`PathManagers`), so **no separate
+Baritone mod jar is bundled or required**. When Baritone is installed, the addon detects it at
+runtime (reflection only) and drives it via `IPathManager.moveTo(...)`; when it is not present,
+the path manager is the `none` backend and the bot falls back to a bounded built-in walker
 that walks toward the target and gives up when it stops making progress. The active backend is
 shown on the bot dashboard (`Navigation: Baritone` / `built-in walker`) and, optionally, in the
 HUD (`show-navigation`).
 
-The Navigation settings group exposes Meteor's path-manager options — `walk-on-water`,
-`walk-on-lava`, `path-step` and `path-no-fall`. These are written into Meteor's own path-manager
-settings, so Baritone and the bot agree on how the player may move; they have no effect with the
-built-in walker. Movement is never teleported or otherwise faked: success requires the player's
+The Navigation settings group exposes the path-manager options — `walk-on-water`, `walk-on-lava`,
+`path-step` and `path-no-fall`. These are written into Baritone's settings, so Baritone and the
+bot agree on how the player may move; they have no effect with the built-in walker. Movement is never teleported or otherwise faked: success requires the player's
 actual position to be within the arrival tolerance.
 
 ## Live Chat Relay
@@ -247,12 +255,49 @@ the total uncompressed size, the report count and the space saved.
 Webhook URLs are treated as secrets: they are never written into a report, never included in
 error messages, and the Discord payload explicitly disables mentions.
 
+## GUI
+
+Press **Right Shift** in-game (or run `.log gui`) to open the addon window. It lists every module
+grouped by category with an on/off toggle and a **Settings** button, then the HUD elements, and
+ends with a **Close** button.
+
+- **Search** filters the module list by name, title or description.
+- **Settings** opens a page with the module's own controls first, then every setting grouped exactly
+  as the module declares it. A second search box filters the settings on that page.
+- **HUD** rows toggle an element and open its own settings page.
+- Long pages scroll with the mouse wheel; the list is clipped to the screen so nothing runs off the
+  bottom.
+
+Every value a module can be configured with is editable here: booleans are checkboxes, numbers are
+sliders, enums cycle on click, strings and string lists are text boxes, and colours have an R/G/B
+slider each. A value that a module declares as dependent is hidden until its parent is on.
+
+## Configuration
+
+All settings live in one file:
+
+```
+<gamedir>/logaddon/config.json
+```
+
+It holds each module's active state and settings, each HUD element's active state, position and
+settings, and the addon-wide prefix. It is written when a value changes, on shutdown, and whenever
+the client stops.
+
+- Writes are **atomic** (temp file + move) and serialised on one lock, so a crash mid-save cannot
+  leave a half-written config.
+- Reads are **tolerant**: a missing, truncated or type-mismatched value is skipped, so a stale or
+  damaged file never resets the settings that are still valid and never stops the addon loading.
+- Keys this build does not understand are **preserved** on save, so a config written by a newer
+  build is not silently truncated.
+
 ## Commands
 
 The addon registers a `.log` command (alias `.la`). Run `.log help` for the list.
 
 | Command | Effect |
 | --- | --- |
+| `.log gui` | Opens the addon window (same as Right Shift). |
 | `.log status` | Chat logging state, automation state and notification counters. |
 | `.log modules` | Every Log Addon module with its on/off state and description. |
 | `.log stats` | Session statistics: messages, players, joins/leaves, deaths, keyword alerts. |
@@ -268,8 +313,8 @@ The addon registers a `.log` command (alias `.la`). Run `.log help` for the list
 | `.log schematic load <path>` | Loads a schematic from a path (no file dialog). |
 | `.log schematic <start\|pause\|resume\|stop>` | Controls a build. |
 
-Commands are registered through a Meteor `PostInit` hook, because Meteor initialises its command
-dispatcher after addon `onInitialize`.
+Commands are registered through the addon's own `PostInit` hook, and are intercepted from the
+client's chat/command path by a mixin before vanilla handles them.
 
 ## Testing
 
@@ -299,6 +344,10 @@ archive with in-memory doubles (no Minecraft runtime required):
 - `LegacyBlockIdTableTest` — legacy id/metadata resolution and honest refusal of unknown ids.
 - `ChatRelayCoreTest` — buffer concurrency, gzip round-trip, corruption detection, archive
   persistence, index rebuild, search, cleanup, deletion and payload safety.
+- `SettingsTest` — clamping, immutability, dependency visibility, declaration order, JSON
+  round-trip and rejection of an invalid stored value.
+- `ConfigManagerTest` — save/load round-trip, missing and corrupt files, unknown-key preservation
+  and the dirty flag, all against a real temp file.
 
 ## Known limitations
 
@@ -306,8 +355,8 @@ archive with in-memory doubles (no Minecraft runtime required):
   load rather than blocking; the list is never truncated.
 - Creative acquisition needs genuine Creative mode with server-side permission. On a server that
   refuses creative inventory changes the module reports that instead of faking items.
-- Schematic building uses Meteor's `BlockUtils.place` (rotate, select the item, click a face,
-  restore), so it is bound by normal survival-style placement rules: the player must be in range
+- Schematic building uses the addon's own `BlockUtils.place` (rotate, select the item, click a
+  face, restore), so it is bound by normal survival-style placement rules: the player must be in range
   and a support face must exist. It does not teleport, fly or bypass reach limits.
 - The legacy (`.schematic`) id table covers the ids that appear in practice; anything outside it is
   reported as unresolved rather than guessed, and the item form of a legacy block is not always
@@ -316,7 +365,7 @@ archive with in-memory doubles (no Minecraft runtime required):
   live Minecraft session from this environment; the core engines, the importer, the readers, the
   checkpoint store and the legacy id table are covered by unit tests that use fakes and the real
   1.21.1 registries.
-- The bot uses Baritone only when the user has installed it (Meteor detects it automatically). The
+- The bot uses Baritone only when the user has installed it (detected at runtime by reflection). The
   addon bundles no pathfinder of its own beyond the bounded fallback walker, and navigation quality
   with the fallback is limited — it walks in a straight line and stops when blocked rather than
   solving complex terrain.

@@ -1,0 +1,17 @@
+{
+  "required": true,
+  "package": "com.logvex.addon.framework.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "ChatHudMixin",
+    "ClientConnectionMixin",
+    "ClientPlayNetworkHandlerCommandMixin",
+    "ClientPlayNetworkHandlerMixin",
+    "InGameHudMixin",
+    "KeyboardMixin",
+    "MinecraftClientMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

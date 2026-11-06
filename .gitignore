@@ -7,3 +7,4 @@ out/
 .vscode/
 .openhands/
 .agent_tmp/
+logs/

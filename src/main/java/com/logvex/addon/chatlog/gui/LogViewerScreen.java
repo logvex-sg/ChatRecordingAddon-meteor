@@ -4,12 +4,12 @@ import com.logvex.addon.chatlog.core.ChatEntry;
 import com.logvex.addon.chatlog.core.LogQuery;
 import com.logvex.addon.chatlog.core.ReportFormatting;
 import com.logvex.addon.chatlog.mc.LogStorageService;
-import meteordevelopment.meteorclient.gui.GuiTheme;
-import meteordevelopment.meteorclient.gui.GuiThemes;
-import meteordevelopment.meteorclient.gui.WindowScreen;
-import meteordevelopment.meteorclient.gui.widgets.containers.WTable;
-import meteordevelopment.meteorclient.gui.widgets.containers.WVerticalList;
-import meteordevelopment.meteorclient.gui.widgets.pressable.WButton;
+import com.logvex.addon.framework.gui.GuiTheme;
+import com.logvex.addon.framework.gui.GuiThemes;
+import com.logvex.addon.framework.gui.WindowScreen;
+import com.logvex.addon.framework.gui.widgets.containers.WTable;
+import com.logvex.addon.framework.gui.widgets.containers.WVerticalList;
+import com.logvex.addon.framework.gui.widgets.pressable.WButton;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -112,7 +112,7 @@ public class LogViewerScreen extends WindowScreen {
         }
     }
 
-    private static meteordevelopment.meteorclient.utils.render.color.Color typeColor(ChatEntry entry) {
+    private static com.logvex.addon.framework.utils.render.color.Color typeColor(ChatEntry entry) {
         return switch (entry.type()) {
             case PUBLIC_CHAT, PLAYER_MESSAGE -> GuiKit.ACCENT;
             case JOIN -> GuiKit.GOOD;
