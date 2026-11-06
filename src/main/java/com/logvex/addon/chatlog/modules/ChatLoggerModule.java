@@ -340,6 +340,21 @@ public class ChatLoggerModule extends Module {
         return reportBuffer.size();
     }
 
+    /** The configured webhook URL, or an empty string. Never log or display this value. */
+    public String webhookUrl() {
+        return webhookUrl.get() == null ? "" : webhookUrl.get();
+    }
+
+    /** The configured webhook display name. */
+    public String webhookUsername() {
+        return webhookUsername.get() == null ? "" : webhookUsername.get();
+    }
+
+    /** The webhook delivery queue shared by every reporting module. */
+    public com.logvex.addon.chatlog.core.WebhookQueue webhookQueue() {
+        return service.webhook();
+    }
+
     @Override
     public String getInfoString() {
         LogStorageService storage = service.storage();

@@ -39,4 +39,9 @@ final class LogCommands {
     static List<Module> addonModules() {
         return Modules.get().getGroup(LogAddon.CATEGORY);
     }
+
+    /** The live module registry, for commands that resolve a module by type. */
+    static Modules modules() {
+        return Modules.get();
+    }
 }

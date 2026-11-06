@@ -190,6 +190,62 @@ public class LogCommand extends Command {
                 return SINGLE_SUCCESS;
             }))
         );
+
+        builder.then(literal("digest").executes(context -> {
+            digest();
+            return SINGLE_SUCCESS;
+        }));
+
+        builder.then(literal("timeline")
+            .executes(context -> {
+                timeline("");
+                return SINGLE_SUCCESS;
+            })
+            .then(argument("filter", StringArgumentType.greedyString()).executes(context -> {
+                timeline(StringArgumentType.getString(context, "filter"));
+                return SINGLE_SUCCESS;
+            }))
+        );
+
+        builder.then(literal("filter")
+            .executes(context -> {
+                filterStatus();
+                return SINGLE_SUCCESS;
+            })
+            .then(literal("stats").executes(context -> {
+                filterStatus();
+                return SINGLE_SUCCESS;
+            }))
+            .then(literal("reset").executes(context -> {
+                filterReset();
+                return SINGLE_SUCCESS;
+            }))
+        );
+
+        builder.then(literal("notes")
+            .executes(context -> {
+                notes("");
+                return SINGLE_SUCCESS;
+            })
+            .then(literal("add").then(argument("player", StringArgumentType.word())
+                .then(argument("text", StringArgumentType.greedyString()).executes(context -> {
+                    notesAdd(StringArgumentType.getString(context, "player"),
+                        StringArgumentType.getString(context, "text"));
+                    return SINGLE_SUCCESS;
+                }))))
+            .then(literal("remove").then(argument("player", StringArgumentType.word()).executes(context -> {
+                notesRemove(StringArgumentType.getString(context, "player"));
+                return SINGLE_SUCCESS;
+            })))
+            .then(literal("list").executes(context -> {
+                notes("");
+                return SINGLE_SUCCESS;
+            }))
+            .then(literal("search").then(argument("filter", StringArgumentType.greedyString()).executes(context -> {
+                notes(StringArgumentType.getString(context, "filter"));
+                return SINGLE_SUCCESS;
+            })))
+        );
     }
 
     // ------------------------------------------------------------------ sections
@@ -207,6 +263,10 @@ public class LogCommand extends Command {
         info("  (highlight).log waypoints [list|add <name>](default) - bot waypoints.");
         info("  (highlight).log import <file>(default) - import a material list.");
         info("  (highlight).log schematic [status|load <path>|start|pause|resume|stop](default).");
+        info("  (highlight).log digest(default) - summarise recent chat activity.");
+        info("  (highlight).log timeline [filter](default) - recent session milestones.");
+        info("  (highlight).log filter [stats|reset](default) - chat filter status.");
+        info("  (highlight).log notes [list|add <player> <text>|remove <player>|search <filter>](default).");
     }
 
     private void status() {
@@ -448,6 +508,88 @@ public class LogCommand extends Command {
         net.minecraft.client.MinecraftClient client = net.minecraft.client.MinecraftClient.getInstance();
         client.setScreen(new com.logvex.addon.gui.ClickGuiScreen());
         info("Opened the Log Addon window.");
+    }
+
+    private void digest() {
+        com.logvex.addon.chatlog.modules.ChatDigestModule module =
+            LogCommands.modules().get(com.logvex.addon.chatlog.modules.ChatDigestModule.class);
+        if (module == null) {
+            error("The chat digest module is not available.");
+            return;
+        }
+        module.digest(true);
+    }
+
+    private void timeline(String filter) {
+        com.logvex.addon.chatlog.core.SessionTimeline timeline =
+            com.logvex.addon.chatlog.mc.SessionTimelineService.get().timeline();
+        var events = filter.isBlank() ? timeline.recent(15) : timeline.search(filter);
+        if (events.isEmpty()) {
+            info(filter.isBlank() ? "No session milestones yet." : "No milestones match that filter.");
+            return;
+        }
+        info("Session milestones: %d", events.size());
+        int shown = Math.min(events.size(), 15);
+        for (int i = 0; i < shown; i++) {
+            var event = events.get(i);
+            info("  %s - %s", com.logvex.addon.common.Messages.clock(event.timestamp()), event.line());
+        }
+        if (events.size() > shown) info("  ... and %d more.", events.size() - shown);
+    }
+
+    private void filterStatus() {
+        com.logvex.addon.chatlog.mc.ChatFilterService service =
+            com.logvex.addon.chatlog.mc.ChatFilterService.get();
+        com.logvex.addon.chatlog.core.ChatFilterRuleSet rules = service.rules();
+        if (rules.isEmpty()) {
+            info("Chat filter: no rules configured (nothing is hidden).");
+            return;
+        }
+        info("Chat filter: %d rules, default %s, %d messages hidden this session.",
+            rules.rules().size(), rules.defaultAction().name().toLowerCase(), service.hiddenCount());
+    }
+
+    private void filterReset() {
+        com.logvex.addon.chatlog.mc.ChatFilterService.get().resetStats();
+        info("Chat filter counters reset.");
+    }
+
+    private void notes(String filter) {
+        var module = LogCommands.modules().get(com.logvex.addon.chatlog.modules.PlayerNotesModule.class);
+        if (module == null) {
+            error("The player notes module is not available.");
+            return;
+        }
+        var notes = module.notes(filter);
+        if (notes.isEmpty()) {
+            info(filter.isBlank() ? "No player notes saved." : "No notes match that filter.");
+            return;
+        }
+        info("Player notes: %d", notes.size());
+        int shown = Math.min(notes.size(), 15);
+        for (int i = 0; i < shown; i++) {
+            var note = notes.get(i);
+            info("  %s: %s", note.player(), com.logvex.addon.common.Messages.truncate(note.text(), 80));
+        }
+        if (notes.size() > shown) info("  ... and %d more.", notes.size() - shown);
+    }
+
+    private void notesAdd(String player, String text) {
+        var module = LogCommands.modules().get(com.logvex.addon.chatlog.modules.PlayerNotesModule.class);
+        if (module == null) {
+            error("The player notes module is not available.");
+            return;
+        }
+        module.note(player, text);
+    }
+
+    private void notesRemove(String player) {
+        var module = LogCommands.modules().get(com.logvex.addon.chatlog.modules.PlayerNotesModule.class);
+        if (module == null) {
+            error("The player notes module is not available.");
+            return;
+        }
+        if (!module.removeNote(player)) warning("No note saved for %s.", player);
     }
 
     private void recording(boolean on) {
