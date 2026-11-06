@@ -63,9 +63,6 @@ import meteordevelopment.meteorclient.settings.StringSetting;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.util.Formatting;
-import org.lwjgl.PointerBuffer;
-import org.lwjgl.system.MemoryUtil;
-import org.lwjgl.util.tinyfd.TinyFileDialogs;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -879,22 +876,11 @@ public class SchematicDropperModule extends Module {
     }
 
     private String chooseSchematicFile() {
-        PointerBuffer filters = MemoryUtil.memAllocPointer(3);
-        filters.put(MemoryUtil.memUTF8("*.schem"));
-        filters.put(MemoryUtil.memUTF8("*.schematic"));
-        filters.put(MemoryUtil.memUTF8("*.litematic"));
-        filters.flip();
-        try {
-            return TinyFileDialogs.tinyfd_openFileDialog(
-                "Select schematic",
-                dataDirectory().getAbsolutePath(),
-                filters,
-                null,
-                false
-            );
-        } finally {
-            MemoryUtil.memFree(filters);
-        }
+        return com.logvex.addon.schematicdropper.mc.FileDialogs.openFile(
+            "Select schematic",
+            dataDirectory().getAbsolutePath(),
+            "*.schem", "*.schematic", "*.litematic"
+        );
     }
 
     /** Routes the build controller's output through the module's chat formatting. */
@@ -1144,25 +1130,11 @@ public class SchematicDropperModule extends Module {
     }
 
     private String chooseFile() {
-        PointerBuffer filters = MemoryUtil.memAllocPointer(6);
-        filters.put(MemoryUtil.memUTF8("*.txt"));
-        filters.put(MemoryUtil.memUTF8("*.md"));
-        filters.put(MemoryUtil.memUTF8("*.csv"));
-        filters.put(MemoryUtil.memUTF8("*.schem"));
-        filters.put(MemoryUtil.memUTF8("*.schematic"));
-        filters.put(MemoryUtil.memUTF8("*.litematic"));
-        filters.flip();
-        try {
-            return TinyFileDialogs.tinyfd_openFileDialog(
-                "Select material list or schematic",
-                dataDirectory().getAbsolutePath(),
-                filters,
-                null,
-                false
-            );
-        } finally {
-            MemoryUtil.memFree(filters);
-        }
+        return com.logvex.addon.schematicdropper.mc.FileDialogs.openFile(
+            "Select material list or schematic",
+            dataDirectory().getAbsolutePath(),
+            "*.txt", "*.md", "*.csv", "*.schem", "*.schematic", "*.litematic"
+        );
     }
 
     private String shortReason(Exception e) {

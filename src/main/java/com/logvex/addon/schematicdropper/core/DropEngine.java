@@ -41,6 +41,13 @@ public final class DropEngine {
     private String activeMaterial;
     private int activeSlot = -1;
 
+    /**
+     * A pause that arrived while a transfer was awaiting confirmation. It is honoured as soon as
+     * that transfer resolves, so the Pause button always takes effect instead of doing nothing
+     * whenever the run happened to be mid-confirmation.
+     */
+    private boolean pauseRequested;
+
     public DropEngine(EnvPort env, RotationPort rotation, ActionPort actions,
                       ProgressTracker tracker, EngineListener listener) {
         this.env = env;
@@ -92,11 +99,14 @@ public final class DropEngine {
 
     public void pause() {
         if (!tracker.state().isRunning()) return;
-        if (tracker.state() == State.WAITING_FOR_CONFIRMATION && pending != null) {
-            // Cannot safely abandon an in-flight transaction; let it resolve first.
+        if (pending != null) {
+            // Cannot safely abandon an in-flight transaction; let it resolve first. The request is
+            // remembered and applied in applyPendingPause once the transfer confirms or fails.
+            pauseRequested = true;
             listener.onFeedback("Finishing current confirmation before pausing...");
             return;
         }
+        pauseRequested = false;
         restoreRotationIfNeeded();
         transition(State.PAUSED);
         listener.onFeedback("Paused.");
@@ -104,13 +114,31 @@ public final class DropEngine {
 
     public void resume(long nowMs) {
         if (tracker.state() != State.PAUSED) return;
+        pauseRequested = false;
         lastActionMs = nowMs - config.operationDelayMs();
         transition(State.SCANNING);
         listener.onFeedback("Resumed.");
     }
 
+    /**
+     * Applies a pause that was requested while a transfer was in flight. Caller is inside the tick.
+     *
+     * <p>The check is "nothing in flight" rather than a specific state: a confirmed transfer moves
+     * the machine to {@code SELECTING}, not {@code SCANNING}, so matching only one state would drop
+     * the request and the pause button would appear to do nothing.
+     */
+    private void applyPendingPause() {
+        if (!pauseRequested) return;
+        if (pending != null || !tracker.state().isRunning()) return;
+        pauseRequested = false;
+        restoreRotationIfNeeded();
+        transition(State.PAUSED);
+        listener.onFeedback("Paused.");
+    }
+
     public void stop() {
         pending = null;
+        pauseRequested = false;
         actions.cancelPending();
         restoreRotationIfNeeded();
         activeMaterial = null;
@@ -146,6 +174,7 @@ public final class DropEngine {
     /** Discards run state on world change or disconnect without emitting completion. */
     public void onWorldChanged() {
         pending = null;
+        pauseRequested = false;
         actions.cancelPending();
         blocked.clear();
         retries = 0;
@@ -163,6 +192,10 @@ public final class DropEngine {
     public void tick(long nowMs) {
         State state = tracker.state();
         if (state == State.IDLE || state == State.PAUSED || state == State.COMPLETED) return;
+
+        // Honour a pause requested while a transfer was in flight, before any new work starts.
+        applyPendingPause();
+        if (tracker.state() == State.PAUSED) return;
 
         if (!env.canRun()) {
             if (state != State.WAITING_FOR_INVENTORY) {

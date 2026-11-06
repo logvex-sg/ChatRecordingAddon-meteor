@@ -33,6 +33,7 @@ public final class PlacementEngine {
     private final Set<BlockPos3> givenUp = new HashSet<>();
 
     private PendingPlacement pending;
+    private boolean pauseRequested;
     private PlacementRequest activeRequest;
     private long pendingSinceMs;
     private long lastActionMs;
@@ -150,23 +151,44 @@ public final class PlacementEngine {
 
     public void pause() {
         if (!state.isRunning()) return;
-        if (state == PlacementStateMachine.VERIFYING && pending != null) {
+        if (pending != null) {
+            // An in-flight placement cannot be abandoned safely. Remember the request and apply it
+            // in applyPendingPause once the placement resolves, so the button always pauses.
+            pauseRequested = true;
             listener.onFeedback("Finishing the current placement before pausing.");
             return;
         }
+        pauseRequested = false;
         transition(PlacementStateMachine.PAUSED);
         listener.onFeedback("Build paused.");
     }
 
     public void resume(long nowMs) {
         if (state != PlacementStateMachine.PAUSED) return;
+        pauseRequested = false;
         lastActionMs = nowMs - config.operationDelayMs();
         transition(PlacementStateMachine.SCANNING);
         listener.onFeedback("Build resumed.");
     }
 
+    /**
+     * Applies a pause requested while a placement was in flight. Caller is inside the tick.
+     *
+     * <p>The check is "nothing in flight" rather than a specific state, because a resolved placement
+     * moves the machine to {@code SCANNING} or {@code SELECTING}; matching one state only would drop
+     * the request and the pause button would appear to do nothing.
+     */
+    private void applyPendingPause() {
+        if (!pauseRequested) return;
+        if (pending != null || !state.isRunning()) return;
+        pauseRequested = false;
+        transition(PlacementStateMachine.PAUSED);
+        listener.onFeedback("Build paused.");
+    }
+
     public void stop() {
         pending = null;
+        pauseRequested = false;
         activeRequest = null;
         if (actions != null) actions.cancelPending();
         currentPos = null;
@@ -179,6 +201,7 @@ public final class PlacementEngine {
     /** Discards run state on a world change or disconnect without reporting completion. */
     public void onWorldChanged() {
         pending = null;
+        pauseRequested = false;
         activeRequest = null;
         if (actions != null) actions.cancelPending();
         currentPos = null;
@@ -247,6 +270,10 @@ public final class PlacementEngine {
             || state == PlacementStateMachine.COMPLETED || state == PlacementStateMachine.ERROR) {
             return;
         }
+
+        // Honour a pause requested while a placement was in flight, before any new work starts.
+        applyPendingPause();
+        if (state == PlacementStateMachine.PAUSED) return;
 
         if (!env.canRun()) {
             if (state != PlacementStateMachine.WAITING_FOR_MATERIAL) {

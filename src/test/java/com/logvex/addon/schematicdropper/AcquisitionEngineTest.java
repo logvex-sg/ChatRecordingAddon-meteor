@@ -305,6 +305,42 @@ class AcquisitionEngineTest {
     }
 
     @Test
+    @DisplayName("pause during an in-flight give is honoured once it resolves")
+    void pauseDuringGiveIsDeferred() {
+        Harness h = new Harness();
+        h.actions.useControllable = true;
+        h.plan(new Requirement("minecraft:stone", "Stone", 64));
+        h.start();
+
+        // Drive until the give has been issued and the engine is waiting on it.
+        h.runUntil(java.util.Set.of(AcquisitionState.VERIFYING), 10);
+        assertEquals(AcquisitionState.VERIFYING, h.state());
+
+        h.engine.pause();
+        assertEquals(AcquisitionState.VERIFYING, h.state(), "pause cannot abandon an in-flight give");
+
+        // The server confirms; the remembered pause must then take effect instead of the engine
+        // carrying on to the next item.
+        h.actions.controllable.confirm(64);
+        // The pause is applied at the top of the next tick, before any new work starts.
+        h.tick(10);
+        h.tick(10);
+
+        assertEquals(AcquisitionState.PAUSED, h.state(), "the deferred pause was applied");
+        assertEquals(64, h.env.countOf("minecraft:stone"), "the in-flight give was not abandoned");
+
+        // Nothing else happens while paused.
+        int issued = h.actions.issued.size();
+        h.run(10, 10);
+        assertEquals(AcquisitionState.PAUSED, h.state());
+        assertEquals(issued, h.actions.issued.size(), "no new gives while paused");
+
+        h.engine.resume(h.now);
+        h.run(4, 10);
+        assertEquals(AcquisitionState.COMPLETED, h.state());
+    }
+
+    @Test
     @DisplayName("stop returns to idle and cancels any pending give")
     void stopCancels() {
         Harness h = new Harness();
