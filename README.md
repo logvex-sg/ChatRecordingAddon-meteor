@@ -127,15 +127,31 @@ the Minecraft 1.21.1 item registry and anything unknown is reported as an invali
 chat, with the full list in the debug log). The imported list replaces the module's material list,
 so both the drop workflow and the acquisition workflow operate on exactly what was imported.
 
+### Import preview
+
+After a file is parsed the **Import Preview** screen opens (and can be reopened any time from the
+module's **Import Preview** button). It shows the material count, total item count, valid entries,
+duplicates merged and invalid entries, then the **first and last entries** so the range can be
+confirmed, and the complete ordered list with a filter box and paging for long lists. Nothing is
+acquired or dropped until **Start Acquisition** or **Start Drop Run** is pressed, so a bad import
+costs a click rather than a wrong build.
+
 ### Choosing files
 
 **Import Material List...** and **Load Schematic...** open the addon's own file browser, built from
 the same widgets as the rest of the GUI. It has no native dependency, so it works on every desktop
 and on headless setups where the OS file dialog (`tinyfd`) returns nothing — which is what used to
 make loading a file look broken. The browser starts in `<gamedir>/schematicdropper`, pages
-a directory of any size, filters to the relevant extensions, and has **Up** and **Data Folder**
-buttons. The typed-path buttons (**Import Material Path**, **Load Path**) and the `.log import` /
-`.log schematic load` commands remain for scripted use.
+a directory of any size, filters to the relevant extensions (including `.nbt` and `.dat`, which
+schematic exports often use), and has **Up** and **Data Folder** buttons. The typed-path buttons
+(**Import Material Path**, **Load Path**) and the `.log import` / `.log schematic load` commands
+remain for scripted use.
+
+A schematic is identified by its **content**, not only its extension. The extension is a hint; when
+it is missing or wrong the leading bytes and the parsed NBT decide the format (a litematic has a
+`Regions` compound, a Sponge/WorldEdit file has a `Palette` with `BlockData`/`Data`, an MCEdit file
+has a `Blocks` array with dimensions). A schematic that lost its extension, or carries a generic
+`.nbt`, therefore still loads instead of failing as an unsupported file type.
 
 ### Automatic Creative acquisition
 
@@ -371,16 +387,35 @@ segment rescued from a backup) is searchable again.
 
 ## GUI
 
-Press **Right Shift** in-game (or run `.log gui`) to open the addon window. It lists every module
-grouped by category with an on/off toggle and a **Settings** button, then the HUD elements, and
-ends with a **Close** button.
+Press **Right Shift** in-game (or run `.log gui`) to open the addon window. It is tabbed:
 
-- **Search** filters the module list by name, title or description.
-- **Settings** opens a page with the module's own controls first, then every setting grouped exactly
-  as the module declares it. A second search box filters the settings on that page.
-- **HUD** rows toggle an element and open its own settings page.
-- Long pages scroll with the mouse wheel; the list is clipped to the screen so nothing runs off the
-  bottom.
+- **Modules** — every module grouped by category, each with an on/off toggle and a **Settings**
+  button. The header shows how many modules are currently on, and each category heading shows how
+  many of its modules are on.
+- **HUD** — every HUD element with an on/off toggle and a **Settings** button, plus **Open HUD
+  Editor** and **Hide All**.
+- **Theme** — the colour scheme, the HUD text scale and the command prefix.
+- **About** — version, module and HUD counts, the config path, keys and links.
+
+**Search** filters the module or HUD list by name, title or description, and shows a clear empty
+state when nothing matches. Long pages scroll with the mouse wheel; the list is clipped to the
+screen so nothing runs off the bottom.
+
+**Settings** opens a page with the module's own controls first, then every setting grouped exactly
+as the module declares it. A second search box filters the settings on that page.
+
+### HUD editor
+
+**Open HUD Editor** (HUD tab) shows every active element at its real position and lets you drag it
+with the mouse, with arrow buttons for precise nudges and a **Hide** button per element. Positions
+are saved to the config, so an arrangement survives a restart.
+
+### Themes
+
+The **Theme** tab switches between built-in colour schemes — Dark, Light, Midnight, Rose, Forest and
+High Contrast. Applying one restyles every open screen on its next frame (the shared theme instance
+is updated in place), and the choice is saved in `config.json`, so the GUI opens in your scheme on
+the next launch.
 
 The chat-intelligence modules open their own screens: **Session Timeline** (searchable, paged
 milestone list with per-kind counts), **Chat Digest** (per-type totals and the most active players),

@@ -2,7 +2,7 @@ package com.logvex.addon.bot.core;
 
 /**
  * An immutable snapshot of every tunable the bot reads. The module builds one of these from its
- * Meteor settings each time the settings change, so the core never reaches back into Meteor and a
+ * the module's settings each time they change, so the core never reaches back into Minecraft and a
  * test can construct an exact configuration.
  */
 public record BotConfig(

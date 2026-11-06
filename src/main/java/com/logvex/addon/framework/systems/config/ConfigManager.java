@@ -5,7 +5,7 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.logvex.addon.LogAddon;
-import com.logvex.addon.framework.MeteorClient;
+import com.logvex.addon.framework.Addon;
 import com.logvex.addon.framework.settings.Setting;
 import com.logvex.addon.framework.systems.hud.Hud;
 import com.logvex.addon.framework.systems.hud.HudElement;
@@ -63,7 +63,7 @@ public final class ConfigManager {
 
     public Path file() {
         if (overridePath != null) return overridePath;
-        return MeteorClient.FOLDER().toPath().resolve("logaddon").resolve(FILE_NAME);
+        return Addon.FOLDER().toPath().resolve("logaddon").resolve(FILE_NAME);
     }
 
     /** Redirects persistence to {@code path}; intended for tests. */
@@ -151,6 +151,7 @@ public final class ConfigManager {
         JsonObject client = new JsonObject();
         client.addProperty("prefix", ClientConfig.get().prefix());
         client.addProperty("text-scale", Hud.get().textScale());
+        client.addProperty("theme-preset", ClientConfig.get().themePreset().name());
         root.add("client", client);
 
         // Re-attach keys this build does not understand so a newer config is not truncated.
@@ -223,6 +224,10 @@ public final class ConfigManager {
         if (client.has("text-scale")) {
             Hud.get().setTextScale(doubleOr(client, "text-scale", Hud.get().textScale()));
         }
+        // The theme is applied after load so the whole GUI starts in the saved colour scheme.
+        ClientConfig.get().setThemePreset(
+            com.logvex.addon.framework.gui.GuiThemePreset.parse(stringOr(client, "theme-preset", null)));
+        com.logvex.addon.framework.gui.GuiThemes.applyPreset(ClientConfig.get().themePreset());
     }
 
     private void applySettings(com.logvex.addon.framework.settings.Settings settings, JsonObject entry) {

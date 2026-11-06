@@ -1,6 +1,6 @@
 package com.logvex.addon.framework.mixin;
 
-import com.logvex.addon.framework.MeteorClient;
+import com.logvex.addon.framework.Addon;
 import com.logvex.addon.framework.events.game.GameJoinedEvent;
 import com.logvex.addon.framework.events.game.GameLeftEvent;
 import com.logvex.addon.framework.events.packets.PacketEvent;
@@ -25,7 +25,7 @@ public abstract class ClientPlayNetworkHandlerMixin {
     private void logaddon$onGameJoinTail(GameJoinS2CPacket packet, CallbackInfo info) {
         // A reconfiguration join replaces an existing world, which the addon must see as a leave
         // before the new join, or a session would never be closed.
-        if (logaddon$worldNotNull) MeteorClient.EVENT_BUS.post(new GameLeftEvent());
-        MeteorClient.EVENT_BUS.post(new GameJoinedEvent());
+        if (logaddon$worldNotNull) Addon.EVENT_BUS.post(new GameLeftEvent());
+        Addon.EVENT_BUS.post(new GameJoinedEvent());
     }
 }

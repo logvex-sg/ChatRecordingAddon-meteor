@@ -312,11 +312,11 @@ public final class LogStorageService {
 
     private void onClient(Runnable task) {
         if (task == null) return;
-        if (com.logvex.addon.framework.MeteorClient.mc == null) {
+        if (com.logvex.addon.framework.Addon.mc == null) {
             task.run();
             return;
         }
-        com.logvex.addon.framework.MeteorClient.mc.execute(task);
+        com.logvex.addon.framework.Addon.mc.execute(task);
     }
 
     private void fail(String what, Exception e) {

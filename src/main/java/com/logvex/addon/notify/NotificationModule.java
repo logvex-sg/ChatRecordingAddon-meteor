@@ -120,10 +120,9 @@ public class NotificationModule extends Module {
     /**
      * Shows or hides the notification HUD element.
      *
-     * <p>Meteor keeps its HUD element list package-private, so an addon cannot add or remove elements
-     * at runtime. Instead the element is added once and its own active flag is driven: that is the
-     * supported public API and gives the same "configurable visibility" result. The scan makes the
-     * call idempotent so repeated toggles never stack duplicate elements.
+     * <p>The element is added once and its own active flag is driven, so repeated toggles never
+     * stack duplicate elements. {@link com.logvex.addon.framework.systems.hud.Hud#toggle} is the
+     * single supported entry point, which keeps this idempotent.
      */
     private void setHudActive(boolean enabled) {
         com.logvex.addon.framework.systems.hud.Hud hud =

@@ -26,12 +26,12 @@ import net.minecraft.util.math.Vec3d;
 import java.util.ArrayList;
 import java.util.List;
 
-import static com.logvex.addon.framework.MeteorClient.mc;
+import static com.logvex.addon.framework.Addon.mc;
 
 /**
  * {@link ActionPorts} backed by the live client.
  *
- * <p>Mining and placing go through Meteor's helpers, which send the vanilla interaction; the result
+ * <p>Mining and placing go through the addon's helpers, which send the vanilla interaction; the result
  * is then confirmed from the world, never from the fact that a packet was sent. Crafting and
  * smelting move items with ordinary slot clicks and then trigger the vanilla recipe click, so the
  * server performs the craft and the client only mirrors it.

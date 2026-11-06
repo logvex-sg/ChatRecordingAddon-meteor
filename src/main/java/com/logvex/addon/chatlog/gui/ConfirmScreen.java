@@ -6,7 +6,7 @@ import com.logvex.addon.framework.gui.WindowScreen;
 import com.logvex.addon.framework.gui.widgets.containers.WTable;
 
 /**
- * A small modal confirmation used before destructive archive operations. Reuses Meteor's window
+ * A small modal confirmation used before destructive archive operations. Reuses the addon's window
  * chrome so it looks native.
  */
 public class ConfirmScreen extends WindowScreen {

@@ -14,10 +14,10 @@ import net.minecraft.registry.Registries;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 
-import static com.logvex.addon.framework.MeteorClient.mc;
+import static com.logvex.addon.framework.Addon.mc;
 
 /**
- * Performs real block placements through Meteor's {@link BlockUtils#place}, then confirms them from
+ * Performs real block placements through the addon's {@link BlockUtils#place}, then confirms them from
  * the world.
  *
  * <p>Nothing here trusts the click: {@code place} only sends the vanilla interaction (select the
@@ -63,7 +63,7 @@ public final class MinecraftPlacementAction implements PlacementAction {
         Pending pending = new Pending(request, pos);
         current = pending;
 
-        // Meteor rotates, swaps, clicks the neighbour and swaps back. A false result means it could
+        // The helper rotates, swaps, clicks the neighbour and swaps back. A false result means it could
         // not even find a face to click, which is a support problem rather than a rejection.
         boolean started = BlockUtils.place(pos, found, true, 50, false, true, true);
         if (!started) {

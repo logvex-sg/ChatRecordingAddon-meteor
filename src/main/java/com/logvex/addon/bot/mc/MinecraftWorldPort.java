@@ -19,12 +19,12 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static com.logvex.addon.framework.MeteorClient.mc;
+import static com.logvex.addon.framework.Addon.mc;
 
 /**
  * {@link WorldPort} backed by the live client world.
  *
- * <p>Block searches use Meteor's {@link BlockIterator}, which walks only loaded chunks around the
+ * <p>Block searches use the addon's {@link BlockIterator}, which walks only loaded chunks around the
  * player on the client tick and stops at a hard cap, so a large radius cannot freeze the game. Every
  * scan is bounded by {@code maxResults}; the bot never asks for an unbounded world scan.
  */

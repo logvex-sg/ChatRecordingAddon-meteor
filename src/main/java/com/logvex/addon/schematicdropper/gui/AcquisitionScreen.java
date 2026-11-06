@@ -20,7 +20,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 
-import static com.logvex.addon.framework.MeteorClient.mc;
+import static com.logvex.addon.framework.Addon.mc;
 
 /**
  * Live view of the Creative acquisition workflow.

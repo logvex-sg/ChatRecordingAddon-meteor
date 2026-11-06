@@ -29,7 +29,7 @@ import com.logvex.addon.notify.core.NotificationType;
 import com.logvex.addon.notify.mc.NotificationService;
 import com.logvex.addon.schematicdropper.SchematicBuildController;
 import com.logvex.addon.schematicdropper.SchematicDropperModule;
-import com.logvex.addon.framework.MeteorClient;
+import com.logvex.addon.framework.Addon;
 import com.logvex.addon.framework.events.game.GameJoinedEvent;
 import com.logvex.addon.framework.events.game.GameLeftEvent;
 import com.logvex.addon.framework.events.world.TickEvent;
@@ -54,7 +54,7 @@ import java.nio.file.Path;
 /**
  * The autonomous bot.
  *
- * <p>This module is the Minecraft/Meteor shell around {@link BotController}. It owns the settings,
+ * <p>This module is the Minecraft-facing shell around {@link BotController}. It owns the settings,
  * the event subscriptions, the live ports and the memory store; every decision lives in the
  * Minecraft-free core. The controller is advanced once per client tick and performs no blocking
  * work, so the game stays responsive while the bot runs.
@@ -168,8 +168,8 @@ public class BotModule extends Module {
         .build()
     );
 
-    // These mirror Meteor's path-manager settings. They only take effect when Baritone (or Voyager)
-    // is installed; with the built-in walker they are ignored. Meteor owns the real settings object,
+    // These mirror the path-manager settings. They only take effect when Baritone (or Voyager)
+    // is installed; with the built-in walker they are ignored. The module owns the real settings object,
     // so the bot writes the user's choice into it rather than inventing a parallel configuration.
     private final Setting<Boolean> walkOnWater = sgNavigation.add(new BoolSetting.Builder()
         .name("walk-on-water")
@@ -324,7 +324,7 @@ public class BotModule extends Module {
 
     @Override
     public void onActivate() {
-        // Meteor subscribes the module itself (autoSubscribe), so no manual subscription here.
+        // The module subscribes itself (autoSubscribe), so no manual subscription here.
         reloadMemory();
         applySettings();
         controller.setContext(buildContext());
@@ -395,7 +395,7 @@ public class BotModule extends Module {
         controller.setAutoStart(autoStart.get());
         worldPort.setMaxResults(config.maxScanResults());
         navPort.setMaxDistance(config.maxTravelDistance());
-        // Push the user's navigation choices into Meteor's path manager so Baritone/Voyager and the
+        // Push the user's navigation choices into the path manager so Baritone/Voyager and the
         // built-in walker agree on how the bot may move. No-op when no path manager is installed.
         MinecraftNavPort.applyPathSettings(
             walkOnWater.get(), walkOnLava.get(), pathStep.get(), pathNoFall.get());

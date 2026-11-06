@@ -15,7 +15,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 /**
  * Keyboard entry points for the addon.
  *
- * <p>Right Shift opens the ClickGUI while a world is loaded, matching the muscle memory Meteor users
+ * <p>Right Shift opens the main window while a world is loaded, matching the muscle memory users of
  * already have. Key presses are also routed to the focused widget of a {@link WidgetScreen}, because
  * vanilla's {@code Screen.keyPressed} never reaches a text box on its own.
  */

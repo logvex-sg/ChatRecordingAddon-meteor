@@ -5,7 +5,7 @@ import com.logvex.addon.framework.utils.player.PlayerUtils;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.world.GameMode;
 
-import static com.logvex.addon.framework.MeteorClient.mc;
+import static com.logvex.addon.framework.Addon.mc;
 
 /** {@link PlayerPort} backed by the live client player. Read-only. */
 public final class MinecraftPlayerPort implements PlayerPort {

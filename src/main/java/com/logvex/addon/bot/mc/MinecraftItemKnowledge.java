@@ -19,7 +19,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import static com.logvex.addon.framework.MeteorClient.mc;
+import static com.logvex.addon.framework.Addon.mc;
 
 /**
  * {@link ItemKnowledge} backed by the live Minecraft registries.
@@ -59,7 +59,7 @@ public final class MinecraftItemKnowledge implements ItemKnowledge {
 
     @Override
     public List<String> toolsFor(String blockId) {
-        // Prefer the block's own item as the tool; Meteor's findFastestTool handles the real
+        // Prefer the block's own item as the tool; the helper's findFastestTool handles the real
         // choice at placement time, so an exhaustive tool table is not needed here.
         return List.of(blockId);
     }

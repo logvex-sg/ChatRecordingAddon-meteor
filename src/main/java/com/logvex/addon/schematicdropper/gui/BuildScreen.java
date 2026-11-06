@@ -19,7 +19,7 @@ import com.logvex.addon.framework.utils.render.color.Color;
 import java.util.List;
 import java.util.Locale;
 
-import static com.logvex.addon.framework.MeteorClient.mc;
+import static com.logvex.addon.framework.Addon.mc;
 
 /**
  * Live view of a schematic build: progress, the active queue, recent problems and the checkpoint
