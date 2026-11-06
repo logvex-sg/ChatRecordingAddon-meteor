@@ -2,6 +2,7 @@ package com.logvex.addon.chatlog.hud;
 
 import com.logvex.addon.LogAddon;
 import com.logvex.addon.chatlog.core.ChatEntry;
+import com.logvex.addon.chatlog.core.DuplicateGrouper;
 import com.logvex.addon.chatlog.core.MessageType;
 import com.logvex.addon.chatlog.core.ReportFormatting;
 import com.logvex.addon.chatlog.mc.LogService;
@@ -69,6 +70,13 @@ public class ChatLogHud extends HudElement {
     private final Setting<Boolean> showType = sgGeneral.add(new BoolSetting.Builder()
         .name("show-type")
         .description("Show the message category for lines without a sender.")
+        .defaultValue(false)
+        .build()
+    );
+
+    private final Setting<Boolean> groupDuplicates = sgGeneral.add(new BoolSetting.Builder()
+        .name("group-duplicates")
+        .description("Collapse repeated consecutive messages into one line with a repeat count.")
         .defaultValue(false)
         .build()
     );
@@ -181,10 +189,10 @@ public class ChatLogHud extends HudElement {
             renderer.text("No messages yet", left, cursor, MUTED, true, scaleValue);
             cursor += lineHeight;
         } else {
-            for (ChatEntry entry : feed) {
-                boolean highlighted = monitor != null && monitor.isHighlighted(entry);
-                renderer.text(compose(entry, highlighted), left, cursor,
-                    highlighted ? HIGHLIGHT : TEXT, true, scaleValue);
+            for (DuplicateGrouper.Group group : grouped(feed)) {
+                boolean highlighted = monitor != null && monitor.isHighlighted(group.entry());
+                renderer.text(compose(group.entry(), highlighted) + DuplicateGrouper.suffix(group.count()),
+                    left, cursor, highlighted ? HIGHLIGHT : TEXT, true, scaleValue);
                 cursor += lineHeight;
             }
         }
@@ -214,7 +222,19 @@ public class ChatLogHud extends HudElement {
             ? service.recent(lines.get())
             : monitor.visibleFeed(lines.get());
         if (feed.isEmpty()) return List.of("No messages yet");
-        return feed.stream().map(entry -> compose(entry, false)).toList();
+        List<String> out = new java.util.ArrayList<>();
+        for (DuplicateGrouper.Group group : grouped(feed)) {
+            out.add(compose(group.entry(), false) + DuplicateGrouper.suffix(group.count()));
+        }
+        return out;
+    }
+
+    /** Consecutive repeats collapsed when grouping is on, otherwise one group per message. */
+    private List<DuplicateGrouper.Group> grouped(List<ChatEntry> feed) {
+        if (groupDuplicates.get()) return DuplicateGrouper.group(feed);
+        List<DuplicateGrouper.Group> out = new java.util.ArrayList<>(feed.size());
+        for (ChatEntry entry : feed) out.add(new DuplicateGrouper.Group(entry, 1));
+        return out;
     }
 
     private void drawBorder(HudRenderer renderer) {

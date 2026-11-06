@@ -11,9 +11,9 @@ import java.util.Map;
  * <p>A litematic holds one or more {@code Regions}. Each region has {@code Size} (absolute
  * dimensions), {@code Position} (the region origin) and a {@code BlockStatePalette} list. Geometry
  * is a {@code BlockStates} long array: the palette indices are bit-packed at a width of
- * {@code max(2, ceil(log2(paletteSize)))} bits per entry, tightly packed without crossing long
- * boundaries. Region-local coordinates are converted into a single schematic space so multi-region
- * files import as one schematic.
+ * {@code max(2, ceil(log2(paletteSize)))} bits per entry, <b>tightly packed</b> - an entry that
+ * starts near the end of a long continues into the next one. Region-local coordinates are converted
+ * into a single schematic space so multi-region files import as one schematic.
  */
 public final class LitematicSchematicReader implements SchematicImporter {
     @Override
@@ -63,15 +63,10 @@ public final class LitematicSchematicReader implements SchematicImporter {
             if (states.length == 0) continue;
 
             long volume = (long) sx * sy * sz;
-            int bits = Math.max(2, 64 - Long.numberOfLeadingZeros(Math.max(1, palette.size() - 1)));
-            long perLong = 64L / bits;
+            int bits = bitsPerEntry(palette.size());
 
             for (long index = 0; index < volume; index++) {
-                long longIndex = index / perLong;
-                if (longIndex >= states.length) break;
-                int offset = (int) (index % perLong) * bits;
-                long mask = (1L << bits) - 1L;
-                int paletteIndex = (int) ((states[(int) longIndex] >>> offset) & mask);
+                int paletteIndex = readEntry(states, index, bits);
                 if (paletteIndex < 0 || paletteIndex >= palette.size()) continue;
 
                 BlockStateSpec spec = palette.get(paletteIndex);
@@ -107,6 +102,41 @@ public final class LitematicSchematicReader implements SchematicImporter {
 
         return new Schematic(name, SchematicFormat.LITEMATIC,
             maxX - minX + 1, maxY - minY + 1, maxZ - minZ + 1, rebased);
+    }
+
+    /**
+     * Bits used per palette index, matching Litematica and vanilla's {@code Palette}: at least two,
+     * otherwise the smallest width that can hold every index. A width of one would be ambiguous with
+     * a single-entry palette, so it is never used.
+     */
+    private static int bitsPerEntry(int paletteSize) {
+        int bits = 1;
+        while ((1 << bits) < paletteSize) bits++;
+        return Math.max(2, bits);
+    }
+
+    /**
+     * Reads one palette index from the tightly packed array, matching Litematica's
+     * {@code LitematicaBitArray.getAt}: an entry starting within eight bits of a long boundary
+     * continues into the next long rather than being padded to it.
+     */
+    private static int readEntry(long[] states, long index, int bits) {
+        long startOffset = index * bits;
+        int startArrayIndex = (int) (startOffset >> 6);
+        if (startArrayIndex >= states.length) return -1;
+
+        int endArrayIndex = (int) (((index + 1L) * bits - 1L) >> 6);
+        if (endArrayIndex >= states.length) return -1;
+
+        int startBitOffset = (int) (startOffset & 0x3F);
+        long mask = (1L << bits) - 1L;
+
+        if (startArrayIndex == endArrayIndex) {
+            return (int) ((states[startArrayIndex] >>> startBitOffset) & mask);
+        }
+        int endOffset = 64 - startBitOffset;
+        return (int) ((states[startArrayIndex] >>> startBitOffset
+            | states[endArrayIndex] << endOffset) & mask);
     }
 
     private static List<BlockStateSpec> readPalette(NbtNode region) {

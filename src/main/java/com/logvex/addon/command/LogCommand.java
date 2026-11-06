@@ -163,6 +163,29 @@ public class LogCommand extends Command {
                 return SINGLE_SUCCESS;
             })));
 
+        builder.then(literal("alerts")
+            .executes(context -> {
+                alerts(10);
+                return SINGLE_SUCCESS;
+            })
+            .then(argument("count", IntegerArgumentType.integer(1, 100)).executes(context -> {
+                alerts(IntegerArgumentType.getInteger(context, "count"));
+                return SINGLE_SUCCESS;
+            }))
+            .then(literal("clear").executes(context -> {
+                com.logvex.addon.chatlog.mc.LogService.get().alerts().clear();
+                info("Alert history cleared.");
+                return SINGLE_SUCCESS;
+            })));
+
+        builder.then(literal("playtime").executes(context -> {
+            playtime("");
+            return SINGLE_SUCCESS;
+        }).then(argument("player", StringArgumentType.greedyString()).executes(context -> {
+            playtime(StringArgumentType.getString(context, "player"));
+            return SINGLE_SUCCESS;
+        })));
+
         builder.then(literal("schematic").executes(context -> {
             schematicStatus();
             return SINGLE_SUCCESS;
@@ -273,6 +296,8 @@ public class LogCommand extends Command {
         info("  (highlight).log waypoints [list|add <name>](default) - bot waypoints.");
         info("  (highlight).log import <file>(default) - import a material list.");
         info("  (highlight).log importlog <file>(default) - import a chat log into the archive.");
+        info("  (highlight).log alerts [count|clear](default) - recent keyword/webhook/error alerts.");
+        info("  (highlight).log playtime [player](default) - observed player session durations.");
         info("  (highlight).log schematic [status|load <path>|start|pause|resume|stop](default).");
         info("  (highlight).log digest(default) - summarise recent chat activity.");
         info("  (highlight).log timeline [filter](default) - recent session milestones.");
@@ -353,6 +378,47 @@ public class LogCommand extends Command {
         for (Notification notification : recent) {
             info("  [%s] %s", notification.priority().name().toLowerCase(Locale.ROOT), notification.line());
         }
+    }
+
+    private void alerts(int count) {
+        var log = com.logvex.addon.chatlog.mc.LogService.get().alerts();
+        List<com.logvex.addon.chatlog.core.AlertLog.Alert> recent = log.recent("", count);
+        if (recent.isEmpty()) {
+            info("No alerts recorded yet.");
+            return;
+        }
+        info("Most recent %d alert%s:", recent.size(), recent.size() == 1 ? "" : "s");
+        for (var alert : recent) {
+            info("  [%s] %s: %s", alert.kind().id(), alert.title(),
+                Messages.truncate(alert.detail(), 90));
+        }
+        info("Totals: %d keyword, %d webhook, %d error.",
+            log.count(com.logvex.addon.chatlog.core.AlertLog.Kind.KEYWORD),
+            log.count(com.logvex.addon.chatlog.core.AlertLog.Kind.WEBHOOK),
+            log.count(com.logvex.addon.chatlog.core.AlertLog.Kind.ERROR));
+    }
+
+    private void playtime(String filter) {
+        var sessions = com.logvex.addon.chatlog.mc.LogService.get().sessions();
+        List<com.logvex.addon.chatlog.core.PlayerSession> list = sessions.search(filter);
+        if (list.isEmpty()) {
+            info(filter.isBlank() ? "No player sessions recorded yet."
+                : "No player sessions match that name.");
+            return;
+        }
+        long now = System.currentTimeMillis();
+        int shown = Math.min(list.size(), 20);
+        info("%d player session%s%s:", list.size(), list.size() == 1 ? "" : "s",
+            filter.isBlank() ? "" : " matching '" + filter + "'");
+        for (int i = 0; i < shown; i++) {
+            var session = list.get(i);
+            String duration = session.hasMeasuredTime()
+                ? ReportFormatting.duration(session.onlineMs(now))
+                : "unknown";
+            info("  %s - %s across %d session%s%s", session.name(), duration, session.sessions(),
+                session.sessions() == 1 ? "" : "s", session.online() ? " (online)" : "");
+        }
+        if (list.size() > shown) info("  ... and %d more.", list.size() - shown);
     }
 
     private void tasks() {

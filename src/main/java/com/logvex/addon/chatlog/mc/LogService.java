@@ -7,7 +7,9 @@ import com.logvex.addon.chatlog.core.KeywordRule;
 import com.logvex.addon.chatlog.core.LogSession;
 import com.logvex.addon.chatlog.core.MessageType;
 import com.logvex.addon.chatlog.core.ActivityHistogram;
+import com.logvex.addon.chatlog.core.AlertLog;
 import com.logvex.addon.chatlog.core.PlayerTracker;
+import com.logvex.addon.chatlog.core.PlayerSessionTracker;
 import com.logvex.addon.chatlog.core.StatsCollector;
 import com.logvex.addon.chatlog.core.StatsSnapshot;
 import com.logvex.addon.chatlog.core.WebhookPayload;
@@ -50,8 +52,12 @@ public final class LogService {
     private final AtomicLong sequence = new AtomicLong();
 
     private final PlayerTracker players = new PlayerTracker();
+    private final PlayerSessionTracker sessions = new PlayerSessionTracker();
     private final StatsCollector stats = new StatsCollector();
     private final WebhookQueue webhook = new WebhookQueue();
+
+    /** A bounded record of noteworthy events (keyword hits, delivery problems, internal errors). */
+    private final AlertLog alerts = new AlertLog();
 
     /** Per-minute activity counts for the last two hours, shared by the graph HUD and the digest. */
     private final ActivityHistogram activity = new ActivityHistogram(60_000L, 120);
@@ -88,6 +94,16 @@ public final class LogService {
 
     public ActivityHistogram activity() {
         return activity;
+    }
+
+    /** Per-player join/leave session durations. */
+    public PlayerSessionTracker sessions() {
+        return sessions;
+    }
+
+    /** The bounded record of noteworthy events. */
+    public AlertLog alerts() {
+        return alerts;
     }
 
     public StatsCollector stats() {
@@ -146,6 +162,7 @@ public final class LogService {
 
     public void reportError(String message) {
         this.lastError = message == null ? "" : message;
+        if (message != null && !message.isBlank()) alerts.record(AlertLog.Kind.ERROR, "Internal error", message);
     }
 
     public LogSession session() {
@@ -203,6 +220,7 @@ public final class LogService {
 
         stats.record(stamped);
         players.record(stamped);
+        sessions.record(stamped);
         activity.record(stamped.timestamp());
 
         LogStorageService current = storage;

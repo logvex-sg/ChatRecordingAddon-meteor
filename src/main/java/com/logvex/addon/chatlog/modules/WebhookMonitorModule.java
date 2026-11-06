@@ -104,6 +104,9 @@ public class WebhookMonitorModule extends Module {
             record(current, false, failed - lastFailed, current.lastMessage());
             lastFailed = failed;
             hadFailure = true;
+            com.logvex.addon.chatlog.mc.LogService.get().alerts().record(
+                com.logvex.addon.chatlog.core.AlertLog.Kind.WEBHOOK, "Delivery failed",
+                safeMessage(current.lastMessage()));
             if (notifyOnFailure.get()) {
                 warning("Webhook delivery failed. %s", safeMessage(current.lastMessage()));
             }

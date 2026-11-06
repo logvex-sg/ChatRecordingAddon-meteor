@@ -70,6 +70,7 @@ public class LogDashboardScreen extends WindowScreen {
         tabButton(tabs, "Players", 2);
         tabButton(tabs, "Keywords", 3);
         tabButton(tabs, "Stats", 4);
+        tabButton(tabs, "Alerts", 5);
 
         add(theme.horizontalSeparator()).expandX();
 
@@ -79,6 +80,7 @@ public class LogDashboardScreen extends WindowScreen {
             case 2 -> renderPlayers();
             case 3 -> renderKeywords();
             case 4 -> renderStats();
+            case 5 -> renderAlerts();
             default -> renderLive();
         }
     }
@@ -359,6 +361,48 @@ public class LogDashboardScreen extends WindowScreen {
                 Long.toString(storage.store().totalEntries()));
             GuiKit.keyValue(add(theme.verticalList()).expandX().widget(), theme, "Compressed:",
                 ReportFormatting.bytes(storage.store().totalCompressedBytes()));
+        }
+    }
+
+    // ------------------------------------------------------------------ alerts
+
+    private void renderAlerts() {
+        var log = LogService.get().alerts();
+
+        WTable summary = add(theme.table()).expandX().widget();
+        summary.add(theme.label("Keyword")).widget().color(GuiKit.MUTED);
+        summary.add(theme.label("Webhook")).widget().color(GuiKit.MUTED);
+        summary.add(theme.label("Error")).widget().color(GuiKit.MUTED);
+        summary.add(theme.label("Total")).widget().color(GuiKit.MUTED);
+        summary.row();
+        summary.add(theme.label(Integer.toString(log.count(com.logvex.addon.chatlog.core.AlertLog.Kind.KEYWORD))))
+            .widget().color(GuiKit.ACCENT);
+        summary.add(theme.label(Integer.toString(log.count(com.logvex.addon.chatlog.core.AlertLog.Kind.WEBHOOK))))
+            .widget().color(GuiKit.WARN);
+        summary.add(theme.label(Integer.toString(log.count(com.logvex.addon.chatlog.core.AlertLog.Kind.ERROR))))
+            .widget().color(GuiKit.BAD);
+        summary.add(theme.label(Long.toString(log.totalRecorded()))).widget();
+
+        WButton open = add(theme.button("Open full alert history")).expandX().widget();
+        open.action = () -> mc.setScreen(new AlertLogScreen("Alert History"));
+
+        add(theme.horizontalSeparator("Recent")).expandX();
+        var recent = log.recent("", 15);
+        if (recent.isEmpty()) {
+            add(theme.label("No alerts recorded yet.")).expandX().widget().color(GuiKit.MUTED);
+            return;
+        }
+        WTable table = add(theme.table()).expandX().widget();
+        table.add(theme.label("Time")).widget().color(GuiKit.MUTED);
+        table.add(theme.label("Kind")).widget().color(GuiKit.MUTED);
+        table.add(theme.label("Detail")).expandCellX().widget().color(GuiKit.MUTED);
+        table.row();
+        for (var alert : recent) {
+            table.add(theme.label(ReportFormatting.shortTime(alert.timestamp()))).widget().color(GuiKit.MUTED);
+            table.add(theme.label(alert.kind().toString())).widget();
+            table.add(theme.label(GuiKit.truncate(alert.title() + ": " + alert.detail(), 70)))
+                .expandCellX().widget();
+            table.row();
         }
     }
 

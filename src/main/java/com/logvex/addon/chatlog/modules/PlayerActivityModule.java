@@ -44,7 +44,10 @@ public class PlayerActivityModule extends Module {
         .name("excluded-players")
         .description("Players never tracked or listed (one name per line).")
         .defaultValue()
-        .onChanged(value -> LogService.get().players().setExcluded(value))
+        .onChanged(value -> {
+            LogService.get().players().setExcluded(value);
+            LogService.get().sessions().setExcluded(value);
+        })
         .build()
     );
 
@@ -57,10 +60,17 @@ public class PlayerActivityModule extends Module {
     @Override
     public void onActivate() {
         service.players().setExcluded(excluded.get());
+        service.sessions().setExcluded(excluded.get());
         if (!rebuildOnActivate.get()) return;
         ChatLoggerModule logger = Modules.get().get(ChatLoggerModule.class);
         if (logger == null || logger.storage() == null) return;
-        logger.storage().rebuildPlayersAsync(service.players(), () -> info("Player activity index rebuilt."));
+        logger.storage().rebuildPlayersAsync(service.players(), service.sessions(),
+            () -> info("Player activity index rebuilt."));
+    }
+
+    /** Per-player session durations, most recently seen first. */
+    public List<com.logvex.addon.chatlog.core.PlayerSession> sessions(String filter) {
+        return service.sessions().search(filter);
     }
 
     /** Players matching the filter, honouring the minimum-message setting. */

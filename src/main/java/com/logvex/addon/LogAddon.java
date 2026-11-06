@@ -70,6 +70,7 @@ public class LogAddon extends MeteorAddon {
         Hud.get().register(StatsHud.INFO);
         Hud.get().register(com.logvex.addon.chatlog.hud.WebhookStatusHud.INFO);
         Hud.get().register(com.logvex.addon.chatlog.hud.ActivityGraphHud.INFO);
+        Hud.get().register(com.logvex.addon.chatlog.hud.RecentPlayersHud.INFO);
     }
 
     /**
