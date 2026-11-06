@@ -245,7 +245,7 @@ actual position to be within the arrival tolerance.
 
 ## Chat intelligence modules
 
-Five modules extend the chat toolkit. They share the same output formatter (`com.logvex.addon.common.Messages`)
+These modules extend the chat toolkit. They share the same output formatter (`com.logvex.addon.common.Messages`)
 so every line reads the same way: a `[Log]` prefix, sentence case, readable numbers and proper
 pluralisation.
 
@@ -254,8 +254,17 @@ pluralisation.
 | `chat-filter` | Ordered hide/allow rules. The first matching rule wins, so a specific `ALLOW` can punch a hole in a broad `HIDE`. A matched message is cancelled in the chat mixin, so it is removed before it reaches the chat HUD, the recorder or the log file. |
 | `chat-digest` | Summarises the last N messages: totals per message type, unique players, joins/leaves/deaths and the most active players. Run it on demand (`.log digest`) or on a timer. Optionally forwards each digest to the webhook. |
 | `session-timeline` | A bounded timeline of milestones the client can actually observe: session start/end, joins, leaves, deaths and keyword hits. Browsable in a GUI (`.log timeline`). |
+| `session-stats` | Live session counters, and a short **session summary printed when you leave a world** (messages, unique players, duration, rate, joins/leaves, deaths, keyword alerts and the most active players). |
 | `webhook-monitor` | Watches the shared webhook queue and reports its health. Keeps a bounded delivery history, warns in chat when a delivery fails and can note a recovery. The URL is never stored or shown — only the host. |
 | `player-notes` | Your own notes about players, with the observed activity shown beside each note. A note is always explicit user input; the addon never infers one. |
+| `player-activity` | Per-player joins, leaves, deaths and message counts, rebuilt from the archive on demand. Supports an **exclude list** so bots or your own alts are never tracked. |
+
+### Activity graph
+
+The shared runtime counts messages into per-minute buckets (a bounded ring, so memory is fixed).
+The **Activity Graph** HUD element draws the last 5–120 minutes as a bar graph scaled to the busiest
+minute, and shows the peak and the total for the window. Empty buckets are drawn as a baseline so a
+quiet stretch is visible rather than hidden.
 
 ### Chat filter rules
 
@@ -292,6 +301,23 @@ the total uncompressed size, the report count and the space saved.
 Webhook URLs are treated as secrets: they are never written into a report, never included in
 error messages, and the Discord payload explicitly disables mentions.
 
+## Importing logs
+
+An existing export can be read back into the archive, so a log moved from another machine (or a
+segment rescued from a backup) is searchable again.
+
+- Open **Log Archive** from the chat-logger widget or the dashboard and press **Import log...**, or
+  run `.log importlog <path>`.
+- Supported inputs: the plain text export (`.txt`), CSV, JSON lines, and the addon's own compressed
+  segment (`.log.gz`). A native segment is CRC-checked, so a damaged file is refused rather than
+  half-read.
+- The file is parsed on the storage worker, never on the client thread, so a large file does not
+  stall the game.
+- Nothing is written until you press **Import into archive**. Before that you get a preview: the
+  detected format, the number of entries, the first and last entry (so the range and order are
+  obvious), and a list of the lines that could not be parsed and why. Unreadable lines are counted
+  and shown, never silently dropped.
+
 ## GUI
 
 Press **Right Shift** in-game (or run `.log gui`) to open the addon window. It lists every module
@@ -306,10 +332,12 @@ ends with a **Close** button.
   bottom.
 
 The chat-intelligence modules open their own screens: **Session Timeline** (searchable, paged
-milestone list with per-kind counts), **Chat Digest** (per-type totals and the most active players)
-and **Player Notes** (add, filter and remove notes, with each player's observed activity shown
-beside the note, or an explicit "not observed" when the client has none). A **Webhook Status** HUD
-element shows delivery health, queue depth and, optionally, the last failure reason.
+milestone list with per-kind counts), **Chat Digest** (per-type totals and the most active players),
+**Player Notes** (add, filter and remove notes, with each player's observed activity shown
+beside the note, or an explicit "not observed" when the client has none) and **Log Import** (pick a
+file, preview the parsed result, then merge it). A **Webhook Status** HUD element shows delivery
+health, queue depth and, optionally, the last failure reason; an **Activity Graph** HUD element
+draws recent chat activity as a bar graph.
 
 Every value a module can be configured with is editable here: booleans are checkboxes, numbers are
 sliders, enums cycle on click, strings and string lists are text boxes, and colours have an R/G/B
@@ -353,6 +381,7 @@ The addon registers a `.log` command (alias `.la`). Run `.log help` for the list
 | `.log waypoints [list]` | Lists saved waypoints. |
 | `.log waypoints add <name>` | Saves your current position as a waypoint. |
 | `.log import <file>` | Imports a material list (or a schematic) from a path, without the file dialog. |
+| `.log importlog <file>` | Imports a chat log (.txt, .csv, .json or .log.gz) into the archive. |
 | `.log schematic [status]` | The current build state and progress. |
 | `.log schematic load <path>` | Loads a schematic from a path (no file dialog). |
 | `.log schematic <start\|pause\|resume\|stop>` | Controls a build. |
@@ -401,6 +430,10 @@ archive with in-memory doubles (no Minecraft runtime required):
   handling; the bounded session timeline, newest-first reads, search and event formatting.
 - `NotesAndWebhookLogTest` — player-note store add/update/remove/search and its bound; the bounded
   webhook delivery log, runtime capacity changes, and `hostOf` never returning a URL's secret path.
+- `LogToolsTest` — the per-minute activity histogram (bucketing, gap materialisation, capacity
+  bounding, peak/total), session-summary formatting, player-tracker exclusions (case-insensitive,
+  applied only to new entries) and `forget`, and the log importer round-tripping every export format
+  (native `.log.gz`, JSON, CSV, text) plus unreadable-line reporting and CSV quoting.
 - `ChatRelayCoreTest` — buffer concurrency, gzip round-trip, corruption detection, archive
   persistence, index rebuild, search, cleanup, deletion and payload safety.
 - `SettingsTest` — clamping, immutability, dependency visibility, declaration order, JSON
@@ -420,13 +453,17 @@ archive with in-memory doubles (no Minecraft runtime required):
 - The legacy (`.schematic`) id table covers the ids that appear in practice; anything outside it is
   reported as unresolved rather than guessed, and the item form of a legacy block is not always
   recoverable.
-- In-game behaviour (the acquisition/build screens, the file browser, HUD and chat filter) has not
-  been verified in a live Minecraft session from this environment; the core engines, the importer,
-  the readers, the checkpoint store, the filter rules, the digest, the timeline and the notes store
-  are covered by unit tests that use fakes and the real 1.21.1 registries.
+- In-game behaviour (the acquisition/build screens, the file browser, the import screen, HUD and chat
+  filter) has not been verified in a live Minecraft session from this environment; the core engines,
+  the importer, the readers, the checkpoint store, the filter rules, the digest, the timeline, the
+  notes store, the activity histogram and the log importer are covered by unit tests that use fakes
+  and the real 1.21.1 registries.
 - The chat filter cancels a message in `ChatHud.addMessage`. A server that sends the same message
   through a path this mixin does not cover (for example a custom chat mod that renders its own
   overlay) is outside its reach; the vanilla chat HUD is what it targets.
+- Log import understands the formats this addon writes (text, CSV, JSON lines and its own compressed
+  segment). It is not a general chat-log parser: a foreign format is reported as unreadable rather
+  than guessed at, and every line it could not parse is listed in the preview.
 - The bot uses Baritone only when the user has installed it (detected at runtime by reflection). The
   addon bundles no pathfinder of its own beyond the bounded fallback walker, and navigation quality
   with the fallback is limited — it walks in a straight line and stops when blocked rather than

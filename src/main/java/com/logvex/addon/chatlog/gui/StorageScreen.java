@@ -84,6 +84,8 @@ public class StorageScreen extends WindowScreen {
             logger.exportSession();
             info("Export started; see the chat log for the result.");
         };
+        WButton importLog = actions.add(theme.button("Import log...")).widget();
+        importLog.action = () -> mc.setScreen(new LogImportScreen(storage));
         WButton deleteAll = actions.add(theme.button("Delete all")).widget();
         deleteAll.action = () -> mc.setScreen(new ConfirmScreen("Delete all logs",
             "This permanently deletes every stored log segment. Continue?",

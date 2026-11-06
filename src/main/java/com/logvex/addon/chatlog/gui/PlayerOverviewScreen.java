@@ -96,7 +96,17 @@ public class PlayerOverviewScreen extends WindowScreen {
                         "Chat: " + activity.name()));
                 }
             };
+            WButton forget = table.add(theme.button("Forget")).widget();
+            forget.action = () -> {
+                com.logvex.addon.chatlog.mc.LogService.get().players().forget(activity.name());
+                info("Forgot the tracked activity for " + activity.name() + ".");
+                render();
+            };
             table.row();
         }
+    }
+
+    private void info(String message) {
+        com.logvex.addon.framework.utils.player.ChatUtils.info("%s", message);
     }
 }

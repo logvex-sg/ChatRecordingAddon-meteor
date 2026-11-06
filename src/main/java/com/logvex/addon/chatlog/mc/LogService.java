@@ -6,6 +6,7 @@ import com.logvex.addon.chatlog.core.KeywordMatcher;
 import com.logvex.addon.chatlog.core.KeywordRule;
 import com.logvex.addon.chatlog.core.LogSession;
 import com.logvex.addon.chatlog.core.MessageType;
+import com.logvex.addon.chatlog.core.ActivityHistogram;
 import com.logvex.addon.chatlog.core.PlayerTracker;
 import com.logvex.addon.chatlog.core.StatsCollector;
 import com.logvex.addon.chatlog.core.StatsSnapshot;
@@ -52,6 +53,9 @@ public final class LogService {
     private final StatsCollector stats = new StatsCollector();
     private final WebhookQueue webhook = new WebhookQueue();
 
+    /** Per-minute activity counts for the last two hours, shared by the graph HUD and the digest. */
+    private final ActivityHistogram activity = new ActivityHistogram(60_000L, 120);
+
     private volatile LogStorageService storage;
     private volatile LogSession session;
     private volatile boolean recording;
@@ -80,6 +84,10 @@ public final class LogService {
 
     public PlayerTracker players() {
         return players;
+    }
+
+    public ActivityHistogram activity() {
+        return activity;
     }
 
     public StatsCollector stats() {
@@ -195,6 +203,7 @@ public final class LogService {
 
         stats.record(stamped);
         players.record(stamped);
+        activity.record(stamped.timestamp());
 
         LogStorageService current = storage;
         if (current != null) current.appendAsync(stamped);

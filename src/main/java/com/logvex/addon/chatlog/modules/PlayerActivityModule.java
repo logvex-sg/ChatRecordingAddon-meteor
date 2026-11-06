@@ -11,6 +11,7 @@ import com.logvex.addon.framework.settings.BoolSetting;
 import com.logvex.addon.framework.settings.IntSetting;
 import com.logvex.addon.framework.settings.Setting;
 import com.logvex.addon.framework.settings.SettingGroup;
+import com.logvex.addon.framework.settings.StringListSetting;
 import com.logvex.addon.framework.systems.modules.Module;
 import com.logvex.addon.framework.systems.modules.Modules;
 
@@ -39,6 +40,14 @@ public class PlayerActivityModule extends Module {
         .build()
     );
 
+    private final Setting<List<String>> excluded = sgGeneral.add(new StringListSetting.Builder()
+        .name("excluded-players")
+        .description("Players never tracked or listed (one name per line).")
+        .defaultValue()
+        .onChanged(value -> LogService.get().players().setExcluded(value))
+        .build()
+    );
+
     private final LogService service = LogService.get();
 
     public PlayerActivityModule() {
@@ -47,6 +56,7 @@ public class PlayerActivityModule extends Module {
 
     @Override
     public void onActivate() {
+        service.players().setExcluded(excluded.get());
         if (!rebuildOnActivate.get()) return;
         ChatLoggerModule logger = Modules.get().get(ChatLoggerModule.class);
         if (logger == null || logger.storage() == null) return;

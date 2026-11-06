@@ -153,6 +153,16 @@ public class LogCommand extends Command {
                 return SINGLE_SUCCESS;
             })));
 
+        builder.then(literal("importlog")
+            .executes(context -> {
+                info("Usage: (highlight).log importlog <file>(default).");
+                return SINGLE_SUCCESS;
+            })
+            .then(argument("path", StringArgumentType.greedyString()).executes(context -> {
+                importLog(StringArgumentType.getString(context, "path"));
+                return SINGLE_SUCCESS;
+            })));
+
         builder.then(literal("schematic").executes(context -> {
             schematicStatus();
             return SINGLE_SUCCESS;
@@ -262,6 +272,7 @@ public class LogCommand extends Command {
         info("  (highlight).log tasks add <type> <item> [amount](default) - queue a task.");
         info("  (highlight).log waypoints [list|add <name>](default) - bot waypoints.");
         info("  (highlight).log import <file>(default) - import a material list.");
+        info("  (highlight).log importlog <file>(default) - import a chat log into the archive.");
         info("  (highlight).log schematic [status|load <path>|start|pause|resume|stop](default).");
         info("  (highlight).log digest(default) - summarise recent chat activity.");
         info("  (highlight).log timeline [filter](default) - recent session milestones.");
@@ -478,6 +489,36 @@ public class LogCommand extends Command {
             return;
         }
         module.importMaterialFromPath(path);
+    }
+
+    private void importLog(String path) {
+        ChatLoggerModule logger = LogCommands.logger();
+        if (logger == null || logger.storage() == null) {
+            error("Storage is unavailable. Enable the Chat Logger module first.");
+            return;
+        }
+        java.nio.file.Path file;
+        try {
+            file = java.nio.file.Path.of(path);
+        } catch (RuntimeException e) {
+            error("That path is not valid.");
+            return;
+        }
+        if (!java.nio.file.Files.isRegularFile(file)) {
+            error("No file found at that path.");
+            return;
+        }
+        info("Reading (highlight)%s(default)...", file.getFileName());
+        logger.storage().importLogAsync(file, result -> {
+            if (result.isEmpty()) {
+                warning("No importable entries were found%s.",
+                    result.skipped().isEmpty() ? "" : " (" + result.skipped().size() + " lines skipped)");
+                return;
+            }
+            info("%s", result.describe(file.getFileName().toString()));
+            logger.storage().importEntriesAsync(result.entries(),
+                () -> info("Imported %s into the archive.", Messages.plural(result.entries().size(), "entry", "entries")));
+        }, message -> error("Could not read the file: %s", message));
     }
 
     private void loadSchematic(String path) {

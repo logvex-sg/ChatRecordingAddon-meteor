@@ -4,6 +4,7 @@ import com.logvex.addon.LogAddon;
 import com.logvex.addon.chatlog.core.ChatEntry;
 import com.logvex.addon.chatlog.core.ChatLogCorruptedException;
 import com.logvex.addon.chatlog.core.LogExporter;
+import com.logvex.addon.chatlog.core.LogImporter;
 import com.logvex.addon.chatlog.core.LogQuery;
 import com.logvex.addon.chatlog.core.LogSegmentMeta;
 import com.logvex.addon.chatlog.core.LogStore;
@@ -262,6 +263,40 @@ public final class LogStorageService {
 
     public void shutdown() {
         io.shutdownNow();
+    }
+
+    /**
+     * Parses a log file in the background and delivers the result on the client thread.
+     *
+     * <p>The file can be a native {@code .log.gz} segment, JSON lines, CSV or the plain text export.
+     * Parsing is pure Java and runs on the worker, so a large file never stalls the game.
+     */
+    public void importLogAsync(Path path, Consumer<LogImporter.Result> onSuccess, Consumer<String> onError) {
+        io.execute(() -> {
+            try {
+                LogImporter.Result result = LogImporter.read(path);
+                onClient(() -> onSuccess.accept(result));
+            } catch (IOException | RuntimeException e) {
+                onClient(() -> onError.accept(describe(e)));
+            }
+        });
+    }
+
+    /** Merges imported entries into the store, in order, off the client thread. */
+    public void importEntriesAsync(List<ChatEntry> entries, Runnable onDone) {
+        LogStore current = store;
+        io.execute(() -> {
+            int appended = 0;
+            try {
+                for (ChatEntry entry : entries) {
+                    current.append(entry);
+                    appended++;
+                }
+            } catch (IOException e) {
+                fail("Imported " + appended + " of " + entries.size() + " entries", e);
+            }
+            onClient(onDone);
+        });
     }
 
     private void onClient(Runnable task) {
