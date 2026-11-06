@@ -114,6 +114,10 @@ public final class Fakes {
         public boolean prepareReady = true;
         public int cancelCount;
 
+        /** When set, {@link #begin} returns {@link #controllable} so a test can resolve it by hand. */
+        public boolean useControllable;
+        public final Controllable controllable = new Controllable();
+
         /** How the next began drop should behave. */
         public enum Behaviour { CONFIRM, REJECT, TIMEOUT, PENDING }
 
@@ -137,6 +141,7 @@ public final class Fakes {
         @Override
         public PendingDrop begin(DropPlan plan) {
             issued.add(plan);
+            if (useControllable) return controllable;
             Outcome outcome = outcomes.poll();
             if (outcome == null) outcome = new Outcome(Behaviour.CONFIRM, plan.expectedOut());
 
@@ -151,6 +156,40 @@ public final class Fakes {
         @Override
         public void cancelPending() {
             cancelCount++;
+        }
+
+        /** A transfer the test resolves explicitly, so an in-flight operation can be held open. */
+        public static final class Controllable implements PendingDrop {
+            private volatile Status status = Status.PENDING;
+            private volatile int confirmed;
+
+            public void confirm(int amount) {
+                confirmed = amount;
+                status = Status.CONFIRMED;
+            }
+
+            public void reject(FailureType failure) {
+                status = Status.REJECTED;
+            }
+
+            public void timeout() {
+                status = Status.TIMEOUT;
+            }
+
+            @Override
+            public Status poll() {
+                return status;
+            }
+
+            @Override
+            public int confirmedOut() {
+                return confirmed;
+            }
+
+            @Override
+            public FailureType failure() {
+                return null;
+            }
         }
     }
 

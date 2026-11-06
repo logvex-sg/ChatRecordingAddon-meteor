@@ -59,6 +59,12 @@ public final class AcquisitionEngine {
     private boolean drainActive;
     private boolean finalDrain;
     private long drainStartedMs;
+    /**
+     * A pause that arrived while an operation was in flight. The engine finishes the current
+     * operation (a give, or a drop batch it is waiting on) and pauses at the next safe point.
+     * Without this the request was simply dropped and the button appeared to do nothing.
+     */
+    private boolean pauseRequested;
     private String currentMaterial;
     private int currentSlot = -1;
     private int currentAmount;
@@ -105,24 +111,47 @@ public final class AcquisitionEngine {
 
     public void pause() {
         if (!state.isRunning()) return;
-        if (pending != null) {
+        if (pending != null || drainActive) {
+            // A pause can only take effect between operations. If one is in flight (a give, or a drop
+            // batch this engine is waiting on), record the request and finish that operation first, so
+            // the button always pauses rather than silently doing nothing.
+            pauseRequested = true;
             listener.onFeedback("Finishing the current item before pausing.");
             return;
         }
+        pauseRequested = false;
         transition(AcquisitionState.PAUSED);
         listener.onFeedback("Acquisition paused.");
     }
 
     public void resume(long nowMs) {
         if (state != AcquisitionState.PAUSED) return;
+        pauseRequested = false;
         lastActionMs = nowMs - config.operationDelayMs();
         transition(AcquisitionState.SCANNING);
         listener.onFeedback("Acquisition resumed.");
     }
 
+    /**
+     * Applies a pause requested while an operation was in flight. Caller is inside the tick.
+     *
+     * <p>The check is "nothing in flight" rather than a specific state: a confirmed give moves the
+     * machine to {@code SCANNING} and a resolved drain to {@code SCANNING} too, but a rejected or
+     * timed-out give can leave it elsewhere, so matching a single state would drop the request and
+     * the pause button would appear to do nothing.
+     */
+    private void applyPendingPause() {
+        if (!pauseRequested || !state.isRunning()) return;
+        if (pending != null || drainActive) return;
+        pauseRequested = false;
+        transition(AcquisitionState.PAUSED);
+        listener.onFeedback("Acquisition paused.");
+    }
+
     public void stop() {
         abortDrainIfNeeded();
         finalDrain = false;
+        pauseRequested = false;
         pending = null;
         actions.cancelPending();
         currentMaterial = null;
@@ -175,6 +204,7 @@ public final class AcquisitionEngine {
         actions.cancelPending();
         drainActive = false;
         finalDrain = false;
+        pauseRequested = false;
         blocked.clear();
         retries = 0;
         currentMaterial = null;
@@ -193,6 +223,11 @@ public final class AcquisitionEngine {
             fail(FailureType.NOT_CREATIVE, "Creative mode is required to acquire materials.", true);
             return;
         }
+
+        // Honour a pause that was requested while an operation was in flight. Checked before the
+        // state switch so no new operation starts once the current one has resolved.
+        applyPendingPause();
+        if (state == AcquisitionState.PAUSED) return;
 
         switch (state) {
             case SCANNING -> tickScanning(nowMs);

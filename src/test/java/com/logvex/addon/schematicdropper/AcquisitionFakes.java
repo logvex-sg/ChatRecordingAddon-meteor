@@ -111,6 +111,10 @@ final class AcquisitionFakes {
         final List<GivePlan> issued = new ArrayList<>();
         int cancelCount;
 
+        /** When set, {@link #begin} returns {@link #controllable} so a test can resolve it by hand. */
+        boolean useControllable;
+        final Controllable controllable = new Controllable();
+
         enum Behaviour { CONFIRM, REJECT, TIMEOUT, NO_PERMISSION, PENDING, GHOST }
 
         record Outcome(Behaviour behaviour, int amount) {
@@ -127,6 +131,7 @@ final class AcquisitionFakes {
         @Override
         public PendingGive begin(GivePlan plan) {
             issued.add(plan);
+            if (useControllable) return controllable;
             Outcome outcome = outcomes.poll();
             if (outcome == null) outcome = new Outcome(Behaviour.CONFIRM, plan.amount());
 
@@ -145,6 +150,32 @@ final class AcquisitionFakes {
         @Override
         public void cancelPending() {
             cancelCount++;
+        }
+
+        /** A give the test resolves explicitly, so an in-flight operation can be held open. */
+        static final class Controllable implements PendingGive {
+            private volatile Status status = Status.PENDING;
+            private volatile int confirmed;
+
+            void confirm(int amount) {
+                confirmed = amount;
+                status = Status.CONFIRMED;
+            }
+
+            @Override
+            public Status poll() {
+                return status;
+            }
+
+            @Override
+            public int confirmedIn() {
+                return confirmed;
+            }
+
+            @Override
+            public FailureType failure() {
+                return null;
+            }
         }
     }
 

@@ -346,6 +346,42 @@ class DropEngineTest {
     }
 
     @Test
+    @DisplayName("pause during an in-flight drop is honoured once it confirms")
+    void pauseDuringDropIsDeferred() {
+        Harness h = new Harness(fast());
+        h.actions.useControllable = true;
+        h.plan(new Requirement("minecraft:cobblestone", "Cobblestone", 4));
+        h.env.set("minecraft:cobblestone", 8);
+        h.start();
+
+        // Drive until a drop has been issued and the engine is waiting for the server.
+        while (h.state() != State.WAITING_FOR_CONFIRMATION && h.now < 1_010_000L) h.tick(10);
+        assertEquals(State.WAITING_FOR_CONFIRMATION, h.state());
+
+        h.engine.pause();
+        assertEquals(State.WAITING_FOR_CONFIRMATION, h.state(), "an in-flight drop is not abandoned");
+
+        // The server confirms the drop; the remembered pause must then apply.
+        h.actions.controllable.confirm(1);
+        // The pause is applied at the top of the next tick, before any new work starts.
+        h.tick(10);
+        h.tick(10);
+
+        assertEquals(State.PAUSED, h.state(), "the deferred pause was applied");
+        assertEquals(1, h.tracker.totalConfirmed(), "the confirmed drop still counted");
+
+        int issued = h.actions.issued.size();
+        h.run(20, 10);
+        assertEquals(State.PAUSED, h.state());
+        assertEquals(issued, h.actions.issued.size(), "no new drops while paused");
+
+        h.engine.resume(h.now);
+        h.run(60, 10);
+        assertEquals(State.COMPLETED, h.state());
+        assertEquals(4, h.tracker.totalConfirmed());
+    }
+
+    @Test
     @DisplayName("stopping safely cancels the pending transaction")
     void stopCancelsPending() {
         Harness h = new Harness(fast());

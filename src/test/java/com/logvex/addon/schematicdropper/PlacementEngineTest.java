@@ -254,6 +254,34 @@ class PlacementEngineTest {
     }
 
     @Test
+    @DisplayName("a pause requested during a placement is applied once it resolves")
+    void deferredPauseApplies() {
+        actions.pollsBeforeConfirm = 3;
+        engine.setPlan(List.of(
+            block(0, 0, 0, "minecraft:stone", PlacementState.PENDING),
+            block(1, 0, 0, "minecraft:stone", PlacementState.PENDING)));
+        env.inventory.put("minecraft:stone", 2);
+
+        engine.start(now);
+        engine.tick(now); // now VERIFYING on the first block
+        assertEquals(PlacementStateMachine.VERIFYING, engine.state());
+
+        engine.pause();
+        assertEquals(PlacementStateMachine.VERIFYING, engine.state(), "an in-flight placement is not abandoned");
+
+        // Resolve the placement. The engine must pause rather than start the second block.
+        for (int i = 0; i < 8 && engine.state() != PlacementStateMachine.PAUSED; i++) {
+            engine.tick(now + i * 10L);
+        }
+        assertEquals(PlacementStateMachine.PAUSED, engine.state(), "the deferred pause was applied");
+
+        int started = actions.started;
+        for (int i = 0; i < 5; i++) engine.tick(now + 100 + i * 10L);
+        assertEquals(started, actions.started, "no new placements while paused");
+        assertEquals(1, engine.snapshot().completed(), "the in-flight placement still completed");
+    }
+
+    @Test
     @DisplayName("stopping clears the plan's in-flight work and returns to idle")
     void stopReturnsToIdle() {
         engine.setPlan(List.of(block(0, 0, 0, "minecraft:stone", PlacementState.PENDING)));
