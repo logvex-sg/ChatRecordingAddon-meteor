@@ -143,6 +143,16 @@ public class LogCommand extends Command {
             return SINGLE_SUCCESS;
         }))));
 
+        builder.then(literal("import")
+            .executes(context -> {
+                info("Usage: (highlight).log import <file>(default).");
+                return SINGLE_SUCCESS;
+            })
+            .then(argument("path", StringArgumentType.greedyString()).executes(context -> {
+                importMaterials(StringArgumentType.getString(context, "path"));
+                return SINGLE_SUCCESS;
+            })));
+
         builder.then(literal("schematic").executes(context -> {
             schematicStatus();
             return SINGLE_SUCCESS;
@@ -186,6 +196,7 @@ public class LogCommand extends Command {
 
     private void help() {
         info("Log Addon commands:");
+        info("  (highlight).log gui(default) - open the addon window.");
         info("  (highlight).log status(default) - overall status.");
         info("  (highlight).log modules(default) - list Log Addon modules.");
         info("  (highlight).log stats(default) - session statistics.");
@@ -194,6 +205,7 @@ public class LogCommand extends Command {
         info("  (highlight).log tasks [list|start|pause|resume|stop|clear](default) - the bot queue.");
         info("  (highlight).log tasks add <type> <item> [amount](default) - queue a task.");
         info("  (highlight).log waypoints [list|add <name>](default) - bot waypoints.");
+        info("  (highlight).log import <file>(default) - import a material list.");
         info("  (highlight).log schematic [status|load <path>|start|pause|resume|stop](default).");
     }
 
@@ -397,6 +409,15 @@ public class LogCommand extends Command {
         info("Build: %s, %d/%d dropped (%s)", module.runState(),
             snapshot.confirmedDropped(), snapshot.totalRequired(),
             com.logvex.addon.common.Messages.percent(snapshot.percent()));
+    }
+
+    private void importMaterials(String path) {
+        SchematicDropperModule module = Modules.get().get(SchematicDropperModule.class);
+        if (module == null) {
+            error("The schematic dropper module is not available.");
+            return;
+        }
+        module.importMaterialFromPath(path);
     }
 
     private void loadSchematic(String path) {
