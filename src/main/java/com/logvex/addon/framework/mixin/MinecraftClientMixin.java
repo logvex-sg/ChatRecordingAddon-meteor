@@ -1,6 +1,6 @@
 package com.logvex.addon.framework.mixin;
 
-import com.logvex.addon.framework.MeteorClient;
+import com.logvex.addon.framework.Addon;
 import com.logvex.addon.framework.events.game.GameLeftEvent;
 import com.logvex.addon.framework.events.world.TickEvent;
 import com.logvex.addon.framework.utils.world.BlockIterator;
@@ -16,7 +16,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class MinecraftClientMixin {
     @Inject(method = "tick", at = @At("TAIL"))
     private void logaddon$onTick(CallbackInfo info) {
-        MeteorClient.EVENT_BUS.post(TickEvent.Post.get());
+        Addon.EVENT_BUS.post(TickEvent.Post.get());
         BlockIterator.tick();
         com.logvex.addon.LogAddon.tick();
     }
@@ -24,7 +24,7 @@ public abstract class MinecraftClientMixin {
     @Inject(method = "disconnect(Lnet/minecraft/client/gui/screen/Screen;Z)V", at = @At("HEAD"))
     private void logaddon$onDisconnect(Screen screen, boolean transferring, CallbackInfo info) {
         if (MinecraftClient.getInstance().world != null) {
-            MeteorClient.EVENT_BUS.post(new GameLeftEvent());
+            Addon.EVENT_BUS.post(new GameLeftEvent());
         }
     }
 

@@ -1,7 +1,7 @@
 package com.logvex.addon.framework.mixin;
 
 import com.logvex.addon.chatlog.mc.ChatFilterService;
-import com.logvex.addon.framework.MeteorClient;
+import com.logvex.addon.framework.Addon;
 import com.logvex.addon.framework.events.game.ReceiveMessageEvent;
 import net.minecraft.client.gui.hud.ChatHud;
 import net.minecraft.client.gui.hud.MessageIndicator;
@@ -29,6 +29,6 @@ public abstract class ChatHudMixin {
             info.cancel();
             return;
         }
-        MeteorClient.EVENT_BUS.post(event);
+        Addon.EVENT_BUS.post(event);
     }
 }

@@ -17,23 +17,65 @@ import com.logvex.addon.framework.utils.render.color.Color;
  * <p>A single shared instance is used everywhere, so a colour change here restyles every screen.
  * Widget factories stamp the theme onto the widget they return, which is why a widget created
  * through a theme never needs its theme assigned by hand.
+ *
+ * <p>The palette is mutable so a preset can be applied at runtime: every field is a {@link Color}
+ * instance that {@link #apply} replaces in place, and screens pick the new values up on their next
+ * frame. The spacing constants keep padding consistent across the whole addon.
  */
 public class GuiTheme {
-    public final Color text = new Color(230, 230, 230);
-    public final Color muted = new Color(150, 150, 150);
-    public final Color button = new Color(45, 45, 58);
-    public final Color buttonHover = new Color(70, 70, 90);
-    public final Color textBoxBackground = new Color(24, 24, 30);
-    public final Color textBoxBorder = new Color(70, 70, 84);
-    public final Color textBoxFocused = new Color(120, 190, 255);
-    public final Color separator = new Color(80, 80, 96);
-    public final Color separatorText = new Color(190, 190, 200);
-    public final Color windowBackground = new Color(14, 14, 18);
-    public final Color windowBorder = new Color(90, 90, 110);
-    public final Color windowTitle = new Color(140, 200, 255);
+    /** Horizontal padding inside a window. */
+    public static final double PAD = 6;
+    /** Vertical gap between stacked widgets. */
+    public static final double GAP = 2;
+
+    public Color text = new Color(230, 230, 230);
+    public Color muted = new Color(150, 150, 150);
+    public Color button = new Color(45, 45, 58);
+    public Color buttonHover = new Color(70, 70, 90);
+    public Color textBoxBackground = new Color(24, 24, 30);
+    public Color textBoxBorder = new Color(70, 70, 84);
+    public Color textBoxFocused = new Color(120, 190, 255);
+    public Color separator = new Color(80, 80, 96);
+    public Color separatorText = new Color(190, 190, 200);
+    public Color windowBackground = new Color(14, 14, 18);
+    public Color windowBorder = new Color(90, 90, 110);
+    public Color windowTitle = new Color(140, 200, 255);
+    /** Accent used for active tabs, highlighted rows and positive values. */
+    public Color accent = new Color(140, 200, 255);
+    public Color good = new Color(150, 220, 150);
+    public Color warn = new Color(255, 200, 120);
+    public Color bad = new Color(255, 140, 140);
+    /** Background drawn behind the whole screen, before the window. */
+    public Color screenBackground = new Color(0, 0, 0, 0x66);
+
+    /** Copies every colour from {@code other} so a preset applies without replacing the instance. */
+    public void apply(GuiTheme other) {
+        if (other == null) return;
+        text = other.text.copy();
+        muted = other.muted.copy();
+        button = other.button.copy();
+        buttonHover = other.buttonHover.copy();
+        textBoxBackground = other.textBoxBackground.copy();
+        textBoxBorder = other.textBoxBorder.copy();
+        textBoxFocused = other.textBoxFocused.copy();
+        separator = other.separator.copy();
+        separatorText = other.separatorText.copy();
+        windowBackground = other.windowBackground.copy();
+        windowBorder = other.windowBorder.copy();
+        windowTitle = other.windowTitle.copy();
+        accent = other.accent.copy();
+        good = other.good.copy();
+        warn = other.warn.copy();
+        bad = other.bad.copy();
+        screenBackground = other.screenBackground.copy();
+    }
 
     public WLabel label(String text) {
         return stamp(new WLabel(text, this.text));
+    }
+
+    public WLabel label(String text, Color color) {
+        return stamp(new WLabel(text, color));
     }
 
     public WButton button(String text) {

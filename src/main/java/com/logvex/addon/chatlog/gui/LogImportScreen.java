@@ -4,7 +4,7 @@ import com.logvex.addon.chatlog.core.ChatEntry;
 import com.logvex.addon.chatlog.core.LogImporter;
 import com.logvex.addon.chatlog.core.ReportFormatting;
 import com.logvex.addon.chatlog.mc.LogStorageService;
-import com.logvex.addon.framework.MeteorClient;
+import com.logvex.addon.framework.Addon;
 import com.logvex.addon.framework.gui.GuiThemes;
 import com.logvex.addon.framework.gui.WindowScreen;
 import com.logvex.addon.framework.gui.widgets.containers.WTable;
@@ -150,7 +150,7 @@ public class LogImportScreen extends WindowScreen {
     private void chooseFile() {
         Path root = storage.root();
         File start = root == null ? new File(".") : root.toFile();
-        MeteorClient.mc.setScreen(new FileBrowserScreen(start, "Choose a log file",
+        Addon.mc.setScreen(new FileBrowserScreen(start, "Choose a log file",
             List.of(".txt", ".csv", ".json", ".gz", ".log"), this::parse));
     }
 

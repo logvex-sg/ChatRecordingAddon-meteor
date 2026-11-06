@@ -21,7 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
 
-import static com.logvex.addon.framework.MeteorClient.mc;
+import static com.logvex.addon.framework.Addon.mc;
 
 /**
  * Reads the live client inventory and player state. Never mutates anything.

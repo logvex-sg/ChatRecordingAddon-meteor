@@ -12,7 +12,7 @@ import java.util.List;
 /**
  * Shared lookups for the {@code .log} commands.
  *
- * <p>Commands must never hold a module reference across calls: a module can be re-created by Meteor
+ * <p>Commands must never hold a module reference across calls: a module can be re-created at
  * on reload, so every accessor resolves the live instance through {@link Modules}. Keeping this in
  * one place means the command tree cannot accidentally cache a stale reference.
  */

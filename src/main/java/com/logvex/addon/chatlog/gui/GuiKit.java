@@ -9,7 +9,7 @@ import com.logvex.addon.framework.utils.render.color.Color;
 
 /**
  * Small helpers that keep the dashboard screens visually consistent and free of duplicated layout
- * code. Everything here uses only documented Meteor widgets.
+ * code. Everything here uses only the addon's own widgets.
  */
 final class GuiKit {
     static final Color MUTED = new Color(150, 150, 150);

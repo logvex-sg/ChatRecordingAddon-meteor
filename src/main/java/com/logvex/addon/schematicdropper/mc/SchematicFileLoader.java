@@ -27,23 +27,50 @@ import java.util.zip.GZIPInputStream;
  * decode touches Minecraft.
  */
 public final class SchematicFileLoader {
-    /** Reads and parses a schematic, detecting the format from the file extension. */
+    /** Reads and parses a schematic, detecting the format from the extension and then the content. */
     public Schematic load(Path path) throws SchematicParseException {
         if (path == null || !Files.isRegularFile(path)) {
             throw new SchematicParseException("That file does not exist.");
         }
 
         String fileName = path.getFileName().toString();
-        SchematicFormat format = SchematicFormat.fromFileName(fileName);
-        if (format == SchematicFormat.UNKNOWN) {
-            throw new SchematicParseException("Unsupported file type: " + fileName);
-        }
-        if (format == SchematicFormat.MATERIAL_LIST) {
+        SchematicFormat hinted = SchematicFormat.fromFileName(fileName);
+        if (hinted == SchematicFormat.MATERIAL_LIST) {
             throw new SchematicParseException("That is a material list, not a schematic. Use Import Material List.");
         }
 
         NbtNode root = readNbt(path, fileName);
 
+        // The extension is only a hint. Downloads are commonly renamed, have no extension, or carry
+        // the wrong one, and a reader chosen from a wrong hint decodes the file into garbage. When
+        // the hint is not a schematic, or the hinted reader cannot make sense of the tree, fall back
+        // to detecting the format from the NBT structure itself.
+        SchematicFormat format = hinted;
+        if (!format.isSchematic()) {
+            format = SchematicFormat.detect(root);
+            if (!format.isSchematic()) {
+                throw new SchematicParseException(
+                    "Could not recognise " + fileName + " as a schematic (.schem, .schematic or .litematic).");
+            }
+        }
+
+        try {
+            return read(format, fileName, root);
+        } catch (SchematicParseException first) {
+            SchematicFormat detected = SchematicFormat.detect(root);
+            if (detected != format && detected.isSchematic()) {
+                // The hint was wrong: retry with the format the content actually describes.
+                try {
+                    return read(detected, fileName, root);
+                } catch (SchematicParseException ignored) {
+                    // Report the original failure, which describes the hinted format the user picked.
+                }
+            }
+            throw first;
+        }
+    }
+
+    private Schematic read(SchematicFormat format, String fileName, NbtNode root) throws SchematicParseException {
         try {
             return switch (format) {
                 case SPONGE -> new SpongeSchematicReader().read(fileName, format, root);

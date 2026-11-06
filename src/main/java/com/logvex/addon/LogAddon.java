@@ -10,9 +10,7 @@ import com.logvex.addon.chatlog.modules.KeywordAlertsModule;
 import com.logvex.addon.chatlog.modules.PlayerActivityModule;
 import com.logvex.addon.chatlog.modules.SessionStatsModule;
 import com.mojang.logging.LogUtils;
-import com.logvex.addon.framework.MeteorClient;
-import com.logvex.addon.framework.addons.GithubRepo;
-import com.logvex.addon.framework.addons.MeteorAddon;
+import com.logvex.addon.framework.Addon;
 import com.logvex.addon.framework.systems.hud.Hud;
 import com.logvex.addon.framework.systems.hud.HudGroup;
 import com.logvex.addon.framework.systems.modules.Category;
@@ -25,22 +23,24 @@ import org.slf4j.Logger;
  * <p>Hosts the chat logging, monitoring, keyword alert, player activity and session statistics
  * modules, plus their HUD elements and the shared dashboard. The {@link ChatRecorder} is subscribed
  * once here so recording is independent of module toggles.
+ *
+ * <p>Standalone by design: this class owns its own module registry, event bus, HUD, command tree and
+ * configuration. Nothing here depends on another mod being installed.
  */
-public class LogAddon extends MeteorAddon {
+public class LogAddon {
     public static final Logger LOG = LogUtils.getLogger();
     public static final Category CATEGORY = new Category("Log Addon");
     public static final HudGroup HUD_GROUP = new HudGroup("Log Addon");
 
-    @Override
     public void onInitialize() {
         LOG.info("Initializing Log Addon");
 
         // Subscribe the recorder before any module so no early chat is missed. The chat filter and
         // the session timeline also subscribe once here: a filter that only worked while a module was
         // enabled would leak messages on toggle, and the timeline must be complete from the first join.
-        MeteorClient.EVENT_BUS.subscribe(new ChatRecorder());
-        com.logvex.addon.chatlog.mc.ChatFilterService.get().init(MeteorClient.EVENT_BUS);
-        com.logvex.addon.chatlog.mc.SessionTimelineService.get().init(MeteorClient.EVENT_BUS);
+        Addon.EVENT_BUS.subscribe(new ChatRecorder());
+        com.logvex.addon.chatlog.mc.ChatFilterService.get().init(Addon.EVENT_BUS);
+        com.logvex.addon.chatlog.mc.SessionTimelineService.get().init(Addon.EVENT_BUS);
 
         Modules.get().add(new ChatLoggerModule());
         Modules.get().add(new ChatMonitorModule());
@@ -57,7 +57,7 @@ public class LogAddon extends MeteorAddon {
         Modules.get().add(new com.logvex.addon.schematicdropper.SchematicDropperModule());
         Hud.get().register(com.logvex.addon.schematicdropper.SchematicProgressHud.INFO);
 
-        // Autonomous bot: the core is Minecraft-free, this is its Meteor shell.
+        // Autonomous bot: the core is Minecraft-free; this is its Minecraft-facing shell.
         Modules.get().add(new com.logvex.addon.bot.BotModule());
         Hud.get().register(com.logvex.addon.bot.hud.BotStatusHud.INFO);
 
@@ -101,18 +101,17 @@ public class LogAddon extends MeteorAddon {
         com.logvex.addon.framework.systems.config.ConfigManager.get().saveIfDirty();
     }
 
-    @Override
     public void onRegisterCategories() {
         Modules.get().registerCategory(CATEGORY);
     }
 
-    @Override
+    /** The addon's package root, exposed for diagnostics and the About screen. */
     public String getPackage() {
         return "com.logvex.addon";
     }
 
-    @Override
-    public GithubRepo getRepo() {
-        return new GithubRepo("logvex-sg", "ChatRecordingAddon-meteor");
+    /** The addon's source repository, exposed for the About screen. */
+    public String getRepo() {
+        return "https://github.com/logvex-sg/ChatRecordingAddon-meteor";
     }
 }

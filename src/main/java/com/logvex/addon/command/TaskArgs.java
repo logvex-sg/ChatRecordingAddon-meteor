@@ -7,7 +7,7 @@ import java.util.Locale;
 /**
  * Parses the small argument vocabulary the {@code .log} commands accept.
  *
- * <p>Kept separate from {@code LogCommand} on purpose: the command class extends Meteor's
+ * <p>Kept separate from {@code LogCommand} on purpose: the command class extends the addon's
  * {@code Command}, whose static initialiser needs a live Fabric environment. This helper touches
  * only Minecraft-free types, so the parsing rules can be tested without booting Minecraft.
  */

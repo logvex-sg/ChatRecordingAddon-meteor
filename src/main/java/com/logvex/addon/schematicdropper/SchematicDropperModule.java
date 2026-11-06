@@ -38,12 +38,12 @@ import com.logvex.addon.schematicdropper.mc.CreativeInventoryController;
 import com.logvex.addon.schematicdropper.mc.CreativeMinecraftEnv;
 import com.logvex.addon.schematicdropper.mc.DropBridge;
 import com.logvex.addon.schematicdropper.mc.DropController;
-import com.logvex.addon.schematicdropper.mc.MeteorRotationPort;
+import com.logvex.addon.schematicdropper.mc.ClientRotationPort;
 import com.logvex.addon.schematicdropper.mc.MinecraftEnv;
 import com.logvex.addon.schematicdropper.mc.RegistryItemResolver;
 import com.logvex.addon.schematicdropper.mc.SchematicFileImport;
 import com.logvex.addon.schematicdropper.mc.ServerInventoryTracker;
-import com.logvex.addon.framework.MeteorClient;
+import com.logvex.addon.framework.Addon;
 import com.logvex.addon.framework.events.game.GameJoinedEvent;
 import com.logvex.addon.framework.events.game.GameLeftEvent;
 import com.logvex.addon.framework.events.world.TickEvent;
@@ -72,7 +72,7 @@ import java.util.Locale;
 /**
  * Drops the materials of a loaded schematic, one confirmed transfer at a time.
  *
- * <p>All decisions live in {@link DropEngine}; this class is the Minecraft/Meteor shell around it:
+ * <p>All decisions live in {@link DropEngine}; this class is the Minecraft-facing shell around it:
  * settings, event subscription and the run controls exposed to the ClickGUI, the material overview
  * and the HUD.
  */
@@ -451,7 +451,7 @@ public class SchematicDropperModule extends Module {
     // Runtime
 
     private final ServerInventoryTracker serverTracker = new ServerInventoryTracker();
-    private final MeteorRotationPort rotationPort = new MeteorRotationPort();
+    private final ClientRotationPort rotationPort = new ClientRotationPort();
     private final ProgressTracker tracker = new ProgressTracker();
     private final DropController dropController = new DropController(serverTracker, inventoryMode::get);
     private final EnvPort env;
@@ -497,13 +497,13 @@ public class SchematicDropperModule extends Module {
         this.acquisition = new AcquisitionEngine(acquisitionEnv, creativeController, dropBridge,
             new AcquisitionListenerImpl());
         this.build = new SchematicBuildController(new BuildFeedback(),
-            MeteorClient.FOLDER().toPath().resolve("schematicdropper").resolve("checkpoints"));
+            Addon.FOLDER().toPath().resolve("schematicdropper").resolve("checkpoints"));
     }
 
     @Override
     public void onActivate() {
-        MeteorClient.EVENT_BUS.subscribe(serverTracker);
-        MeteorClient.EVENT_BUS.subscribe(creativeController);
+        Addon.EVENT_BUS.subscribe(serverTracker);
+        Addon.EVENT_BUS.subscribe(creativeController);
 
         ensureDataDirectory();
 
@@ -536,8 +536,8 @@ public class SchematicDropperModule extends Module {
         build.deactivate();
         SchematicProgressHud.disable();
         cancelImport();
-        MeteorClient.EVENT_BUS.unsubscribe(creativeController);
-        MeteorClient.EVENT_BUS.unsubscribe(serverTracker);
+        Addon.EVENT_BUS.unsubscribe(creativeController);
+        Addon.EVENT_BUS.unsubscribe(serverTracker);
     }
 
     @EventHandler
@@ -615,6 +615,9 @@ public class SchematicDropperModule extends Module {
         WButton overview = list.add(theme.button("Material Overview")).expandX().widget();
         overview.action = this::openMaterialOverview;
 
+        WButton preview = list.add(theme.button("Import Preview")).expandX().widget();
+        preview.action = this::openImportPreview;
+
         WHorizontalList buildRow = list.add(theme.horizontalList()).expandX().widget();
         WButton loadSchematic = buildRow.add(theme.button("Load Schematic...")).expandX().widget();
         loadSchematic.action = this::loadSchematicFile;
@@ -670,7 +673,7 @@ public class SchematicDropperModule extends Module {
 
     /** The folder the file pickers open in, created up front so the dialog never starts nowhere. */
     private static File dataDirectory() {
-        return new File(MeteorClient.FOLDER(), "schematicdropper");
+        return new File(Addon.FOLDER(), "schematicdropper");
     }
 
     private static void ensureDataDirectory() {
@@ -1002,7 +1005,7 @@ public class SchematicDropperModule extends Module {
         ensureDataDirectory();
         mc.setScreen(new com.logvex.addon.schematicdropper.gui.FileBrowserScreen(
             dataDirectory(), "Select Material List or Schematic",
-            java.util.List.of(".txt", ".md", ".csv", ".schem", ".schematic", ".litematic"),
+            java.util.List.of(".txt", ".md", ".csv", ".schem", ".schematic", ".litematic", ".nbt", ".dat"),
             file -> importMaterialFromPath(file.getAbsolutePath())));
     }
 
@@ -1036,8 +1039,10 @@ public class SchematicDropperModule extends Module {
         if (!ensureActiveForWork("import a material list")) return;
 
         // A schematic is imported by loading it: the block counts become the material list, so the
-        // same file can drive dropping, acquisition and building.
-        if (isSchematicFile(file.getName())) {
+        // same file can drive dropping, acquisition and building. The extension is only a hint, so
+        // the bytes decide when it is missing or wrong: gzipped NBT is a schematic, plain text is a
+        // material list.
+        if (looksLikeSchematic(file)) {
             build.loadAsync(file.toPath());
             info("Importing " + file.getName() + "...");
             return;
@@ -1047,6 +1052,30 @@ public class SchematicDropperModule extends Module {
         pendingImport = new SchematicFileImport(file.toPath(), itemResolver());
         lastImportName = file.getName();
         info("Importing " + file.getName() + "...");
+    }
+
+    /**
+     * True when {@code file} should be loaded as a schematic rather than parsed as a material list.
+     *
+     * <p>Known schematic extensions win. For anything else the leading bytes are inspected: gzip
+     * (the container for every supported schematic) starts {@code 1F 8B}, whereas a material list is
+     * plain text. This is what makes a schematic that lost its extension, or carries a generic
+     * {@code .nbt}, still import instead of being fed to the text parser.
+     */
+    private static boolean looksLikeSchematic(File file) {
+        if (isSchematicFile(file.getName())) return true;
+        SchematicFormat hint = SchematicFormat.fromFileName(file.getName());
+        if (hint == SchematicFormat.MATERIAL_LIST) return false;
+
+        try (java.io.InputStream in = new java.io.BufferedInputStream(new java.io.FileInputStream(file))) {
+            in.mark(2);
+            int b1 = in.read();
+            int b2 = in.read();
+            in.reset();
+            return b1 == 0x1F && b2 == 0x8B;
+        } catch (java.io.IOException e) {
+            return false;
+        }
     }
 
     private static boolean isSchematicFile(String fileName) {
@@ -1116,6 +1145,10 @@ public class SchematicDropperModule extends Module {
                 debug(lastImportName + " " + entry);
             }
         }
+
+        // Show the user exactly what was imported before anything is acquired or dropped: the whole
+        // point of the preview step is to catch a bad import before it drives a build.
+        previewAfterImport();
     }
 
     private String shortReason(Exception e) {
@@ -1153,6 +1186,30 @@ public class SchematicDropperModule extends Module {
 
     public void openAcquisitionScreen() {
         mc.setScreen(new AcquisitionScreen(this));
+    }
+
+    /** Opens the preview of the last import, if there is one. */
+    public void openImportPreview() {
+        if (lastImport == null) {
+            error("Nothing has been imported yet. Use \"Import Material List...\" first.");
+            return;
+        }
+        mc.setScreen(new com.logvex.addon.schematicdropper.gui.MaterialImportPreviewScreen(this, lastImport));
+    }
+
+    /**
+     * Opens the preview after an import, but only when it would not steal focus from an unrelated
+     * screen. Importing from a file browser (one of ours) or with no screen open is the normal case;
+     * a screen owned by another mod is left alone.
+     */
+    private void previewAfterImport() {
+        if (lastImport == null) return;
+        if (mc.currentScreen == null
+            || mc.currentScreen instanceof com.logvex.addon.framework.gui.WidgetScreen) {
+            openImportPreview();
+        } else {
+            info("Use \"Import Preview\" to review the imported list.");
+        }
     }
 
     public void openBuildScreen() {

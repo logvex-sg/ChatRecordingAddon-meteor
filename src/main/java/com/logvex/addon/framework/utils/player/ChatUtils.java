@@ -24,7 +24,7 @@ public final class ChatUtils {
         forcedPrefix = null;
     }
 
-    public static Text getMeteorPrefix() {
+    public static Text getAddonPrefix() {
         return Text.literal(PREFIX).formatted(Formatting.AQUA);
     }
 

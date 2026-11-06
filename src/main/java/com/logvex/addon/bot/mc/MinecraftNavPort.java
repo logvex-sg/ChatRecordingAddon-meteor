@@ -8,13 +8,13 @@ import com.logvex.addon.framework.utils.player.CustomPlayerInput;
 import net.minecraft.client.input.Input;
 import net.minecraft.util.math.BlockPos;
 
-import static com.logvex.addon.framework.MeteorClient.mc;
+import static com.logvex.addon.framework.Addon.mc;
 
 /**
  * {@link NavPort} that prefers a real path manager and otherwise falls back to a bounded walker.
  *
  * <p>If Baritone or Voyager is installed, their path manager is used. Otherwise the bot walks toward
- * the target using the same {@link CustomPlayerInput} override Meteor's own modules use. The walker
+ * the target using the same {@link CustomPlayerInput} override the walker uses. The walker
  * is deliberately conservative: it stops and reports failure when it stops making progress, so a
  * blocked or impossible route ends the navigation instead of walking into a wall forever.
  */
@@ -188,7 +188,7 @@ public final class MinecraftNavPort implements NavPort {
     }
 
     /**
-     * The path manager Meteor selected. {@code "none"} means neither Baritone nor Voyager is
+     * The path manager that is active. {@code "none"} means neither Baritone nor Voyager is
      * installed and the built-in walker is being used.
      */
     public static String activeManagerName() {
@@ -202,8 +202,8 @@ public final class MinecraftNavPort implements NavPort {
     }
 
     /**
-     * Applies Meteor's path-manager settings. Baritone's walk-on-water/lava/step/no-fall options are
-     * surfaced as Meteor settings, so the bot should respect the user's configuration instead of
+     * Applies the path-manager settings. Baritone's walk-on-water/lava/step/no-fall options are
+     * surfaced as module settings, so the bot should respect the user's configuration instead of
      * forcing its own. No-ops when no path manager is installed.
      */
     public static void applyPathSettings(boolean walkOnWater, boolean walkOnLava, boolean step, boolean noFall) {

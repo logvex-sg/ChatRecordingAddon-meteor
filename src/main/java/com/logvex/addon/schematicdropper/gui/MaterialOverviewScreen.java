@@ -18,12 +18,12 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 
-import static com.logvex.addon.framework.MeteorClient.mc;
+import static com.logvex.addon.framework.Addon.mc;
 
 /**
  * Material overview: one row per material with live, confirmed progress values.
  *
- * <p>Uses only standard Meteor window widgets so it opens through the normal GUI stack and can be
+ * <p>Uses only the addon's standard window widgets so it opens through the normal GUI stack and can be
  * opened from the module's ClickGUI screen.
  */
 public class MaterialOverviewScreen extends WindowScreen {

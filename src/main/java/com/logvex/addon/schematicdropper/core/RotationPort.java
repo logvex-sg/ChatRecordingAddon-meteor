@@ -1,11 +1,11 @@
 package com.logvex.addon.schematicdropper.core;
 
-/** Applies and restores player rotation. Implemented over the Meteor rotation helper. */
+/** Applies and restores player rotation. Implemented over the client rotation helper. */
 public interface RotationPort {
     /**
      * Rotates toward {@code target} and returns the rotation the port is now aiming with.
      *
-     * <p>Meteor's rotation helper restores the client's own yaw/pitch right after the movement
+     * <p>The client rotation helper restores the client's own yaw/pitch right after the movement
      * packet is sent, so the player's {@code getYaw()} cannot be used to detect convergence.
      * The port therefore keeps its own interpolated state and returns it here.
      *

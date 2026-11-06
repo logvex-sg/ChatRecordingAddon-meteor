@@ -7,7 +7,7 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import com.logvex.addon.framework.MeteorClient;
+import com.logvex.addon.framework.Addon;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -158,8 +158,8 @@ public final class FileMemoryStore implements MemoryStore {
         return o.has(key) && o.get(key).isJsonPrimitive() ? o.get(key).getAsString() : "";
     }
 
-    /** The default memory file under the Meteor folder. */
+    /** The default memory file under the addon's data folder. */
     public static Path defaultPath() {
-        return MeteorClient.FOLDER().toPath().resolve("logaddon").resolve("bot-memory.json");
+        return Addon.FOLDER().toPath().resolve("logaddon").resolve("bot-memory.json");
     }
 }

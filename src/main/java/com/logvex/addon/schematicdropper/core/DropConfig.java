@@ -1,7 +1,7 @@
 package com.logvex.addon.schematicdropper.core;
 
 /**
- * Immutable engine configuration. Built from the module's Meteor settings on every tick so that
+ * Immutable engine configuration. Built from the module's settings on every tick so that
  * changing a setting takes effect immediately without restarting the run.
  */
 public record DropConfig(

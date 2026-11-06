@@ -16,7 +16,7 @@ import net.minecraft.util.Identifier;
 
 import java.util.function.Supplier;
 
-import static com.logvex.addon.framework.MeteorClient.mc;
+import static com.logvex.addon.framework.Addon.mc;
 
 /**
  * Performs real, server-synchronised inventory drops.

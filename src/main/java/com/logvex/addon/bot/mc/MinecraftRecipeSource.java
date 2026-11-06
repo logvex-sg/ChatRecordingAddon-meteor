@@ -11,7 +11,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-import static com.logvex.addon.framework.MeteorClient.mc;
+import static com.logvex.addon.framework.Addon.mc;
 
 /**
  * {@link RecipeSource} backed by the live recipe manager.

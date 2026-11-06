@@ -6,13 +6,13 @@ import com.logvex.addon.schematicdropper.core.RotationPort;
 import com.logvex.addon.framework.utils.player.Rotations;
 
 /**
- * Rotation adapter built on Meteor's {@link Rotations} helper.
+ * Rotation adapter built on the addon's {@link Rotations} helper.
  *
  * <p>{@code Rotations} queues a yaw/pitch pair and restores the client's own rotation right after
  * the movement packet is sent. The player's {@code getYaw()} therefore never reflects the queued
  * rotation, so this class keeps its own interpolated state and exposes it through {@link #apply}.
  */
-public final class MeteorRotationPort implements RotationPort {
+public final class ClientRotationPort implements RotationPort {
     private static final int PRIORITY = 50;
 
     private Rotation current;

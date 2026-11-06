@@ -8,7 +8,7 @@ import com.logvex.addon.chatlog.core.ReportFormatting;
 import com.logvex.addon.chatlog.mc.LogService;
 import com.logvex.addon.chatlog.mc.LogStorageService;
 import com.logvex.addon.chatlog.gui.LogDashboardScreen;
-import com.logvex.addon.framework.MeteorClient;
+import com.logvex.addon.framework.Addon;
 import com.logvex.addon.framework.gui.GuiTheme;
 import com.logvex.addon.framework.gui.widgets.WWidget;
 import com.logvex.addon.framework.gui.widgets.containers.WHorizontalList;
@@ -324,7 +324,7 @@ public class ChatLoggerModule extends Module {
     }
 
     private void onClient(Runnable task) {
-        var client = MeteorClient.mc;
+        var client = Addon.mc;
         if (client == null) {
             task.run();
             return;
@@ -392,7 +392,7 @@ public class ChatLoggerModule extends Module {
     public Path storagePath() {
         String configured = storageDirectory.get();
         String relative = configured == null || configured.isBlank() ? "logaddon/logs" : configured;
-        return MeteorClient.FOLDER().toPath().resolve(relative);
+        return Addon.FOLDER().toPath().resolve(relative);
     }
 
     // ------------------------------------------------------------------ controls

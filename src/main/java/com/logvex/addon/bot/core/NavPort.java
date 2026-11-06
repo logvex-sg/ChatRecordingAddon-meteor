@@ -37,7 +37,7 @@ public interface NavPort {
     double maxDistance();
 
     /**
-     * The navigation backend in use, for display. Meteor exposes Baritone (or Voyager) through its
+     * The navigation backend in use, for display. Baritone (or Voyager) is detected at runtime and
      * path-manager abstraction; when neither is installed this reports the built-in walker.
      */
     default String backendName() {

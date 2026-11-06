@@ -27,7 +27,7 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * The Log Addon dashboard: a single Meteor-native window with live, search, players, keywords and
+ * The Log Addon dashboard: a single native window with live, search, players, keywords and
  * statistics tabs. Every control invokes the real module functionality and every value is read from
  * the shared runtime.
  */
