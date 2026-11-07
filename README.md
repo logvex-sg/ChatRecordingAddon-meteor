@@ -264,6 +264,40 @@ The Navigation settings group exposes the path-manager options — `walk-on-wate
 bot agree on how the player may move; they have no effect with the built-in walker. Movement is never teleported or otherwise faked: success requires the player's
 actual position to be within the arrival tolerance.
 
+### Profiles
+
+A **profile** is a named snapshot of the bot's settings. **Profiles...** on the bot dashboard (or
+the `.bot profile` command) lists the built-in profiles, applies one, captures the current settings
+under a new name, and deletes user profiles. Built-in profiles are marked and cannot be overwritten
+or deleted, so a known-good starting point is always available. Applying a profile changes only the
+settings the profile actually stores; everything else is left as it is, so a profile saved before a
+new setting existed still loads cleanly. Profiles are written to
+`<gamedir>/logaddon/profiles.json` with an atomic write; a corrupt file loads as empty rather than
+resetting your configuration.
+
+### Emergency stop
+
+The dashboard's **Emergency Stop** button (or `.bot emergency`) is the immediate, no-questions stop:
+it cancels the active task, clears the queue, cancels goals and scheduled tasks, stops navigation and
+cancels any in-flight block interaction, then returns to idle. It is deliberately more forceful than
+**Stop**, which keeps the queue so work can be resumed.
+
+### `.bot` command
+
+The `.bot` command (alias `.b`) is the short front end for the bot, built on the same methods the
+dashboard and HUD use, so a command never diverges from the GUI:
+
+| Command | Effect |
+| --- | --- |
+| `.bot [status]` | Automation state, queue length, navigation backend and current destination. |
+| `.bot start\|pause\|resume\|stop` | Controls the automation, validating the current state first. |
+| `.bot emergency` | The immediate stop described above. |
+| `.bot goto <x y z>` or `.bot goto <waypoint>` | Queues a navigation task to a coordinate or a saved waypoint. |
+| `.bot tasks [clear]` | Lists the queue, or empties it. |
+| `.bot waypoint add\|del\|list <name>` | Manages named waypoints. |
+| `.bot profile [list\|apply\|save\|delete] <name>` | Manages bot profiles. |
+
+
 ## Chat intelligence modules
 
 These modules extend the chat toolkit. They share the same output formatter (`com.logvex.addon.common.Messages`)

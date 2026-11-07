@@ -24,6 +24,15 @@ public interface NavPort {
     /** Stops any navigation in progress. */
     void stop();
 
+    /**
+     * The position currently being navigated to, or {@code null} when no navigation is in progress.
+     * Used by the dashboard and HUD to show the destination and the remaining distance; it is never
+     * used to decide success, which always comes from {@link #arrived}.
+     */
+    default BlockPos3 target() {
+        return null;
+    }
+
     /** True when the player is within {@code tolerance} blocks of the target. */
     boolean arrived(BlockPos3 target, double tolerance);
 

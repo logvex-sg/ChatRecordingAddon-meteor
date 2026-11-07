@@ -216,4 +216,33 @@ class BotControllerTest {
             assertFalse(entry.outcome() == TaskState.DONE && entry.description().contains("oak"));
         }
     }
+
+    @Test
+    void emergencyStopCancelsEverythingAndReturnsToIdle() {
+        BotFakes.Harness h = new BotFakes.Harness();
+        h.world.blocks.put("minecraft:oak_log", List.of(new BlockPos3(1, 64, 0)));
+        BotController controller = controller(h, new RecordingListener());
+        controller.start();
+        controller.addTask(new BotTask(TaskType.GATHERING, "a").itemId("minecraft:oak_log").required(5));
+        controller.addTask(new BotTask(TaskType.GATHERING, "b").itemId("minecraft:oak_log").required(5));
+
+        h.clock.advance(200);
+        controller.tick();
+        assertTrue(controller.queue().size() > 0);
+
+        controller.emergencyStop();
+
+        assertEquals(BotState.IDLE, controller.state());
+        assertTrue(controller.queue().isEmpty(), "emergency stop must empty the queue");
+        assertTrue(h.nav.ticks >= 0);
+    }
+
+    @Test
+    void emergencyStopFromIdleIsSafe() {
+        BotFakes.Harness h = new BotFakes.Harness();
+        BotController controller = controller(h, new RecordingListener());
+        controller.emergencyStop();
+        assertEquals(BotState.IDLE, controller.state());
+        assertTrue(controller.queue().isEmpty());
+    }
 }

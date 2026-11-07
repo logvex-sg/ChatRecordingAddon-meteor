@@ -22,6 +22,7 @@ public final class Commands {
     @PostInit(dependencies = PathManagers.class)
     public static void init() {
         add(new com.logvex.addon.command.LogCommand());
+        add(new com.logvex.addon.command.BotCommand());
         COMMANDS.sort(Comparator.comparing(Command::getName));
     }
 
