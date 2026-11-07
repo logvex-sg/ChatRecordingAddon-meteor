@@ -56,6 +56,20 @@ public class LogAddon {
         Modules.get().add(new com.logvex.addon.chatlog.modules.PlayerIdentityModule());
         Modules.get().add(new com.logvex.addon.chatlog.modules.SessionHistoryModule());
 
+        // Automation: Minecraft-facing shells over the Minecraft-free controllers in
+        // com.logvex.addon.automation.core. Each is independent and cleans up on deactivate.
+        Modules.get().add(new com.logvex.addon.automation.modules.AutoCreativeModule());
+        Modules.get().add(new com.logvex.addon.automation.modules.AutoEatModule());
+        Modules.get().add(new com.logvex.addon.automation.modules.AutoToolModule());
+        Modules.get().add(new com.logvex.addon.automation.modules.AutoReplenishModule());
+        Modules.get().add(new com.logvex.addon.automation.modules.AutoSprintModule());
+        Modules.get().add(new com.logvex.addon.automation.modules.SafeWalkModule());
+        Modules.get().add(new com.logvex.addon.automation.modules.AntiAfkModule());
+        Modules.get().add(new com.logvex.addon.automation.modules.ArmorGuardModule());
+        Modules.get().add(new com.logvex.addon.automation.modules.AutoLogModule());
+        Modules.get().add(new com.logvex.addon.automation.modules.AutoReconnectModule());
+        Modules.get().add(new com.logvex.addon.automation.modules.ServerMonitorModule());
+
         // Keep the existing Schematic Dropper module and its HUD.
         Modules.get().add(new com.logvex.addon.schematicdropper.SchematicDropperModule());
         Hud.get().register(com.logvex.addon.schematicdropper.SchematicProgressHud.INFO);
