@@ -5,29 +5,31 @@ import com.logvex.addon.chatlog.core.MessageType;
 import com.logvex.addon.chatlog.core.ReportFormatting;
 import com.logvex.addon.chatlog.core.StatsSnapshot;
 import com.logvex.addon.chatlog.mc.LogService;
+import com.logvex.addon.common.Messages;
 import com.logvex.addon.framework.settings.BoolSetting;
-import com.logvex.addon.framework.settings.ColorSetting;
 import com.logvex.addon.framework.settings.Setting;
 import com.logvex.addon.framework.settings.SettingGroup;
 import com.logvex.addon.framework.systems.hud.HudElement;
 import com.logvex.addon.framework.systems.hud.HudElementInfo;
+import com.logvex.addon.framework.systems.hud.HudPanel;
 import com.logvex.addon.framework.systems.hud.HudRenderer;
-import com.logvex.addon.framework.utils.render.color.Color;
-import com.logvex.addon.framework.utils.render.color.SettingColor;
+import com.logvex.addon.framework.systems.hud.HudSettings;
+import com.logvex.addon.framework.systems.hud.HudStyle;
 
 import java.util.ArrayList;
 import java.util.List;
 
-/** HUD summarising the current session statistics. */
+/**
+ * HUD summarising the current session statistics.
+ *
+ * <p>Each row is a key/value pair, right-aligned, so the panel reads as a small table rather than a
+ * ragged list. Values use the shared formatters, so "4.2k" and "3m 12s" look the same here as in chat.
+ */
 public class StatsHud extends HudElement {
     public static final HudElementInfo<StatsHud> INFO =
         new HudElementInfo<>(LogAddon.HUD_GROUP, "session-stats", "Session chat statistics.", StatsHud::new);
 
-    private static final Color MUTED = new Color(150, 150, 150);
-    private static final Color TEXT = new Color(230, 230, 230);
-
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
-    private final SettingGroup sgStyle = settings.createGroup("Style");
 
     private final Setting<Boolean> showTotal = sgGeneral.add(new BoolSetting.Builder()
         .name("show-total").description("Show the total message count.").defaultValue(true).build());
@@ -46,44 +48,28 @@ public class StatsHud extends HudElement {
     private final Setting<Boolean> showBreakdown = sgGeneral.add(new BoolSetting.Builder()
         .name("show-breakdown").description("Show a per-type breakdown.").defaultValue(false).build());
 
-    private final Setting<Boolean> background = sgStyle.add(new BoolSetting.Builder()
-        .name("background").description("Draw a background behind the HUD.").defaultValue(true).build());
-    private final Setting<SettingColor> backgroundColor = sgStyle.add(new ColorSetting.Builder()
-        .name("background-color").description("Background color.")
-        .defaultValue(new SettingColor(12, 12, 16, 170)).visible(background::get).build());
-    private final Setting<SettingColor> titleColor = sgStyle.add(new ColorSetting.Builder()
-        .name("title-color").description("Title color.")
-        .defaultValue(new SettingColor(140, 200, 255)).build());
-    private final Setting<Boolean> customScale = sgStyle.add(new BoolSetting.Builder()
-        .name("custom-scale").description("Use a custom text scale instead of the global one.")
-        .defaultValue(false).build());
-    private final Setting<Double> scale = sgStyle.add(new com.logvex.addon.framework.settings.DoubleSetting.Builder()
-        .name("scale").description("Custom scale.").defaultValue(1).min(0.5).sliderRange(0.5, 3)
-        .visible(customScale::get).build());
-
     private final LogService service = LogService.get();
 
     public StatsHud() {
         super(INFO);
     }
 
-    private double getScale() {
-        return customScale.get() ? scale.get() : -1;
+    private record Row(String key, String value) {
     }
 
-    private List<String> lines(StatsSnapshot snapshot) {
-        List<String> out = new ArrayList<>();
-        if (showTotal.get()) out.add("Messages: " + snapshot.totalMessages());
-        if (showRate.get()) out.add(String.format(java.util.Locale.ROOT, "Rate: %.1f/min", snapshot.messagesPerMinute()));
-        if (showPlayers.get()) out.add("Players: " + snapshot.uniquePlayers());
-        if (showJoins.get()) out.add("Joins/Leaves: " + snapshot.joinEvents() + "/" + snapshot.leaveEvents());
-        if (showDeaths.get()) out.add("Deaths: " + snapshot.deathEvents());
-        if (showKeywords.get()) out.add("Keyword alerts: " + snapshot.keywordAlerts());
-        if (showDuration.get()) out.add("Duration: " + ReportFormatting.duration(snapshot.durationMs()));
+    private List<Row> rows(StatsSnapshot snapshot) {
+        List<Row> out = new ArrayList<>();
+        if (showTotal.get()) out.add(new Row("Messages", Messages.number(snapshot.totalMessages())));
+        if (showRate.get()) out.add(new Row("Rate", Messages.decimal(snapshot.messagesPerMinute(), 1) + "/min"));
+        if (showPlayers.get()) out.add(new Row("Players", Messages.number(snapshot.uniquePlayers())));
+        if (showJoins.get()) out.add(new Row("Joins / Leaves", snapshot.joinEvents() + " / " + snapshot.leaveEvents()));
+        if (showDeaths.get()) out.add(new Row("Deaths", Messages.number(snapshot.deathEvents())));
+        if (showKeywords.get()) out.add(new Row("Alerts", Messages.number(snapshot.keywordAlerts())));
+        if (showDuration.get()) out.add(new Row("Duration", ReportFormatting.duration(snapshot.durationMs())));
         if (showBreakdown.get()) {
             for (MessageType type : MessageType.values()) {
                 long count = snapshot.count(type);
-                if (count > 0) out.add("  " + type + ": " + count);
+                if (count > 0) out.add(new Row(type.toString(), Messages.number(count)));
             }
         }
         return out;
@@ -91,37 +77,37 @@ public class StatsHud extends HudElement {
 
     @Override
     public void tick(HudRenderer renderer) {
-        double scaleValue = getScale();
-        double lineHeight = renderer.textHeight(true, scaleValue) + 1;
-        List<String> lines = lines(service.snapshot());
+        double scale = HudPanel.scale(shared);
+        boolean shadow = shared.shadow.get();
+        List<Row> rows = rows(service.snapshot());
 
-        double width = renderer.textWidth("Session Stats", true, scaleValue);
-        for (String line : lines) width = Math.max(width, renderer.textWidth(line, true, scaleValue));
-
-        double height = lineHeight * (1 + Math.max(1, lines.size()));
-        setSize(width + 6, height + 6);
+        double width = renderer.textWidth("Session", shadow, scale);
+        for (Row row : rows) {
+            double rowWidth = renderer.textWidth(row.key(), shadow, scale)
+                + renderer.textWidth(row.value(), shadow, scale) + 10;
+            width = Math.max(width, rowWidth);
+        }
+        double lineHeight = renderer.textHeight(shadow, scale) + HudPanel.LINE_GAP;
+        int count = Math.max(1, rows.size());
+        setSize(width + HudPanel.PAD * 2, lineHeight * (count + 1) + HudPanel.PAD * 2);
     }
 
     @Override
     public void render(HudRenderer renderer) {
-        double scaleValue = getScale();
-        double lineHeight = renderer.textHeight(true, scaleValue) + 1;
-        double left = x + 3;
-        double cursor = y + 3;
+        double scale = HudPanel.scale(shared);
+        boolean shadow = shared.shadow.get();
+        HudStyle style = HudPanel.style(shared, renderer.theme);
+        double cursor = HudPanel.frame(renderer, this, style, shared.background.get(), shared.border.get(),
+            "Session", scale, shadow);
 
-        if (background.get()) renderer.quad(x, y, getWidth(), getHeight(), backgroundColor.get());
-
-        renderer.text("Session Stats", left, cursor, titleColor.get(), true, scaleValue);
-        cursor += lineHeight;
-
-        List<String> lines = lines(service.snapshot());
-        if (lines.isEmpty()) {
-            renderer.text("No statistics", left, cursor, MUTED, true, scaleValue);
+        List<Row> rows = rows(service.snapshot());
+        if (rows.isEmpty()) {
+            HudPanel.line(renderer, this, "No statistics yet", cursor, style.muted(), scale, shadow);
             return;
         }
-        for (String line : lines) {
-            renderer.text(line, left, cursor, TEXT, true, scaleValue);
-            cursor += lineHeight;
+        for (Row row : rows) {
+            HudPanel.keyValue(renderer, this, row.key(), row.value(), cursor, style.muted(), style.text(), scale, shadow);
+            cursor += HudPanel.lineHeight(renderer, scale);
         }
     }
 }

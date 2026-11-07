@@ -13,6 +13,15 @@ public abstract class WindowScreen extends WidgetScreen {
         window = new WWindow(title);
         window.theme = theme;
         window.view.theme = theme;
+    }
+
+    /**
+     * Re-attaches the window frame. The root is cleared on every reload, so the frame has to be added
+     * back or the screen would render nothing after its first interaction.
+     */
+    @Override
+    protected void populateRoot() {
+        window.clear();
         root.add(window).expandX();
     }
 

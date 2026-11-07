@@ -19,6 +19,21 @@ public final class Settings {
         return group;
     }
 
+    /** Creates a group at a fixed position, so shared groups can precede an owner's own ones. */
+    public SettingGroup createGroupAt(int index, String name) {
+        SettingGroup group = new SettingGroup(name);
+        groups.add(Math.max(0, Math.min(index, groups.size())), group);
+        return group;
+    }
+
+    /** True when a group with this name already exists, so a shared group is never duplicated. */
+    public boolean hasGroup(String name) {
+        for (SettingGroup group : groups) {
+            if (group.name().equals(name)) return true;
+        }
+        return false;
+    }
+
     public List<SettingGroup> groups() {
         return Collections.unmodifiableList(groups);
     }

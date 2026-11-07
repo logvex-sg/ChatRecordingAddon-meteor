@@ -6,20 +6,22 @@ import com.logvex.addon.framework.gui.GuiTheme;
 import com.logvex.addon.framework.gui.GuiThemePreset;
 import com.logvex.addon.framework.gui.GuiThemes;
 import com.logvex.addon.framework.gui.WidgetScreen;
+import com.logvex.addon.framework.gui.widgets.containers.WCard;
 import com.logvex.addon.framework.gui.widgets.containers.WHorizontalList;
 import com.logvex.addon.framework.gui.widgets.containers.WTable;
 import com.logvex.addon.framework.gui.widgets.containers.WVerticalList;
 import com.logvex.addon.framework.gui.widgets.input.WTextBox;
 import com.logvex.addon.framework.gui.widgets.pressable.WButton;
+import com.logvex.addon.framework.gui.widgets.pressable.WToggle;
 import com.logvex.addon.framework.systems.config.ClientConfig;
 import com.logvex.addon.framework.systems.config.ConfigManager;
 import com.logvex.addon.framework.systems.hud.Hud;
 import com.logvex.addon.framework.systems.hud.HudElementInfo;
-import com.logvex.addon.framework.systems.modules.Category;
 import com.logvex.addon.framework.systems.modules.Module;
 import com.logvex.addon.framework.systems.modules.Modules;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.gui.screen.Screen;
 
 import java.util.List;
 import java.util.Locale;
@@ -27,73 +29,58 @@ import java.util.Locale;
 /**
  * The addon's main window.
  *
- * <p>One entry point that makes every feature reachable without a command: a searchable module list
- * grouped by category, the HUD element list, a colour-scheme picker and an About page. It opens on
- * Right Shift and from {@code .log gui}.
- *
- * <p>The window is tabbed rather than one long scroll so the important lists stay short and the
- * screen keeps a stable shape as modules are added. Search filters within the active tab, matching a
- * module's title, id or description, so a user who knows roughly what they want can type three
- * letters and find it.
+ * <p>Three tabs: Modules, HUD and Theme. Each list is a stack of cards, one per entry, with a big
+ * on/off switch on the left and a Settings button on the right; search narrows the list. The aim is
+ * that a first-time user can turn something on and open its settings without reading anything.
  */
 public class ClickGuiScreen extends WidgetScreen {
-    private enum Tab {
-        MODULES("Modules"),
-        HUD("HUD"),
-        THEME("Theme"),
-        ABOUT("About");
+    private static final String[] TABS = {"Modules", "HUD", "Theme"};
 
-        final String label;
-
-        Tab(String label) {
-            this.label = label;
-        }
-    }
-
-    private Tab tab = Tab.MODULES;
+    private int tab;
     private String query = "";
 
     public ClickGuiScreen() {
         super(GuiThemes.get(), "Log Addon");
+        this.tab = 0;
+    }
+
+    /** Opens the window on the HUD tab, used by "Manage HUD" from the editor. */
+    public ClickGuiScreen(int tab) {
+        super(GuiThemes.get(), "Log Addon");
+        this.tab = tab;
     }
 
     @Override
     public void initWidgets() {
         GuiTheme theme = this.theme;
 
-        // Header: the addon name and version, so the window is self-identifying.
         WHorizontalList header = add(theme.horizontalList()).expandX().widget();
-        header.add(theme.label(Addon.NAME + "  v" + Addon.VERSION)).expandX();
-        header.add(theme.label(activeSummary())).widget().color(theme.muted);
+        header.add(theme.label(Addon.NAME + "   v" + Addon.VERSION)).expandX();
+        header.add(theme.label(summary()).color(theme.muted)).widget();
 
-        WTable tabs = add(theme.table()).expandX().widget();
-        for (Tab value : Tab.values()) {
-            WButton button = tabs.add(theme.button(value == tab ? "[" + value.label + "]" : value.label)).widget();
+        WTable strip = add(theme.table()).expandX().widget();
+        for (int i = 0; i < TABS.length; i++) {
+            boolean active = i == tab;
+            WButton button = strip.add(theme.button(active ? "[ " + TABS[i] + " ]" : TABS[i])).widget();
+            int index = i;
             button.action = () -> {
-                tab = value;
+                tab = index;
                 reload();
             };
         }
-        tabs.finish();
+        strip.finish();
 
-        // Search only makes sense where there is a long list to filter.
-        if (tab == Tab.MODULES || tab == Tab.HUD) {
-            WTextBox search = add(theme.textBox(query,
-                tab == Tab.MODULES ? "Search modules..." : "Search HUD elements...")).expandX().widget();
+        if (tab == 0 || tab == 1) {
+            WTextBox search = add(theme.textBox(query, tab == 0 ? "Search modules..." : "Search HUD...")).expandX().widget();
             search.action = () -> {
                 query = search.get();
                 reload();
             };
         }
 
-        add(theme.horizontalSeparator()).expandX();
-
-        switch (tab) {
-            case MODULES -> renderModules(theme);
-            case HUD -> renderHud(theme);
-            case THEME -> renderTheme(theme);
-            case ABOUT -> renderAbout(theme);
-        }
+        if (tab == 0) renderModules(theme);
+        else if (tab == 1) renderHud(theme);
+        else renderTheme(theme);
 
         add(theme.button("Close", () -> MinecraftClient.getInstance().setScreen(parent))).expandX();
     }
@@ -103,58 +90,60 @@ public class ClickGuiScreen extends WidgetScreen {
     private void renderModules(GuiTheme theme) {
         String needle = query.trim().toLowerCase(Locale.ROOT);
         int shown = 0;
-        for (Category category : Modules.get().categories()) {
+        for (var category : Modules.get().categories()) {
             List<Module> group = Modules.get().getGroup(category).stream()
-                .filter(module -> matches(module, needle))
-                .toList();
+                .filter(module -> matches(module, needle)).toList();
             if (group.isEmpty()) continue;
 
-            long active = group.stream().filter(Module::isActive).count();
-            add(theme.horizontalSeparator(category.name + "  (" + active + "/" + group.size() + " on)")).expandX();
+            long on = group.stream().filter(Module::isActive).count();
+            add(theme.horizontalSeparator(category.name + "   " + on + " / " + group.size() + " on")).expandX();
             for (Module module : group) {
-                add(moduleRow(theme, module)).expandX();
+                add(moduleCard(theme, module)).expandX();
                 shown++;
             }
         }
-
-        if (shown == 0) {
-            add(theme.label(Modules.get().getAll().isEmpty()
-                ? "No modules are registered."
-                : "No modules match \"" + query + "\".").color(theme.muted)).expandX();
-        }
+        if (shown == 0) empty(theme, "modules", query);
     }
 
-    private WTable moduleRow(GuiTheme theme, Module module) {
+    private WCard moduleCard(GuiTheme theme, Module module) {
+        WCard card = theme.card();
         WTable row = theme.table();
 
-        WButton toggle = row.add(theme.button(module.isActive() ? "On" : "Off")).widget();
-        toggle.action = () -> {
+        WToggle toggle = row.add(theme.toggle(module.isActive() ? "On" : "Off", module::isActive, value -> {
             module.toggle();
             ConfigManager.get().markDirty();
             reload();
-        };
+        })).widget();
+        toggle.theme = theme;
 
         WVerticalList details = theme.verticalList();
         details.add(theme.label(module.title)).expandX();
         if (module.description != null && !module.description.isBlank()) {
-            details.add(theme.label(Messages.truncate(module.description, 72)).color(theme.muted)).expandX();
+            details.add(theme.label(Messages.truncate(module.description, 70)).color(theme.muted)).expandX();
         }
         row.add(details).expandCellX();
 
         WButton settings = row.add(theme.button("Settings")).widget();
-        settings.action = () -> MinecraftClient.getInstance().setScreen(new ModuleSettingsScreen(module));
+        settings.action = () -> MinecraftClient.getInstance().setScreen(new ModuleSettingsScreen(module, this));
 
         row.finish();
-        return row;
+        card.add(row).expandX();
+        return card;
     }
 
     // ------------------------------------------------------------------ hud
 
     private void renderHud(GuiTheme theme) {
-        WHorizontalList actions = add(theme.horizontalList()).expandX().widget();
-        WButton editor = actions.add(theme.button("Open HUD Editor")).expandX().widget();
-        editor.action = () -> MinecraftClient.getInstance().setScreen(new HudEditorScreen());
-        WButton hideAll = actions.add(theme.button("Hide All")).expandX().widget();
+        WHorizontalList actions = theme.horizontalList();
+        WButton editor = actions.add(theme.button("Arrange HUD")).expandX().widget();
+        editor.action = () -> MinecraftClient.getInstance().setScreen(new HudEditorScreen(this));
+        WButton showAll = actions.add(theme.button("Show all")).expandX().widget();
+        showAll.action = () -> {
+            for (HudElementInfo<?> info : Hud.get().infos()) Hud.get().add(info, 4, 4);
+            ConfigManager.get().markDirty();
+            reload();
+        };
+        WButton hideAll = actions.add(theme.button("Hide all")).expandX().widget();
         hideAll.action = () -> {
             for (HudElementInfo<?> info : Hud.get().infos()) {
                 if (Hud.get().isActive(info)) Hud.get().remove(Hud.get().instance(info));
@@ -162,43 +151,42 @@ public class ClickGuiScreen extends WidgetScreen {
             ConfigManager.get().markDirty();
             reload();
         };
+        add(actions).expandX();
 
         String needle = query.trim().toLowerCase(Locale.ROOT);
         int shown = 0;
         for (HudElementInfo<?> info : Hud.get().infos()) {
             if (!needle.isEmpty() && !matchesHud(info, needle)) continue;
-            add(hudRow(theme, info)).expandX();
+            add(hudCard(theme, info)).expandX();
             shown++;
         }
-        if (shown == 0) {
-            add(theme.label(Hud.get().infos().isEmpty()
-                ? "No HUD elements are registered."
-                : "No HUD elements match \"" + query + "\".").color(theme.muted)).expandX();
-        }
+        if (shown == 0) empty(theme, "HUD elements", query);
     }
 
-    private WTable hudRow(GuiTheme theme, HudElementInfo<?> info) {
+    private WCard hudCard(GuiTheme theme, HudElementInfo<?> info) {
+        WCard card = theme.card();
         WTable row = theme.table();
 
-        WButton toggle = row.add(theme.button(Hud.get().isActive(info) ? "On" : "Off")).widget();
-        toggle.action = () -> {
+        WToggle toggle = row.add(theme.toggle(Hud.get().isActive(info) ? "On" : "Off", () -> Hud.get().isActive(info), value -> {
             Hud.get().toggle(info);
             ConfigManager.get().markDirty();
             reload();
-        };
+        })).widget();
+        toggle.theme = theme;
 
         WVerticalList details = theme.verticalList();
         details.add(theme.label(info.title)).expandX();
         if (info.description != null && !info.description.isBlank()) {
-            details.add(theme.label(Messages.truncate(info.description, 72)).color(theme.muted)).expandX();
+            details.add(theme.label(Messages.truncate(info.description, 70)).color(theme.muted)).expandX();
         }
         row.add(details).expandCellX();
 
         WButton settings = row.add(theme.button("Settings")).widget();
-        settings.action = () -> MinecraftClient.getInstance().setScreen(new HudElementSettingsScreen(info));
+        settings.action = () -> MinecraftClient.getInstance().setScreen(new HudElementSettingsScreen(info, this));
 
         row.finish();
-        return row;
+        card.add(row).expandX();
+        return card;
     }
 
     // ------------------------------------------------------------------ theme
@@ -208,7 +196,7 @@ public class ClickGuiScreen extends WidgetScreen {
         WTable presets = add(theme.table()).expandX().widget();
         for (GuiThemePreset preset : GuiThemePreset.values()) {
             boolean current = GuiThemes.preset() == preset;
-            WButton button = presets.add(theme.button(current ? "[" + preset.title() + "]" : preset.title())).widget();
+            WButton button = presets.add(theme.button(current ? "[ " + preset.title() + " ]" : preset.title())).widget();
             button.action = () -> {
                 GuiThemes.applyPreset(preset);
                 ClientConfig.get().setThemePreset(preset);
@@ -219,11 +207,10 @@ public class ClickGuiScreen extends WidgetScreen {
         presets.finish();
 
         add(theme.horizontalSeparator("HUD text scale")).expandX();
-        WVerticalList scale = add(theme.verticalList()).expandX().widget();
-        scale.add(theme.label(String.format(Locale.ROOT, "Current: %.2f", Hud.get().textScale()))).expandX();
+        add(theme.label(String.format(Locale.ROOT, "Current: %.2f", Hud.get().textScale()))).expandX();
         WHorizontalList scaleRow = add(theme.horizontalList()).expandX().widget();
         for (double value : new double[]{0.75, 1.0, 1.25, 1.5, 2.0}) {
-            WButton button = scaleRow.add(theme.button(String.format(Locale.ROOT, "%.2f", value))).widget();
+            WButton button = scaleRow.add(theme.button(String.format(Locale.ROOT, "%.2f", value))).expandX().widget();
             button.action = () -> {
                 Hud.get().setTextScale(value);
                 ConfigManager.get().markDirty();
@@ -237,43 +224,27 @@ public class ClickGuiScreen extends WidgetScreen {
             ClientConfig.get().setPrefix(prefix.get());
             ConfigManager.get().markDirty();
         };
-    }
 
-    // ------------------------------------------------------------------ about
-
-    private void renderAbout(GuiTheme theme) {
-        WVerticalList info = add(theme.verticalList()).expandX().widget();
-        info.add(theme.label(Addon.NAME + "  v" + Addon.VERSION)).expandX();
-        info.add(theme.label("A standalone chat logging, monitoring and schematic toolkit for Minecraft.")
-            .color(theme.muted)).expandX();
-        info.add(theme.label("No other mod is required; Baritone is used for navigation only when present.")
-            .color(theme.muted)).expandX();
-
-        add(theme.horizontalSeparator("Overview")).expandX();
-        WVerticalList counts = add(theme.verticalList()).expandX().widget();
-        counts.add(theme.label("Modules: " + Modules.get().getAll().size())).expandX();
-        counts.add(theme.label("HUD elements: " + Hud.get().infos().size())).expandX();
-        counts.add(theme.label("Categories: " + Modules.get().categories().size())).expandX();
-        counts.add(theme.label("Config: " + ConfigManager.get().file())).expandX();
-
-        add(theme.horizontalSeparator("Keys")).expandX();
-        WVerticalList keys = add(theme.verticalList()).expandX().widget();
-        keys.add(theme.label("Right Shift - open this window").color(theme.muted)).expandX();
-        keys.add(theme.label(".log gui - open this window from chat").color(theme.muted)).expandX();
-        keys.add(theme.label(".log help - list every command").color(theme.muted)).expandX();
-
-        add(theme.horizontalSeparator("Links")).expandX();
-        WVerticalList links = add(theme.verticalList()).expandX().widget();
-        links.add(theme.label("Source: github.com/logvex-sg/ChatRecordingAddon-meteor")
-            .color(theme.muted)).expandX();
-        links.add(theme.label("Licensed under the MIT License.").color(theme.muted)).expandX();
+        add(theme.horizontalSeparator("About")).expandX();
+        WVerticalList about = add(theme.verticalList()).expandX().widget();
+        about.add(theme.label("Modules: " + Modules.get().getAll().size()
+            + "    HUD elements: " + Hud.get().infos().size())).expandX();
+        about.add(theme.label("Right Shift opens this window; .log gui does the same.").color(theme.muted)).expandX();
+        about.add(theme.label("Config: " + ConfigManager.get().file()).color(theme.muted)).expandX();
+        about.add(theme.label("github.com/logvex-sg/ChatRecordingAddon-meteor  -  MIT").color(theme.muted)).expandX();
     }
 
     // ------------------------------------------------------------------ helpers
 
-    private String activeSummary() {
+    private void empty(GuiTheme theme, String what, String query) {
+        boolean none = what.equals("modules") ? Modules.get().getAll().isEmpty() : Hud.get().infos().isEmpty();
+        add(theme.label(none ? "Nothing is registered." : "No " + what + " match \"" + query + "\".").color(theme.muted)).expandX();
+    }
+
+    private String summary() {
         long active = Modules.get().getAll().stream().filter(Module::isActive).count();
-        return active + " of " + Modules.get().getAll().size() + " modules on";
+        long hud = Hud.get().infos().stream().filter(Hud.get()::isActive).count();
+        return active + " modules - " + hud + " HUD";
     }
 
     private boolean matches(Module module, String needle) {
@@ -289,6 +260,11 @@ public class ClickGuiScreen extends WidgetScreen {
         return info.description != null && info.description.toLowerCase(Locale.ROOT).contains(needle);
     }
 
+    /** The parent this window should return to; kept so screens opened from here can go back. */
+    public Screen parentScreen() {
+        return parent;
+    }
+
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         context.fill(0, 0, this.width, this.height, argb(theme.screenBackground));
@@ -296,6 +272,6 @@ public class ClickGuiScreen extends WidgetScreen {
     }
 
     private static int argb(com.logvex.addon.framework.utils.render.color.Color c) {
-        return (c.a << 24) | (c.r << 16) | (c.g << 8) | c.b;
+        return ((c.a == 0 ? 255 : c.a) << 24) | (c.r << 16) | (c.g << 8) | c.b;
     }
 }

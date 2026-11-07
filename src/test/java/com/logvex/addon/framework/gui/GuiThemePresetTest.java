@@ -9,10 +9,12 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
+import java.util.Locale;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -27,7 +29,7 @@ class GuiThemePresetTest {
     @AfterEach
     void tearDown() {
         config.setFile(null);
-        GuiThemes.applyPreset(GuiThemePreset.DARK);
+        GuiThemes.applyPreset(GuiThemePreset.BLUE);
     }
 
     @Test
@@ -39,17 +41,26 @@ class GuiThemePresetTest {
             for (Color c : new Color[]{theme.text, theme.muted, theme.button, theme.buttonHover,
                 theme.textBoxBackground, theme.textBoxBorder, theme.textBoxFocused, theme.separator,
                 theme.separatorText, theme.windowBackground, theme.windowBorder, theme.windowTitle,
-                theme.accent, theme.good, theme.warn, theme.bad, theme.screenBackground}) {
+                theme.accent, theme.good, theme.warn, theme.bad, theme.screenBackground,
+                theme.row, theme.rowHover, theme.toggleOn, theme.toggleOff}) {
                 assertNotNull(c, preset + " left a colour null");
             }
         }
     }
 
     @Test
+    @DisplayName("the default theme is blue")
+    void defaultIsBlue() {
+        assertEquals(GuiThemePreset.BLUE, GuiThemePreset.parse(null));
+        assertTrue(GuiThemePreset.BLUE.create().accent.b > GuiThemePreset.BLUE.create().accent.r,
+            "the signature accent must lean blue");
+    }
+
+    @Test
     @DisplayName("presets have distinct accents so switching one is visible")
     void accentsDiffer() {
-        assertNotEquals(GuiThemePreset.DARK.create().accent.r, GuiThemePreset.ROSE.create().accent.r);
-        assertNotEquals(GuiThemePreset.DARK.create().windowBackground.r,
+        assertNotEquals(GuiThemePreset.BLUE.create().accent.r, GuiThemePreset.VIOLET.create().accent.r);
+        assertNotEquals(GuiThemePreset.BLUE.create().windowBackground.r,
             GuiThemePreset.LIGHT.create().windowBackground.r);
     }
 
@@ -63,21 +74,31 @@ class GuiThemePresetTest {
 
         // The instance is the same object; only its colours changed. This is what lets an already
         // open screen restyle itself without rebuilding.
-        assertTrue(shared == GuiThemes.get());
+        assertSame(shared, GuiThemes.get());
         assertNotEquals(before.r, shared.windowBackground.r);
         assertEquals(GuiThemePreset.LIGHT, GuiThemes.preset());
     }
 
     @Test
-    @DisplayName("a stored name parses back to the same preset, unknown names fall back to DARK")
+    @DisplayName("a stored name parses back to the same preset, unknown names fall back to BLUE")
     void parseRoundTrips() {
         for (GuiThemePreset preset : GuiThemePreset.values()) {
             assertEquals(preset, GuiThemePreset.parse(preset.name()));
-            assertEquals(preset, GuiThemePreset.parse(preset.title().toLowerCase(java.util.Locale.ROOT)));
+            assertEquals(preset, GuiThemePreset.parse(preset.title().toLowerCase(Locale.ROOT)));
         }
-        assertEquals(GuiThemePreset.DARK, GuiThemePreset.parse("no-such-theme"));
-        assertEquals(GuiThemePreset.DARK, GuiThemePreset.parse(null));
-        assertEquals(GuiThemePreset.DARK, GuiThemePreset.parse(""));
+        assertEquals(GuiThemePreset.BLUE, GuiThemePreset.parse("no-such-theme"));
+        assertEquals(GuiThemePreset.BLUE, GuiThemePreset.parse(null));
+        assertEquals(GuiThemePreset.BLUE, GuiThemePreset.parse(""));
+    }
+
+    @Test
+    @DisplayName("names from the pre-blue builds migrate onto their nearest replacement")
+    void oldNamesMigrate() {
+        // A config written before the blue rework named the old presets; they must not fall back to
+        // an arbitrary default, or the user's choice would silently change.
+        assertEquals(GuiThemePreset.BLUE, GuiThemePreset.parse("DARK"));
+        assertEquals(GuiThemePreset.VIOLET, GuiThemePreset.parse("ROSE"));
+        assertEquals(GuiThemePreset.TEAL, GuiThemePreset.parse("FOREST"));
     }
 
     @Test
@@ -86,19 +107,19 @@ class GuiThemePresetTest {
         Path file = dir.resolve("config.json");
         config.setFile(file);
 
-        ClientConfig.get().setThemePreset(GuiThemePreset.ROSE);
-        GuiThemes.applyPreset(GuiThemePreset.ROSE);
+        ClientConfig.get().setThemePreset(GuiThemePreset.VIOLET);
+        GuiThemes.applyPreset(GuiThemePreset.VIOLET);
         config.save();
 
         // Simulate a restart: reset to the default, then load the file back over it.
-        ClientConfig.get().setThemePreset(GuiThemePreset.DARK);
-        GuiThemes.applyPreset(GuiThemePreset.DARK);
+        ClientConfig.get().setThemePreset(GuiThemePreset.BLUE);
+        GuiThemes.applyPreset(GuiThemePreset.BLUE);
 
         config.load();
 
-        assertEquals(GuiThemePreset.ROSE, ClientConfig.get().themePreset(),
+        assertEquals(GuiThemePreset.VIOLET, ClientConfig.get().themePreset(),
             "the theme choice should be restored");
-        assertEquals(GuiThemePreset.ROSE, GuiThemes.preset(),
+        assertEquals(GuiThemePreset.VIOLET, GuiThemes.preset(),
             "loading must re-apply the saved theme to the shared instance");
     }
 }
