@@ -374,7 +374,7 @@ How the assistant answers these is controlled by `memory-reply-mode` (`chat`, `n
 | `persist` | Save memory to disk so it survives a restart. |
 | `rate-limit-per-minute` | Global reply cap; `0` disables it. |
 | `max-reply-length` | Longest reply, in characters. |
-| `chat-feedback` | A short local note when a trigger matches. |
+| `match-feedback` | A short local note when a trigger matches. |
 
 ### Assistant Manager
 
