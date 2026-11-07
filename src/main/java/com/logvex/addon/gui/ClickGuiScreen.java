@@ -6,6 +6,10 @@ import com.logvex.addon.framework.gui.GuiTheme;
 import com.logvex.addon.framework.gui.GuiThemePreset;
 import com.logvex.addon.framework.gui.GuiThemes;
 import com.logvex.addon.framework.gui.WidgetScreen;
+import com.logvex.addon.framework.gui.utils.Cell;
+import com.logvex.addon.framework.gui.widgets.WLabel;
+import com.logvex.addon.framework.gui.widgets.WNavItem;
+import com.logvex.addon.framework.gui.widgets.WWidget;
 import com.logvex.addon.framework.gui.widgets.containers.WCard;
 import com.logvex.addon.framework.gui.widgets.containers.WHorizontalList;
 import com.logvex.addon.framework.gui.widgets.containers.WTable;
@@ -19,6 +23,7 @@ import com.logvex.addon.framework.systems.hud.Hud;
 import com.logvex.addon.framework.systems.hud.HudElementInfo;
 import com.logvex.addon.framework.systems.modules.Module;
 import com.logvex.addon.framework.systems.modules.Modules;
+import com.logvex.addon.framework.utils.render.Render2D;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
@@ -29,60 +34,143 @@ import java.util.Locale;
 /**
  * The addon's main window.
  *
- * <p>Three tabs: Modules, HUD and Theme. Each list is a stack of cards, one per entry, with a big
- * on/off switch on the left and a Settings button on the right; search narrows the list. The aim is
- * that a first-time user can turn something on and open its settings without reading anything.
+ * <p>A navigation rail on the left switches between Modules, HUD, Theme and About; the content area
+ * on the right lists the entries for the current page. Each list is a stack of cards, one per entry,
+ * with an on/off switch and a Settings button; search narrows the list, and an enabled entry is
+ * marked with an accent bar so it can be spotted in a long list at a glance.
+ *
+ * <p>The rail is drawn from primitives rather than textures, so it needs no art assets and picks up
+ * whichever theme is active. The layout is a two-column shell that is laid out every frame, which is
+ * what lets the rail and the content scroll independently.
  */
 public class ClickGuiScreen extends WidgetScreen {
-    private static final String[] TABS = {"Modules", "HUD", "Theme"};
+    private static final String[] TABS = {"Modules", "HUD", "Theme", "About"};
+    private static final WNavItem.Glyph[] GLYPHS = {
+        WNavItem.Glyph.MODULES, WNavItem.Glyph.HUD, WNavItem.Glyph.THEME, WNavItem.Glyph.INFO
+    };
+    /** Width of the navigation rail. */
+    private static final double RAIL_WIDTH = 108;
 
     private int tab;
     private String query = "";
 
+    /** The two-column shell: rail on the left, content on the right. */
+    private WHorizontalList shell;
+    private WVerticalList rail;
+    private WVerticalList content;
+
     public ClickGuiScreen() {
-        super(GuiThemes.get(), "Log Client");
-        this.tab = 0;
+        this(0);
     }
 
-    /** Opens the window on the HUD tab, used by "Manage HUD" from the editor. */
+    /** Opens the window on a given tab, used by "Manage HUD" from the editor. */
     public ClickGuiScreen(int tab) {
         super(GuiThemes.get(), "Log Client");
-        this.tab = tab;
+        this.tab = Math.max(0, Math.min(TABS.length - 1, tab));
+    }
+
+    @Override
+    protected void populateRoot() {
+        // Rebuilt on every reload: the root is cleared first, so the shell and its two columns must
+        // be recreated rather than reused, or they would be orphaned.
+        shell = new WHorizontalList();
+        shell.theme = theme;
+        shell.spacing = 4;
+
+        rail = new WVerticalList();
+        rail.theme = theme;
+        rail.spacing = 2;
+
+        content = new WVerticalList();
+        content.theme = theme;
+        content.spacing = 3;
+
+        shell.add(rail).minWidth(RAIL_WIDTH);
+        shell.add(content).expandX();
+        root.add(shell).expandX();
+    }
+
+    @Override
+    public <W extends WWidget> Cell<W> add(W widget) {
+        widget.theme = theme;
+        return content.add(widget);
+    }
+
+    /** Adds a widget to the rail rather than the content column. */
+    private <W extends WWidget> Cell<W> railAdd(W widget) {
+        widget.theme = theme;
+        return rail.add(widget);
     }
 
     @Override
     public void initWidgets() {
         GuiTheme theme = this.theme;
+        buildRail(theme);
+        buildHeader(theme);
 
-        WHorizontalList header = add(theme.horizontalList()).expandX().widget();
-        header.add(theme.label(LogClientContext.NAME + "   v" + LogClientContext.VERSION)).expandX();
-        header.add(theme.label(summary()).color(theme.muted)).widget();
-
-        WTable strip = add(theme.table()).expandX().widget();
-        for (int i = 0; i < TABS.length; i++) {
-            boolean active = i == tab;
-            WButton button = strip.add(theme.button(active ? "[ " + TABS[i] + " ]" : TABS[i])).widget();
-            int index = i;
-            button.action = () -> {
-                tab = index;
-                reload();
-            };
+        switch (tab) {
+            case 0 -> renderModules(theme);
+            case 1 -> renderHud(theme);
+            case 2 -> renderTheme(theme);
+            default -> renderAbout(theme);
         }
-        strip.finish();
+    }
 
-        if (tab == 0 || tab == 1) {
-            WTextBox search = add(theme.textBox(query, tab == 0 ? "Search modules..." : "Search HUD...")).expandX().widget();
+    // ------------------------------------------------------------------ rail
+
+    private void buildRail(GuiTheme theme) {
+        WLabel brand = new WLabel(LogClientContext.NAME, theme.text);
+        railAdd(brand).expandX();
+        railAdd(new WLabel("v" + LogClientContext.VERSION, theme.muted)).expandX();
+        railAdd(new com.logvex.addon.framework.gui.widgets.WHorizontalSeparator("")).expandX();
+
+        for (int i = 0; i < TABS.length; i++) {
+            int index = i;
+            WNavItem item = new WNavItem(TABS[i], GLYPHS[i], i == tab, () -> {
+                if (tab != index) {
+                    tab = index;
+                    query = "";
+                    reload();
+                }
+            });
+            railAdd(item).expandX();
+        }
+
+        railAdd(new com.logvex.addon.framework.gui.widgets.WHorizontalSeparator("")).expandX();
+        long active = Modules.get().getAll().stream().filter(Module::isActive).count();
+        long hud = Hud.get().infos().stream().filter(Hud.get()::isActive).count();
+        railAdd(new WLabel(active + " on", theme.good)).expandX();
+        railAdd(new WLabel(hud + " HUD", theme.accent)).expandX();
+    }
+
+    // ------------------------------------------------------------------ header
+
+    private void buildHeader(GuiTheme theme) {
+        WHorizontalList header = theme.horizontalList();
+        header.add(theme.label(tabTitle()).color(theme.accent)).expandX();
+        header.add(theme.label(summary()).color(theme.muted)).widget();
+        add(header).expandX();
+
+        if (tab != 3) {
+            WTextBox search = add(theme.textBox(query, searchHint())).expandX().widget();
             search.action = () -> {
                 query = search.get();
                 reload();
             };
         }
+    }
 
-        if (tab == 0) renderModules(theme);
-        else if (tab == 1) renderHud(theme);
-        else renderTheme(theme);
+    private String tabTitle() {
+        return switch (tab) {
+            case 0 -> "Modules";
+            case 1 -> "HUD elements";
+            case 2 -> "Appearance";
+            default -> "About";
+        };
+    }
 
-        add(theme.button("Close", () -> MinecraftClient.getInstance().setScreen(parent))).expandX();
+    private String searchHint() {
+        return tab == 0 ? "Search modules..." : "Search HUD elements...";
     }
 
     // ------------------------------------------------------------------ modules
@@ -107,6 +195,7 @@ public class ClickGuiScreen extends WidgetScreen {
 
     private WCard moduleCard(GuiTheme theme, Module module) {
         WCard card = theme.card();
+        card.accentBar = module.isActive();
         WTable row = theme.table();
 
         WToggle toggle = row.add(theme.toggle(module.isActive() ? "On" : "Off", module::isActive, value -> {
@@ -165,6 +254,7 @@ public class ClickGuiScreen extends WidgetScreen {
 
     private WCard hudCard(GuiTheme theme, HudElementInfo<?> info) {
         WCard card = theme.card();
+        card.accentBar = Hud.get().isActive(info);
         WTable row = theme.table();
 
         WToggle toggle = row.add(theme.toggle(Hud.get().isActive(info) ? "On" : "Off", () -> Hud.get().isActive(info), value -> {
@@ -206,6 +296,22 @@ public class ClickGuiScreen extends WidgetScreen {
         }
         presets.finish();
 
+        // A live swatch strip so the effect of a preset is visible without leaving the page.
+        add(theme.horizontalSeparator("Preview")).expandX();
+        WCard swatch = theme.card();
+        WVerticalList swatchRows = theme.verticalList();
+        swatchRows.add(theme.label("The colours this preset derives, in order:").color(theme.muted)).expandX();
+        WHorizontalList colours = theme.horizontalList();
+        String[] captions = {"accent", "second", "glow", "good", "warn", "bad"};
+        com.logvex.addon.framework.utils.render.color.Color[] palette = {
+            theme.accent, theme.accentSecondary, theme.glow, theme.good, theme.warn, theme.bad};
+        for (int i = 0; i < palette.length; i++) {
+            colours.add(theme.swatch(palette[i], captions[i])).expandX();
+        }
+        swatchRows.add(colours).expandX();
+        swatch.add(swatchRows).expandX();
+        add(swatch).expandX();
+
         add(theme.horizontalSeparator("HUD text scale")).expandX();
         add(theme.label(String.format(Locale.ROOT, "Current: %.2f", Hud.get().textScale()))).expandX();
         WHorizontalList scaleRow = add(theme.horizontalList()).expandX().widget();
@@ -224,21 +330,49 @@ public class ClickGuiScreen extends WidgetScreen {
             ClientConfig.get().setPrefix(prefix.get());
             ConfigManager.get().markDirty();
         };
+    }
 
-        add(theme.horizontalSeparator("About")).expandX();
+    // ------------------------------------------------------------------ about
+
+    private void renderAbout(GuiTheme theme) {
+        add(theme.horizontalSeparator("Log Client")).expandX();
         WVerticalList about = add(theme.verticalList()).expandX().widget();
-        about.add(theme.label("Modules: " + Modules.get().getAll().size()
-            + "    HUD elements: " + Hud.get().infos().size())).expandX();
-        about.add(theme.label("Right Shift opens this window; .log gui does the same.").color(theme.muted)).expandX();
-        about.add(theme.label("Config: " + ConfigManager.get().file()).color(theme.muted)).expandX();
-        about.add(theme.label("github.com/logvex-sg/ChatRecordingAddon-meteor  -  MIT").color(theme.muted)).expandX();
+        about.add(theme.label(LogClientContext.NAME + "  v" + LogClientContext.VERSION)).expandX();
+        about.add(theme.label("A standalone Fabric client for Minecraft 1.21.1.").color(theme.muted)).expandX();
+        about.add(theme.label("No Meteor Client required.").color(theme.muted)).expandX();
+
+        add(theme.horizontalSeparator("Registered")).expandX();
+        WVerticalList counts = add(theme.verticalList()).expandX().widget();
+        long activeModules = Modules.get().getAll().stream().filter(Module::isActive).count();
+        long activeHud = Hud.get().infos().stream().filter(Hud.get()::isActive).count();
+        counts.add(theme.label("Modules: " + Modules.get().getAll().size()
+            + "  (" + activeModules + " on)")).expandX();
+        counts.add(theme.label("HUD elements: " + Hud.get().infos().size()
+            + "  (" + activeHud + " shown)")).expandX();
+        counts.add(theme.label("Theme: " + GuiThemes.preset().title())).expandX();
+
+        add(theme.horizontalSeparator("Shortcuts")).expandX();
+        WVerticalList keys = add(theme.verticalList()).expandX().widget();
+        keys.add(theme.label("Right Shift opens this window.").color(theme.muted)).expandX();
+        keys.add(theme.label("Type " + ClientConfig.get().prefix() + "log gui in chat to do the same.").color(theme.muted)).expandX();
+        keys.add(theme.label("Config: " + ConfigManager.get().file()).color(theme.muted)).expandX();
+        keys.add(theme.label("github.com/logvex-sg/ChatRecordingAddon-meteor  -  MIT").color(theme.muted)).expandX();
+
+        add(theme.button("Close", () -> MinecraftClient.getInstance().setScreen(parent))).expandX();
     }
 
     // ------------------------------------------------------------------ helpers
 
     private void empty(GuiTheme theme, String what, String query) {
         boolean none = what.equals("modules") ? Modules.get().getAll().isEmpty() : Hud.get().infos().isEmpty();
-        add(theme.label(none ? "Nothing is registered." : "No " + what + " match \"" + query + "\".").color(theme.muted)).expandX();
+        WCard card = theme.card();
+        WVerticalList column = theme.verticalList();
+        column.add(theme.label(none ? "Nothing is registered yet." : "No results").color(theme.text)).expandX();
+        column.add(theme.label(none
+            ? "Modules appear here once they are registered."
+            : "Nothing matches \"" + query + "\". Try a shorter search.").color(theme.muted)).expandX();
+        card.add(column).expandX();
+        add(card).expandX();
     }
 
     private String summary() {
@@ -265,13 +399,34 @@ public class ClickGuiScreen extends WidgetScreen {
         return parent;
     }
 
+    // ------------------------------------------------------------------ layout & render
+
     @Override
-    public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        context.fill(0, 0, this.width, this.height, argb(theme.screenBackground));
-        super.render(context, mouseX, mouseY, delta);
+    protected void layoutRoot() {
+        // The content column scrolls; the rail is short and always stays fully visible, so the shell
+        // itself is given its natural height rather than being clamped and scrolled twice.
+        if (content != null) content.maxHeight = Math.max(40, this.height - 30);
+        root.maxHeight = Double.MAX_VALUE;
+        root.calculateSize();
+        double maxWidth = Math.min(Math.max(root.width, RAIL_WIDTH + 240), Math.max(240, this.width - 20));
+        root.layout(10, 10, maxWidth);
     }
 
-    private static int argb(com.logvex.addon.framework.utils.render.color.Color c) {
-        return ((c.a == 0 ? 255 : c.a) << 24) | (c.r << 16) | (c.g << 8) | c.b;
+    @Override
+    public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+        context.fill(0, 0, this.width, this.height, Render2D.argb(theme.screenBackground));
+        // Lay out before painting the rail's surface, so the surface follows the rail on the first
+        // frame instead of being drawn at the origin.
+        layoutRoot();
+        if (rail != null && theme != null) {
+            // The rail is laid out at least RAIL_WIDTH wide by the shell; its own reported width can
+            // be narrower, so the surface follows the laid-out column.
+            double railWidth = Math.max(rail.width, RAIL_WIDTH);
+            Render2D.roundedRect(context, rail.x - 4, rail.y - 4, railWidth + 8, rail.height + 8, 5,
+                Render2D.argb(theme.sidebar));
+            Render2D.roundedOutline(context, rail.x - 4, rail.y - 4, railWidth + 8, rail.height + 8, 5,
+                Render2D.argb(theme.windowBorder, 150), 1);
+        }
+        super.render(context, mouseX, mouseY, delta);
     }
 }

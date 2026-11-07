@@ -1,5 +1,7 @@
 package com.logvex.addon.framework.systems.hud;
 
+import com.logvex.addon.framework.gui.animation.AnimationClock;
+import com.logvex.addon.framework.utils.render.Render2D;
 import com.logvex.addon.framework.utils.render.color.Color;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
@@ -13,9 +15,10 @@ import net.minecraft.item.ItemStack;
  * which is how an element with its custom scale disabled behaves.
  *
  * <p>The panel helpers give every element the same visual language: {@link #panel} draws a filled
- * rounded box, {@link #outline} a rounded border and {@link #bar} a progress bar. Keeping them here
- * means an element only decides what to show, not how a box is drawn, so the whole HUD looks like one
- * product rather than a set of unrelated rectangles.
+ * rounded box, {@link #outline} a rounded border, {@link #glow} a soft halo and {@link #bar} a
+ * progress bar. They delegate to {@link Render2D}, so a HUD panel and a GUI button round their
+ * corners with the same code and the two surfaces cannot drift apart. Keeping them here means an
+ * element only decides what to show, not how a box is drawn.
  */
 public class HudRenderer {
     public static final HudRenderer INSTANCE = new HudRenderer();
@@ -29,6 +32,9 @@ public class HudRenderer {
         this.drawContext = drawContext;
         this.delta = delta;
         this.theme = HudThemeColors.current();
+        // Advance the shared animation clock once per frame so HUD animations run on the same time
+        // base as the GUI's.
+        AnimationClock.tick();
     }
 
     public void end() {
@@ -44,60 +50,31 @@ public class HudRenderer {
 
     public void quad(double x, double y, double width, double height, Color color) {
         if (drawContext == null || width <= 0 || height <= 0) return;
-        drawContext.fill((int) x, (int) y, (int) Math.ceil(x + width), (int) Math.ceil(y + height), argb(color, 255));
+        Render2D.rect(drawContext, x, y, width, height, Render2D.argb(color, 255));
     }
 
     /**
      * A filled rounded panel. The corner radius is clamped to half the shorter side so a thin element
-     * still draws. Only the four corner pixels are inset, which is cheap and reads as "rounded".
+     * still draws.
      */
     public void panel(double x, double y, double width, double height, Color color, int radius) {
         if (drawContext == null || width <= 0 || height <= 0) return;
-        int argb = argb(color, color == null ? 255 : (color.a == 0 ? 255 : color.a));
-        int xi = (int) x;
-        int yi = (int) y;
-        int wi = (int) Math.ceil(width);
-        int hi = (int) Math.ceil(height);
-        int r = Math.max(0, Math.min(radius, Math.min(wi, hi) / 2));
-
-        if (r == 0) {
-            drawContext.fill(xi, yi, xi + wi, yi + hi, argb);
-            return;
-        }
-        // Body without the corner squares, then the four rounded corners.
-        drawContext.fill(xi + r, yi, xi + wi - r, yi + hi, argb);
-        drawContext.fill(xi, yi + r, xi + r, yi + hi - r, argb);
-        drawContext.fill(xi + wi - r, yi + r, xi + wi, yi + hi - r, argb);
-        for (int i = 0; i < r; i++) {
-            int inset = r - (int) Math.round(Math.sqrt(r * r - (r - i) * (r - i)) + 0.5);
-            drawContext.fill(xi + inset, yi + i, xi + r, yi + i + 1, argb);
-            drawContext.fill(xi + wi - r, yi + i, xi + wi - inset, yi + i + 1, argb);
-            drawContext.fill(xi + inset, yi + hi - i - 1, xi + r, yi + hi - i, argb);
-            drawContext.fill(xi + wi - r, yi + hi - i - 1, xi + wi - inset, yi + hi - i, argb);
-        }
+        int argb = Render2D.argb(color, color == null ? 255 : (color.a == 0 ? 255 : color.a));
+        Render2D.roundedRect(drawContext, x, y, width, height, radius, argb);
     }
 
     /** A one-pixel rounded outline, drawn inside the given bounds. */
     public void outline(double x, double y, double width, double height, Color color, int radius) {
         if (drawContext == null || width <= 0 || height <= 0) return;
-        int argb = argb(color, color == null ? 255 : (color.a == 0 ? 255 : color.a));
-        int xi = (int) x;
-        int yi = (int) y;
-        int wi = (int) Math.ceil(width);
-        int hi = (int) Math.ceil(height);
-        int r = Math.max(0, Math.min(radius, Math.min(wi, hi) / 2));
+        int argb = Render2D.argb(color, color == null ? 255 : (color.a == 0 ? 255 : color.a));
+        Render2D.roundedOutline(drawContext, x, y, width, height, radius, argb, 1);
+    }
 
-        drawContext.fill(xi + r, yi, xi + wi - r, yi + 1, argb);
-        drawContext.fill(xi + r, yi + hi - 1, xi + wi - r, yi + hi, argb);
-        drawContext.fill(xi, yi + r, xi + 1, yi + hi - r, argb);
-        drawContext.fill(xi + wi - 1, yi + r, xi + wi, yi + hi - r, argb);
-        for (int i = 0; i < r; i++) {
-            int inset = r - (int) Math.round(Math.sqrt(r * r - (r - i) * (r - i)) + 0.5);
-            drawContext.fill(xi + inset, yi + i, xi + r, yi + i + 1, argb);
-            drawContext.fill(xi + wi - r, yi + i, xi + wi - inset, yi + i + 1, argb);
-            drawContext.fill(xi + inset, yi + hi - i - 1, xi + r, yi + hi - i, argb);
-            drawContext.fill(xi + wi - r, yi + hi - i - 1, xi + wi - inset, yi + hi - i, argb);
-        }
+    /** A soft halo around a panel, drawn before the panel itself. */
+    public void glow(double x, double y, double width, double height, Color color, int radius) {
+        if (drawContext == null || width <= 0 || height <= 0) return;
+        Render2D.glow(drawContext, x, y, width, height, radius,
+            Render2D.argb(color, color == null ? 120 : (color.a == 0 ? 120 : color.a)), 4, 3);
     }
 
     /**
@@ -111,6 +88,23 @@ public class HudRenderer {
         double clamped = Math.max(0, Math.min(1, fraction));
         double filled = width * clamped;
         if (filled > 0) panel(x, y, filled, height, fill, radius);
+    }
+
+    /**
+     * A progress bar whose filled portion runs through a gradient from the accent to its secondary
+     * colour, which is what makes a HUD bar read as "lit" rather than flat.
+     */
+    public void gradientBar(double x, double y, double width, double height, double fraction,
+                            Color from, Color to, Color track) {
+        if (drawContext == null || width <= 0 || height <= 0) return;
+        double radius = Math.max(0, Math.min(height / 2, 2));
+        Render2D.roundedRect(drawContext, x, y, width, height, radius, Render2D.argb(track, 200));
+        double clamped = Math.max(0, Math.min(1, fraction));
+        double filled = width * clamped;
+        if (filled > 0) {
+            Render2D.gradientHorizontalRounded(drawContext, x, y, filled, height, radius,
+                Render2D.argb(from), Render2D.argb(to));
+        }
     }
 
     // ------------------------------------------------------------------ text

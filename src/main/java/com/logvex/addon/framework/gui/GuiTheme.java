@@ -57,6 +57,16 @@ public class GuiTheme {
     public Color toggleOn = new Color(96, 165, 250);
     /** Fill behind a disabled toggle. */
     public Color toggleOff = new Color(48, 56, 72);
+    /** The glow colour drawn around active elements. Usually the accent, often dimmer. */
+    public Color glow = new Color(96, 165, 250);
+    /** Fill behind the navigation rail on the left of the main window. */
+    public Color sidebar = new Color(18, 22, 32, 0xF0);
+    /** Fill behind the window's title bar. */
+    public Color header = new Color(26, 32, 46, 0xFF);
+    /** A second accent used for gradients, so an active bar reads as lit rather than flat. */
+    public Color accentSecondary = new Color(147, 197, 253);
+    /** Fill behind a selected navigation entry. */
+    public Color navSelected = new Color(45, 60, 88, 0xFF);
 
     /** Copies every colour from {@code other} so a preset applies without replacing the instance. */
     public void apply(GuiTheme other) {
@@ -82,6 +92,11 @@ public class GuiTheme {
         rowHover = other.rowHover.copy();
         toggleOn = other.toggleOn.copy();
         toggleOff = other.toggleOff.copy();
+        glow = other.glow.copy();
+        sidebar = other.sidebar.copy();
+        header = other.header.copy();
+        accentSecondary = other.accentSecondary.copy();
+        navSelected = other.navSelected.copy();
     }
 
     public WLabel label(String text) {
@@ -142,6 +157,11 @@ public class GuiTheme {
     /** A row card that groups the widgets of one list entry. */
     public WCard card() {
         return stamp(new WCard());
+    }
+
+    /** A filled colour block, captioned, for the appearance preview. */
+    public com.logvex.addon.framework.gui.widgets.WSwatch swatch(Color color, String caption) {
+        return stamp(new com.logvex.addon.framework.gui.widgets.WSwatch(color, caption));
     }
 
     private <W extends WWidget> W stamp(W widget) {

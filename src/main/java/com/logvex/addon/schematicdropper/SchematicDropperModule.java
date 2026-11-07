@@ -584,8 +584,26 @@ public class SchematicDropperModule extends Module {
     public WWidget getWidget(GuiTheme theme) {
         WVerticalList list = theme.verticalList();
 
+        // ---- Material list ----
+        list.add(theme.horizontalSeparator("Material list")).expandX();
+
+        WHorizontalList importRow = list.add(theme.horizontalList()).expandX().widget();
+        WButton importFile = importRow.add(theme.button("Import file...").primary()).expandX().widget();
+        importFile.action = this::importMaterialFile;
+        WButton importPath = importRow.add(theme.button("Import from path...")).expandX().widget();
+        importPath.action = this::importMaterialPath;
+
+        WHorizontalList importRow2 = list.add(theme.horizontalList()).expandX().widget();
+        WButton preview = importRow2.add(theme.button("Preview import")).expandX().widget();
+        preview.action = this::openImportPreview;
+        WButton overview = importRow2.add(theme.button("Material overview")).expandX().widget();
+        overview.action = this::openMaterialOverview;
+
+        // ---- Dropping ----
+        list.add(theme.horizontalSeparator("Dropping")).expandX();
+
         WHorizontalList run = list.add(theme.horizontalList()).expandX().widget();
-        WButton start = run.add(theme.button("Start")).expandX().widget();
+        WButton start = run.add(theme.button("Start").primary()).expandX().widget();
         start.action = this::startRun;
         WButton pause = run.add(theme.button("Pause")).expandX().widget();
         pause.action = this::pauseRun;
@@ -595,46 +613,41 @@ public class SchematicDropperModule extends Module {
         WHorizontalList run2 = list.add(theme.horizontalList()).expandX().widget();
         WButton stop = run2.add(theme.button("Stop")).expandX().widget();
         stop.action = this::stopRun;
-        WButton reset = run2.add(theme.button("Reset")).expandX().widget();
+        WButton reset = run2.add(theme.button("Reset progress")).expandX().widget();
         reset.action = this::resetProgress;
-        WButton rescan = run2.add(theme.button("Rescan")).expandX().widget();
+        WButton rescan = run2.add(theme.button("Rescan inventory")).expandX().widget();
         rescan.action = this::rescanInventory;
 
-        WHorizontalList run3 = list.add(theme.horizontalList()).expandX().widget();
-        WButton acquire = run3.add(theme.button("Acquire Materials")).expandX().widget();
+        // ---- Creative acquisition ----
+        list.add(theme.horizontalSeparator("Creative acquisition")).expandX();
+
+        WHorizontalList acquireRow = list.add(theme.horizontalList()).expandX().widget();
+        WButton acquire = acquireRow.add(theme.button("Acquire materials").primary()).expandX().widget();
         acquire.action = this::startAcquisition;
-        WButton acquisitionScreen = run3.add(theme.button("Acquisition...")).expandX().widget();
+        WButton acquisitionScreen = acquireRow.add(theme.button("Acquisition window...")).expandX().widget();
         acquisitionScreen.action = this::openAcquisitionScreen;
 
-        WButton importFile = list.add(theme.button("Import Material List...")).expandX().widget();
-        importFile.action = this::importMaterialFile;
-
-        WButton importPath = list.add(theme.button("Import Material Path")).expandX().widget();
-        importPath.action = this::importMaterialPath;
-
-        WButton overview = list.add(theme.button("Material Overview")).expandX().widget();
-        overview.action = this::openMaterialOverview;
-
-        WButton preview = list.add(theme.button("Import Preview")).expandX().widget();
-        preview.action = this::openImportPreview;
+        // ---- Schematic building ----
+        list.add(theme.horizontalSeparator("Schematic building")).expandX();
 
         WHorizontalList buildRow = list.add(theme.horizontalList()).expandX().widget();
-        WButton loadSchematic = buildRow.add(theme.button("Load Schematic...")).expandX().widget();
+        WButton loadSchematic = buildRow.add(theme.button("Load schematic...")).expandX().widget();
         loadSchematic.action = this::loadSchematicFile;
-        WButton loadPath = buildRow.add(theme.button("Load Path")).expandX().widget();
+        WButton loadPath = buildRow.add(theme.button("Load from path...")).expandX().widget();
         loadPath.action = this::loadSchematicPath;
-        WButton startBuild = buildRow.add(theme.button("Start Build")).expandX().widget();
-        startBuild.action = this::startBuild;
 
         WHorizontalList buildRow2 = list.add(theme.horizontalList()).expandX().widget();
-        WButton pauseBuild = buildRow2.add(theme.button("Pause")).expandX().widget();
+        WButton startBuild = buildRow2.add(theme.button("Start build").primary()).expandX().widget();
+        startBuild.action = this::startBuild;
+        WButton pauseBuild = buildRow2.add(theme.button("Pause build")).expandX().widget();
         pauseBuild.action = this::pauseBuild;
-        WButton resumeBuild = buildRow2.add(theme.button("Resume")).expandX().widget();
+        WButton resumeBuild = buildRow2.add(theme.button("Resume build")).expandX().widget();
         resumeBuild.action = this::resumeBuild;
-        WButton stopBuild = buildRow2.add(theme.button("Stop")).expandX().widget();
-        stopBuild.action = this::stopBuild;
 
-        WButton buildScreen = list.add(theme.button("Schematic Builder...")).expandX().widget();
+        WHorizontalList buildRow3 = list.add(theme.horizontalList()).expandX().widget();
+        WButton stopBuild = buildRow3.add(theme.button("Stop build")).expandX().widget();
+        stopBuild.action = this::stopBuild;
+        WButton buildScreen = buildRow3.add(theme.button("Builder window...")).expandX().widget();
         buildScreen.action = this::openBuildScreen;
 
         return list;

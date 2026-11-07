@@ -29,7 +29,17 @@ public enum GuiThemePreset {
     /** A teal-leaning variation on the blue theme. */
     TEAL("Teal", 45, 212, 191),
     /** Maximum contrast for accessibility. */
-    HIGH_CONTRAST("High Contrast", 255, 255, 255);
+    HIGH_CONTRAST("High Contrast", 255, 255, 255),
+    /** A vivid magenta with a warm secondary, the most "client" looking of the set. */
+    NEON("Neon", 244, 114, 182),
+    /** A saturated green terminal palette. */
+    MATRIX("Matrix", 74, 222, 128),
+    /** A warm amber palette for a softer look. */
+    AMBER("Amber", 251, 191, 36),
+    /** A deep crimson palette. */
+    CRIMSON("Crimson", 248, 113, 113),
+    /** A cool cyan palette. */
+    CYAN("Cyan", 34, 211, 238);
 
     private final String title;
     private final int accentR;
@@ -121,6 +131,7 @@ public enum GuiThemePreset {
         theme.windowTitle = accent;
         theme.textBoxFocused = accent;
         theme.toggleOn = accent.copy();
+        theme.glow = accent.copy();
         // A light or high-contrast scheme needs light rows; a dark one keeps the default dark rows.
         if (this == LIGHT) {
             theme.row = new Color(228, 234, 246, 0xC0);
@@ -131,7 +142,39 @@ public enum GuiThemePreset {
             theme.rowHover = new Color(60, 60, 60, 0xE0);
             theme.toggleOff = new Color(60, 60, 60);
         }
+
+        // Derived chrome. Every preset gets a secondary accent (a lighter version of the accent, for
+        // gradients) plus matching sidebar, header and selection fills, so a new preset looks complete
+        // without having to list each of these by hand.
+        theme.accentSecondary = lighten(accent, 0.35);
+        boolean light = this == LIGHT;
+        theme.sidebar = light ? new Color(226, 232, 246, 0xF0) : new Color(14, 17, 26, 0xF0);
+        theme.header = light ? new Color(232, 238, 250, 0xFF) : tint(accent, 26, 0xFF);
+        theme.navSelected = light ? new Color(206, 218, 240, 0xFF) : tint(accent, 72, 0xFF);
         return theme;
+    }
+
+    /** Blends {@code color} towards white by {@code amount} (0..1). */
+    private static Color lighten(Color color, double amount) {
+        double t = Math.max(0, Math.min(1, amount));
+        return new Color(
+            (int) Math.round(color.r + (255 - color.r) * t),
+            (int) Math.round(color.g + (255 - color.g) * t),
+            (int) Math.round(color.b + (255 - color.b) * t),
+            color.a);
+    }
+
+    /** A dark surface blended towards {@code accent} by {@code amount}/255. */
+    private static Color tint(Color accent, int amount, int alpha) {
+        double t = Math.max(0, Math.min(255, amount)) / 255.0;
+        int baseR = 16;
+        int baseG = 20;
+        int baseB = 30;
+        return new Color(
+            (int) Math.round(baseR + (accent.r - baseR) * t),
+            (int) Math.round(baseG + (accent.g - baseG) * t),
+            (int) Math.round(baseB + (accent.b - baseB) * t),
+            alpha);
     }
 
     /** Parses a stored name case-insensitively, returning {@code BLUE} when it does not match. */

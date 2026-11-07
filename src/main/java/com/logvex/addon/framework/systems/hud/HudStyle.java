@@ -18,6 +18,8 @@ public record HudStyle(
     Color text,
     Color muted,
     Color accent,
+    Color accentSecondary,
+    Color glow,
     Color good,
     Color warn,
     Color bad,
@@ -37,6 +39,8 @@ public record HudStyle(
             customText && text != null ? text.copy() : theme.text(),
             theme.muted(),
             customAccent && accent != null ? accent.copy() : theme.accent(),
+            theme.accentSecondary(),
+            theme.glow(),
             theme.good(),
             theme.warn(),
             theme.bad(),
@@ -46,6 +50,7 @@ public record HudStyle(
     /** Convenience for an element that only overrides a background and everything else follows the theme. */
     public static HudStyle theme(HudThemeColors theme) {
         return new HudStyle(theme.background(), theme.border(), theme.accent(), theme.text(),
-            theme.muted(), theme.accent(), theme.good(), theme.warn(), theme.bad(), theme.track());
+            theme.muted(), theme.accent(), theme.accentSecondary(), theme.glow(),
+            theme.good(), theme.warn(), theme.bad(), theme.track());
     }
 }

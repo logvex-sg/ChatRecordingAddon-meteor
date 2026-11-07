@@ -91,7 +91,10 @@ public final class HudPanel {
 
         double cursor = y + PAD;
         if (title != null && !title.isEmpty()) {
-            renderer.text(title, x + PAD, cursor, titleColor == null ? style.title() : titleColor, shadow, scale);
+            // A short accent tick before the title, matching the GUI's section headers so a HUD panel
+            // and a settings group read as the same product.
+            renderer.quad(x + PAD, y + PAD + 1, 2, renderer.textHeight(shadow, scale) - 2, style.accent());
+            renderer.text(title, x + PAD + 4, cursor, titleColor == null ? style.title() : titleColor, shadow, scale);
             cursor += lineHeight(renderer, scale);
         }
         return cursor;

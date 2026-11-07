@@ -1,5 +1,6 @@
 package com.logvex.addon.framework.gui.widgets;
 
+import com.logvex.addon.framework.utils.render.Render2D;
 import com.logvex.addon.framework.utils.render.color.Color;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
@@ -45,7 +46,7 @@ public class WLabel extends WWidget {
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, double delta) {
         var tr = MinecraftClient.getInstance().textRenderer;
-        int argb = color == null ? 0xFFFFFFFF : (0xFF000000 | (color.r << 16) | (color.g << 8) | color.b);
+        int argb = Render2D.argb(color);
         context.drawTextWithShadow(tr, text, (int) Math.round(x), (int) Math.round(y), argb);
     }
 }

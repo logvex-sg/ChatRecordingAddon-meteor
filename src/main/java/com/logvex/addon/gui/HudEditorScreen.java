@@ -16,6 +16,7 @@ import com.logvex.addon.framework.systems.hud.HudRenderer;
 import com.logvex.addon.framework.systems.hud.layout.HudAnchor;
 import com.logvex.addon.framework.systems.hud.layout.HudLayout;
 import com.logvex.addon.framework.systems.hud.layout.HudRect;
+import com.logvex.addon.framework.utils.render.Render2D;
 import com.logvex.addon.framework.utils.render.color.Color;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
@@ -40,7 +41,6 @@ import java.util.Locale;
 public class HudEditorScreen extends WidgetScreen {
     private static final Color OUTLINE = new Color(96, 165, 250, 220);
     private static final Color OUTLINE_SELECTED = new Color(255, 210, 120, 255);
-    private static final Color GRID = new Color(255, 255, 255, 18);
 
     private HudElement selected;
     private HudElement dragging;
@@ -65,6 +65,13 @@ public class HudEditorScreen extends WidgetScreen {
     @Override
     public void initWidgets() {
         GuiTheme theme = this.theme;
+        WHorizontalList titleBar = theme.horizontalList();
+        titleBar.add(theme.label("HUD Editor").color(theme.accent)).expandX();
+        WButton doneTop = titleBar.add(theme.button("Done")).widget();
+        doneTop.action = () -> MinecraftClient.getInstance().setScreen(
+            parent instanceof ClickGuiScreen ? parent : new ClickGuiScreen(1));
+        add(titleBar).expandX();
+
         add(theme.label("Drag an element on the canvas to move it, or select it and use the controls below.")
             .color(theme.muted)).expandX();
         add(theme.horizontalSeparator()).expandX();
@@ -242,15 +249,17 @@ public class HudEditorScreen extends WidgetScreen {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        context.fill(0, 0, this.width, this.height, argb(theme.screenBackground));
-        context.fill(0, 0, canvasWidth(), this.height, argb(theme.windowBackground));
+        context.fill(0, 0, this.width, this.height, Render2D.argb(theme.screenBackground));
+        Render2D.roundedRect(context, 2, 2, canvasWidth() - 4, this.height - 4, 5,
+            Render2D.argb(theme.windowBackground, 220));
 
         if (showGrid) {
+            int gridColor = Render2D.argb(theme.separator, 22);
             for (int gx = 0; gx < canvasWidth(); gx += gridStep * 8) {
-                context.fill(gx, 0, gx + 1, this.height, argb(GRID));
+                context.fill(gx, 0, gx + 1, this.height, gridColor);
             }
             for (int gy = 0; gy < this.height; gy += gridStep * 8) {
-                context.fill(0, gy, canvasWidth(), gy + 1, argb(GRID));
+                context.fill(0, gy, canvasWidth(), gy + 1, gridColor);
             }
         }
 
@@ -278,14 +287,12 @@ public class HudEditorScreen extends WidgetScreen {
             HudRect rect = element.bounds();
             boolean isSelected = element == selected;
             Color outline = isSelected ? OUTLINE_SELECTED : OUTLINE;
-            context.fill(rect.x() - 1, rect.y() - 1, rect.right() + 1, rect.y(), argb(outline));
-            context.fill(rect.x() - 1, rect.bottom(), rect.right() + 1, rect.bottom() + 1, argb(outline));
-            context.fill(rect.x() - 1, rect.y(), rect.x(), rect.bottom(), argb(outline));
-            context.fill(rect.right(), rect.y(), rect.right() + 1, rect.bottom(), argb(outline));
+            Render2D.roundedOutline(context, rect.x() - 1, rect.y() - 1,
+                rect.width() + 2, rect.height() + 2, 3, Render2D.argb(outline), isSelected ? 1.5 : 1);
         }
 
         // A vertical divider between the canvas and the controls.
-        context.fill(canvasWidth(), 0, canvasWidth() + 1, this.height, argb(theme.windowBorder));
+        Render2D.rect(context, canvasWidth(), 0, 1, this.height, Render2D.argb(theme.windowBorder, 180));
 
         super.render(context, mouseX, mouseY, delta);
     }
@@ -360,9 +367,5 @@ public class HudEditorScreen extends WidgetScreen {
         double x = canvasWidth() + 6;
         double maxWidth = Math.max(80, this.width - x - 6);
         root.layout(x, 10, maxWidth);
-    }
-
-    private static int argb(Color c) {
-        return ((c.a == 0 ? 255 : c.a) << 24) | (c.r << 16) | (c.g << 8) | c.b;
     }
 }

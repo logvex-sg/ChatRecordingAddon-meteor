@@ -5,9 +5,12 @@ import com.logvex.addon.framework.gui.GuiThemes;
 import com.logvex.addon.framework.gui.WidgetScreen;
 import com.logvex.addon.framework.gui.widgets.WWidget;
 import com.logvex.addon.framework.gui.widgets.input.WTextBox;
+import com.logvex.addon.framework.gui.widgets.containers.WHorizontalList;
 import com.logvex.addon.framework.gui.widgets.pressable.WButton;
+import com.logvex.addon.framework.gui.widgets.pressable.WToggle;
 import com.logvex.addon.framework.settings.Setting;
 import com.logvex.addon.framework.settings.SettingGroup;
+import com.logvex.addon.framework.systems.config.ConfigManager;
 import com.logvex.addon.framework.systems.hud.Hud;
 import com.logvex.addon.framework.systems.hud.HudElement;
 import com.logvex.addon.framework.systems.hud.HudElementInfo;
@@ -39,25 +42,39 @@ public class HudElementSettingsScreen extends WidgetScreen {
     public void initWidgets() {
         GuiTheme theme = this.theme;
 
+        WHorizontalList header = theme.horizontalList();
+        WButton back = header.add(theme.button("< Back")).widget();
+        back.action = () -> MinecraftClient.getInstance().setScreen(
+            parent instanceof ClickGuiScreen ? parent : new ClickGuiScreen(1));
+        header.add(theme.label(info.title).color(theme.accent)).expandX();
+        WToggle shown = header.add(theme.toggle(Hud.get().isActive(info) ? "Shown" : "Hidden",
+            () -> Hud.get().isActive(info), value -> {
+                Hud.get().toggle(info);
+                ConfigManager.get().markDirty();
+                reload();
+            })).widget();
+        shown.theme = theme;
+        add(header).expandX();
+
+        if (info.description != null && !info.description.isBlank()) {
+            add(theme.label(info.description).color(theme.muted)).expandX();
+        }
+
+        WHorizontalList actions = theme.horizontalList();
+        WButton arrange = actions.add(theme.button("Arrange in HUD editor")).expandX().widget();
+        arrange.action = () -> MinecraftClient.getInstance().setScreen(new HudEditorScreen(this));
+        add(actions).expandX();
+
         WTextBox search = add(theme.textBox(query, "Search settings...")).expandX().widget();
         search.action = () -> {
             query = search.get();
             reload();
         };
 
-        WButton back = add(theme.button("Back")).expandX().widget();
-        back.action = () -> MinecraftClient.getInstance().setScreen(
-            parent instanceof ClickGuiScreen ? parent : new ClickGuiScreen(1));
-        WButton toggle = add(theme.button(Hud.get().isActive(info) ? "Hide element" : "Show element")).expandX().widget();
-        toggle.action = () -> {
-            Hud.get().toggle(info);
-            com.logvex.addon.framework.systems.config.ConfigManager.get().markDirty();
-            reload();
-        };
-        WButton arrange = add(theme.button("Arrange in HUD editor")).expandX().widget();
-        arrange.action = () -> MinecraftClient.getInstance().setScreen(new HudEditorScreen(this));
-
-        if (element == null) return;
+        if (element == null) {
+            add(theme.label("This element is not available.").color(theme.muted)).expandX();
+            return;
+        }
 
         String needle = query.trim().toLowerCase(Locale.ROOT);
         boolean any = false;
