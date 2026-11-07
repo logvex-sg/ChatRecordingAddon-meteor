@@ -162,8 +162,4 @@ public class WTextBox extends WWidget {
         changed();
         return true;
     }
-
-    private static int argb(com.logvex.addon.framework.utils.render.color.Color c) {
-        return 0xFF000000 | (c.r << 16) | (c.g << 8) | c.b;
-    }
 }
