@@ -241,7 +241,6 @@ public class AutoCreativeModule extends AutomationModule {
             entries.add(requirement.itemId() + " " + requirement.required());
         }
         items.set(entries);
-        controller.setRequests(parseItems(entries));
         controller.reset();
         controller.setRequests(parseItems(entries));
 
