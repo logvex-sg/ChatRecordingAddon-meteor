@@ -67,6 +67,44 @@ public class LogCommand extends Command {
             return SINGLE_SUCCESS;
         }));
 
+        builder.then(literal("world")
+            .executes(context -> {
+                worldStatus();
+                return SINGLE_SUCCESS;
+            })
+            .then(literal("status").executes(context -> {
+                worldStatus();
+                return SINGLE_SUCCESS;
+            }))
+            .then(literal("map").executes(context -> {
+                openWorldMap();
+                return SINGLE_SUCCESS;
+            }))
+            .then(literal("places").executes(context -> {
+                worldPlaces("");
+                return SINGLE_SUCCESS;
+            }).then(argument("query", StringArgumentType.greedyString()).executes(context -> {
+                worldPlaces(StringArgumentType.getString(context, "query"));
+                return SINGLE_SUCCESS;
+            })))
+            .then(literal("nearest").executes(context -> {
+                worldNearest(null);
+                return SINGLE_SUCCESS;
+            }).then(argument("category", StringArgumentType.word()).executes(context -> {
+                worldNearest(StringArgumentType.getString(context, "category"));
+                return SINGLE_SUCCESS;
+            })))
+            .then(literal("mark")
+                .then(argument("name", StringArgumentType.greedyString()).executes(context -> {
+                    worldMark(StringArgumentType.getString(context, "name"));
+                    return SINGLE_SUCCESS;
+                })))
+            .then(literal("export").executes(context -> {
+                worldExport();
+                return SINGLE_SUCCESS;
+            }))
+        );
+
         builder.then(literal("notifications")
             .executes(context -> {
                 notifications(10);
@@ -458,6 +496,7 @@ public class LogCommand extends Command {
         info("  (highlight).log sessions [list|clear](default) - past recording sessions.");
         info("  (highlight).log companion [status|start|stop|token|regenerate|gui](default) - the companion web app.");
         info("  (highlight).log update [status|check|download|channel <stable|beta>|gui](default) - GitHub release updates.");
+        info("  (highlight).log world [status|map|places [query]|nearest [category]|mark <name>|export](default) - world intelligence.");
         info("  (highlight).log web(default) - open the local web console in your browser.");
         info("  (highlight).ai [status|triggers|facts|remember|forget|test|gui](default) - the chat assistant.");
     }
@@ -812,6 +851,131 @@ public class LogCommand extends Command {
         net.minecraft.client.MinecraftClient client = net.minecraft.client.MinecraftClient.getInstance();
         client.setScreen(new com.logvex.addon.gui.ClickGuiScreen());
         info("Opened the Log Client window.");
+    }
+
+    private void worldStatus() {
+        var module = LogCommands.world();
+        if (module == null) {
+            error("The world-intelligence module is not available.");
+            return;
+        }
+        var profile = module.service().intelligence().current();
+        if (profile == null) {
+            info("No world is loaded yet. Join a world to start recording discoveries.");
+            return;
+        }
+        info("World: %s", profile.label());
+        info("Places: %d, biomes: %d, resource types: %d, chunks: %d",
+            profile.locations().size(), profile.biomes().size(),
+            profile.resources().size(), profile.chunks().size());
+        var recent = profile.discoveries().recent(5);
+        if (recent.isEmpty()) {
+            info("No discoveries recorded yet.");
+        } else {
+            info("Recent discoveries:");
+            for (var event : recent) {
+                info("  %s %s at %s", event.kind(), event.label(),
+                    com.logvex.addon.world.core.WorldFormat.coords(event.x(), event.y(), event.z()));
+            }
+        }
+    }
+
+    private void openWorldMap() {
+        var module = LogCommands.world();
+        if (module == null) {
+            error("The world-intelligence module is not available.");
+            return;
+        }
+        module.openMap();
+    }
+
+    private void worldPlaces(String query) {
+        var module = LogCommands.world();
+        if (module == null) {
+            error("The world-intelligence module is not available.");
+            return;
+        }
+        var places = module.service().intelligence().search(query, null, null);
+        if (places.isEmpty()) {
+            info(query.isBlank() ? "No places recorded yet." : "No places match \"" + query + "\".");
+            return;
+        }
+        info("Found %d place%s:", places.size(), places.size() == 1 ? "" : "s");
+        int shown = 0;
+        for (var point : places) {
+            if (shown++ >= 20) {
+                info("  ... and %d more.", places.size() - 20);
+                break;
+            }
+            info("  %s (%s) %s", point.name().isBlank() ? "(unnamed)" : point.name(),
+                point.category(), com.logvex.addon.world.core.WorldFormat.coords(point.x(), point.y(), point.z()));
+        }
+    }
+
+    private void worldNearest(String categoryRaw) {
+        var module = LogCommands.world();
+        if (module == null) {
+            error("The world-intelligence module is not available.");
+            return;
+        }
+        if (mc.player == null || mc.world == null) {
+            error("Join a world first.");
+            return;
+        }
+        com.logvex.addon.world.core.LocationCategory category = categoryRaw == null
+            ? null : com.logvex.addon.world.core.LocationCategory.fromName(categoryRaw);
+        String dimension = mc.world.getRegistryKey().getValue().toString();
+        var points = module.service().intelligence().nearest(dimension, mc.player.getBlockX(),
+            mc.player.getBlockY(), mc.player.getBlockZ(), 5);
+        if (category != null) {
+            points = points.stream().filter(p -> p.category() == category).toList();
+        }
+        if (points.isEmpty()) {
+            info("No known places nearby.");
+            return;
+        }
+        info("Nearest known places:");
+        for (var point : points) {
+            double dx = point.x() - mc.player.getX();
+            double dy = point.y() - mc.player.getY();
+            double dz = point.z() - mc.player.getZ();
+            double distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            info("  %s - %s", point.name().isBlank() ? point.category().toString() : point.name(),
+                com.logvex.addon.world.core.WorldFormat.distance(distance));
+        }
+    }
+
+    private void worldMark(String name) {
+        var module = LogCommands.world();
+        if (module == null) {
+            error("The world-intelligence module is not available.");
+            return;
+        }
+        if (name == null || name.isBlank()) {
+            error("Give the place a name.");
+            return;
+        }
+        var point = module.service().markHere(name, com.logvex.addon.world.core.LocationCategory.WAYPOINT);
+        if (point == null) {
+            error("Join a world before marking a place.");
+            return;
+        }
+        info("Marked \"%s\" at %s.", point.name(),
+            com.logvex.addon.world.core.WorldFormat.coords(point.x(), point.y(), point.z()));
+    }
+
+    private void worldExport() {
+        var module = LogCommands.world();
+        if (module == null) {
+            error("The world-intelligence module is not available.");
+            return;
+        }
+        java.nio.file.Path file = com.logvex.addon.framework.LogClientContext.FOLDER().toPath()
+            .resolve("logclient").resolve("world-intelligence-export.json");
+        boolean ok = com.logvex.addon.world.core.WorldStore.exportTo(file,
+            module.service().intelligence().exportMap());
+        if (ok) info("Exported the world database to %s.", file.getFileName());
+        else error("Could not write the export file.");
     }
 
     private void digest() {
