@@ -15,8 +15,10 @@ sound and optional webhook), `player-activity` (per-player activity tracking) an
 **Chat intelligence** — `chat-filter` (ordered hide/allow rules applied in the chat mixin, so a
 filtered message never reaches chat, the recorder or the log), `chat-digest` (on-demand and timed
 summaries of chat activity), `session-timeline` (a bounded timeline of joins, leaves, deaths and
-keyword hits), `webhook-monitor` (delivery health, queue depth and a bounded delivery history) and
-`player-notes` (your own notes about players, shown next to their observed activity).
+keyword hits), `webhook-monitor` (delivery health, queue depth and a bounded delivery history),
+`player-notes` (your own notes about players, shown next to their observed activity),
+`player-identity` (observed account name changes and a watchlist) and `session-history` (a
+browsable history of past recording sessions).
 
 **Schematic Dropper** — imports a material report or a schematic, acquires missing materials in
 Creative mode, drops them one *server-confirmed* transfer at a time, and can place a schematic
@@ -277,6 +279,8 @@ pluralisation.
 | `webhook-monitor` | Watches the shared webhook queue and reports its health. Keeps a bounded delivery history, warns in chat when a delivery fails and can note a recovery. The URL is never stored or shown — only the host. |
 | `player-notes` | Your own notes about players, with the observed activity shown beside each note. A note is always explicit user input; the addon never infers one. |
 | `player-activity` | Per-player joins, leaves, deaths and message counts, rebuilt from the archive on demand. Supports an **exclude list** so bots or your own alts are never tracked, and shows observed online time per player. |
+| `player-identity` | Tracks the names each **account** (by UUID) is seen using, and reports a rename only when the same UUID is later announced under a different name. Includes a per-account **watchlist**; watched renames are highlighted. Never merges two accounts that share a name. |
+| `session-history` | A bounded, browsable history of past recording sessions (server, duration, message/event counts), with a configurable cap. Each session is folded into a compact record when it ends, so past sessions can be reviewed without re-reading the archive. |
 
 ### Activity graph
 
@@ -306,6 +310,35 @@ completed sessions and whether the player is believed to be online right now.
   an *Online* column.
 - `.log playtime [player]` prints the table in chat. Players on the activity exclude list are not
   tracked.
+
+### Player identity and renames
+
+A client cannot see an account's rename history. It can only notice that the **same UUID** is later
+announced under a **different name** in the server player list, so that is exactly what
+`player-identity` reports — nothing more.
+
+- Two different accounts that happen to share a name are tracked separately and never merged.
+- A first observation is not a rename; the previous name is retained and shown as `was <name>`.
+- `.log identities [renamed|watch <player>|unwatch <player>|watchlist|clear|<filter>]` browses the
+  index in chat; the **Player Identity** screen (`.log identities`, or the module's button) shows a
+  table with the current name, previous name, change count, last-seen time and a Watch toggle.
+- The **Player Identity** HUD lists the most recent renames as `old -> new`, with a time-ago; a
+  watched player's line is highlighted. With nothing observed it says `No renames observed` rather
+  than showing an empty box.
+- Renames are recorded even while the module is disabled (the packet subscription is installed once
+  at bootstrap, like the recorder), so turning the module on never loses history. Notifications are
+  raised by the module while it is active.
+
+### Session history
+
+Every session that ends is folded into a compact record: server, start and end time, and the
+message, player, join, leave, death and keyword-alert counts that were actually observed.
+
+- `.log sessions [list|clear]` prints the totals and the most recent sessions in chat.
+- The **Session History** screen (the module's button) shows a table with a **View Log** button per
+  session that opens the log viewer filtered to that session's id.
+- The history is bounded; the cap is the module's `history-size` setting and takes effect
+  immediately when lowered. A session id is never stored twice.
 
 ### Alert history
 
@@ -351,6 +384,20 @@ the total uncompressed size, the report count and the space saved.
 
 Webhook URLs are treated as secrets: they are never written into a report, never included in
 error messages, and the Discord payload explicitly disables mentions.
+
+## Log storage locations
+
+Everything the addon writes lives under `<gamedir>/logaddon/`:
+
+```
+<gamedir>/logaddon/config.json      module, HUD and addon settings
+<gamedir>/logaddon/logs/            gzip-compressed chat log segments and index.json
+<gamedir>/logaddon/logs/sessions.json   past recording-session summaries
+<gamedir>/logaddon/reports/         gzip-compressed webhook report archive and index.json
+```
+
+`sessions.json` is written atomically (temp file + move) when a session ends, and read back on the
+next launch. A missing or damaged file loads as an empty history rather than failing.
 
 ## Exporting logs
 
@@ -486,6 +533,14 @@ The addon registers a `.log` command (alias `.la`). Run `.log help` for the list
 | `.log notes add <player> <text>` | Saves a note about a player. |
 | `.log notes remove <player>` | Removes a player's note. |
 | `.log notes search <filter>` | Searches notes by player or body. |
+| `.log identities [filter]` | Lists observed accounts and their names. |
+| `.log identities renamed` | Lists only the accounts seen under more than one name. |
+| `.log identities watch <player>` | Adds a player to the rename watchlist. |
+| `.log identities unwatch <player>` | Removes a player from the watchlist. |
+| `.log identities watchlist` | Lists the watched players. |
+| `.log identities clear` | Clears the identity index. |
+| `.log sessions [list]` | Totals and the most recent past recording sessions. |
+| `.log sessions clear` | Clears the session history. |
 
 Commands are registered through the addon's own `PostInit` hook, and are intercepted from the
 client's chat/command path by a mixin before vanilla handles them.
@@ -538,6 +593,15 @@ archive with in-memory doubles (no Minecraft runtime required):
   round-trip and rejection of an invalid stored value.
 - `ConfigManagerTest` — save/load round-trip, missing and corrupt files, unknown-key preservation
   and the dirty flag, all against a real temp file.
+- `PlayerIdentityTrackerTest` — observed-name tracking: a first observation is not a rename, a
+  repeated name does not duplicate, a rename keeps the old name, two accounts sharing a name are
+  never merged, blank input is ignored, search covers every observed name, `renamed()` filters
+  single-name accounts, the rename log is bounded and newest-first, and the watchlist is
+  case-insensitive, bounded and de-duplicated.
+- `SessionHistoryTest` — session records built from a session and its statistics, an open session
+  using `now`, the bounded history and its cap, duplicate-id rejection, search across server/id/date,
+  totals, immediate cap reduction, map round-trip, ordered load, and the JSON file round-trip with a
+  corrupt file loading as empty.
 
 ## Known limitations
 
@@ -564,8 +628,14 @@ archive with in-memory doubles (no Minecraft runtime required):
   than guessed at, and every line it could not parse is listed in the preview.
 - Player online time is only known for players whose join *and* leave were both observed. A player
   already present when the client connected is reported as unknown, not as zero, and the addon never
-  invents a duration for them. Name changes are not tracked: the client is not reliably told a
-  renamed player is the same person, so a rename appears as a new name.
+  invents a duration for them.
+- Player name changes are only reported when the server's player list announces the **same UUID**
+  under a different name. If a server does not include the player list, or a rename happens while the
+  player is absent from it, no change is detected — the addon never guesses that two names are the
+  same person.
+- The identity index and session history are held in memory for the running client. The session
+  history is also written to `logs/sessions.json` when a session ends; the identity index is not
+  persisted, so it is rebuilt from the player list after a restart.
 - The bot uses Baritone only when the user has installed it (detected at runtime by reflection). The
   addon bundles no pathfinder of its own beyond the bounded fallback walker, and navigation quality
   with the fallback is limited — it walks in a straight line and stops when blocked rather than

@@ -261,7 +261,10 @@ public class ChatLoggerModule extends Module {
         LogStorageService storage = service.storage();
         storage.setCompressionLevel(compressionLevel.get());
         storage.setFlushThreshold(flushThreshold.get());
-        storage.loadAsync(this::cleanupIfNeeded);
+        storage.loadAsync(() -> {
+            cleanupIfNeeded();
+            storage.loadSessionHistoryAsync(service.sessionHistory(), null);
+        });
     }
 
     @Override
