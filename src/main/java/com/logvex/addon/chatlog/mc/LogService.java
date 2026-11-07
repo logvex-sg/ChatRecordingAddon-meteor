@@ -10,8 +10,12 @@ import com.logvex.addon.chatlog.core.ActivityHistogram;
 import com.logvex.addon.chatlog.core.AlertLog;
 import com.logvex.addon.chatlog.core.PlayerTracker;
 import com.logvex.addon.chatlog.core.PlayerSessionTracker;
+import com.logvex.addon.chatlog.core.PlayerIdentityTracker;
+import com.logvex.addon.chatlog.core.SessionHistory;
+import com.logvex.addon.chatlog.core.SessionRecord;
 import com.logvex.addon.chatlog.core.StatsCollector;
 import com.logvex.addon.chatlog.core.StatsSnapshot;
+import com.logvex.addon.chatlog.core.Watchlist;
 import com.logvex.addon.chatlog.core.WebhookPayload;
 import com.logvex.addon.chatlog.core.WebhookQueue;
 
@@ -55,6 +59,15 @@ public final class LogService {
     private final PlayerSessionTracker sessions = new PlayerSessionTracker();
     private final StatsCollector stats = new StatsCollector();
     private final WebhookQueue webhook = new WebhookQueue();
+
+    /** Observed account names, keyed by UUID. Fed from the player-list packets. */
+    private final PlayerIdentityTracker identities = new PlayerIdentityTracker();
+
+    /** Completed-session summaries, so past sessions can be reviewed without reading the archive. */
+    private final SessionHistory sessionHistory = new SessionHistory();
+
+    /** Player names the user asked to watch. */
+    private final Watchlist watchlist = new Watchlist();
 
     /** A bounded record of noteworthy events (keyword hits, delivery problems, internal errors). */
     private final AlertLog alerts = new AlertLog();
@@ -104,6 +117,21 @@ public final class LogService {
     /** The bounded record of noteworthy events. */
     public AlertLog alerts() {
         return alerts;
+    }
+
+    /** Observed account identities, keyed by UUID. */
+    public PlayerIdentityTracker identities() {
+        return identities;
+    }
+
+    /** Completed-session summaries. */
+    public SessionHistory sessionHistory() {
+        return sessionHistory;
+    }
+
+    /** The player watchlist. */
+    public Watchlist watchlist() {
+        return watchlist;
     }
 
     public StatsCollector stats() {
@@ -181,6 +209,10 @@ public final class LogService {
     public void endSession(long nowMs) {
         if (session != null && session.endedAt() == 0) session = session.withEnded(nowMs);
         stats.stop(nowMs);
+        SessionRecord record = SessionRecord.from(session, stats.snapshot(nowMs));
+        if (record != null) sessionHistory.add(record);
+        LogStorageService current = storage;
+        if (current != null) current.saveSessionHistoryAsync(sessionHistory);
         flush(null);
     }
 

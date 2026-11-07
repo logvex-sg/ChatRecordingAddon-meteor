@@ -10,6 +10,8 @@ import com.logvex.addon.chatlog.core.LogSegmentMeta;
 import com.logvex.addon.chatlog.core.LogStore;
 import com.logvex.addon.chatlog.core.PlayerTracker;
 import com.logvex.addon.chatlog.core.PlayerSessionTracker;
+import com.logvex.addon.chatlog.core.SessionHistory;
+import com.logvex.addon.chatlog.core.SessionHistoryStore;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -269,6 +271,22 @@ public final class LogStorageService {
                 fail("Failed to rebuild player activity", e);
             }
             onClient(onDone);
+        });
+    }
+
+    /** Persists the session history next to the logs, off the client thread. */
+    public void saveSessionHistoryAsync(SessionHistory history) {
+        if (history == null) return;
+        Path root = root();
+        io.execute(() -> SessionHistoryStore.save(root, history));
+    }
+
+    /** Loads the session history from next to the logs, then runs {@code onLoaded} on the client thread. */
+    public void loadSessionHistoryAsync(SessionHistory history, Runnable onLoaded) {
+        Path root = root();
+        io.execute(() -> {
+            SessionHistoryStore.load(root, history);
+            onClient(onLoaded);
         });
     }
 

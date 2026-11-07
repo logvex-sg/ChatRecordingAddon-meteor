@@ -279,6 +279,60 @@ public class LogCommand extends Command {
                 return SINGLE_SUCCESS;
             })))
         );
+
+        builder.then(literal("identities")
+            .executes(context -> {
+                identities("");
+                return SINGLE_SUCCESS;
+            })
+            .then(literal("list").executes(context -> {
+                identities("");
+                return SINGLE_SUCCESS;
+            }))
+            .then(literal("renamed").executes(context -> {
+                renames();
+                return SINGLE_SUCCESS;
+            }))
+            .then(literal("clear").executes(context -> {
+                com.logvex.addon.chatlog.mc.LogService.get().identities().clear();
+                info("Identity index cleared.");
+                return SINGLE_SUCCESS;
+            }))
+            .then(literal("watch")
+                .then(argument("player", StringArgumentType.word()).executes(context -> {
+                    watch(StringArgumentType.getString(context, "player"), true);
+                    return SINGLE_SUCCESS;
+                })))
+            .then(literal("unwatch")
+                .then(argument("player", StringArgumentType.word()).executes(context -> {
+                    watch(StringArgumentType.getString(context, "player"), false);
+                    return SINGLE_SUCCESS;
+                })))
+            .then(literal("watchlist").executes(context -> {
+                watchlist();
+                return SINGLE_SUCCESS;
+            }))
+            .then(argument("filter", StringArgumentType.greedyString()).executes(context -> {
+                identities(StringArgumentType.getString(context, "filter"));
+                return SINGLE_SUCCESS;
+            }))
+        );
+
+        builder.then(literal("sessions")
+            .executes(context -> {
+                sessions();
+                return SINGLE_SUCCESS;
+            })
+            .then(literal("list").executes(context -> {
+                sessions();
+                return SINGLE_SUCCESS;
+            }))
+            .then(literal("clear").executes(context -> {
+                com.logvex.addon.chatlog.mc.LogService.get().sessionHistory().clear();
+                info("Session history cleared.");
+                return SINGLE_SUCCESS;
+            }))
+        );
     }
 
     // ------------------------------------------------------------------ sections
@@ -303,6 +357,8 @@ public class LogCommand extends Command {
         info("  (highlight).log timeline [filter](default) - recent session milestones.");
         info("  (highlight).log filter [stats|reset](default) - chat filter status.");
         info("  (highlight).log notes [list|add <player> <text>|remove <player>|search <filter>](default).");
+        info("  (highlight).log identities [renamed|watch|unwatch|watchlist|clear|<filter>](default) - observed name changes.");
+        info("  (highlight).log sessions [list|clear](default) - past recording sessions.");
     }
 
     private void status() {
@@ -697,6 +753,91 @@ public class LogCommand extends Command {
             return;
         }
         if (!module.removeNote(player)) warning("No note saved for %s.", player);
+    }
+
+    private void identities(String filter) {
+        var tracker = com.logvex.addon.chatlog.mc.LogService.get().identities();
+        List<com.logvex.addon.chatlog.core.PlayerIdentity> list = tracker.search(filter);
+        if (list.isEmpty()) {
+            info(filter.isBlank() ? "No account names observed yet."
+                : "No observed accounts match that name.");
+            return;
+        }
+        info("Observed accounts: %d%s", list.size(),
+            filter.isBlank() ? "" : " matching '" + filter + "'");
+        int shown = Math.min(list.size(), 20);
+        long now = System.currentTimeMillis();
+        for (int i = 0; i < shown; i++) {
+            var identity = list.get(i);
+            String previous = identity.previousName();
+            info("  %s%s - %d name%s, last seen %s", identity.currentName(),
+                previous.isEmpty() ? "" : " (was " + previous + ")",
+                identity.nameCount(), identity.nameCount() == 1 ? "" : "s",
+                Messages.ago(identity.lastSeen(), now));
+        }
+        if (list.size() > shown) info("  ... and %d more.", list.size() - shown);
+    }
+
+    private void renames() {
+        var renames = com.logvex.addon.chatlog.mc.LogService.get().identities().renames();
+        if (renames.isEmpty()) {
+            info("No player renames observed yet.");
+            return;
+        }
+        info("Observed renames: %d", renames.size());
+        long now = System.currentTimeMillis();
+        int shown = Math.min(renames.size(), 20);
+        for (int i = 0; i < shown; i++) {
+            var rename = renames.get(i);
+            info("  %s \u2192 %s (%s)", rename.from(), rename.to(), Messages.ago(rename.atMs(), now));
+        }
+        if (renames.size() > shown) info("  ... and %d more.", renames.size() - shown);
+    }
+
+    private void watch(String player, boolean add) {
+        var watchlist = com.logvex.addon.chatlog.mc.LogService.get().watchlist();
+        if (player == null || player.isBlank()) {
+            error("Give a player name.");
+            return;
+        }
+        if (add) {
+            if (watchlist.add(player)) info("Now watching %s.", Messages.player(player));
+            else warning("%s is already on the watchlist.", Messages.player(player));
+        } else {
+            if (watchlist.remove(player)) info("Stopped watching %s.", Messages.player(player));
+            else warning("%s is not on the watchlist.", Messages.player(player));
+        }
+    }
+
+    private void watchlist() {
+        var watchlist = com.logvex.addon.chatlog.mc.LogService.get().watchlist();
+        if (watchlist.isEmpty()) {
+            info("The watchlist is empty. Use (highlight).log identities watch <player>(default).");
+            return;
+        }
+        info("Watching %d player%s: %s", watchlist.size(), watchlist.size() == 1 ? "" : "s",
+            String.join(", ", watchlist.entries()));
+    }
+
+    private void sessions() {
+        var history = com.logvex.addon.chatlog.mc.LogService.get().sessionHistory();
+        if (history.size() == 0) {
+            info("No past sessions recorded yet.");
+            return;
+        }
+        info("Sessions kept: %d, %s across %s.", history.size(),
+            Messages.plural(history.totalMessages(), "message"),
+            Messages.duration(history.totalDurationMs(System.currentTimeMillis())));
+        var records = history.search("");
+        int shown = Math.min(records.size(), 15);
+        for (int i = 0; i < shown; i++) {
+            var record = records.get(i);
+            info("  %s %s - %s, %s, %d player%s", Messages.dateTime(record.startedAt()),
+                record.server(), Messages.duration(record.durationMs(System.currentTimeMillis())),
+                Messages.plural(record.messages(), "message"), record.uniquePlayers(),
+                record.uniquePlayers() == 1 ? "" : "s");
+        }
+        if (records.size() > shown) info("  ... and %d more.", records.size() - shown);
     }
 
     private void recording(boolean on) {

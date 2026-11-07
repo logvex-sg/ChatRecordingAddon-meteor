@@ -41,6 +41,7 @@ public class LogAddon {
         Addon.EVENT_BUS.subscribe(new ChatRecorder());
         com.logvex.addon.chatlog.mc.ChatFilterService.get().init(Addon.EVENT_BUS);
         com.logvex.addon.chatlog.mc.SessionTimelineService.get().init(Addon.EVENT_BUS);
+        com.logvex.addon.chatlog.mc.PlayerIdentityService.get().init(Addon.EVENT_BUS);
 
         Modules.get().add(new ChatLoggerModule());
         Modules.get().add(new ChatMonitorModule());
@@ -52,6 +53,8 @@ public class LogAddon {
         Modules.get().add(new com.logvex.addon.chatlog.modules.ChatDigestModule());
         Modules.get().add(new com.logvex.addon.chatlog.modules.WebhookMonitorModule());
         Modules.get().add(new com.logvex.addon.chatlog.modules.PlayerNotesModule());
+        Modules.get().add(new com.logvex.addon.chatlog.modules.PlayerIdentityModule());
+        Modules.get().add(new com.logvex.addon.chatlog.modules.SessionHistoryModule());
 
         // Keep the existing Schematic Dropper module and its HUD.
         Modules.get().add(new com.logvex.addon.schematicdropper.SchematicDropperModule());
@@ -71,6 +74,7 @@ public class LogAddon {
         Hud.get().register(com.logvex.addon.chatlog.hud.WebhookStatusHud.INFO);
         Hud.get().register(com.logvex.addon.chatlog.hud.ActivityGraphHud.INFO);
         Hud.get().register(com.logvex.addon.chatlog.hud.RecentPlayersHud.INFO);
+        Hud.get().register(com.logvex.addon.chatlog.hud.PlayerIdentityHud.INFO);
     }
 
     /**
