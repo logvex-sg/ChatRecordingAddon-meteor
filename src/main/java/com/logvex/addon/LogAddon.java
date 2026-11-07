@@ -87,6 +87,11 @@ public class LogAddon {
         Modules.get().add(new com.logvex.addon.notify.NotificationModule());
         Hud.get().register(com.logvex.addon.notify.hud.NotificationHud.INFO);
 
+        // Companion: a small local web server and app so a phone or another machine can watch and
+        // control this client. Off by default; the server only runs while the module is enabled.
+        Modules.get().add(new com.logvex.addon.companion.mc.CompanionModule());
+        Hud.get().register(com.logvex.addon.companion.hud.CompanionHud.INFO);
+
         Hud.get().register(ChatLogHud.INFO);
         Hud.get().register(ActivityHud.INFO);
         Hud.get().register(StatsHud.INFO);

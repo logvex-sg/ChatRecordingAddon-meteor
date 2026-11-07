@@ -16,7 +16,7 @@ import java.io.File;
 public final class Addon {
     public static final String MOD_ID = "logvex-addon";
     public static final String NAME = "Log Addon";
-    public static final String VERSION = "10.0.0";
+    public static final String VERSION = "12.0.0";
 
     /** The addon-wide event bus: modules, HUD and the recorder all publish and listen here. */
     public static final EventBus EVENT_BUS = new EventBus();
