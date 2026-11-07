@@ -315,6 +315,8 @@ public class BotModule extends Module {
     private MemoryStore memoryStore;
     private BotMemory memory = new BotMemory();
     private boolean recipesIndexed;
+    private final com.logvex.addon.profiles.ProfileManager profiles =
+        new com.logvex.addon.profiles.ProfileManager();
 
     public BotModule() {
         super(LogAddon.CATEGORY, "auto-bot", "Autonomous task bot: gather, craft, build, farm and more.");
@@ -326,6 +328,7 @@ public class BotModule extends Module {
     public void onActivate() {
         // The module subscribes itself (autoSubscribe), so no manual subscription here.
         reloadMemory();
+        profiles.load(profileDirectory());
         applySettings();
         controller.setContext(buildContext());
         controller.setAutoStart(autoStart.get());
@@ -441,6 +444,56 @@ public class BotModule extends Module {
         saveMemory();
     }
 
+    // ------------------------------------------------------------------ profiles
+
+    /** The folder profiles are read from and written to. */
+    private Path profileDirectory() {
+        return com.logvex.addon.framework.Addon.FOLDER().toPath().resolve("logaddon");
+    }
+
+    /** The live profile manager, for the GUI and commands. */
+    public com.logvex.addon.profiles.ProfileManager profiles() {
+        return profiles;
+    }
+
+    /** Captures the current settings as a named user profile and saves it. */
+    public com.logvex.addon.profiles.BotProfile saveProfile(String name) {
+        com.logvex.addon.profiles.BotProfile profile = profiles.capture(name, settings);
+        if (profile == null) {
+            error("Could not save that profile (the name is empty or reserved).");
+            return null;
+        }
+        profiles.save(profileDirectory());
+        info("Saved profile \"%s\" (%d settings).", profile.name(), profile.size());
+        return profile;
+    }
+
+    /** Applies a named profile to the live settings and persists the configuration. */
+    public boolean applyProfile(String name) {
+        com.logvex.addon.profiles.BotProfile profile = profiles.get(name);
+        if (profile == null) {
+            error("No profile named \"%s\".", name);
+            return false;
+        }
+        int changed = profiles.apply(profile, settings);
+        applySettings();
+        controller.setContext(buildContext());
+        com.logvex.addon.framework.systems.config.ConfigManager.get().markDirty();
+        info("Applied profile \"%s\" (%d settings changed).", profile.name(), changed);
+        return true;
+    }
+
+    /** Deletes a user profile. */
+    public boolean deleteProfile(String name) {
+        if (!profiles.remove(name)) {
+            error("No removable profile named \"%s\".", name);
+            return false;
+        }
+        profiles.save(profileDirectory());
+        info("Deleted profile \"%s\".", name);
+        return true;
+    }
+
     public MinecraftNavPort navigation() {
         return navPort;
     }
@@ -473,6 +526,37 @@ public class BotModule extends Module {
         return controller.stop("user");
     }
 
+    /** Immediate stop: cancels the active task, the queue and any navigation. */
+    public void emergencyStop() {
+        controller.emergencyStop();
+        navPort.stop();
+        actionPort.cancel();
+        publish(NotificationType.TASK_FAILED, NotificationPriority.HIGH, "Emergency stop engaged.");
+        if (chatFeedback.get()) warning("Emergency stop: all automation cancelled.");
+    }
+
+    /** The block the bot is currently navigating to, or {@code null}. */
+    public com.logvex.addon.bot.core.BlockPos3 navTarget() {
+        return navPort.target();
+    }
+
+    /** Straight-line distance in blocks to the current navigation target, or {@code -1} when idle. */
+    public double navDistance() {
+        com.logvex.addon.bot.core.BlockPos3 target = navPort.target();
+        if (target == null) return -1;
+        double[] pos = navPort.position();
+        if (pos == null) return -1;
+        double dx = pos[0] - (target.x() + 0.5);
+        double dy = pos[1] - (target.y() + 0.5);
+        double dz = pos[2] - (target.z() + 0.5);
+        return Math.sqrt(dx * dx + dy * dy + dz * dz);
+    }
+
+    /** The navigation backend name (Baritone, Voyager or the built-in walker). */
+    public String navigationBackend() {
+        return navPort.backendName();
+    }
+
     // ------------------------------------------------------------------ widget
 
     @Override
@@ -488,6 +572,9 @@ public class BotModule extends Module {
         resume.action = this::resumeBot;
         WButton stop = row1.add(theme.button("Stop")).expandX().widget();
         stop.action = this::stopBot;
+
+        WButton emergency = list.add(theme.button("Emergency Stop")).expandX().widget();
+        emergency.action = this::emergencyStop;
 
         WButton dashboard = list.add(theme.button("Bot Dashboard...")).expandX().widget();
         dashboard.action = () -> mc.setScreen(new BotDashboardScreen(this));

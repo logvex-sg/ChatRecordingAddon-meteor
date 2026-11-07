@@ -124,6 +124,30 @@ public final class BotController {
         setState(BotState.DISABLED, "disabled");
     }
 
+    /**
+     * Emergency stop: the immediate, no-questions stop.
+     *
+     * <p>It cancels the active task, cancels every queued task, stops navigation and cancels any
+     * in-flight block interaction, then returns to {@link BotState#IDLE} with an empty queue. It is
+     * deliberately more forceful than {@link #stop(String)}, which keeps the queue so work can be
+     * resumed: this is the control a user reaches for when they want everything to stop right now.
+     */
+    public void emergencyStop() {
+        cancelActive("emergency stop");
+        queue.cancelAll();
+        queue.clear();
+        goals.clear();
+        scheduler.clear();
+        recovery.reset();
+        if (context != null) {
+            if (context.nav() != null) context.nav().stop();
+            if (context.actions() != null) context.actions().cancel();
+        }
+        emit(BotEvent.Level.WARNING, "Emergency stop: all work cancelled.");
+        listener.onWarning("Emergency stop engaged.");
+        setState(BotState.IDLE, "emergency stop");
+    }
+
     /** Reacts to a world change or a disconnect. */
     public void onWorldChanged() {
         cancelActive("world changed");

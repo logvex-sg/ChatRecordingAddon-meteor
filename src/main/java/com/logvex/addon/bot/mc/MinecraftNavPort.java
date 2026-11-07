@@ -133,6 +133,12 @@ public final class MinecraftNavPort implements NavPort {
         return active;
     }
 
+    /** The target currently being navigated to, or {@code null} when navigation is not running. */
+    @Override
+    public BlockPos3 target() {
+        return active ? target : null;
+    }
+
     @Override
     public void stop() {
         if (usingPathManager) {

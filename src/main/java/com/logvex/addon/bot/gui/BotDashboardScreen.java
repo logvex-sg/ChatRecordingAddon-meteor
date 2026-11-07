@@ -61,16 +61,25 @@ public class BotDashboardScreen extends WindowScreen {
         stop.action = module::stopBot;
 
         WHorizontalList controls2 = add(theme.horizontalList()).expandX().widget();
+        WButton emergency = controls2.add(theme.button("Emergency Stop")).expandX().widget();
+        emergency.action = () -> {
+            module.emergencyStop();
+            refresh();
+        };
         WButton tasks = controls2.add(theme.button("Task Manager...")).expandX().widget();
         tasks.action = () -> mc.setScreen(new TaskManagerScreen(module));
         WButton memory = controls2.add(theme.button("Memory...")).expandX().widget();
         memory.action = () -> mc.setScreen(new MemoryScreen(module));
-        WButton clearQueue = controls2.add(theme.button("Clear Queue")).expandX().widget();
+        WButton profiles = controls2.add(theme.button("Profiles...")).expandX().widget();
+        profiles.action = () -> mc.setScreen(new ProfileScreen(module));
+
+        WHorizontalList controls3 = add(theme.horizontalList()).expandX().widget();
+        WButton clearQueue = controls3.add(theme.button("Clear Queue")).expandX().widget();
         clearQueue.action = () -> {
             module.controller().queue().clear();
             refresh();
         };
-        WButton clearEvents = controls2.add(theme.button("Clear Events")).expandX().widget();
+        WButton clearEvents = controls3.add(theme.button("Clear Events")).expandX().widget();
         clearEvents.action = () -> {
             module.controller().events().clear();
             refresh();
@@ -138,8 +147,18 @@ public class BotDashboardScreen extends WindowScreen {
             module.controller().performance().averageTickMicros(),
             module.controller().performance().actionsPerSecond()))).expandCellX();
         overview.row();
-        overview.add(theme.label("Navigation: " + module.navigation().backendName())).expandCellX();
+        overview.add(theme.label("Navigation: " + module.navigationBackend())).expandCellX();
         overview.row();
+        var navTarget = module.navTarget();
+        if (navTarget != null) {
+            double distance = module.navDistance();
+            overview.add(theme.label(String.format(Locale.ROOT, "Destination: %s (%.1f blocks away)",
+                navTarget, distance))).expandCellX();
+            overview.row();
+        } else {
+            overview.add(theme.label("Destination: none")).expandCellX();
+            overview.row();
+        }
 
         if (queueTable != null) {
             queueTable.clear();

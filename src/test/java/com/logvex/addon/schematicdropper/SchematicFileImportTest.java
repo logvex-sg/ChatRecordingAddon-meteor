@@ -1,6 +1,7 @@
 package com.logvex.addon.schematicdropper;
 
 import com.logvex.addon.schematicdropper.core.MaterialListImporter;
+import com.logvex.addon.schematicdropper.core.MaterialPlan;
 import com.logvex.addon.schematicdropper.core.Requirement;
 import com.logvex.addon.schematicdropper.mc.SchematicFileImport;
 import org.junit.jupiter.api.DisplayName;
@@ -139,5 +140,31 @@ class SchematicFileImportTest {
 
         List<String> ids = result.requirements().stream().map(Requirement::itemId).toList();
         assertEquals(List.of("minecraft:dirt", "minecraft:stone", "minecraft:glass"), ids);
+    }
+
+    @Test
+    @DisplayName("acceptance: the whole imported file becomes the ordered acquisition queue")
+    void importedFileDrivesTheAcquisitionQueue(@TempDir Path dir) throws IOException {
+        String content = Files.readString(
+            Path.of("src/test/resources/material-list-367.txt"), StandardCharsets.UTF_8);
+        Path file = write(dir, "materials.txt", content);
+
+        MaterialListImporter.Result result = runToCompletion(new SchematicFileImport(file, registry));
+
+        // Exactly what SchematicDropperModule.applyImport does: every requirement becomes one plan
+        // entry, in file order, with its imported quantity. This is the contract that the queue the
+        // acquisition engine consumes is the file itself.
+        MaterialPlan plan = new MaterialPlan();
+        plan.set(result.requirements());
+
+        assertEquals(367, plan.size(), "every valid entry must reach the queue");
+        List<Requirement> queued = plan.requirements();
+        for (int i = 0; i < result.requirements().size(); i++) {
+            assertEquals(result.requirements().get(i).itemId(), queued.get(i).itemId(),
+                "queue order must match the file order at index " + i);
+            assertEquals(result.requirements().get(i).required(), queued.get(i).required(),
+                "queued quantity must match the file at index " + i);
+        }
+        assertEquals(result.totalRequired(), plan.totalRequired());
     }
 }
