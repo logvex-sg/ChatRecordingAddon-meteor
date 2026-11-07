@@ -49,6 +49,65 @@ class SchematicFileLoaderTest {
     }
 
     @Test
+    @DisplayName("an uncompressed vanilla structure .nbt loads through the real loader")
+    void loadsUncompressedStructure(@TempDir Path dir) throws Exception {
+        // Vanilla structure files (structure blocks, data packs) are plain NBT, not gzipped, and
+        // use lowercase "palette"/"blocks" lists. They used to be routed to the text parser, which
+        // is the "can't import schematics" symptom for this format.
+        NbtCompound root = new NbtCompound();
+        root.putInt("DataVersion", 3953);
+
+        NbtList palette = new NbtList();
+        NbtCompound stone = new NbtCompound();
+        stone.putString("Name", "minecraft:stone");
+        palette.add(stone);
+        NbtCompound dirt = new NbtCompound();
+        dirt.putString("Name", "minecraft:dirt");
+        palette.add(dirt);
+        root.put("palette", palette);
+
+        NbtList blocks = new NbtList();
+        blocks.add(structureBlock(0, 0, 0, 0));
+        blocks.add(structureBlock(1, 2, 0, 0));
+        root.put("blocks", blocks);
+
+        Path file = dir.resolve("village.nbt");
+        try (OutputStream out = Files.newOutputStream(file)) {
+            NbtIo.writeCompound(root, new DataOutputStream(out));
+        }
+
+        Schematic s = new SchematicFileLoader().load(file);
+
+        assertEquals(3, s.sizeX());
+        assertEquals(2, s.blockCount());
+        assertEquals("minecraft:stone", s.at(new BlockPos3(0, 0, 0)).id());
+        assertEquals("minecraft:dirt", s.at(new BlockPos3(2, 0, 0)).id());
+        assertEquals(2, s.toMaterialPlan().size());
+    }
+
+    private static NbtCompound structureBlock(int state, int x, int y, int z) {
+        NbtCompound node = new NbtCompound();
+        node.putInt("state", state);
+        node.putIntArray("pos", new int[]{x, y, z});
+        return node;
+    }
+
+    @Test
+    @DisplayName("a zlib-compressed schematic loads")
+    void loadsZlibCompressed(@TempDir Path dir) throws Exception {
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        try (java.util.zip.DeflaterOutputStream deflater = new java.util.zip.DeflaterOutputStream(bos);
+             DataOutputStream out = new DataOutputStream(deflater)) {
+            NbtIo.writeCompound(sponge(), out);
+        }
+        Path file = dir.resolve("zlib.schem");
+        Files.write(file, bos.toByteArray());
+
+        Schematic s = new SchematicFileLoader().load(file);
+        assertEquals(3, s.blockCount());
+    }
+
+    @Test
     @DisplayName("a gzipped sponge .schem loads through the real loader")
     void loadsSponge(@TempDir Path dir) throws Exception {
         Path file = dir.resolve("build.schem");

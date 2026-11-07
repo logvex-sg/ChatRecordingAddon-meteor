@@ -191,6 +191,54 @@ public final class NbtNode {
         return child != null ? child.asLongArray() : new long[0];
     }
 
+    /**
+     * Reads an int array, accepting either a {@code TAG_Int_Array} or a {@code TAG_List} of numbers.
+     * Some schematic writers (and hand-edited files) store {@code Size} as a list of ints rather than
+     * an int array, which would otherwise be read as empty and reject an otherwise valid file.
+     */
+    public int[] getIntArrayLoose(String key) {
+        NbtNode child = children.get(key);
+        if (child == null) return new int[0];
+        if (child.type == Type.INT_ARRAY) return child.asIntArray();
+        if (child.isList()) {
+            int[] out = new int[child.items.size()];
+            for (int i = 0; i < out.length; i++) {
+                NbtNode item = child.items.get(i);
+                out[i] = item != null && item.isNumber() ? item.asInt() : 0;
+            }
+            return out;
+        }
+        return new int[0];
+    }
+
+    /**
+     * Reads a long array, accepting either a {@code TAG_Long_Array} or a {@code TAG_List} of longs,
+     * for the same reason as {@link #getIntArrayLoose}.
+     */
+    public long[] getLongArrayLoose(String key) {
+        NbtNode child = children.get(key);
+        if (child == null) return new long[0];
+        if (child.type == Type.LONG_ARRAY) return child.asLongArray();
+        if (child.isList()) {
+            long[] out = new long[child.items.size()];
+            for (int i = 0; i < out.length; i++) {
+                NbtNode item = child.items.get(i);
+                out[i] = item != null && item.isNumber() ? item.asLong() : 0L;
+            }
+            return out;
+        }
+        return new long[0];
+    }
+
+    /** The number of children of a compound or items of a list; 0 for any other type. */
+    public int childCount(String key) {
+        NbtNode child = children.get(key);
+        if (child == null) return 0;
+        if (child.isCompound()) return child.children.size();
+        if (child.isList()) return child.items.size();
+        return 0;
+    }
+
     @Override
     public String toString() {
         return switch (type) {

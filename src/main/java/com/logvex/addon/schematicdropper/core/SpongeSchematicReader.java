@@ -26,7 +26,7 @@ public final class SpongeSchematicReader implements SchematicImporter {
         int width;
         int height;
         int length;
-        int[] size = root.getIntArray("Size");
+        int[] size = root.getIntArrayLoose("Size");
         if (size.length >= 3) {
             width = size[0];
             height = size[1];

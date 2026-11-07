@@ -760,7 +760,7 @@ public class SchematicDropperModule extends Module {
         ensureDataDirectory();
         mc.setScreen(new com.logvex.addon.schematicdropper.gui.FileBrowserScreen(
             dataDirectory(), "Select Schematic",
-            java.util.List.of(".schem", ".schematic", ".litematic"),
+            java.util.List.of(".schem", ".schematic", ".litematic", ".nbt"),
             file -> loadSchematicFromPath(file.getAbsolutePath())));
     }
 
@@ -1076,13 +1076,16 @@ public class SchematicDropperModule extends Module {
     /**
      * True when {@code file} should be loaded as a schematic rather than parsed as a material list.
      *
-     * <p>Known schematic extensions win. For anything else the leading bytes are inspected: gzip
-     * (the container for every supported schematic) starts {@code 1F 8B}, whereas a material list is
-     * plain text. This is what makes a schematic that lost its extension, or carries a generic
-     * {@code .nbt}, still import instead of being fed to the text parser.
+     * <p>Known schematic extensions win. An {@code .nbt} or {@code .dat} file is a structure or a
+     * WorldEdit export often enough that it is treated as a schematic candidate too: the loader
+     * gives a clear "not valid NBT" reason if it turns out not to be one, which is far better than
+     * feeding binary to the text parser. For anything else the leading bytes are inspected: gzip
+     * ({@code 1F 8B}) or zlib is a compressed schematic, whereas a material list is plain text.
      */
     private static boolean looksLikeSchematic(File file) {
         if (isSchematicFile(file.getName())) return true;
+        String lower = file.getName().toLowerCase(java.util.Locale.ROOT);
+        if (lower.endsWith(".nbt") || lower.endsWith(".dat")) return true;
         SchematicFormat hint = SchematicFormat.fromFileName(file.getName());
         if (hint == SchematicFormat.MATERIAL_LIST) return false;
 
@@ -1091,7 +1094,9 @@ public class SchematicDropperModule extends Module {
             int b1 = in.read();
             int b2 = in.read();
             in.reset();
-            return b1 == 0x1F && b2 == 0x8B;
+            if (b1 == 0x1F && b2 == 0x8B) return true;
+            if (b1 == 0x78 && b2 >= 0 && (((b1 << 8) | b2) % 31 == 0)) return true;
+            return false;
         } catch (java.io.IOException e) {
             return false;
         }
@@ -1100,7 +1105,7 @@ public class SchematicDropperModule extends Module {
     private static boolean isSchematicFile(String fileName) {
         SchematicFormat format = SchematicFormat.fromFileName(fileName);
         return format == SchematicFormat.SPONGE || format == SchematicFormat.MCEDIT
-            || format == SchematicFormat.LITEMATIC;
+            || format == SchematicFormat.LITEMATIC || format == SchematicFormat.STRUCTURE;
     }
 
     /** Releases any in-progress import reader. */
