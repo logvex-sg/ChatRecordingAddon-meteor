@@ -78,6 +78,11 @@ public class LogAddon {
         Modules.get().add(new com.logvex.addon.bot.BotModule());
         Hud.get().register(com.logvex.addon.bot.hud.BotStatusHud.INFO);
 
+        // Configurable chat assistant: keyword triggers, memory and memory commands. The decision
+        // logic is Minecraft-free; this is its Minecraft-facing shell.
+        Modules.get().add(new com.logvex.addon.assistant.modules.AssistantModule());
+        Hud.get().register(com.logvex.addon.assistant.hud.AssistantHud.INFO);
+
         // Notifications are the shared output bus every other feature reports through.
         Modules.get().add(new com.logvex.addon.notify.NotificationModule());
         Hud.get().register(com.logvex.addon.notify.hud.NotificationHud.INFO);
@@ -113,6 +118,7 @@ public class LogAddon {
         Modules.get().disableAll();
         com.logvex.addon.chatlog.mc.SessionTimelineService.get().shutdown();
         com.logvex.addon.chatlog.mc.PlayerIdentityService.get().shutdown();
+        com.logvex.addon.assistant.mc.AssistantService.get().shutdown();
     }
 
     /** Persists the configuration when it has changed. Called periodically from the tick loop. */

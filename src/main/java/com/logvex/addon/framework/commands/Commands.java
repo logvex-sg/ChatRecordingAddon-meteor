@@ -23,6 +23,7 @@ public final class Commands {
     public static void init() {
         add(new com.logvex.addon.command.LogCommand());
         add(new com.logvex.addon.command.BotCommand());
+        add(new com.logvex.addon.command.AssistantCommand());
         COMMANDS.sort(Comparator.comparing(Command::getName));
     }
 

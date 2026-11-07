@@ -393,6 +393,7 @@ public class LogCommand extends Command {
         info("  (highlight).log notes [list|add <player> <text>|remove <player>|search <filter>](default).");
         info("  (highlight).log identities [renamed|watch|unwatch|watchlist|clear|<filter>](default) - observed name changes.");
         info("  (highlight).log sessions [list|clear](default) - past recording sessions.");
+        info("  (highlight).ai [status|triggers|facts|remember|forget|test|gui](default) - the chat assistant.");
     }
 
     private void status() {

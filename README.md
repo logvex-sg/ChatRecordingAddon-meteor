@@ -27,6 +27,11 @@ block by block into the world with verified placements and resumable checkpoints
 **Notifications** — `notifications` collects events from the other modules into one searchable
 history with a HUD and a GUI, and can echo them to chat and play a sound.
 
+**Assistant** — `assistant` is a configurable chat bot: keyword triggers answer messages from chat
+(with per-rule sender filters, reply modes, cooldowns, session limits and sounds), memory commands
+(`!remember`, `!fact`, `!forget`, ...) store and recall facts, and everything the assistant knows is
+persisted to a JSON file that survives a restart.
+
 **GUI** — Right Shift (or `.log gui`) opens the addon window: every module and HUD element with a
 toggle, a search box and a settings page. Module settings are grouped and searchable, and every
 value is persisted to `<gamedir>/logaddon/config.json`.
@@ -298,6 +303,118 @@ dashboard and HUD use, so a command never diverges from the GUI:
 | `.bot profile [list\|apply\|save\|delete] <name>` | Manages bot profiles. |
 
 
+## Assistant
+
+`assistant` is a chat bot that lives inside the addon. It is off by default; enable it like any
+other module. Nothing is said or done unless a rule you wrote asks for it, so an empty
+configuration is silent.
+
+### Keyword triggers
+
+A trigger watches incoming chat for a keyword or phrase and answers it. Triggers are stored as a
+single line each, so the whole feature set is editable from the settings list, the
+`.ai triggers` command or the Assistant Manager GUI:
+
+```
+pattern;sender=;reply=;mode=chat|notify|silent;cooldown=3000;limit=0;sound=false;remember=false;enabled=true
+```
+
+| Field | Meaning |
+| --- | --- |
+| `pattern` | The keyword or phrase to look for. |
+| `case` | Match case-sensitively (`false` by default). |
+| `whole` | Only match whole words, so `cat` does not fire inside `concatenate`. |
+| `sender` | Only fire for this player. Blank matches anyone. |
+| `reply` | What to say. Supports `{player}`, `{message}`, `{time}`, `{date}`, `{server}`, `{fact:key}`, `{count:name}` and `{memory}`. |
+| `mode` | `chat` says it publicly, `notify` raises a local notification only, `silent` records the match without speaking. |
+| `cooldown` | Minimum milliseconds between two fires of the same rule. |
+| `limit` | Maximum fires per session; `0` is unlimited. |
+| `sound` | Play a chime when the rule fires. |
+| `remember` | Write the exchange to memory. |
+| `enabled` | Turn the rule off without deleting it. |
+
+The first rule that matches wins, so a specific rule can be placed above a broad one. A global
+rate limit (default 20 replies per minute) caps how often the assistant can answer in total, and a
+rule's cooldown and session limit cap it per rule — the assistant cannot flood chat even if a
+keyword appears in every message.
+
+The assistant never answers itself: a message from the local player, or one that matches one of
+its own recent replies, is ignored.
+
+### Memory commands
+
+When `memory-commands` is on, chat messages that start with the command prefix (default `!`) are
+understood:
+
+| Command | Effect |
+| --- | --- |
+| `!remember key = value` | Store a fact. |
+| `!fact key` | Read a fact back. |
+| `!forget key` | Remove a fact. |
+| `!facts` | List stored facts. |
+| `!memory` | A short memory summary. |
+| `!whoami` | What the assistant knows about you. |
+| `!forgetme` | Erase everything stored about you. |
+| `!history` | Recent remembered exchanges. |
+
+How the assistant answers these is controlled by `memory-reply-mode` (`chat`, `notify` or
+`silent`). The default, `notify`, keeps answers out of public chat.
+
+### Settings
+
+| Setting | Meaning |
+| --- | --- |
+| `name` | Shown in the HUD and notifications. |
+| `respond-to-triggers` | Whether keyword triggers are answered at all. |
+| `memory-commands` / `command-prefix` | Whether memory commands are understood, and their prefix. |
+| `watch-public-chat` / `watch-private-messages` / `watch-system` | Which message types are watched. |
+| `rules` | The trigger list, one encoded rule per line. |
+| `remember-conversations` | Record recent exchanges so `!history` and `{fact:...}` stay useful. |
+| `memory-reply-mode` | How memory commands are answered. |
+| `persist` | Save memory to disk so it survives a restart. |
+| `rate-limit-per-minute` | Global reply cap; `0` disables it. |
+| `max-reply-length` | Longest reply, in characters. |
+| `chat-feedback` | A short local note when a trigger matches. |
+
+### Assistant Manager
+
+`.ai gui` (or the module's "Assistant Manager..." button) opens a window with three tabs:
+
+- **Triggers** — add, edit, enable/disable and remove rules; restore the defaults.
+- **Memory** — add, filter and forget facts, see recent exchanges, clear history or all memory.
+- **Status** — counts, the memory file path and a "test a message" box that shows what the
+  assistant would do with a line of text without sending anything.
+
+### HUD
+
+The `assistant` HUD element shows the number of triggers, remembered facts and handled messages.
+It shows a single "Disabled" line when the module is off, so it never displays stale data.
+
+### `.ai` command
+
+| Command | Effect |
+| --- | --- |
+| `.ai [status]` | Assistant state and memory summary. |
+| `.ai gui` | Opens the Assistant Manager. |
+| `.ai triggers [list]` | Lists the loaded triggers. |
+| `.ai triggers add <pattern> <reply>` | Adds a trigger. |
+| `.ai triggers remove <n>` | Removes trigger number `n`. |
+| `.ai triggers restore` | Restores the default triggers. |
+| `.ai facts` | Lists stored facts. |
+| `.ai remember <key> <value>` | Stores a fact. |
+| `.ai forget <key>` | Removes a fact. |
+| `.ai test <message>` | Shows what the assistant would do with a message. |
+| `.ai history` | Recent remembered exchanges. |
+| `.ai save` / `.ai clear` | Save memory now / clear all memory. |
+
+### Storage
+
+Memory is stored at `<gamedir>/logaddon/assistant-memory.json`. Writes are atomic (temp file plus
+move) and happen on a background thread on a slow cadence, so a busy chat cannot cause a disk-write
+storm and a crash mid-save cannot corrupt the file. A missing or damaged file loads as empty; a
+file written by a newer build is refused rather than silently downgraded.
+
+
 ## Automation modules
 
 These modules automate small, legitimate client actions. Each one is a thin Minecraft shell over a
@@ -494,6 +611,7 @@ Everything the addon writes lives under `<gamedir>/logaddon/`:
 <gamedir>/logaddon/logs/            gzip-compressed chat log segments and index.json
 <gamedir>/logaddon/logs/sessions.json   past recording-session summaries
 <gamedir>/logaddon/identities.json  observed account names and renames
+<gamedir>/logaddon/assistant-memory.json   assistant facts, player facts and conversation history
 <gamedir>/logaddon/reports/         gzip-compressed webhook report archive and index.json
 ```
 
@@ -648,6 +766,20 @@ The addon registers a `.log` command (alias `.la`). Run `.log help` for the list
 | `.log sessions [list]` | Totals and the most recent past recording sessions. |
 | `.log sessions clear` | Clears the session history. |
 
+### Assistant (`.ai`, alias `.assistant`)
+
+| Command | Effect |
+| --- | --- |
+| `.ai [status]` | Assistant state and memory summary. |
+| `.ai gui` | Opens the Assistant Manager. |
+| `.ai triggers [list\|add <pattern> <reply>\|remove <n>\|restore]` | Manages keyword triggers. |
+| `.ai facts` | Lists stored facts. |
+| `.ai remember <key> <value>` | Stores a fact. |
+| `.ai forget <key>` | Removes a fact. |
+| `.ai test <message>` | Shows what the assistant would do with a message. |
+| `.ai history` | Recent remembered exchanges. |
+| `.ai save` / `.ai clear` | Save memory now / clear all memory. |
+
 Commands are registered through the addon's own `PostInit` hook, and are intercepted from the
 client's chat/command path by a mixin before vanilla handles them.
 
@@ -719,6 +851,19 @@ archive with in-memory doubles (no Minecraft runtime required):
   using `now`, the bounded history and its cap, duplicate-id rejection, search across server/id/date,
   totals, immediate cap reduction, map round-trip, ordered load, and the JSON file round-trip with a
   corrupt file loading as empty.
+- `TriggerRuleTest` / `TriggerCooldownTrackerTest` — trigger encode/decode round-trips (including
+  unknown keys from a newer build), case-sensitive and whole-word matching, sender filters,
+  first-match-wins, blank-input rejection, and the cooldown/session-limit accounting with reset and
+  prune.
+- `AssistantMemoryTest` — facts, per-player facts, bounded history ordering, counters, version
+  migration (an older map upgrades, a newer one is refused) and the deep, independent `copy`.
+- `AssistantBrainTest` — the decision path: trigger replies with template expansion, no-match
+  handling, cooldown and session-limit suppression, the global rate limit, trigger-over-command
+  precedence, every memory command, reply clamping and silent rules.
+- `ResponseTemplateTest` — placeholder expansion for player/message/server/fact/counter/memory, and
+  that an unknown or malformed placeholder is left verbatim instead of throwing.
+- `FileAssistantStoreTest` — memory round-trip, a missing file loading as empty, corruption
+  recovery, refusal of a newer-version file and no temporary file left behind.
 
 ## Known limitations
 
@@ -746,6 +891,15 @@ archive with in-memory doubles (no Minecraft runtime required):
 - The chat filter cancels a message in `ChatHud.addMessage`. A server that sends the same message
   through a path this mixin does not cover (for example a custom chat mod that renders its own
   overlay) is outside its reach; the vanilla chat HUD is what it targets.
+- `assistant` is a rule-and-memory bot, not a language model: it matches the keywords you configure
+  and stores the facts you give it. It does not generate free-form answers, and it only sees chat
+  the client receives — messages from before it was enabled, or from a channel the client never
+  receives, are invisible to it. Memory commands work like any other chat: the sender must be able
+  to post the prefixed message, and the server must relay it to the client. No server-side plugin is
+  involved.
+- The assistant HUD and Assistant Manager GUI have not been opened in a live Minecraft session from
+  this environment; the trigger engine, memory, templates, decision path and the memory file are
+  covered by unit tests.
 - Log import understands the formats this addon writes (text, CSV, JSON lines and its own compressed
   segment). It is not a general chat-log parser: a foreign format is reported as unreadable rather
   than guessed at, and every line it could not parse is listed in the preview.
