@@ -109,4 +109,57 @@ public final class PlayerIdentity {
         map.put("names", names.size());
         return map;
     }
+
+    /** The full identity, including every observed name, for persistence. */
+    public Map<String, Object> toFullMap() {
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("uuid", uuid);
+        map.put("first", firstSeen);
+        map.put("last", lastSeen);
+        List<Map<String, Object>> encoded = new ArrayList<>(names.size());
+        for (NameChange change : names) {
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("name", change.name());
+            entry.put("at", change.observedAt());
+            encoded.add(entry);
+        }
+        map.put("names", encoded);
+        return map;
+    }
+
+    /** Rebuilds an identity from {@link #toFullMap()}, or null when the uuid is missing. */
+    public static PlayerIdentity fromFullMap(Map<?, ?> map) {
+        if (map == null) return null;
+        Object rawUuid = map.get("uuid");
+        String uuid = rawUuid == null ? "" : String.valueOf(rawUuid);
+        if (uuid.isBlank()) return null;
+
+        PlayerIdentity identity = new PlayerIdentity(uuid);
+        identity.firstSeen = num(map.get("first"));
+        identity.lastSeen = num(map.get("last"));
+        Object rawNames = map.get("names");
+        if (rawNames instanceof List<?> list) {
+            for (Object element : list) {
+                if (element instanceof Map<?, ?> nameMap) {
+                    Object name = nameMap.get("name");
+                    if (name == null) continue;
+                    String value = String.valueOf(name);
+                    if (value.isBlank()) continue;
+                    identity.names.add(new NameChange(value, num(nameMap.get("at"))));
+                }
+            }
+        }
+        if (identity.names.isEmpty()) return null;
+        return identity;
+    }
+
+    private static long num(Object value) {
+        if (value instanceof Number number) return number.longValue();
+        if (value == null) return 0L;
+        try {
+            return Long.parseLong(String.valueOf(value));
+        } catch (NumberFormatException e) {
+            return 0L;
+        }
+    }
 }

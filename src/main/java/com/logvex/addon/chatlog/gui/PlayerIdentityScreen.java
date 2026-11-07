@@ -58,6 +58,7 @@ public class PlayerIdentityScreen extends WindowScreen {
         WButton clear = controls.add(theme.button("Clear Index")).widget();
         clear.action = () -> {
             com.logvex.addon.chatlog.mc.LogService.get().identities().clear();
+            com.logvex.addon.chatlog.mc.PlayerIdentityService.get().saveAsync();
             info("Identity index cleared.");
             taskAfterRender = this::render;
         };

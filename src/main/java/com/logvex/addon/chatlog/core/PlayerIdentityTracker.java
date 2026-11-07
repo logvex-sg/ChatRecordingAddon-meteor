@@ -120,6 +120,41 @@ public final class PlayerIdentityTracker {
         renames.clear();
     }
 
+    /** The full identities as plain maps, for persistence. */
+    public synchronized List<Map<String, Object>> toMaps() {
+        List<Map<String, Object>> out = new ArrayList<>(byUuid.size());
+        for (PlayerIdentity identity : byUuid.values()) out.add(identity.toFullMap());
+        return out;
+    }
+
+    /**
+     * Replaces the tracker with {@code loaded}, rebuilding the rename log from each identity's
+     * observed names so a restored index reports the same history it had before.
+     */
+    public synchronized void load(List<PlayerIdentity> loaded) {
+        byUuid.clear();
+        renames.clear();
+        if (loaded == null) return;
+        for (PlayerIdentity identity : loaded) {
+            if (identity == null || identity.uuid().isBlank() || identity.nameCount() == 0) continue;
+            byUuid.put(identity.uuid(), identity);
+        }
+        rebuildRenames();
+        evictIfNeeded();
+    }
+
+    private void rebuildRenames() {
+        for (PlayerIdentity identity : byUuid.values()) {
+            List<PlayerIdentity.NameChange> names = identity.names();
+            for (int i = 1; i < names.size(); i++) {
+                renames.add(new Rename(identity.uuid(), names.get(i - 1).name(), names.get(i).name(),
+                    names.get(i).observedAt()));
+            }
+        }
+        renames.sort(Comparator.comparingLong(Rename::atMs));
+        while (renames.size() > maxRenames) renames.remove(0);
+    }
+
     private static boolean contains(PlayerIdentity identity, String needle) {
         for (PlayerIdentity.NameChange change : identity.names()) {
             if (change.name().toLowerCase(Locale.ROOT).contains(needle)) return true;

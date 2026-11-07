@@ -137,6 +137,7 @@ public class PlayerIdentityModule extends Module {
         WButton forgetAll = list.add(theme.button("Clear Identity Index")).expandX().widget();
         forgetAll.action = () -> {
             service.identities().clear();
+            identities.saveAsync();
             info("Identity index cleared.");
         };
         return list;

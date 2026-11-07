@@ -328,6 +328,9 @@ announced under a **different name** in the server player list, so that is exact
 - Renames are recorded even while the module is disabled (the packet subscription is installed once
   at bootstrap, like the recorder), so turning the module on never loses history. Notifications are
   raised by the module while it is active.
+- The index is saved to `identities.json` when a rename is observed and on shutdown, and restored on
+  the next launch, so a rename seen in an earlier session is still reported afterwards. Clearing the
+  index (command, module button or screen) is written through immediately.
 
 ### Session history
 
@@ -393,11 +396,13 @@ Everything the addon writes lives under `<gamedir>/logaddon/`:
 <gamedir>/logaddon/config.json      module, HUD and addon settings
 <gamedir>/logaddon/logs/            gzip-compressed chat log segments and index.json
 <gamedir>/logaddon/logs/sessions.json   past recording-session summaries
+<gamedir>/logaddon/identities.json  observed account names and renames
 <gamedir>/logaddon/reports/         gzip-compressed webhook report archive and index.json
 ```
 
-`sessions.json` is written atomically (temp file + move) when a session ends, and read back on the
-next launch. A missing or damaged file loads as an empty history rather than failing.
+`sessions.json` and `identities.json` are written atomically (temp file + move) — the session
+history when a session ends, the identity index when a rename is observed and on shutdown. Each is
+read back on the next launch, and a missing or damaged file loads as empty rather than failing.
 
 ## Exporting logs
 
@@ -633,9 +638,10 @@ archive with in-memory doubles (no Minecraft runtime required):
   under a different name. If a server does not include the player list, or a rename happens while the
   player is absent from it, no change is detected — the addon never guesses that two names are the
   same person.
-- The identity index and session history are held in memory for the running client. The session
-  history is also written to `logs/sessions.json` when a session ends; the identity index is not
-  persisted, so it is rebuilt from the player list after a restart.
+- The identity index and session history are persisted under `<gamedir>/logaddon/` (`identities.json`
+  and `logs/sessions.json`) and restored on the next launch. A file written by an older build that
+  lacks the new keys still loads: unknown or missing fields are skipped rather than rejecting the
+  record.
 - The bot uses Baritone only when the user has installed it (detected at runtime by reflection). The
   addon bundles no pathfinder of its own beyond the bounded fallback walker, and navigation quality
   with the fallback is limited — it walks in a straight line and stops when blocked rather than
