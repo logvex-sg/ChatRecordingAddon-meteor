@@ -155,4 +155,32 @@ class PlayerIdentityTrackerTest {
         watchlist.set(List.of("", "   "));
         assertTrue(watchlist.isEmpty());
     }
+
+    @Test
+    @DisplayName("the index round-trips through its JSON file and rebuilds the rename log")
+    void storeRoundTripAndRecovery(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
+        PlayerIdentityTracker original = new PlayerIdentityTracker();
+        original.observe("uuid-1", "Alice", 1_000L);
+        original.observe("uuid-1", "Alicia", 2_000L);
+        original.observe("uuid-2", "Bob", 1_500L);
+        assertEquals(1, original.renameCount());
+
+        assertTrue(com.logvex.addon.chatlog.core.PlayerIdentityStore.save(dir, original));
+
+        PlayerIdentityTracker restored = new PlayerIdentityTracker();
+        com.logvex.addon.chatlog.core.PlayerIdentityStore.load(dir, restored);
+        assertEquals(2, restored.size());
+        assertEquals("Alicia", restored.get("uuid-1").currentName());
+        assertEquals("Alice", restored.get("uuid-1").previousName());
+        assertEquals(1, restored.renameCount());
+        assertEquals("Alice", restored.renames().get(0).from());
+        assertEquals("Alicia", restored.renames().get(0).to());
+
+        // A corrupt file must load as empty, never throw.
+        java.nio.file.Files.writeString(
+            com.logvex.addon.chatlog.core.PlayerIdentityStore.fileIn(dir), "{ not json");
+        PlayerIdentityTracker recovered = new PlayerIdentityTracker();
+        com.logvex.addon.chatlog.core.PlayerIdentityStore.load(dir, recovered);
+        assertEquals(0, recovered.size());
+    }
 }

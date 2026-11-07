@@ -295,6 +295,7 @@ public class LogCommand extends Command {
             }))
             .then(literal("clear").executes(context -> {
                 com.logvex.addon.chatlog.mc.LogService.get().identities().clear();
+                com.logvex.addon.chatlog.mc.PlayerIdentityService.get().saveAsync();
                 info("Identity index cleared.");
                 return SINGLE_SUCCESS;
             }))

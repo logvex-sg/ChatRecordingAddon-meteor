@@ -98,6 +98,7 @@ public class LogAddon {
         com.logvex.addon.framework.systems.config.ConfigManager.get().save();
         Modules.get().disableAll();
         com.logvex.addon.chatlog.mc.SessionTimelineService.get().shutdown();
+        com.logvex.addon.chatlog.mc.PlayerIdentityService.get().shutdown();
     }
 
     /** Persists the configuration when it has changed. Called periodically from the tick loop. */
