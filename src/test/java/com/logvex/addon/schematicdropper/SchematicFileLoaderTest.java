@@ -89,6 +89,40 @@ class SchematicFileLoaderTest {
     }
 
     @Test
+    @DisplayName("a real WorldEdit v3 file wrapped in a Schematic compound loads")
+    void loadsWrappedWorldEditV3(@TempDir Path dir) throws Exception {
+        // WorldEdit 7.3+ writes an empty root name and a literal "Schematic" child holding the
+        // payload (see the Sponge schematic specification). Reading the root directly finds no
+        // palette and rejects the file, which is the "can't import schematics" symptom.
+        NbtCompound payload = new NbtCompound();
+        payload.putInt("Version", 3);
+        payload.putInt("DataVersion", 3953);
+        payload.putShort("Width", (short) 3);
+        payload.putShort("Height", (short) 1);
+        payload.putShort("Length", (short) 1);
+        NbtCompound blocks = new NbtCompound();
+        NbtCompound palette = new NbtCompound();
+        palette.putInt("minecraft:quartz_pillar", 0);
+        palette.putInt("minecraft:spruce_planks", 1);
+        blocks.put("Palette", palette);
+        blocks.putByteArray("Data", new byte[]{0, 1, 0});
+        payload.put("Blocks", blocks);
+
+        NbtCompound root = new NbtCompound();
+        root.put("Schematic", payload);
+
+        Path file = dir.resolve("wrapped.schem");
+        Files.write(file, gzip(root));
+
+        Schematic s = new SchematicFileLoader().load(file);
+
+        assertEquals(3, s.sizeX());
+        assertEquals("minecraft:quartz_pillar", s.at(new BlockPos3(0, 0, 0)).id());
+        assertEquals("minecraft:spruce_planks", s.at(new BlockPos3(1, 0, 0)).id());
+        assertEquals(2, s.toMaterialPlan().size());
+    }
+
+    @Test
     @DisplayName("a realistic WorldEdit v3 file with block states and multiple layers loads")
     void loadsRealisticWorldEditV3(@TempDir Path dir) throws Exception {
         // 2x2x2: air, a block state with properties, and blocks on both y layers. This mirrors the

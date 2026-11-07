@@ -1,6 +1,6 @@
 package com.logvex.addon.framework.utils.world;
 
-import com.logvex.addon.LogAddon;
+import com.logvex.addon.LogClient;
 import net.minecraft.block.BlockState;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.util.math.BlockPos;
@@ -43,7 +43,7 @@ public final class BlockIterator {
             try {
                 run(mc, pending);
             } catch (RuntimeException e) {
-                LogAddon.LOG.error("Block scan failed", e);
+                LogClient.LOG.error("Block scan failed", e);
             }
         }
     }

@@ -186,7 +186,7 @@ public class AutoCreativeModule extends AutomationModule {
     /** Opens the built-in file browser to choose a material list to acquire. */
     public void importMaterialFile() {
         mc.setScreen(new com.logvex.addon.schematicdropper.gui.FileBrowserScreen(
-            new java.io.File(com.logvex.addon.framework.Addon.FOLDER(), "schematicdropper"),
+            new java.io.File(com.logvex.addon.framework.LogClientContext.FOLDER(), "schematicdropper"),
             "Select Material List",
             java.util.List.of(".txt", ".md", ".csv"),
             file -> importMaterialPath(file.getAbsolutePath())));

@@ -44,7 +44,7 @@ public final class ChatRecorder {
     }
 
     private String serverAddress() {
-        var mc = com.logvex.addon.framework.Addon.mc;
+        var mc = com.logvex.addon.framework.LogClientContext.mc;
         if (mc == null) return "unknown";
         if (mc.getCurrentServerEntry() != null) {
             String address = mc.getCurrentServerEntry().address;

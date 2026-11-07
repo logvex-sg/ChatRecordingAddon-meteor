@@ -18,7 +18,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 
-import static com.logvex.addon.framework.Addon.mc;
+import static com.logvex.addon.framework.LogClientContext.mc;
 
 /**
  * Material overview: one row per material with live, confirmed progress values.

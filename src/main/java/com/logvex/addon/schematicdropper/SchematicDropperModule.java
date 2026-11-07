@@ -1,6 +1,6 @@
 package com.logvex.addon.schematicdropper;
 
-import com.logvex.addon.LogAddon;
+import com.logvex.addon.LogClient;
 import com.logvex.addon.common.Messages;
 import com.logvex.addon.schematicdropper.core.AcquisitionConfig;
 import com.logvex.addon.schematicdropper.core.AcquisitionEngine;
@@ -43,7 +43,7 @@ import com.logvex.addon.schematicdropper.mc.MinecraftEnv;
 import com.logvex.addon.schematicdropper.mc.RegistryItemResolver;
 import com.logvex.addon.schematicdropper.mc.SchematicFileImport;
 import com.logvex.addon.schematicdropper.mc.ServerInventoryTracker;
-import com.logvex.addon.framework.Addon;
+import com.logvex.addon.framework.LogClientContext;
 import com.logvex.addon.framework.events.game.GameJoinedEvent;
 import com.logvex.addon.framework.events.game.GameLeftEvent;
 import com.logvex.addon.framework.events.world.TickEvent;
@@ -484,7 +484,7 @@ public class SchematicDropperModule extends Module {
     }
 
     public SchematicDropperModule() {
-        super(LogAddon.CATEGORY, "schematic-dropper", "Automated schematic material dropping.");
+        super(LogClient.CATEGORY, "schematic-dropper", "Automated schematic material dropping.");
 
         this.env = new MinecraftEnv(targetMode::get, (float) (double) dropPitch.get());
         this.engine = new DropEngine(env, rotationPort, dropController, tracker, new Listener());
@@ -497,13 +497,13 @@ public class SchematicDropperModule extends Module {
         this.acquisition = new AcquisitionEngine(acquisitionEnv, creativeController, dropBridge,
             new AcquisitionListenerImpl());
         this.build = new SchematicBuildController(new BuildFeedback(),
-            Addon.FOLDER().toPath().resolve("schematicdropper").resolve("checkpoints"));
+            LogClientContext.FOLDER().toPath().resolve("schematicdropper").resolve("checkpoints"));
     }
 
     @Override
     public void onActivate() {
-        Addon.EVENT_BUS.subscribe(serverTracker);
-        Addon.EVENT_BUS.subscribe(creativeController);
+        LogClientContext.EVENT_BUS.subscribe(serverTracker);
+        LogClientContext.EVENT_BUS.subscribe(creativeController);
 
         ensureDataDirectory();
 
@@ -536,8 +536,8 @@ public class SchematicDropperModule extends Module {
         build.deactivate();
         SchematicProgressHud.disable();
         cancelImport();
-        Addon.EVENT_BUS.unsubscribe(creativeController);
-        Addon.EVENT_BUS.unsubscribe(serverTracker);
+        LogClientContext.EVENT_BUS.unsubscribe(creativeController);
+        LogClientContext.EVENT_BUS.unsubscribe(serverTracker);
     }
 
     @EventHandler
@@ -692,13 +692,13 @@ public class SchematicDropperModule extends Module {
 
     /** The folder the file pickers open in, created up front so the dialog never starts nowhere. */
     private static File dataDirectory() {
-        return new File(Addon.FOLDER(), "schematicdropper");
+        return new File(LogClientContext.FOLDER(), "schematicdropper");
     }
 
     private static void ensureDataDirectory() {
         File dir = dataDirectory();
         if (!dir.isDirectory() && !dir.mkdirs() && !dir.isDirectory()) {
-            LogAddon.LOG.warn("Could not create the schematic folder at {}", dir);
+            LogClient.LOG.warn("Could not create the schematic folder at {}", dir);
         }
     }
 
@@ -1412,6 +1412,6 @@ public class SchematicDropperModule extends Module {
     }
 
     private void debug(String message) {
-        LogAddon.LOG.debug("[SchematicDropper] {}", message);
+        LogClient.LOG.debug("[SchematicDropper] {}", message);
     }
 }

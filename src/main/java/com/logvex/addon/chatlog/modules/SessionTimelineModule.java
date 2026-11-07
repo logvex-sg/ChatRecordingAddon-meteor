@@ -1,6 +1,6 @@
 package com.logvex.addon.chatlog.modules;
 
-import com.logvex.addon.LogAddon;
+import com.logvex.addon.LogClient;
 import com.logvex.addon.chatlog.core.SessionTimeline;
 import com.logvex.addon.chatlog.mc.SessionTimelineService;
 import com.logvex.addon.framework.gui.GuiTheme;
@@ -58,7 +58,7 @@ public class SessionTimelineModule extends Module {
     private final SessionTimelineService service = SessionTimelineService.get();
 
     public SessionTimelineModule() {
-        super(LogAddon.CATEGORY, "session-timeline",
+        super(LogClient.CATEGORY, "session-timeline",
             "Chronological record of joins, leaves, deaths and session events.");
     }
 

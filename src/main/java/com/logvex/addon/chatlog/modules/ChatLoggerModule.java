@@ -1,6 +1,6 @@
 package com.logvex.addon.chatlog.modules;
 
-import com.logvex.addon.LogAddon;
+import com.logvex.addon.LogClient;
 import com.logvex.addon.chatlog.core.LogExporter;
 import com.logvex.addon.chatlog.core.LogQuery;
 import com.logvex.addon.chatlog.core.MessageType;
@@ -8,7 +8,7 @@ import com.logvex.addon.chatlog.core.ReportFormatting;
 import com.logvex.addon.chatlog.mc.LogService;
 import com.logvex.addon.chatlog.mc.LogStorageService;
 import com.logvex.addon.chatlog.gui.LogDashboardScreen;
-import com.logvex.addon.framework.Addon;
+import com.logvex.addon.framework.LogClientContext;
 import com.logvex.addon.framework.gui.GuiTheme;
 import com.logvex.addon.framework.gui.widgets.WWidget;
 import com.logvex.addon.framework.gui.widgets.containers.WHorizontalList;
@@ -120,7 +120,7 @@ public class ChatLoggerModule extends Module {
     private final Setting<String> storageDirectory = sgStorage.add(new StringSetting.Builder()
         .name("storage-directory")
         .description("Folder for the logs, relative to the game directory.")
-        .defaultValue("logaddon/logs")
+        .defaultValue("logclient/logs")
         .wide()
         .visible(saveLogs::get)
         .build()
@@ -212,7 +212,7 @@ public class ChatLoggerModule extends Module {
     private final Setting<String> webhookUsername = sgRelay.add(new StringSetting.Builder()
         .name("webhook-username")
         .description("Display name used for webhook reports.")
-        .defaultValue("Log Addon")
+        .defaultValue("Log Client")
         .build()
     );
 
@@ -243,7 +243,7 @@ public class ChatLoggerModule extends Module {
     private long lastReportAt;
 
     public ChatLoggerModule() {
-        super(LogAddon.CATEGORY, "chat-logger", "Records chat to disk for search, export and stats.");
+        super(LogClient.CATEGORY, "chat-logger", "Records chat to disk for search, export and stats.");
     }
 
     @Override
@@ -327,7 +327,7 @@ public class ChatLoggerModule extends Module {
     }
 
     private void onClient(Runnable task) {
-        var client = Addon.mc;
+        var client = LogClientContext.mc;
         if (client == null) {
             task.run();
             return;
@@ -394,8 +394,8 @@ public class ChatLoggerModule extends Module {
 
     public Path storagePath() {
         String configured = storageDirectory.get();
-        String relative = configured == null || configured.isBlank() ? "logaddon/logs" : configured;
-        return Addon.FOLDER().toPath().resolve(relative);
+        String relative = configured == null || configured.isBlank() ? "logclient/logs" : configured;
+        return LogClientContext.FOLDER().toPath().resolve(relative);
     }
 
     // ------------------------------------------------------------------ controls
@@ -538,14 +538,14 @@ public class ChatLoggerModule extends Module {
     public void feedback(boolean success, String message) {
         if (!chatFeedback.get()) return;
         Formatting color = success ? Formatting.GREEN : Formatting.RED;
-        warning("%s", color + "[Log Addon] " + message);
+        warning("%s", color + "[Log Client] " + message);
     }
 
     @Override
     public WWidget getWidget(GuiTheme theme) {
         WVerticalList list = theme.verticalList();
 
-        WButton dashboard = list.add(theme.button("Open Log Addon Dashboard")).expandX().widget();
+        WButton dashboard = list.add(theme.button("Open Log Client Dashboard")).expandX().widget();
         dashboard.action = this::openDashboard;
 
         WHorizontalList controls = list.add(theme.horizontalList()).expandX().widget();

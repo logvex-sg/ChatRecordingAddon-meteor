@@ -1,6 +1,6 @@
 package com.logvex.addon.framework.systems.hud;
 
-import com.logvex.addon.LogAddon;
+import com.logvex.addon.LogClient;
 import net.minecraft.client.MinecraftClient;
 
 import java.util.ArrayList;
@@ -162,7 +162,7 @@ public final class Hud implements Iterable<HudElement> {
                 element.reposition(screenWidth, screenHeight);
                 element.render(renderer);
             } catch (RuntimeException e) {
-                LogAddon.LOG.error("HUD element {} failed to render", element.info.name, e);
+                LogClient.LOG.error("HUD element {} failed to render", element.info.name, e);
             }
         }
     }

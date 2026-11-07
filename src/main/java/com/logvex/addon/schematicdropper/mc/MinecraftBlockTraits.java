@@ -43,7 +43,7 @@ import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 
-import static com.logvex.addon.framework.Addon.mc;
+import static com.logvex.addon.framework.LogClientContext.mc;
 
 /**
  * {@link BlockTraits} backed by the real Minecraft 1.21.1 block classes.

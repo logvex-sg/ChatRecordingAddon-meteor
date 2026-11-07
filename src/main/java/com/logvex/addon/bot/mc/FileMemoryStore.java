@@ -7,7 +7,7 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import com.logvex.addon.framework.Addon;
+import com.logvex.addon.framework.LogClientContext;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -160,6 +160,6 @@ public final class FileMemoryStore implements MemoryStore {
 
     /** The default memory file under the addon's data folder. */
     public static Path defaultPath() {
-        return Addon.FOLDER().toPath().resolve("logaddon").resolve("bot-memory.json");
+        return LogClientContext.FOLDER().toPath().resolve("logclient").resolve("bot-memory.json");
     }
 }

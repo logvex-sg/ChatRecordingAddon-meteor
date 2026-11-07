@@ -1,6 +1,6 @@
 package com.logvex.addon.chatlog.hud;
 
-import com.logvex.addon.LogAddon;
+import com.logvex.addon.LogClient;
 import com.logvex.addon.chatlog.core.PlayerActivity;
 import com.logvex.addon.chatlog.core.PlayerSession;
 import com.logvex.addon.chatlog.mc.LogService;
@@ -29,7 +29,7 @@ import java.util.List;
  */
 public class RecentPlayersHud extends HudElement {
     public static final HudElementInfo<RecentPlayersHud> INFO =
-        new HudElementInfo<>(LogAddon.HUD_GROUP, "recent-players", "Players seen most recently.",
+        new HudElementInfo<>(LogClient.HUD_GROUP, "recent-players", "Players seen most recently.",
             RecentPlayersHud::new);
 
     private final SettingGroup sgGeneral = settings.getDefaultGroup();

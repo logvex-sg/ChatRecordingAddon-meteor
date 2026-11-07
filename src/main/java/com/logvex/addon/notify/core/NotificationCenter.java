@@ -11,7 +11,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * The single place every Log Addon feature reports notable events.
+ * The single place every Log Client feature reports notable events.
  *
  * <p>The centre is Minecraft-free and thread-safe: producers may be on the client thread, a disk
  * worker or a network callback, so every mutation is guarded and listeners are invoked outside the

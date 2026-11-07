@@ -14,7 +14,7 @@ import net.minecraft.registry.Registries;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 
-import static com.logvex.addon.framework.Addon.mc;
+import static com.logvex.addon.framework.LogClientContext.mc;
 
 /**
  * Performs real block placements through the addon's {@link BlockUtils#place}, then confirms them from

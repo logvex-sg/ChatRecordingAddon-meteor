@@ -21,7 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
 
-import static com.logvex.addon.framework.Addon.mc;
+import static com.logvex.addon.framework.LogClientContext.mc;
 
 /**
  * Reads the live client inventory and player state. Never mutates anything.

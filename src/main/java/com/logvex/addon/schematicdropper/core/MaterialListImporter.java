@@ -11,7 +11,7 @@ import java.util.Map;
  *
  * <p>Two input shapes are supported and auto-detected:
  *
- * <p><b>Format A — simplified Log Addon list.</b> One entry per line, id first, quantity after:
+ * <p><b>Format A — simplified Log Client list.</b> One entry per line, id first, quantity after:
  * <pre>
  *   minecraft:quartz_pillar 3861
  *   minecraft:spruce_planks 3420

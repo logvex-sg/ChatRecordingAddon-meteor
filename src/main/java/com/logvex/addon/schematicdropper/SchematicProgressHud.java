@@ -1,6 +1,6 @@
 package com.logvex.addon.schematicdropper;
 
-import com.logvex.addon.LogAddon;
+import com.logvex.addon.LogClient;
 import com.logvex.addon.common.Messages;
 import com.logvex.addon.schematicdropper.core.AcquisitionSnapshot;
 import com.logvex.addon.schematicdropper.core.AcquisitionState;
@@ -39,7 +39,7 @@ import java.util.Locale;
  */
 public class SchematicProgressHud extends HudElement {
     public static final HudElementInfo<SchematicProgressHud> INFO =
-        new HudElementInfo<>(LogAddon.HUD_GROUP, "schematic-progress", "Schematic dropper progress.",
+        new HudElementInfo<>(LogClient.HUD_GROUP, "schematic-progress", "Schematic dropper progress.",
             SchematicProgressHud::new);
 
     private static final double BAR_WIDTH = 120;

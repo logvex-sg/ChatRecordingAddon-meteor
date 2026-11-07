@@ -45,12 +45,12 @@ public final class WebhookPayload {
     }
 
     public static String test(String username) {
-        return envelope(username, "**Log Addon** webhook test succeeded.");
+        return envelope(username, "**Log Client** webhook test succeeded.");
     }
 
     private static String envelope(String username, String content) {
         Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("username", username == null || username.isBlank() ? "Log Addon" : username);
+        payload.put("username", username == null || username.isBlank() ? "Log Client" : username);
         payload.put("content", content);
         Map<String, Object> mentions = new LinkedHashMap<>();
         mentions.put("parse", List.of());

@@ -42,7 +42,7 @@ class CompanionServerTest {
         config.setToken(TOKEN);
         config.setPort(0);
         server = new CompanionServer(config, api, CompanionClientThread.direct(), events,
-            "<html><body>Log Addon Companion</body></html>");
+            "<html><body>Log LogClientContext Companion</body></html>");
         server.start();
         return server;
     }
@@ -88,7 +88,7 @@ class CompanionServerTest {
 
         HttpURLConnection app = open("/", "GET", null, false);
         assertEquals(200, app.getResponseCode());
-        assertTrue(read(app).contains("Log Addon Companion"));
+        assertTrue(read(app).contains("Log LogClientContext Companion"));
 
         HttpURLConnection unauth = open("/api/v1/snapshot", "GET", null, false);
         assertEquals(401, unauth.getResponseCode());

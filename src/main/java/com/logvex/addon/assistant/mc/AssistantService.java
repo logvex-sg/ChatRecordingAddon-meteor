@@ -2,7 +2,7 @@ package com.logvex.addon.assistant.mc;
 
 import com.logvex.addon.assistant.core.AssistantMemory;
 import com.logvex.addon.assistant.core.AssistantMemoryStore;
-import com.logvex.addon.framework.Addon;
+import com.logvex.addon.framework.LogClientContext;
 
 import java.nio.file.Path;
 import java.util.Optional;
@@ -73,8 +73,8 @@ public final class AssistantService {
             }
             loaded = true;
             if (onLoaded == null) return;
-            if (Addon.mc == null) onLoaded.run();
-            else Addon.mc.execute(onLoaded);
+            if (LogClientContext.mc == null) onLoaded.run();
+            else LogClientContext.mc.execute(onLoaded);
         });
     }
 

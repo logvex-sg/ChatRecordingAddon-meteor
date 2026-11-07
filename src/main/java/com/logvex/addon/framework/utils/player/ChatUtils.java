@@ -14,7 +14,7 @@ import net.minecraft.util.Formatting;
  * never allowed to carry a stack trace.
  */
 public final class ChatUtils {
-    private static final String PREFIX = "[Log Addon] ";
+    private static final String PREFIX = "[Log Client] ";
     private static String forcedPrefix;
 
     private ChatUtils() {

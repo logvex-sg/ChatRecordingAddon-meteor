@@ -1,6 +1,6 @@
 package com.logvex.addon.companion.mc;
 
-import com.logvex.addon.LogAddon;
+import com.logvex.addon.LogClient;
 import com.logvex.addon.bot.BotModule;
 import com.logvex.addon.bot.core.BotState;
 import com.logvex.addon.chatlog.core.ChatEntry;
@@ -55,7 +55,7 @@ public class CompanionModule extends Module {
     private final Setting<Integer> port = sgServer.add(new IntSetting.Builder()
         .name("port")
         .description("The TCP port the companion listens on.")
-        .defaultValue(8765)
+        .defaultValue(6767)
         .min(1024)
         .sliderRange(1024, 65535)
         .onChanged(value -> restart())
@@ -65,7 +65,7 @@ public class CompanionModule extends Module {
     private final Setting<String> nodeName = sgServer.add(new StringSetting.Builder()
         .name("node-name")
         .description("The name this client shows up as in the app.")
-        .defaultValue("Log Addon")
+        .defaultValue("Log Client")
         .onChanged(value -> { /* read on the next snapshot */ })
         .build()
     );
@@ -132,7 +132,7 @@ public class CompanionModule extends Module {
     private boolean lastInWorld;
 
     public CompanionModule() {
-        super(LogAddon.CATEGORY, "companion",
+        super(LogClient.CATEGORY, "companion",
             "Serve a small web dashboard so a phone or another machine can watch and control this client.",
             "web", "remote", "app");
         this.nodeId = UUID.randomUUID().toString().substring(0, 8);
@@ -203,7 +203,7 @@ public class CompanionModule extends Module {
         try {
             server.start();
         } catch (IOException e) {
-            LogAddon.LOG.warn("Companion could not bind port {}: {}", config.port(), e.getMessage());
+            LogClient.LOG.warn("Companion could not bind port {}: {}", config.port(), e.getMessage());
             warning("Could not start the companion on port %d. Is it already in use?", config.port());
             server = null;
         }
@@ -225,10 +225,10 @@ public class CompanionModule extends Module {
 
     private static String loadAppHtml() {
         try (InputStream in = CompanionModule.class.getResourceAsStream("/companion/app.html")) {
-            if (in == null) return "<!DOCTYPE html><title>Log Addon Companion</title><p>App resource missing.";
+            if (in == null) return "<!DOCTYPE html><title>Log Client Companion</title><p>App resource missing.";
             return new String(in.readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException e) {
-            return "<!DOCTYPE html><title>Log Addon Companion</title><p>The app could not be loaded.";
+            return "<!DOCTYPE html><title>Log Client Companion</title><p>The app could not be loaded.";
         }
     }
 

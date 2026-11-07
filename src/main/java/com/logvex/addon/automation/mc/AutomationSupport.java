@@ -19,7 +19,7 @@ import net.minecraft.world.GameMode;
 import java.util.ArrayList;
 import java.util.List;
 
-import static com.logvex.addon.framework.Addon.mc;
+import static com.logvex.addon.framework.LogClientContext.mc;
 
 /**
  * Small, shared reads of the live client used by the automation modules.

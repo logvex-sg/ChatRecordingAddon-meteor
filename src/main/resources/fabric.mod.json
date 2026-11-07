@@ -1,24 +1,26 @@
 {
   "schemaVersion": 1,
-  "id": "logvex-addon",
+  "id": "logclient",
   "version": "${version}",
-  "name": "Log Addon",
-  "description": "Log Addon: a standalone chat logging, monitoring, search and notification toolkit for Minecraft. Records chat to compressed searchable logs, tracks player activity and session statistics, raises keyword alerts, forwards reports to a webhook, and includes SchematicDropper for automatic Creative-mode material acquisition and schematic material dropping. Baritone is used for navigation when it is installed.",
+  "name": "Log Client",
+  "description": "Log Client: an independent Fabric client for Minecraft 1.21.1. It records and searches chat, tracks player activity and session statistics, raises keyword alerts, forwards reports to a webhook, drops schematic materials, runs an autonomous task bot, checks GitHub Releases for updates and serves a local web console on 127.0.0.1:6767. Baritone drives navigation, mining and building when it is installed.",
   "authors": [
     "logvex"
   ],
   "contact": {
-    "sources": "https://github.com/logvex-sg/ChatRecordingAddon-meteor"
+    "homepage": "https://github.com/logvex-sg/ChatRecordingAddon-meteor",
+    "sources": "https://github.com/logvex-sg/ChatRecordingAddon-meteor",
+    "issues": "https://github.com/logvex-sg/ChatRecordingAddon-meteor/issues"
   },
   "license": "MIT",
   "environment": "client",
   "entrypoints": {
     "client": [
-      "com.logvex.addon.LogAddonClient"
+      "com.logvex.addon.LogClientMod"
     ]
   },
   "mixins": [
-    "logaddon.mixins.json"
+    "logclient.mixins.json"
   ],
   "depends": {
     "java": ">=${jdk_version}",

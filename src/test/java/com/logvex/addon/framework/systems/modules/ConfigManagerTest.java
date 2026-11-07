@@ -146,4 +146,53 @@ class ConfigManagerTest {
         assertFalse(config.isDirty());
         assertTrue(Files.isRegularFile(file));
     }
+
+    @Test
+    @DisplayName("a stored log directory from before the rebrand is repointed")
+    void migratesLegacyStorageDirectory(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("config.json");
+        config.setFile(file);
+
+        // The chat-logger module must exist for the migration to find it; other tests may have
+        // registered a stub, so only add the real one when it is missing.
+        if (Modules.get().get("chat-logger") == null) {
+            Modules.get().add(new com.logvex.addon.chatlog.modules.ChatLoggerModule());
+        }
+
+        Files.writeString(file, "{\"modules\":{\"chat-logger\":{\"settings\":"
+            + "{\"storage-directory\":\"logaddon/logs\"}}}}");
+
+        config.load();
+
+        Setting<?> storage = Modules.get().get("chat-logger").settings.byName("storage-directory");
+        assertEquals("logclient/logs", storage.get(),
+            "an old default log folder must follow the renamed data folder");
+
+        // The repointed value must survive the next save and reload, not just this in-memory pass.
+        config.save();
+        config.load();
+        assertEquals("logclient/logs", storage.get(),
+            "the migrated log folder must persist across a restart");
+        assertTrue(Files.readString(file).contains("logclient/logs"),
+            "the saved file must hold the new path");
+    }
+
+    @Test
+    @DisplayName("a custom log directory is left untouched by the migration")
+    void keepsCustomStorageDirectory(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("config.json");
+        config.setFile(file);
+
+        if (Modules.get().get("chat-logger") == null) {
+            Modules.get().add(new com.logvex.addon.chatlog.modules.ChatLoggerModule());
+        }
+
+        Files.writeString(file, "{\"modules\":{\"chat-logger\":{\"settings\":"
+            + "{\"storage-directory\":\"my/own/logs\"}}}}");
+
+        config.load();
+
+        Setting<?> storage = Modules.get().get("chat-logger").settings.byName("storage-directory");
+        assertEquals("my/own/logs", storage.get(), "a user-chosen folder must never be rewritten");
+    }
 }

@@ -1,6 +1,6 @@
 package com.logvex.addon.chatlog.hud;
 
-import com.logvex.addon.LogAddon;
+import com.logvex.addon.LogClient;
 import com.logvex.addon.chatlog.core.PlayerActivity;
 import com.logvex.addon.chatlog.core.PlayerSession;
 import com.logvex.addon.chatlog.core.ReportFormatting;
@@ -21,7 +21,7 @@ import java.util.List;
 /** HUD showing the most active players seen this session. */
 public class ActivityHud extends HudElement {
     public static final HudElementInfo<ActivityHud> INFO =
-        new HudElementInfo<>(LogAddon.HUD_GROUP, "activity", "Most active players.", ActivityHud::new);
+        new HudElementInfo<>(LogClient.HUD_GROUP, "activity", "Most active players.", ActivityHud::new);
 
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
 

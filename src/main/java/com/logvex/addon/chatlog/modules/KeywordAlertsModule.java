@@ -1,6 +1,6 @@
 package com.logvex.addon.chatlog.modules;
 
-import com.logvex.addon.LogAddon;
+import com.logvex.addon.LogClient;
 import com.logvex.addon.chatlog.core.ChatEntry;
 import com.logvex.addon.chatlog.core.KeywordMatcher;
 import com.logvex.addon.chatlog.core.KeywordRule;
@@ -57,7 +57,7 @@ public class KeywordAlertsModule extends Module {
     private final Setting<String> webhookUsername = sgWebhook.add(new com.logvex.addon.framework.settings.StringSetting.Builder()
         .name("webhook-username")
         .description("Display name used for webhook alerts.")
-        .defaultValue("Log Addon")
+        .defaultValue("Log Client")
         .build()
     );
 
@@ -85,7 +85,7 @@ public class KeywordAlertsModule extends Module {
     private long lastSeenTimestamp;
 
     public KeywordAlertsModule() {
-        super(LogAddon.CATEGORY, "keyword-alerts", "Alerts on configurable keywords with sound and webhook options.");
+        super(LogClient.CATEGORY, "keyword-alerts", "Alerts on configurable keywords with sound and webhook options.");
     }
 
     @Override

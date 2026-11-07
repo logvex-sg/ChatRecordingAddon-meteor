@@ -1,7 +1,7 @@
 package com.logvex.addon.gui;
 
 import com.logvex.addon.common.Messages;
-import com.logvex.addon.framework.Addon;
+import com.logvex.addon.framework.LogClientContext;
 import com.logvex.addon.framework.gui.GuiTheme;
 import com.logvex.addon.framework.gui.GuiThemePreset;
 import com.logvex.addon.framework.gui.GuiThemes;
@@ -40,13 +40,13 @@ public class ClickGuiScreen extends WidgetScreen {
     private String query = "";
 
     public ClickGuiScreen() {
-        super(GuiThemes.get(), "Log Addon");
+        super(GuiThemes.get(), "Log Client");
         this.tab = 0;
     }
 
     /** Opens the window on the HUD tab, used by "Manage HUD" from the editor. */
     public ClickGuiScreen(int tab) {
-        super(GuiThemes.get(), "Log Addon");
+        super(GuiThemes.get(), "Log Client");
         this.tab = tab;
     }
 
@@ -55,7 +55,7 @@ public class ClickGuiScreen extends WidgetScreen {
         GuiTheme theme = this.theme;
 
         WHorizontalList header = add(theme.horizontalList()).expandX().widget();
-        header.add(theme.label(Addon.NAME + "   v" + Addon.VERSION)).expandX();
+        header.add(theme.label(LogClientContext.NAME + "   v" + LogClientContext.VERSION)).expandX();
         header.add(theme.label(summary()).color(theme.muted)).widget();
 
         WTable strip = add(theme.table()).expandX().widget();

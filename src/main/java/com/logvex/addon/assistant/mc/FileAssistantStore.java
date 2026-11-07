@@ -8,7 +8,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.logvex.addon.assistant.core.AssistantMemory;
 import com.logvex.addon.assistant.core.AssistantMemoryStore;
-import com.logvex.addon.framework.Addon;
+import com.logvex.addon.framework.LogClientContext;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -189,6 +189,6 @@ public final class FileAssistantStore implements AssistantMemoryStore {
 
     /** The default memory file under the addon's data folder. */
     public static Path defaultPath() {
-        return Addon.FOLDER().toPath().resolve("logaddon").resolve("assistant-memory.json");
+        return LogClientContext.FOLDER().toPath().resolve("logclient").resolve("assistant-memory.json");
     }
 }

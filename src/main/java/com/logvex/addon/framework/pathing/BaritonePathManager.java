@@ -1,6 +1,6 @@
 package com.logvex.addon.framework.pathing;
 
-import com.logvex.addon.LogAddon;
+import com.logvex.addon.LogClient;
 import com.logvex.addon.framework.settings.BoolSetting;
 import com.logvex.addon.framework.settings.Setting;
 import com.logvex.addon.framework.settings.SettingGroup;
@@ -70,10 +70,10 @@ public final class BaritonePathManager implements IPathManager {
                     clearAllKeys();
                     yield constructor.newInstance(null, commandType);
                 }
-                case "displayName" -> "Log Addon pause";
+                case "displayName" -> "Log Client pause";
                 case "priority" -> 0.0;
                 case "onLostControl" -> null;
-                case "toString" -> "Log Addon pause";
+                case "toString" -> "Log Client pause";
                 case "hashCode" -> System.identityHashCode(proxy);
                 case "equals" -> proxy == args[0];
                 default -> null;
@@ -82,7 +82,7 @@ public final class BaritonePathManager implements IPathManager {
             Object process = Proxy.newProxyInstance(loader, new Class<?>[]{processInterface}, handler);
             controlManager.getClass().getMethod("registerProcess", processInterface).invoke(controlManager, process);
         } catch (ReflectiveOperationException e) {
-            LogAddon.LOG.warn("Baritone pause control unavailable: {}", e.toString());
+            LogClient.LOG.warn("Baritone pause control unavailable: {}", e.toString());
         }
     }
 
@@ -134,7 +134,7 @@ public final class BaritonePathManager implements IPathManager {
         try {
             behavior.getClass().getMethod("cancelEverything").invoke(behavior);
         } catch (ReflectiveOperationException e) {
-            LogAddon.LOG.warn("Baritone cancel failed: {}", e.toString());
+            LogClient.LOG.warn("Baritone cancel failed: {}", e.toString());
         }
     }
 
@@ -151,7 +151,7 @@ public final class BaritonePathManager implements IPathManager {
                     .getConstructor(BlockPos.class).newInstance(pos);
             process.getClass().getMethod("setGoalAndPath", goalClass).invoke(process, goal);
         } catch (ReflectiveOperationException e) {
-            LogAddon.LOG.warn("Baritone moveTo failed: {}", e.toString());
+            LogClient.LOG.warn("Baritone moveTo failed: {}", e.toString());
         }
     }
 
@@ -251,7 +251,7 @@ public final class BaritonePathManager implements IPathManager {
                 Class.forName("baritone.api.utils.SettingsUtil")
                     .getMethod("save", baritoneSettings.getClass()).invoke(null, baritoneSettings);
             } catch (ReflectiveOperationException e) {
-                LogAddon.LOG.warn("Baritone settings save failed: {}", e.toString());
+                LogClient.LOG.warn("Baritone settings save failed: {}", e.toString());
             }
         }
 
@@ -294,7 +294,7 @@ public final class BaritonePathManager implements IPathManager {
             try {
                 setting.getClass().getField("value").set(setting, value);
             } catch (ReflectiveOperationException e) {
-                LogAddon.LOG.warn("Baritone setting {} write failed: {}", name, e.toString());
+                LogClient.LOG.warn("Baritone setting {} write failed: {}", name, e.toString());
             }
         }
     }

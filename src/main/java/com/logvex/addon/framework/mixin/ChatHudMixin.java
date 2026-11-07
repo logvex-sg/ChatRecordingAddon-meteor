@@ -1,7 +1,7 @@
 package com.logvex.addon.framework.mixin;
 
 import com.logvex.addon.chatlog.mc.ChatFilterService;
-import com.logvex.addon.framework.Addon;
+import com.logvex.addon.framework.LogClientContext;
 import com.logvex.addon.framework.events.game.ReceiveMessageEvent;
 import net.minecraft.client.gui.hud.ChatHud;
 import net.minecraft.client.gui.hud.MessageIndicator;
@@ -23,12 +23,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class ChatHudMixin {
     @Inject(method = "addMessage(Lnet/minecraft/text/Text;Lnet/minecraft/network/message/MessageSignatureData;Lnet/minecraft/client/gui/hud/MessageIndicator;)V",
         at = @At("HEAD"), cancellable = true)
-    private void logaddon$onAddMessage(Text message, MessageSignatureData signature, MessageIndicator indicator, CallbackInfo info) {
+    private void logclient$onAddMessage(Text message, MessageSignatureData signature, MessageIndicator indicator, CallbackInfo info) {
         ReceiveMessageEvent event = new ReceiveMessageEvent(message, indicator);
         if (ChatFilterService.get().shouldHide(event)) {
             info.cancel();
             return;
         }
-        Addon.EVENT_BUS.post(event);
+        LogClientContext.EVENT_BUS.post(event);
     }
 }

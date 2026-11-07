@@ -20,14 +20,14 @@ public final class CompanionConfig {
     public static final int DEFAULT_MAX_BODY = 256 * 1024;
 
     private boolean enabled;
-    private int port = 8765;
+    private int port = 6767;
     private String bindAddress = "127.0.0.1";
     private String token = "";
     private boolean allowRemote;
     private int maxBodyBytes = DEFAULT_MAX_BODY;
     private int requestsPerMinute = 240;
     private int eventBufferSize = 200;
-    private String nodeName = "Log Addon";
+    private String nodeName = "Log Client";
 
     public boolean enabled() {
         return enabled;
@@ -102,7 +102,7 @@ public final class CompanionConfig {
     }
 
     public String nodeName() {
-        return nodeName == null || nodeName.isBlank() ? "Log Addon" : nodeName;
+        return nodeName == null || nodeName.isBlank() ? "Log Client" : nodeName;
     }
 
     public void setNodeName(String nodeName) {

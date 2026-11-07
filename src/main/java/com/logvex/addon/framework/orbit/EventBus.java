@@ -1,6 +1,6 @@
 package com.logvex.addon.framework.orbit;
 
-import com.logvex.addon.LogAddon;
+import com.logvex.addon.LogClient;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -81,9 +81,9 @@ public final class EventBus {
                 try {
                     handler.invoke(registration.listener, event);
                 } catch (IllegalAccessException e) {
-                    LogAddon.LOG.error("Event handler not accessible: {}", handler, e);
+                    LogClient.LOG.error("Event handler not accessible: {}", handler, e);
                 } catch (InvocationTargetException e) {
-                    LogAddon.LOG.error("Event handler threw for {}", event.getClass().getSimpleName(),
+                    LogClient.LOG.error("Event handler threw for {}", event.getClass().getSimpleName(),
                         e.getCause());
                 }
             }

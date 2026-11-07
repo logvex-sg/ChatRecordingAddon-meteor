@@ -1,6 +1,6 @@
 package com.logvex.addon.notify;
 
-import com.logvex.addon.LogAddon;
+import com.logvex.addon.LogClient;
 import com.logvex.addon.notify.core.Notification;
 import com.logvex.addon.notify.core.NotificationCenter;
 import com.logvex.addon.notify.core.NotificationPriority;
@@ -27,7 +27,7 @@ import java.util.Map;
  * Surfaces the shared notification stream to the player.
  *
  * <p>The module is only the output side: it listens to {@link NotificationService} and decides what
- * to print and what to beep. Every other Log Addon feature publishes through the service, so this
+ * to print and what to beep. Every other Log Client feature publishes through the service, so this
  * module is the single place that controls chat and sound output, and turning it off never loses
  * history.
  */
@@ -93,8 +93,8 @@ public class NotificationModule extends Module {
     private final NotificationCenter.Listener listener = this::onNotification;
 
     public NotificationModule() {
-        super(LogAddon.CATEGORY, "notifications",
-            "Central notification stream: chat, sound and history for every Log Addon feature.");
+        super(LogClient.CATEGORY, "notifications",
+            "Central notification stream: chat, sound and history for every Log Client feature.");
         for (NotificationType type : NotificationType.values()) {
             typeToggles.put(type, sgTypes.add(new BoolSetting.Builder()
                 .name(type.name().toLowerCase(java.util.Locale.ROOT).replace('_', '-'))

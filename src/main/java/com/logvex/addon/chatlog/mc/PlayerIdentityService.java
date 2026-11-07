@@ -49,7 +49,7 @@ public final class PlayerIdentityService {
 
     /** The directory the identity index is written to. */
     private static java.nio.file.Path dataDir() {
-        return com.logvex.addon.framework.Addon.FOLDER().toPath().resolve("logaddon");
+        return com.logvex.addon.framework.LogClientContext.FOLDER().toPath().resolve("logclient");
     }
 
     /** Loads the persisted index, then runs {@code onLoaded} on the client thread. */
@@ -58,8 +58,8 @@ public final class PlayerIdentityService {
             PlayerIdentityStore.load(dataDir(), tracker);
             loaded = true;
             if (onLoaded == null) return;
-            if (com.logvex.addon.framework.Addon.mc == null) onLoaded.run();
-            else com.logvex.addon.framework.Addon.mc.execute(onLoaded);
+            if (com.logvex.addon.framework.LogClientContext.mc == null) onLoaded.run();
+            else com.logvex.addon.framework.LogClientContext.mc.execute(onLoaded);
         });
     }
 

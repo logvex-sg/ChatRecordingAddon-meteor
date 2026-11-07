@@ -1,6 +1,6 @@
 package com.logvex.addon.chatlog.modules;
 
-import com.logvex.addon.LogAddon;
+import com.logvex.addon.LogClient;
 import com.logvex.addon.chatlog.core.WebhookDeliveryLog;
 import com.logvex.addon.chatlog.core.WebhookQueue;
 import com.logvex.addon.common.Messages;
@@ -59,7 +59,7 @@ public class WebhookMonitorModule extends Module {
     private boolean dirty;
 
     public WebhookMonitorModule() {
-        super(LogAddon.CATEGORY, "webhook-monitor",
+        super(LogClient.CATEGORY, "webhook-monitor",
             "Monitors webhook delivery health, queue depth and failure reasons.");
     }
 

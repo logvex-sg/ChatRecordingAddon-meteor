@@ -1,6 +1,6 @@
 package com.logvex.addon.framework.pathing;
 
-import com.logvex.addon.LogAddon;
+import com.logvex.addon.LogClient;
 
 /**
  * Selects the navigation backend once, at startup.
@@ -20,14 +20,14 @@ public final class PathManagers {
 
     public static void init() {
         if (!exists("baritone.api.BaritoneAPI")) {
-            LogAddon.LOG.info("Path manager: none (Baritone not installed)");
+            LogClient.LOG.info("Path manager: none (Baritone not installed)");
             return;
         }
         try {
             instance = new BaritonePathManager();
-            LogAddon.LOG.info("Path manager: Baritone");
+            LogClient.LOG.info("Path manager: Baritone");
         } catch (ReflectiveOperationException | RuntimeException e) {
-            LogAddon.LOG.warn("Baritone present but unusable, falling back to the built-in walker: {}", e.toString());
+            LogClient.LOG.warn("Baritone present but unusable, falling back to the built-in walker: {}", e.toString());
             instance = new NopPathManager();
         }
     }

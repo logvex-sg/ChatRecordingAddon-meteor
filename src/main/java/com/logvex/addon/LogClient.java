@@ -10,7 +10,7 @@ import com.logvex.addon.chatlog.modules.KeywordAlertsModule;
 import com.logvex.addon.chatlog.modules.PlayerActivityModule;
 import com.logvex.addon.chatlog.modules.SessionStatsModule;
 import com.mojang.logging.LogUtils;
-import com.logvex.addon.framework.Addon;
+import com.logvex.addon.framework.LogClientContext;
 import com.logvex.addon.framework.systems.hud.Hud;
 import com.logvex.addon.framework.systems.hud.HudGroup;
 import com.logvex.addon.framework.systems.modules.Category;
@@ -18,7 +18,7 @@ import com.logvex.addon.framework.systems.modules.Modules;
 import org.slf4j.Logger;
 
 /**
- * Entry point for Log Addon.
+ * Entry point for Log Client.
  *
  * <p>Hosts the chat logging, monitoring, keyword alert, player activity and session statistics
  * modules, plus their HUD elements and the shared dashboard. The {@link ChatRecorder} is subscribed
@@ -27,21 +27,21 @@ import org.slf4j.Logger;
  * <p>Standalone by design: this class owns its own module registry, event bus, HUD, command tree and
  * configuration. Nothing here depends on another mod being installed.
  */
-public class LogAddon {
+public class LogClient {
     public static final Logger LOG = LogUtils.getLogger();
-    public static final Category CATEGORY = new Category("Log Addon");
-    public static final HudGroup HUD_GROUP = new HudGroup("Log Addon");
+    public static final Category CATEGORY = new Category("Log Client");
+    public static final HudGroup HUD_GROUP = new HudGroup("Log Client");
 
     public void onInitialize() {
-        LOG.info("Initializing Log Addon");
+        LOG.info("Initializing Log Client");
 
         // Subscribe the recorder before any module so no early chat is missed. The chat filter and
         // the session timeline also subscribe once here: a filter that only worked while a module was
         // enabled would leak messages on toggle, and the timeline must be complete from the first join.
-        Addon.EVENT_BUS.subscribe(new ChatRecorder());
-        com.logvex.addon.chatlog.mc.ChatFilterService.get().init(Addon.EVENT_BUS);
-        com.logvex.addon.chatlog.mc.SessionTimelineService.get().init(Addon.EVENT_BUS);
-        com.logvex.addon.chatlog.mc.PlayerIdentityService.get().init(Addon.EVENT_BUS);
+        LogClientContext.EVENT_BUS.subscribe(new ChatRecorder());
+        com.logvex.addon.chatlog.mc.ChatFilterService.get().init(LogClientContext.EVENT_BUS);
+        com.logvex.addon.chatlog.mc.SessionTimelineService.get().init(LogClientContext.EVENT_BUS);
+        com.logvex.addon.chatlog.mc.PlayerIdentityService.get().init(LogClientContext.EVENT_BUS);
 
         Modules.get().add(new ChatLoggerModule());
         Modules.get().add(new ChatMonitorModule());
@@ -92,6 +92,10 @@ public class LogAddon {
         Modules.get().add(new com.logvex.addon.companion.mc.CompanionModule());
         Hud.get().register(com.logvex.addon.companion.hud.CompanionHud.INFO);
 
+        // Updates: checks GitHub Releases and downloads a newer jar on request. Off by default; all
+        // network work runs on a daemon worker, and the module never installs anything itself.
+        Modules.get().add(new com.logvex.addon.update.mc.UpdateModule());
+
         Hud.get().register(ChatLogHud.INFO);
         Hud.get().register(ActivityHud.INFO);
         Hud.get().register(StatsHud.INFO);
@@ -106,12 +110,16 @@ public class LogAddon {
      * tree. Called once from the client entrypoint.
      */
     public static void initialize() {
-        LogAddon addon = new LogAddon();
+        LogClient addon = new LogClient();
         addon.onInitialize();
         addon.onRegisterCategories();
 
         com.logvex.addon.framework.pathing.PathManagers.init();
         com.logvex.addon.framework.commands.Commands.init();
+
+        // Rename the pre-rebrand data folder before anything reads or creates it, so an upgrade keeps
+        // the recorded logs, identities, bot memory and config instead of starting empty.
+        LogClientContext.migrateLegacyDataFolder();
 
         // Restore the saved configuration only after every module and HUD element exists.
         com.logvex.addon.framework.systems.config.ConfigManager.get().load();
@@ -124,6 +132,7 @@ public class LogAddon {
         com.logvex.addon.chatlog.mc.SessionTimelineService.get().shutdown();
         com.logvex.addon.chatlog.mc.PlayerIdentityService.get().shutdown();
         com.logvex.addon.assistant.mc.AssistantService.get().shutdown();
+        com.logvex.addon.update.mc.UpdateService.get().engine().shutdown();
     }
 
     /** Persists the configuration when it has changed. Called periodically from the tick loop. */

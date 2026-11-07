@@ -85,11 +85,11 @@ class ExportAndPayloadTest {
         KeywordRule rule = KeywordRule.of("wts");
         ChatEntry entry = entry(1000, MessageType.PUBLIC_CHAT, "Notch", "WTS diamonds");
 
-        String payload = WebhookPayload.alert("Log Addon", rule, entry);
+        String payload = WebhookPayload.alert("Log LogClientContext", rule, entry);
         Map<?, ?> map = Json.toMap(payload);
 
         assertNotNull(map);
-        assertEquals("Log Addon", map.get("username"));
+        assertEquals("Log LogClientContext", map.get("username"));
         assertTrue(String.valueOf(map.get("content")).contains("wts"));
         assertFalse(payload.contains("http"), "the payload must never contain a webhook URL");
     }
@@ -99,7 +99,7 @@ class ExportAndPayloadTest {
         KeywordRule rule = KeywordRule.of("@everyone");
         ChatEntry entry = entry(1000, MessageType.PUBLIC_CHAT, "Notch", "@everyone come here");
 
-        Map<?, ?> map = Json.toMap(WebhookPayload.alert("Log Addon", rule, entry));
+        Map<?, ?> map = Json.toMap(WebhookPayload.alert("Log LogClientContext", rule, entry));
         assertNotNull(map);
         Map<?, ?> mentions = (Map<?, ?>) map.get("allowed_mentions");
         assertNotNull(mentions, "mentions must be explicitly restricted");
@@ -113,16 +113,16 @@ class ExportAndPayloadTest {
             entries.add(entry(1000 + i, MessageType.PUBLIC_CHAT, "Notch", "a reasonably long chat message body " + i));
         }
 
-        Map<?, ?> map = Json.toMap(WebhookPayload.summary("Log Addon", "mc.example.com", entries));
+        Map<?, ?> map = Json.toMap(WebhookPayload.summary("Log LogClientContext", "mc.example.com", entries));
         assertNotNull(map);
         assertTrue(String.valueOf(map.get("content")).length() <= WebhookPayload.CONTENT_LIMIT);
     }
 
     @Test
     void testPayloadIsValidJson() {
-        Map<?, ?> map = Json.toMap(WebhookPayload.test("Log Addon"));
+        Map<?, ?> map = Json.toMap(WebhookPayload.test("Log LogClientContext"));
         assertNotNull(map);
-        assertEquals("Log Addon", map.get("username"));
+        assertEquals("Log LogClientContext", map.get("username"));
     }
 
     @Test

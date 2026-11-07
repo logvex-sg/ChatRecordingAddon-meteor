@@ -1,6 +1,6 @@
 package com.logvex.addon.chatlog.hud;
 
-import com.logvex.addon.LogAddon;
+import com.logvex.addon.LogClient;
 import com.logvex.addon.chatlog.core.MessageType;
 import com.logvex.addon.chatlog.core.ReportFormatting;
 import com.logvex.addon.chatlog.core.StatsSnapshot;
@@ -27,7 +27,7 @@ import java.util.List;
  */
 public class StatsHud extends HudElement {
     public static final HudElementInfo<StatsHud> INFO =
-        new HudElementInfo<>(LogAddon.HUD_GROUP, "session-stats", "Session chat statistics.", StatsHud::new);
+        new HudElementInfo<>(LogClient.HUD_GROUP, "session-stats", "Session chat statistics.", StatsHud::new);
 
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
 

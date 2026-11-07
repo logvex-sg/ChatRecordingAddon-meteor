@@ -18,7 +18,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(ClientPlayNetworkHandler.class)
 public abstract class ClientPlayNetworkHandlerCommandMixin {
     @Inject(method = "sendChatMessage", at = @At("HEAD"), cancellable = true)
-    private void logaddon$onSendChatMessage(String message, CallbackInfo info) {
+    private void logclient$onSendChatMessage(String message, CallbackInfo info) {
         String prefix = ClientConfig.get().prefix();
         if (message == null || prefix.isEmpty() || !message.startsWith(prefix)) return;
 

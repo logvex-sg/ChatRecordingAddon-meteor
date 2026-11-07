@@ -1,6 +1,6 @@
 package com.logvex.addon.bot.hud;
 
-import com.logvex.addon.LogAddon;
+import com.logvex.addon.LogClient;
 import com.logvex.addon.bot.BotModule;
 import com.logvex.addon.bot.core.BotEvent;
 import com.logvex.addon.bot.core.BotTask;
@@ -28,7 +28,7 @@ import java.util.Locale;
  */
 public class BotStatusHud extends HudElement {
     public static final HudElementInfo<BotStatusHud> INFO =
-        new HudElementInfo<>(LogAddon.HUD_GROUP, "bot-status", "Autonomous bot status.", BotStatusHud::new);
+        new HudElementInfo<>(LogClient.HUD_GROUP, "bot-status", "Autonomous bot status.", BotStatusHud::new);
 
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
 

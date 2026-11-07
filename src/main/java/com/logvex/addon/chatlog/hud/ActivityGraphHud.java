@@ -1,6 +1,6 @@
 package com.logvex.addon.chatlog.hud;
 
-import com.logvex.addon.LogAddon;
+import com.logvex.addon.LogClient;
 import com.logvex.addon.chatlog.core.ActivityHistogram;
 import com.logvex.addon.chatlog.mc.LogService;
 import com.logvex.addon.common.Messages;
@@ -25,7 +25,7 @@ import java.util.List;
  */
 public class ActivityGraphHud extends HudElement {
     public static final HudElementInfo<ActivityGraphHud> INFO =
-        new HudElementInfo<>(LogAddon.HUD_GROUP, "activity-graph", "Recent chat activity as a graph.",
+        new HudElementInfo<>(LogClient.HUD_GROUP, "activity-graph", "Recent chat activity as a graph.",
             ActivityGraphHud::new);
 
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
