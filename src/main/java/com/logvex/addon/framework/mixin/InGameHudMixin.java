@@ -15,7 +15,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(InGameHud.class)
 public abstract class InGameHudMixin {
     @Inject(method = "render", at = @At("TAIL"))
-    private void logaddon$onRender(DrawContext context, RenderTickCounter tickCounter, CallbackInfo info) {
+    private void logclient$onRender(DrawContext context, RenderTickCounter tickCounter, CallbackInfo info) {
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc.player == null || mc.options.hudHidden) return;
 

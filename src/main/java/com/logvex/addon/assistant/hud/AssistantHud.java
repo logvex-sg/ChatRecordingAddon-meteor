@@ -1,6 +1,6 @@
 package com.logvex.addon.assistant.hud;
 
-import com.logvex.addon.LogAddon;
+import com.logvex.addon.LogClient;
 import com.logvex.addon.assistant.modules.AssistantModule;
 import com.logvex.addon.framework.settings.BoolSetting;
 import com.logvex.addon.framework.settings.Setting;
@@ -24,7 +24,7 @@ import java.util.List;
  */
 public class AssistantHud extends HudElement {
     public static final HudElementInfo<AssistantHud> INFO =
-        new HudElementInfo<>(LogAddon.HUD_GROUP, "assistant", "Assistant status.", AssistantHud::new);
+        new HudElementInfo<>(LogClient.HUD_GROUP, "assistant", "Assistant status.", AssistantHud::new);
 
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
 

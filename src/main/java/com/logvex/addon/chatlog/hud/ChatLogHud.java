@@ -1,6 +1,6 @@
 package com.logvex.addon.chatlog.hud;
 
-import com.logvex.addon.LogAddon;
+import com.logvex.addon.LogClient;
 import com.logvex.addon.chatlog.core.ChatEntry;
 import com.logvex.addon.chatlog.core.DuplicateGrouper;
 import com.logvex.addon.chatlog.core.ReportFormatting;
@@ -31,7 +31,7 @@ import java.util.List;
  */
 public class ChatLogHud extends HudElement {
     public static final HudElementInfo<ChatLogHud> INFO =
-        new HudElementInfo<>(LogAddon.HUD_GROUP, "chat-log", "Live chat log feed.", ChatLogHud::new);
+        new HudElementInfo<>(LogClient.HUD_GROUP, "chat-log", "Live chat log feed.", ChatLogHud::new);
 
     private static final int MAX_CHARS = 64;
 
@@ -114,7 +114,7 @@ public class ChatLogHud extends HudElement {
         double scale = HudPanel.scale(shared);
         boolean shadow = shared.shadow.get();
         List<Line> composed = compose();
-        double width = renderer.textWidth("Log Addon", shadow, scale);
+        double width = renderer.textWidth("Log Client", shadow, scale);
         for (Line line : composed) width = Math.max(width, renderer.textWidth(line.text(), shadow, scale));
         double lineHeight = renderer.textHeight(shadow, scale) + HudPanel.LINE_GAP;
         setSize(Math.min(width, 340) + HudPanel.PAD * 2, lineHeight * (composed.size() + 1) + HudPanel.PAD * 2);
@@ -126,7 +126,7 @@ public class ChatLogHud extends HudElement {
         boolean shadow = shared.shadow.get();
         HudStyle style = HudPanel.style(shared, renderer.theme);
         double cursor = HudPanel.frame(renderer, this, style, shared.background.get(), shared.border.get(),
-            "Log Addon", scale, shadow);
+            "Log Client", scale, shadow);
 
         for (Line line : compose()) {
             Color color = line.status()

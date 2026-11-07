@@ -11,7 +11,7 @@ import net.minecraft.registry.Registries;
 import net.minecraft.screen.ScreenHandler;
 import net.minecraft.util.Identifier;
 
-import static com.logvex.addon.framework.Addon.mc;
+import static com.logvex.addon.framework.LogClientContext.mc;
 
 /**
  * {@link CreativePort} backed by real, server-synchronised Creative inventory gives.
@@ -44,7 +44,7 @@ public final class MinecraftCreativePort implements CreativePort {
 
     /** Subscribes to the packet stream so the server's corrections can be observed. */
     public MinecraftCreativePort() {
-        com.logvex.addon.framework.Addon.EVENT_BUS.subscribe(this);
+        com.logvex.addon.framework.LogClientContext.EVENT_BUS.subscribe(this);
     }
 
     @Override

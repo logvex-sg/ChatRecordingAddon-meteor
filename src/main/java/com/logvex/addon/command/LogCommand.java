@@ -32,7 +32,7 @@ import java.util.Locale;
  */
 public class LogCommand extends Command {
     public LogCommand() {
-        super("log", "Log Addon: status, modules, tasks, notifications, schematics and stats.", "la");
+        super("log", "Log Client: status, modules, tasks, notifications, schematics and stats.", "la");
     }
 
     @Override
@@ -367,6 +367,38 @@ public class LogCommand extends Command {
             }))
         );
 
+        builder.then(literal("update")
+            .executes(context -> {
+                update();
+                return SINGLE_SUCCESS;
+            })
+            .then(literal("status").executes(context -> {
+                update();
+                return SINGLE_SUCCESS;
+            }))
+            .then(literal("check").executes(context -> {
+                updateCheck();
+                return SINGLE_SUCCESS;
+            }))
+            .then(literal("download").executes(context -> {
+                updateDownload();
+                return SINGLE_SUCCESS;
+            }))
+            .then(literal("gui").executes(context -> {
+                updateGui();
+                return SINGLE_SUCCESS;
+            }))
+            .then(literal("channel").then(argument("channel", StringArgumentType.word()).executes(context -> {
+                updateChannel(StringArgumentType.getString(context, "channel"));
+                return SINGLE_SUCCESS;
+            })))
+        );
+
+        builder.then(literal("web").executes(context -> {
+            openWebConsole();
+            return SINGLE_SUCCESS;
+        }));
+
         builder.then(literal("companion")
             .executes(context -> {
                 companion();
@@ -402,10 +434,10 @@ public class LogCommand extends Command {
     // ------------------------------------------------------------------ sections
 
     private void help() {
-        info("Log Addon commands:");
+        info("Log Client commands:");
         info("  (highlight).log gui(default) - open the addon window.");
         info("  (highlight).log status(default) - overall status.");
-        info("  (highlight).log modules(default) - list Log Addon modules.");
+        info("  (highlight).log modules(default) - list Log Client modules.");
         info("  (highlight).log stats(default) - session statistics.");
         info("  (highlight).log record <on|off>(default) - toggle chat recording.");
         info("  (highlight).log notifications [count|clear](default) - recent notifications.");
@@ -425,6 +457,8 @@ public class LogCommand extends Command {
         info("  (highlight).log identities [renamed|watch|unwatch|watchlist|clear|<filter>](default) - observed name changes.");
         info("  (highlight).log sessions [list|clear](default) - past recording sessions.");
         info("  (highlight).log companion [status|start|stop|token|regenerate|gui](default) - the companion web app.");
+        info("  (highlight).log update [status|check|download|channel <stable|beta>|gui](default) - GitHub release updates.");
+        info("  (highlight).log web(default) - open the local web console in your browser.");
         info("  (highlight).ai [status|triggers|facts|remember|forget|test|gui](default) - the chat assistant.");
     }
 
@@ -455,10 +489,10 @@ public class LogCommand extends Command {
     private void modules() {
         List<Module> modules = LogCommands.addonModules();
         if (modules.isEmpty()) {
-            warning("No Log Addon modules are registered.");
+            warning("No Log Client modules are registered.");
             return;
         }
-        info("%d Log Addon module%s:", modules.size(), modules.size() == 1 ? "" : "s");
+        info("%d Log Client module%s:", modules.size(), modules.size() == 1 ? "" : "s");
         for (Module module : modules) {
             info("  %s %s - %s", module.isActive() ? "(highlight)[on](default)" : "(highlight)[off](default)",
                 module.title, module.description);
@@ -777,7 +811,7 @@ public class LogCommand extends Command {
     private void openGui() {
         net.minecraft.client.MinecraftClient client = net.minecraft.client.MinecraftClient.getInstance();
         client.setScreen(new com.logvex.addon.gui.ClickGuiScreen());
-        info("Opened the Log Addon window.");
+        info("Opened the Log Client window.");
     }
 
     private void digest() {
@@ -989,7 +1023,7 @@ public class LogCommand extends Command {
                 info("Open %s in a browser.", module.url());
             } else {
                 warning("The companion could not start. Is port %d already in use?",
-                    module.settings.get("port") == null ? 8765 : module.settings.get("port").get());
+                    module.settings.get("port") == null ? 6767 : module.settings.get("port").get());
             }
         } else {
             info("Companion stopped.");
@@ -1025,6 +1059,98 @@ public class LogCommand extends Command {
         var mc = net.minecraft.client.MinecraftClient.getInstance();
         if (mc != null) {
             mc.setScreen(new com.logvex.addon.companion.gui.CompanionScreen(module));
+        }
+    }
+
+    // ------------------------------------------------------------------ updates
+
+    private com.logvex.addon.update.mc.UpdateModule updateModule() {
+        var module = Modules.get().get("updates");
+        return module instanceof com.logvex.addon.update.mc.UpdateModule u ? u : null;
+    }
+
+    private void update() {
+        var snapshot = com.logvex.addon.update.mc.UpdateService.get().snapshot();
+        info("Log Client updates - installed %s, channel %s.",
+            snapshot.installedVersion(), snapshot.channel().label());
+        info("%s", snapshot.statusLine());
+        info("Last checked: %s.", snapshot.lastCheckedText());
+        if (snapshot.hasUpdate()) {
+            info("Use (highlight).log update download(default) to fetch %s.", snapshot.latestVersion());
+        }
+    }
+
+    private void updateCheck() {
+        var module = updateModule();
+        if (module == null) {
+            warning("The updates module is not available.");
+            return;
+        }
+        if (!module.isActive()) module.toggle();
+        module.checkNow();
+        info("Checking GitHub Releases for a newer build...");
+    }
+
+    private void updateDownload() {
+        var snapshot = com.logvex.addon.update.mc.UpdateService.get().snapshot();
+        if (!snapshot.hasUpdate()) {
+            warning("No update is available to download. Run (highlight).log update check(default) first.");
+            return;
+        }
+        com.logvex.addon.update.mc.UpdateService.get().download();
+        info("Downloading %s. You will be told when it is ready.", snapshot.latestVersion());
+    }
+
+    private void updateChannel(String name) {
+        var channel = com.logvex.addon.update.core.UpdateChannel.parse(name, null);
+        if (channel == null) {
+            warning("Unknown channel \"%s\". Use (highlight)stable(default) or (highlight)beta(default).", name);
+            return;
+        }
+        var module = updateModule();
+        if (module != null) {
+            @SuppressWarnings("unchecked")
+            var channelSetting = (com.logvex.addon.framework.settings.Setting<com.logvex.addon.update.core.UpdateChannel>)
+                module.settings.get("channel");
+            channelSetting.set(channel);
+        }
+        com.logvex.addon.update.mc.UpdateService.get().setChannel(channel);
+        info("Update channel set to %s.", channel.label());
+    }
+
+    private void updateGui() {
+        var module = updateModule();
+        if (module == null) {
+            warning("The updates module is not available.");
+            return;
+        }
+        var mc = net.minecraft.client.MinecraftClient.getInstance();
+        if (mc != null) mc.setScreen(new com.logvex.addon.update.gui.UpdateScreen(module));
+    }
+
+    // ------------------------------------------------------------------ web console
+
+    private void openWebConsole() {
+        var module = companionModule();
+        if (module == null) {
+            warning("The web console module is not available.");
+            return;
+        }
+        if (!module.isActive()) {
+            module.toggle();
+        }
+        if (!module.isRunning()) {
+            warning("The web console could not start. Is port %d already in use?",
+                module.settings.get("port") == null ? 6767 : module.settings.get("port").get());
+            return;
+        }
+        String url = module.url();
+        info("Web console listening on port %d.", module.boundPort());
+        info("Open %s in a browser. The access token is under (highlight).log companion token(default).", url);
+        try {
+            net.minecraft.util.Util.getOperatingSystem().open(java.net.URI.create(url));
+        } catch (RuntimeException e) {
+            info("Open %s manually in a browser.", url);
         }
     }
 

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Log Addon Companion</title>
+<title>Log Client Companion</title>
 <style>
   :root {
     --bg: #0b1020;
@@ -106,7 +106,7 @@
 </head>
 <body>
 <header>
-  <h1>Log Addon Companion</h1>
+  <h1>Log Client Companion</h1>
   <span class="badge" id="node-count">0 clients</span>
   <span class="badge" id="link-state">offline</span>
   <span class="spacer"></span>
@@ -132,7 +132,7 @@
 <dialog id="nodes-dialog">
   <h3 style="margin-top:0">Clients</h3>
   <p class="muted" style="font-size:13px">
-    Add each Minecraft client running Log Addon. The token is the one shown in the addon's
+    Add each Minecraft client running Log Client. The token is the one shown in the addon's
     Companion settings. Tokens are kept only in this browser.
   </p>
   <div id="node-list"></div>
@@ -150,11 +150,11 @@
 
 <script>
 "use strict";
-/* The companion app. It talks to one or more Log Addon clients over their companion API and never
+/* The companion app. It talks to one or more Log Client clients over their companion API and never
    assumes a client is reachable: every call reports its own failure. State lives in localStorage. */
 
-const STORE_KEY = "logaddon.companion.nodes";
-const TAB_KEY = "logaddon.companion.tab";
+const STORE_KEY = "logclient.companion.nodes";
+const TAB_KEY = "logclient.companion.tab";
 const TABS = [
   ["overview", "Overview"], ["bot", "Bot"], ["tasks", "Tasks"], ["chat", "Chat"],
   ["players", "Players"], ["modules", "Modules"], ["storage", "Storage"], ["events", "Live feed"]
@@ -201,7 +201,7 @@ function boot() {
   }
   if (nodes.length === 0 && location.origin.startsWith("http")) {
     // When the app is served by a client, that client is reachable at the same origin.
-    const stored = localStorage.getItem("logaddon.companion.lastToken");
+    const stored = localStorage.getItem("logclient.companion.lastToken");
     if (stored) nodes.push({ id: uid(), url: location.origin, token: stored, label: "This client" });
   }
   if (nodes.length > 0) activeNodeId = nodes[0].id;

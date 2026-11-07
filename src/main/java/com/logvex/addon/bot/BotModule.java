@@ -1,6 +1,6 @@
 package com.logvex.addon.bot;
 
-import com.logvex.addon.LogAddon;
+import com.logvex.addon.LogClient;
 import com.logvex.addon.bot.core.BotClock;
 import com.logvex.addon.bot.core.BotConfig;
 import com.logvex.addon.bot.core.BotController;
@@ -29,7 +29,7 @@ import com.logvex.addon.notify.core.NotificationType;
 import com.logvex.addon.notify.mc.NotificationService;
 import com.logvex.addon.schematicdropper.SchematicBuildController;
 import com.logvex.addon.schematicdropper.SchematicDropperModule;
-import com.logvex.addon.framework.Addon;
+import com.logvex.addon.framework.LogClientContext;
 import com.logvex.addon.framework.events.game.GameJoinedEvent;
 import com.logvex.addon.framework.events.game.GameLeftEvent;
 import com.logvex.addon.framework.events.world.TickEvent;
@@ -319,7 +319,7 @@ public class BotModule extends Module {
         new com.logvex.addon.profiles.ProfileManager();
 
     public BotModule() {
-        super(LogAddon.CATEGORY, "auto-bot", "Autonomous task bot: gather, craft, build, farm and more.");
+        super(LogClient.CATEGORY, "auto-bot", "Autonomous task bot: gather, craft, build, farm and more.");
     }
 
     // ------------------------------------------------------------------ lifecycle
@@ -448,7 +448,7 @@ public class BotModule extends Module {
 
     /** The folder profiles are read from and written to. */
     private Path profileDirectory() {
-        return com.logvex.addon.framework.Addon.FOLDER().toPath().resolve("logaddon");
+        return com.logvex.addon.framework.LogClientContext.FOLDER().toPath().resolve("logclient");
     }
 
     /** The live profile manager, for the GUI and commands. */

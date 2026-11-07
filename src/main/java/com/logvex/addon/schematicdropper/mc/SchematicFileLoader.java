@@ -40,6 +40,7 @@ public final class SchematicFileLoader {
         }
 
         NbtNode root = readNbt(path, fileName);
+        root = unwrapSchematicRoot(root);
 
         // The extension is only a hint. Downloads are commonly renamed, have no extension, or carry
         // the wrong one, and a reader chosen from a wrong hint decodes the file into garbage. When
@@ -83,6 +84,36 @@ public final class SchematicFileLoader {
         } catch (RuntimeException e) {
             throw new SchematicParseException("Could not read " + fileName + ": " + shortReason(e), e);
         }
+    }
+
+    /**
+     * Unwraps the {@code {"Schematic": {...}}} envelope that the Sponge specification (and WorldEdit
+     * 7.3+) puts around the real schematic payload.
+     *
+     * <p>The specification shows the schematic compound nested inside the root compound under the key
+     * {@code Schematic}. Older WorldEdit builds wrote the fields at the root with a root tag *name* of
+     * {@code "Schematic"} (which {@link NbtIo#readCompound} already discards), but newer builds write
+     * an empty root name and a literal {@code Schematic} child. Without this unwrap every modern
+     * {@code .schem} reads an empty root and is rejected, which is exactly the "can't import
+     * schematics" symptom.
+     */
+    private static NbtNode unwrapSchematicRoot(NbtNode root) {
+        if (root == null || !root.isCompound()) return root;
+        // Only unwrap when the root carries no usable payload of its own, so a file that legitimately
+        // stores its fields at the top level (MCEdit, litematic) is never misread.
+        if (looksLikePayload(root)) return root;
+
+        NbtNode nested = root.getCompound("Schematic");
+        if (nested != null && looksLikePayload(nested)) return nested;
+        NbtNode lower = root.getCompound("schematic");
+        if (lower != null && looksLikePayload(lower)) return lower;
+        return root;
+    }
+
+    private static boolean looksLikePayload(NbtNode node) {
+        return node.has("Palette") || node.has("palette") || node.has("BlockPalette")
+            || node.has("Blocks") || node.has("BlockData") || node.has("Data")
+            || node.has("Width") || node.has("Size") || node.has("Regions");
     }
 
     private NbtNode readNbt(Path path, String fileName) throws SchematicParseException {

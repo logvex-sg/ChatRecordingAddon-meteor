@@ -1,6 +1,6 @@
 package com.logvex.addon.chatlog.modules;
 
-import com.logvex.addon.LogAddon;
+import com.logvex.addon.LogClient;
 import com.logvex.addon.chatlog.core.PlayerNote;
 import com.logvex.addon.chatlog.mc.LogService;
 import com.logvex.addon.framework.gui.GuiTheme;
@@ -25,7 +25,7 @@ public class PlayerNotesModule extends Module {
     private final PlayerNote.Store store = new PlayerNote.Store();
 
     public PlayerNotesModule() {
-        super(LogAddon.CATEGORY, "player-notes",
+        super(LogClient.CATEGORY, "player-notes",
             "Keeps notes about players and links them to observed activity.");
     }
 

@@ -24,7 +24,7 @@ public abstract class KeyboardMixin {
     @Shadow @Final private MinecraftClient client;
 
     @Inject(method = "onKey", at = @At("HEAD"), cancellable = true)
-    private void logaddon$onKey(long window, int key, int scancode, int action, int modifiers, CallbackInfo info) {
+    private void logclient$onKey(long window, int key, int scancode, int action, int modifiers, CallbackInfo info) {
         if (key == GLFW.GLFW_KEY_UNKNOWN || action == GLFW.GLFW_RELEASE) return;
 
         if (action == GLFW.GLFW_PRESS && key == GLFW.GLFW_KEY_RIGHT_SHIFT) {

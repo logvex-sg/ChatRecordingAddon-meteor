@@ -10,7 +10,7 @@ import com.logvex.addon.framework.gui.widgets.pressable.WButton;
 import com.logvex.addon.framework.utils.render.color.Color;
 import net.minecraft.client.MinecraftClient;
 
-import static com.logvex.addon.framework.Addon.mc;
+import static com.logvex.addon.framework.LogClientContext.mc;
 
 /**
  * The companion's control panel: where the server is reachable, the token, and the ways to open or

@@ -17,7 +17,7 @@ import com.logvex.addon.framework.utils.render.color.Color;
 import java.util.List;
 import java.util.Locale;
 
-import static com.logvex.addon.framework.Addon.mc;
+import static com.logvex.addon.framework.LogClientContext.mc;
 
 /**
  * The bot's main screen: current state, the active task, the queue, the objectives and the recent

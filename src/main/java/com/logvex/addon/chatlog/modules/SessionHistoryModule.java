@@ -1,6 +1,6 @@
 package com.logvex.addon.chatlog.modules;
 
-import com.logvex.addon.LogAddon;
+import com.logvex.addon.LogClient;
 import com.logvex.addon.chatlog.core.SessionRecord;
 import com.logvex.addon.framework.gui.GuiTheme;
 import com.logvex.addon.framework.gui.widgets.WWidget;
@@ -37,7 +37,7 @@ public class SessionHistoryModule extends Module {
     );
 
     public SessionHistoryModule() {
-        super(LogAddon.CATEGORY, "session-history",
+        super(LogClient.CATEGORY, "session-history",
             "Keeps a browsable history of past recording sessions.");
     }
 

@@ -4,8 +4,8 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import com.logvex.addon.LogAddon;
-import com.logvex.addon.framework.Addon;
+import com.logvex.addon.LogClient;
+import com.logvex.addon.framework.LogClientContext;
 import com.logvex.addon.framework.settings.Setting;
 import com.logvex.addon.framework.systems.hud.Hud;
 import com.logvex.addon.framework.systems.hud.HudElement;
@@ -23,7 +23,7 @@ import java.nio.file.StandardCopyOption;
 import java.util.Map;
 
 /**
- * Persists module and HUD configuration to {@code <gamedir>/logaddon/config.json}.
+ * Persists module and HUD configuration to {@code <gamedir>/logclient/config.json}.
  *
  * <p>Writes are atomic (a temp file is moved into place) and serialised on a single lock, so a
  * crash mid-save can never leave a half-written config behind. Reads are tolerant: a missing file,
@@ -63,7 +63,7 @@ public final class ConfigManager {
 
     public Path file() {
         if (overridePath != null) return overridePath;
-        return Addon.FOLDER().toPath().resolve("logaddon").resolve(FILE_NAME);
+        return LogClientContext.FOLDER().toPath().resolve("logclient").resolve(FILE_NAME);
     }
 
     /** Redirects persistence to {@code path}; intended for tests. */
@@ -93,7 +93,7 @@ public final class ConfigManager {
                 }
                 dirty = false;
             } catch (IOException e) {
-                LogAddon.LOG.error("Could not save the addon config to {}", path, e);
+                LogClient.LOG.error("Could not save the addon config to {}", path, e);
             }
         }
     }
@@ -108,7 +108,7 @@ public final class ConfigManager {
                 JsonElement parsed = gson.fromJson(reader, JsonElement.class);
                 root = parsed != null && parsed.isJsonObject() ? parsed.getAsJsonObject() : new JsonObject();
             } catch (IOException | RuntimeException e) {
-                LogAddon.LOG.warn("Could not read the addon config at {}; keeping defaults", path, e);
+                LogClient.LOG.warn("Could not read the addon config at {}; keeping defaults", path, e);
                 return;
             }
         }
@@ -116,11 +116,33 @@ public final class ConfigManager {
         applyModules(root);
         applyHud(root);
         applyClient(root);
-
+        migrateStoredPaths();
         // Keep every key the file contained. On the next save the recognised ones are rebuilt from
         // live state and the rest are copied back, so a config written by a newer build is not
         // silently truncated by an older one.
         unknown = root.deepCopy();
+    }
+
+    /**
+     * Repoints settings that stored the old data-folder name.
+     *
+     * <p>Only the changed default is rewritten, and only when it still holds that exact old value: a
+     * user who chose their own log folder keeps it. This is a one-time rebrand migration, so it is
+     * safe to leave in place across restarts.
+     */
+    private void migrateStoredPaths() {
+        Module logger = Modules.get().get("chat-logger");
+        if (logger == null) return;
+        Setting<?> storage = logger.settings.byName("storage-directory");
+        if (storage == null) return;
+        try {
+            Object value = storage.get();
+            if (value instanceof String path && path.startsWith("logaddon")) {
+                storage.fromJson(path.replaceFirst("^logaddon", "logclient"));
+            }
+        } catch (RuntimeException e) {
+            LogClient.LOG.warn("Could not migrate the stored log directory", e);
+        }
     }
 
     // ------------------------------------------------------------------ serialise
@@ -168,7 +190,7 @@ public final class ConfigManager {
             try {
                 out.add(setting.name, setting.toJson());
             } catch (RuntimeException e) {
-                LogAddon.LOG.warn("Could not serialise setting {}", setting.name, e);
+                LogClient.LOG.warn("Could not serialise setting {}", setting.name, e);
             }
         }
         return out;
@@ -252,7 +274,7 @@ public final class ConfigManager {
             try {
                 setting.fromJson(values.get(setting.name));
             } catch (RuntimeException e) {
-                LogAddon.LOG.warn("Ignoring invalid value for setting {}", setting.name, e);
+                LogClient.LOG.warn("Ignoring invalid value for setting {}", setting.name, e);
             }
         }
     }

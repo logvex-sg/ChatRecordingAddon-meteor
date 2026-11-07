@@ -13,7 +13,7 @@ import com.logvex.addon.framework.utils.render.color.Color;
 
 import java.util.List;
 
-import static com.logvex.addon.framework.Addon.mc;
+import static com.logvex.addon.framework.LogClientContext.mc;
 
 /**
  * Shows the bot's stored knowledge: waypoints, known places and past objectives.

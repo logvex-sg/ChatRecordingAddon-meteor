@@ -1,6 +1,6 @@
 package com.logvex.addon.chatlog.hud;
 
-import com.logvex.addon.LogAddon;
+import com.logvex.addon.LogClient;
 import com.logvex.addon.chatlog.core.PlayerIdentityTracker;
 import com.logvex.addon.chatlog.mc.LogService;
 import com.logvex.addon.common.Messages;
@@ -27,7 +27,7 @@ import java.util.List;
  */
 public class PlayerIdentityHud extends HudElement {
     public static final HudElementInfo<PlayerIdentityHud> INFO =
-        new HudElementInfo<>(LogAddon.HUD_GROUP, "player-identity", "Recently observed player renames.",
+        new HudElementInfo<>(LogClient.HUD_GROUP, "player-identity", "Recently observed player renames.",
             PlayerIdentityHud::new);
 
     private final SettingGroup sgGeneral = settings.getDefaultGroup();

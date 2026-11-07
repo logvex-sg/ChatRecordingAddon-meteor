@@ -27,7 +27,7 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * The Log Addon dashboard: a single native window with live, search, players, keywords and
+ * The Log Client dashboard: a single native window with live, search, players, keywords and
  * statistics tabs. Every control invokes the real module functionality and every value is read from
  * the shared runtime.
  */
@@ -51,7 +51,7 @@ public class LogDashboardScreen extends WindowScreen {
     }
 
     public LogDashboardScreen(ChatLoggerModule logger, int tab) {
-        super(GuiThemes.get(), "Log Addon");
+        super(GuiThemes.get(), "Log Client");
         this.logger = logger;
         this.tab = tab;
     }

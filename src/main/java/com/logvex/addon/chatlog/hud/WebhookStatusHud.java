@@ -1,6 +1,6 @@
 package com.logvex.addon.chatlog.hud;
 
-import com.logvex.addon.LogAddon;
+import com.logvex.addon.LogClient;
 import com.logvex.addon.chatlog.modules.WebhookMonitorModule;
 import com.logvex.addon.common.Messages;
 import com.logvex.addon.framework.settings.BoolSetting;
@@ -26,7 +26,7 @@ import java.util.List;
  */
 public class WebhookStatusHud extends HudElement {
     public static final HudElementInfo<WebhookStatusHud> INFO =
-        new HudElementInfo<>(LogAddon.HUD_GROUP, "webhook-status", "Webhook delivery status.", WebhookStatusHud::new);
+        new HudElementInfo<>(LogClient.HUD_GROUP, "webhook-status", "Webhook delivery status.", WebhookStatusHud::new);
 
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
 

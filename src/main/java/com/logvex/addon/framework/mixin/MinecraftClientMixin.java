@@ -1,6 +1,6 @@
 package com.logvex.addon.framework.mixin;
 
-import com.logvex.addon.framework.Addon;
+import com.logvex.addon.framework.LogClientContext;
 import com.logvex.addon.framework.events.game.GameLeftEvent;
 import com.logvex.addon.framework.events.world.TickEvent;
 import com.logvex.addon.framework.utils.world.BlockIterator;
@@ -15,21 +15,21 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(MinecraftClient.class)
 public abstract class MinecraftClientMixin {
     @Inject(method = "tick", at = @At("TAIL"))
-    private void logaddon$onTick(CallbackInfo info) {
-        Addon.EVENT_BUS.post(TickEvent.Post.get());
+    private void logclient$onTick(CallbackInfo info) {
+        LogClientContext.EVENT_BUS.post(TickEvent.Post.get());
         BlockIterator.tick();
-        com.logvex.addon.LogAddon.tick();
+        com.logvex.addon.LogClient.tick();
     }
 
     @Inject(method = "disconnect(Lnet/minecraft/client/gui/screen/Screen;Z)V", at = @At("HEAD"))
-    private void logaddon$onDisconnect(Screen screen, boolean transferring, CallbackInfo info) {
+    private void logclient$onDisconnect(Screen screen, boolean transferring, CallbackInfo info) {
         if (MinecraftClient.getInstance().world != null) {
-            Addon.EVENT_BUS.post(new GameLeftEvent());
+            LogClientContext.EVENT_BUS.post(new GameLeftEvent());
         }
     }
 
     @Inject(method = "stop", at = @At("HEAD"))
-    private void logaddon$onStop(CallbackInfo info) {
-        com.logvex.addon.LogAddon.shutdown();
+    private void logclient$onStop(CallbackInfo info) {
+        com.logvex.addon.LogClient.shutdown();
     }
 }

@@ -8,7 +8,7 @@ import com.logvex.addon.notify.core.NotificationType;
 /**
  * The process-wide notification service.
  *
- * <p>This is the seam every Log Addon feature talks to. It owns the {@link NotificationCenter} and
+ * <p>This is the seam every Log Client feature talks to. It owns the {@link NotificationCenter} and
  * nothing else: no Minecraft types, no chat, no sound. Modules, the HUD and the GUI read from the
  * centre, and the chat/sound bridge lives in {@code NotificationModule} so that muting output never
  * loses history.

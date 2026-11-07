@@ -1,6 +1,6 @@
 package com.logvex.addon.chatlog.modules;
 
-import com.logvex.addon.LogAddon;
+import com.logvex.addon.LogClient;
 import com.logvex.addon.chatlog.core.ChatDigest;
 import com.logvex.addon.chatlog.core.ChatEntry;
 import com.logvex.addon.chatlog.mc.LogService;
@@ -75,7 +75,7 @@ public class ChatDigestModule extends Module {
     private long lastDigestAt;
 
     public ChatDigestModule() {
-        super(LogAddon.CATEGORY, "chat-digest",
+        super(LogClient.CATEGORY, "chat-digest",
             "Summarises chat activity on demand and on a timer.");
     }
 

@@ -1,6 +1,6 @@
 package com.logvex.addon.chatlog.modules;
 
-import com.logvex.addon.LogAddon;
+import com.logvex.addon.LogClient;
 import com.logvex.addon.chatlog.core.PlayerActivity;
 import com.logvex.addon.chatlog.mc.LogService;
 import com.logvex.addon.framework.gui.GuiTheme;
@@ -54,7 +54,7 @@ public class PlayerActivityModule extends Module {
     private final LogService service = LogService.get();
 
     public PlayerActivityModule() {
-        super(LogAddon.CATEGORY, "player-activity", "Tracks and displays per-player chat activity.");
+        super(LogClient.CATEGORY, "player-activity", "Tracks and displays per-player chat activity.");
     }
 
     @Override

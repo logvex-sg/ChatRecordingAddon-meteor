@@ -162,7 +162,7 @@ public final class WebhookQueue {
             connection.setReadTimeout(READ_TIMEOUT_MS);
             connection.setDoOutput(true);
             connection.setRequestProperty("Content-Type", "application/json");
-            connection.setRequestProperty("User-Agent", "LogAddon");
+            connection.setRequestProperty("User-Agent", "LogClient");
 
             byte[] body = payload.getBytes(StandardCharsets.UTF_8);
             connection.setFixedLengthStreamingMode(body.length);

@@ -1,6 +1,6 @@
 package com.logvex.addon.chatlog.modules;
 
-import com.logvex.addon.LogAddon;
+import com.logvex.addon.LogClient;
 import com.logvex.addon.chatlog.core.ChatFilterRule;
 import com.logvex.addon.chatlog.core.ChatFilterRuleSet;
 import com.logvex.addon.chatlog.mc.ChatFilterService;
@@ -61,7 +61,7 @@ public class ChatFilterModule extends Module {
     private long announcedHides = -1;
 
     public ChatFilterModule() {
-        super(LogAddon.CATEGORY, "chat-filter",
+        super(LogClient.CATEGORY, "chat-filter",
             "Suppresses chat noise with ordered hide/allow rules.");
     }
 

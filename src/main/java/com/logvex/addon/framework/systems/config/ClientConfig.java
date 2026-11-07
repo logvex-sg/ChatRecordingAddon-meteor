@@ -2,7 +2,7 @@ package com.logvex.addon.framework.systems.config;
 
 import com.logvex.addon.framework.gui.GuiThemePreset;
 
-/** Addon-wide client settings that are not owned by any one module. */
+/** LogClientContext-wide client settings that are not owned by any one module. */
 public final class ClientConfig {
     private static final ClientConfig INSTANCE = new ClientConfig();
 

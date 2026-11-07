@@ -1,6 +1,6 @@
 package com.logvex.addon.companion.mc;
 
-import com.logvex.addon.LogAddon;
+import com.logvex.addon.LogClient;
 import com.logvex.addon.bot.BotModule;
 import com.logvex.addon.bot.core.BotEvent;
 import com.logvex.addon.bot.core.BotState;
@@ -13,7 +13,7 @@ import com.logvex.addon.chatlog.mc.LogService;
 import com.logvex.addon.chatlog.mc.LogStorageService;
 import com.logvex.addon.companion.core.CompanionApi;
 import com.logvex.addon.companion.core.CompanionSnapshot;
-import com.logvex.addon.framework.Addon;
+import com.logvex.addon.framework.LogClientContext;
 import com.logvex.addon.framework.systems.modules.Module;
 import com.logvex.addon.framework.systems.modules.ModuleLookup;
 import com.logvex.addon.framework.systems.modules.Modules;
@@ -99,7 +99,7 @@ public final class MinecraftCompanionApi implements CompanionApi {
         return new CompanionSnapshot.NodeInfo(
             nodeId,
             nodeName(),
-            com.logvex.addon.framework.Addon.VERSION,
+            com.logvex.addon.framework.LogClientContext.VERSION,
             minecraftVersion(),
             playerName,
             serverAddress,
@@ -112,7 +112,7 @@ public final class MinecraftCompanionApi implements CompanionApi {
 
     private String nodeName() {
         String server = LogService.get().serverName();
-        return server == null || server.isBlank() ? "Log Addon" : server;
+        return server == null || server.isBlank() ? "Log Client" : server;
     }
 
     private static String minecraftVersion() {
@@ -469,12 +469,12 @@ public final class MinecraftCompanionApi implements CompanionApi {
 
     /** The addon's version string, exposed so the app can show it without another call. */
     public String addonVersion() {
-        return Addon.VERSION;
+        return LogClientContext.VERSION;
     }
 
-    /** Kept for symmetry with the LogAddon bootstrap; unused but documents the dependency. */
+    /** Kept for symmetry with the LogClient bootstrap; unused but documents the dependency. */
     static Class<?> bootstrap() {
-        return LogAddon.class;
+        return LogClient.class;
     }
 
     /** True when the client is currently in a world, used by the module to decide when to start. */

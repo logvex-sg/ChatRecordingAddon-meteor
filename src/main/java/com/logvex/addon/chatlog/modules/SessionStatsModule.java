@@ -1,6 +1,6 @@
 package com.logvex.addon.chatlog.modules;
 
-import com.logvex.addon.LogAddon;
+import com.logvex.addon.LogClient;
 import com.logvex.addon.chatlog.core.SessionSummary;
 import com.logvex.addon.chatlog.core.StatsSnapshot;
 import com.logvex.addon.chatlog.mc.LogService;
@@ -36,7 +36,7 @@ public class SessionStatsModule extends Module {
     private final LogService service = LogService.get();
 
     public SessionStatsModule() {
-        super(LogAddon.CATEGORY, "session-stats", "Collects session statistics for the stats HUD and dashboard.");
+        super(LogClient.CATEGORY, "session-stats", "Collects session statistics for the stats HUD and dashboard.");
     }
 
     public StatsSnapshot snapshot() {

@@ -1,4 +1,4 @@
-# Logvex Addon
+# Log Client
 
 A standalone Fabric addon for Minecraft 1.21.1.
 
@@ -41,7 +41,7 @@ See [Companion (web app)](#companion-web-app).
 **GUI** — Right Shift (or `.log gui`) opens the addon window: a blue-themed, card-based interface
 listing every module and HUD element with an on/off switch, a search box and a settings page, plus a
 theme picker and a drag-and-drop HUD editor. Module settings are grouped and searchable, and every
-value is persisted to `<gamedir>/logaddon/config.json`.
+value is persisted to `<gamedir>/logclient/config.json`.
 
 **Commands** — a `.log` (alias `.la`) command tree exposes status, the module list, session
 statistics, notifications, the automation task queue, waypoints and schematic control from chat.
@@ -52,7 +52,7 @@ statistics, notifications, the automation task queue, waypoints and schematic co
 ./gradlew clean test build
 ```
 
-The jar is written to `build/libs/log-addon-5.0.0.jar`. Drop it into `.minecraft/mods`. No other
+The jar is written to `build/libs/log-client-13.0.0.jar`. Drop it into `.minecraft/mods`. No other
 mod is required; Baritone is optional and only affects bot navigation.
 
 ### Java 21 is required for the Gradle daemon
@@ -115,7 +115,7 @@ cannot report progress for a drop the server rejected or that only existed as a 
 **entire** file: the importer never stops at a fixed entry count and never silently truncates.
 Two input formats are supported.
 
-*Simplified Log Addon format* — `minecraft:<id> <quantity>`, one per line:
+*Simplified Log Client format* — `minecraft:<id> <quantity>`, one per line:
 
 ```text
 minecraft:quartz_pillar 3861
@@ -193,13 +193,15 @@ block. The pipeline is:
 
 `LOAD FILE → COMPARE WITH WORLD → ORDER BY DEPENDENCY → PLACE → VERIFY → CHECKPOINT → NEXT BLOCK`
 
-- **Load Schematic...** reads `.schem` (Sponge v2/v3), `.schematic` (MCEdit) and `.litematic`
+- **Load Schematic...** reads `.schem` (Sponge v1/v2/v3), `.schematic` (MCEdit) and `.litematic`
   files. Loading happens on a background worker and the result is applied on the next tick, so a
   large file never blocks the game thread. Both the legacy top-level `Palette`/`BlockData` layout
-  and the Sponge v3 `Blocks` container (WorldEdit 7.3+ default) are read. Litematic regions are
-  unpacked with the same tightly packed bit array Litematica writes, so an entry that straddles a
-  `long` boundary (palette widths of 5, 6, 7 … bits) is read correctly instead of coming back as
-  air.
+  and the Sponge v3 `Blocks` container (WorldEdit 7.3+ default) are read, and the WorldEdit
+  `Schematic` envelope (the payload nested under a `Schematic` key, as the Sponge specification
+  describes) is unwrapped first. Without that unwrap every modern `.schem` read an empty root and
+  was rejected, which is the "can't import schematics" symptom. Litematic regions are unpacked with
+  the same tightly packed bit array Litematica writes, so an entry that straddles a `long` boundary
+  (palette widths of 5, 6, 7 … bits) is read correctly instead of coming back as air.
 - If the native file dialog does not open (some Linux desktops and headless setups return nothing,
   which looks like "import does nothing"), set **schematic-file** in the *Schematic Building*
   settings group to the full path and press **Load Path**. This reads the same file through the
@@ -284,7 +286,7 @@ under a new name, and deletes user profiles. Built-in profiles are marked and ca
 or deleted, so a known-good starting point is always available. Applying a profile changes only the
 settings the profile actually stores; everything else is left as it is, so a profile saved before a
 new setting existed still loads cleanly. Profiles are written to
-`<gamedir>/logaddon/profiles.json` with an atomic write; a corrupt file loads as empty rather than
+`<gamedir>/logclient/profiles.json` with an atomic write; a corrupt file loads as empty rather than
 resetting your configuration.
 
 ### Emergency stop
@@ -416,7 +418,7 @@ It shows a single "Disabled" line when the module is off, so it never displays s
 
 ### Storage
 
-Memory is stored at `<gamedir>/logaddon/assistant-memory.json`. Writes are atomic (temp file plus
+Memory is stored at `<gamedir>/logclient/assistant-memory.json`. Writes are atomic (temp file plus
 move) and happen on a background thread on a slow cadence, so a busy chat cannot cause a disk-write
 storm and a crash mid-save cannot corrupt the file. A missing or damaged file loads as empty; a
 file written by a newer build is refused rather than silently downgraded.
@@ -699,15 +701,15 @@ never puts an internal exception in the response.
 
 ## Log storage locations
 
-Everything the addon writes lives under `<gamedir>/logaddon/`:
+Everything the addon writes lives under `<gamedir>/logclient/`:
 
 ```
-<gamedir>/logaddon/config.json      module, HUD and addon settings
-<gamedir>/logaddon/logs/            gzip-compressed chat log segments and index.json
-<gamedir>/logaddon/logs/sessions.json   past recording-session summaries
-<gamedir>/logaddon/identities.json  observed account names and renames
-<gamedir>/logaddon/assistant-memory.json   assistant facts, player facts and conversation history
-<gamedir>/logaddon/reports/         gzip-compressed webhook report archive and index.json
+<gamedir>/logclient/config.json      module, HUD and addon settings
+<gamedir>/logclient/logs/            gzip-compressed chat log segments and index.json
+<gamedir>/logclient/logs/sessions.json   past recording-session summaries
+<gamedir>/logclient/identities.json  observed account names and renames
+<gamedir>/logclient/assistant-memory.json   assistant facts, player facts and conversation history
+<gamedir>/logclient/reports/         gzip-compressed webhook report archive and index.json
 ```
 
 `sessions.json` and `identities.json` are written atomically (temp file + move) — the session
@@ -805,7 +807,7 @@ slider each. A value that a module declares as dependent is hidden until its par
 All settings live in one file:
 
 ```
-<gamedir>/logaddon/config.json
+<gamedir>/logclient/config.json
 ```
 
 It holds each module's active state and settings, each HUD element's active state, position and
@@ -827,7 +829,7 @@ The addon registers a `.log` command (alias `.la`). Run `.log help` for the list
 | --- | --- |
 | `.log gui` | Opens the addon window (same as Right Shift). |
 | `.log status` | Chat logging state, automation state and notification counters. |
-| `.log modules` | Every Log Addon module with its on/off state and description. |
+| `.log modules` | Every Log Client module with its on/off state and description. |
 | `.log stats` | Session statistics: messages, players, joins/leaves, deaths, keyword alerts. |
 | `.log record <on\|off>` | Starts or stops chat recording (enabling the module if needed). |
 | `.log notifications [count]` | The most recent notifications. |
@@ -911,6 +913,12 @@ archive with in-memory doubles (no Minecraft runtime required):
   world diffing, the placement state machine (including server rejection and retry), dependency
   ordering, checkpoint re-validation on resume, material accounting and the Sponge/MCEdit/Litematic
   readers, all driven by in-memory doubles.
+- `SchematicFileLoaderTest` — disk-level loading of gzipped Sponge v2 and v3 `.schem` files,
+  including the WorldEdit `Schematic` envelope that real 7.3+ files use, block states with
+  properties and multi-layer geometry.
+- `ConfigManagerTest` — save/load round-trip, tolerant reads of a missing or corrupt file, unknown
+  key preservation, the dirty flag, and the rebrand migration of a stored `logaddon` log folder
+  (repointed) versus a user-chosen folder (left alone).
 - `FileCheckpointStoreTest` — checkpoint round-trip, newest-first listing, corrupt-file recovery,
   deletion and path-name sanitisation.
 - `LegacyBlockIdTableTest` — legacy id/metadata resolution and honest refusal of unknown ids.
@@ -1010,6 +1018,10 @@ archive with in-memory doubles (no Minecraft runtime required):
 - **A schematic loads but has no blocks.** Water, lava, fire and similar blocks have no item form
   and are filtered out of the material list; they are counted and reported rather than silently
   dropped.
+- **A modern `.schem` reports "The schematic has no block palette".** WorldEdit 7.3+ writes the
+  payload nested under a `Schematic` key (the Sponge specification layout). Older builds of the
+  addon read the root directly and rejected every such file. Fixed: the loader unwraps the
+  `Schematic` envelope before detection, so v1/v2/v3 `.schem` files all load.
 - **The HUD element is missing.** Open the addon window (Right Shift), go to the **HUD** tab and
   check the element is on, or press **Show all**. A hidden element costs nothing per frame.
 - **The companion app will not connect.** The server only runs while the **Companion** module is
@@ -1022,6 +1034,11 @@ archive with in-memory doubles (no Minecraft runtime required):
   truncate them, and a missing or invalid value falls back to its default rather than aborting the
   load. A theme name from an older build (`DARK`, `ROSE`, `FOREST`) migrates to its nearest
   replacement.
+- **Upgrading from a build branded "Log Addon".** The data folder was renamed from
+  `<gamedir>/logaddon` to `<gamedir>/logclient`. On first launch the addon moves the old folder
+  into the new one, and a stored `storage-directory` of `logaddon/logs` is repointed to
+  `logclient/logs`, so recorded logs, identities, bot memory and the config are kept. A folder the
+  user chose themselves is never rewritten.
 
 ## Known limitations
 
@@ -1068,7 +1085,7 @@ archive with in-memory doubles (no Minecraft runtime required):
   under a different name. If a server does not include the player list, or a rename happens while the
   player is absent from it, no change is detected — the addon never guesses that two names are the
   same person.
-- The identity index and session history are persisted under `<gamedir>/logaddon/` (`identities.json`
+- The identity index and session history are persisted under `<gamedir>/logclient/` (`identities.json`
   and `logs/sessions.json`) and restored on the next launch. A file written by an older build that
   lacks the new keys still loads: unknown or missing fields are skipped rather than rejecting the
   record.

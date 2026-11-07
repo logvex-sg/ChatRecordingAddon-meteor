@@ -1,6 +1,6 @@
 package com.logvex.addon.schematicdropper.gui;
 
-import com.logvex.addon.framework.Addon;
+import com.logvex.addon.framework.LogClientContext;
 import com.logvex.addon.framework.gui.GuiThemes;
 import com.logvex.addon.framework.gui.WindowScreen;
 import com.logvex.addon.framework.gui.widgets.containers.WTable;
@@ -63,7 +63,7 @@ public class FileBrowserScreen extends WindowScreen {
         WButton up = controls.add(theme.button("Up")).widget();
         up.action = () -> open(directory.getParentFile());
         WButton home = controls.add(theme.button("Data Folder")).widget();
-        home.action = () -> open(new File(Addon.FOLDER(), "schematicdropper"));
+        home.action = () -> open(new File(LogClientContext.FOLDER(), "schematicdropper"));
 
         List<File> dirs = new ArrayList<>();
         List<File> files = new ArrayList<>();

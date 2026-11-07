@@ -1,6 +1,6 @@
 package com.logvex.addon.framework.systems.modules;
 
-import com.logvex.addon.framework.Addon;
+import com.logvex.addon.framework.LogClientContext;
 import com.logvex.addon.framework.orbit.EventBus;
 
 import java.util.ArrayList;
@@ -19,7 +19,7 @@ public final class Modules {
     private static final Modules INSTANCE = new Modules();
 
     // One bus for the whole addon: modules, HUD and the recorder all publish and listen here.
-    private final EventBus eventBus = Addon.EVENT_BUS;
+    private final EventBus eventBus = LogClientContext.EVENT_BUS;
     private final Map<Class<? extends Module>, Module> modules = new LinkedHashMap<>();
     private final List<Module> active = new ArrayList<>();
     private final List<Category> categories = new ArrayList<>();

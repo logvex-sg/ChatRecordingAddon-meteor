@@ -1,6 +1,6 @@
 package com.logvex.addon.chatlog.modules;
 
-import com.logvex.addon.LogAddon;
+import com.logvex.addon.LogClient;
 import com.logvex.addon.chatlog.core.ChatEntry;
 import com.logvex.addon.chatlog.core.MessageType;
 import com.logvex.addon.chatlog.mc.LogService;
@@ -110,7 +110,7 @@ public class ChatMonitorModule extends Module {
     private final LogService service = LogService.get();
 
     public ChatMonitorModule() {
-        super(LogAddon.CATEGORY, "chat-monitor", "Live chat feed with search, filters and highlighting.");
+        super(LogClient.CATEGORY, "chat-monitor", "Live chat feed with search, filters and highlighting.");
     }
 
     @EventHandler
@@ -122,7 +122,7 @@ public class ChatMonitorModule extends Module {
         for (ChatEntry entry : recent) {
             if (!isHighlighted(entry)) continue;
             if (desktopNotifications.get()) {
-                LogAddon.LOG.info("[Log Addon] highlighted: {}", entry.content());
+                LogClient.LOG.info("[Log Client] highlighted: {}", entry.content());
             }
         }
     }

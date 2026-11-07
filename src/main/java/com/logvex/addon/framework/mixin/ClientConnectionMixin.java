@@ -1,6 +1,6 @@
 package com.logvex.addon.framework.mixin;
 
-import com.logvex.addon.framework.Addon;
+import com.logvex.addon.framework.LogClientContext;
 import com.logvex.addon.framework.events.packets.PacketEvent;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.network.ClientConnection;
@@ -15,7 +15,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(ClientConnection.class)
 public abstract class ClientConnectionMixin {
     @Inject(method = "handlePacket", at = @At("HEAD"))
-    private static void logaddon$onHandlePacket(Packet<?> packet, PacketListener listener, CallbackInfo info) {
-        Addon.EVENT_BUS.post(new PacketEvent.Receive(packet));
+    private static void logclient$onHandlePacket(Packet<?> packet, PacketListener listener, CallbackInfo info) {
+        LogClientContext.EVENT_BUS.post(new PacketEvent.Receive(packet));
     }
 }

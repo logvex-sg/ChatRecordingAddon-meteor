@@ -1,6 +1,6 @@
 package com.logvex.addon.notify.hud;
 
-import com.logvex.addon.LogAddon;
+import com.logvex.addon.LogClient;
 import com.logvex.addon.common.Messages;
 import com.logvex.addon.notify.core.Notification;
 import com.logvex.addon.notify.core.NotificationPriority;
@@ -27,7 +27,7 @@ import java.util.List;
  */
 public class NotificationHud extends HudElement {
     public static final HudElementInfo<NotificationHud> INFO = new HudElementInfo<>(
-        LogAddon.HUD_GROUP, "notifications", "Recent Log Addon notifications.", NotificationHud::new);
+        LogClient.HUD_GROUP, "notifications", "Recent Log Client notifications.", NotificationHud::new);
 
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
 

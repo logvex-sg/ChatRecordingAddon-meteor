@@ -1,6 +1,6 @@
 package com.logvex.addon.companion.hud;
 
-import com.logvex.addon.LogAddon;
+import com.logvex.addon.LogClient;
 import com.logvex.addon.common.Messages;
 import com.logvex.addon.companion.mc.CompanionModule;
 import com.logvex.addon.framework.settings.BoolSetting;
@@ -25,7 +25,7 @@ import java.util.List;
  */
 public class CompanionHud extends HudElement {
     public static final HudElementInfo<CompanionHud> INFO =
-        new HudElementInfo<>(LogAddon.HUD_GROUP, "companion", "Companion web server status.",
+        new HudElementInfo<>(LogClient.HUD_GROUP, "companion", "Companion web server status.",
             CompanionHud::new);
 
     private final SettingGroup sgGeneral = settings.getDefaultGroup();

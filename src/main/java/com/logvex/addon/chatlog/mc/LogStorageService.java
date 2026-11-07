@@ -1,6 +1,6 @@
 package com.logvex.addon.chatlog.mc;
 
-import com.logvex.addon.LogAddon;
+import com.logvex.addon.LogClient;
 import com.logvex.addon.chatlog.core.ChatEntry;
 import com.logvex.addon.chatlog.core.ChatLogCorruptedException;
 import com.logvex.addon.chatlog.core.LogExporter;
@@ -330,16 +330,16 @@ public final class LogStorageService {
 
     private void onClient(Runnable task) {
         if (task == null) return;
-        if (com.logvex.addon.framework.Addon.mc == null) {
+        if (com.logvex.addon.framework.LogClientContext.mc == null) {
             task.run();
             return;
         }
-        com.logvex.addon.framework.Addon.mc.execute(task);
+        com.logvex.addon.framework.LogClientContext.mc.execute(task);
     }
 
     private void fail(String what, Exception e) {
         lastError = what + ": " + describe(e);
-        LogAddon.LOG.error(lastError, e);
+        LogClient.LOG.error(lastError, e);
     }
 
     private static String describe(Throwable e) {

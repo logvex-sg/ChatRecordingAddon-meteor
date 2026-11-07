@@ -1,6 +1,6 @@
 package com.logvex.addon.command;
 
-import com.logvex.addon.LogAddon;
+import com.logvex.addon.LogClient;
 import com.logvex.addon.bot.BotModule;
 import com.logvex.addon.chatlog.modules.ChatLoggerModule;
 import com.logvex.addon.notify.NotificationModule;
@@ -35,9 +35,9 @@ final class LogCommands {
         return Modules.get().get(NotificationModule.class);
     }
 
-    /** Every module that belongs to the Log Addon category, in registration order. */
+    /** Every module that belongs to the Log Client category, in registration order. */
     static List<Module> addonModules() {
-        return Modules.get().getGroup(LogAddon.CATEGORY);
+        return Modules.get().getGroup(LogClient.CATEGORY);
     }
 
     /** The live module registry, for commands that resolve a module by type. */

@@ -1,6 +1,6 @@
 package com.logvex.addon.chatlog.modules;
 
-import com.logvex.addon.LogAddon;
+import com.logvex.addon.LogClient;
 import com.logvex.addon.chatlog.core.PlayerIdentity;
 import com.logvex.addon.chatlog.core.PlayerIdentityTracker;
 import com.logvex.addon.chatlog.mc.LogService;
@@ -68,7 +68,7 @@ public class PlayerIdentityModule extends Module {
     private final PlayerIdentityService.RenameListener listener = this::onRename;
 
     public PlayerIdentityModule() {
-        super(LogAddon.CATEGORY, "player-identity",
+        super(LogClient.CATEGORY, "player-identity",
             "Tracks observed player name changes and a per-account watchlist.");
     }
 

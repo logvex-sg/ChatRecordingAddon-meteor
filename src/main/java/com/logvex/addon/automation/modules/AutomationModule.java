@@ -1,6 +1,6 @@
 package com.logvex.addon.automation.modules;
 
-import com.logvex.addon.LogAddon;
+import com.logvex.addon.LogClient;
 import com.logvex.addon.automation.mc.AutomationSupport;
 import com.logvex.addon.framework.events.game.GameJoinedEvent;
 import com.logvex.addon.framework.events.game.GameLeftEvent;
@@ -21,7 +21,7 @@ public abstract class AutomationModule extends Module {
     private boolean worldLoaded;
 
     protected AutomationModule(String name, String description, String... aliases) {
-        super(LogAddon.CATEGORY, name, description, aliases);
+        super(LogClient.CATEGORY, name, description, aliases);
     }
 
     /** True when a world and a player are present and the module may act. */

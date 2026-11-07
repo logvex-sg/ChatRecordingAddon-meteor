@@ -85,7 +85,7 @@ public class NotificationCenterScreen extends WindowScreen {
 
         if (shown.isEmpty()) {
             add(theme.label(module.center().isEmpty()
-                ? "No notifications yet. Every Log Addon feature reports here."
+                ? "No notifications yet. Every Log Client feature reports here."
                 : "No notifications match this filter.")).expandX().widget().color(MUTED);
         } else {
             WTable table = add(theme.table()).expandX().widget();

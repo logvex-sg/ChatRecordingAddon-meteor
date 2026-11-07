@@ -203,7 +203,7 @@ class CompanionCoreTest {
     @Test
     @DisplayName("the snapshot's JSON keys are exactly the ones the bundled app reads")
     void snapshotKeysMatchTheApp() {
-        String json = CompanionJson.write(CompanionSnapshot.empty("node", "Log Addon", "12.0.0"));
+        String json = CompanionJson.write(CompanionSnapshot.empty("node", "Log LogClientContext", "12.0.0"));
         com.google.gson.JsonObject root = com.google.gson.JsonParser.parseString(json).getAsJsonObject();
         for (String key : List.of("node", "modules", "tasks", "players", "chat", "stats", "storage",
             "bot", "capabilities")) {

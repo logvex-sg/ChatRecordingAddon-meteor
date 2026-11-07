@@ -8,7 +8,7 @@ import com.logvex.addon.framework.utils.player.CustomPlayerInput;
 import net.minecraft.client.input.Input;
 import net.minecraft.util.math.BlockPos;
 
-import static com.logvex.addon.framework.Addon.mc;
+import static com.logvex.addon.framework.LogClientContext.mc;
 
 /**
  * {@link NavPort} that prefers a real path manager and otherwise falls back to a bounded walker.
