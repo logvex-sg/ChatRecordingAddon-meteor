@@ -30,6 +30,11 @@ final class LogCommands {
         return Modules.get().get(BotModule.class);
     }
 
+    /** The live world-intelligence module, or null when it is not registered. */
+    static com.logvex.addon.world.modules.WorldIntelligenceModule world() {
+        return Modules.get().get(com.logvex.addon.world.modules.WorldIntelligenceModule.class);
+    }
+
     /** The live notification module, or null when it is not registered. */
     static NotificationModule notifications() {
         return Modules.get().get(NotificationModule.class);

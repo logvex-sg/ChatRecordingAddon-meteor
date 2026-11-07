@@ -42,6 +42,7 @@ public class LogClient {
         com.logvex.addon.chatlog.mc.ChatFilterService.get().init(LogClientContext.EVENT_BUS);
         com.logvex.addon.chatlog.mc.SessionTimelineService.get().init(LogClientContext.EVENT_BUS);
         com.logvex.addon.chatlog.mc.PlayerIdentityService.get().init(LogClientContext.EVENT_BUS);
+        com.logvex.addon.world.mc.WorldService.get().init(LogClientContext.EVENT_BUS);
 
         Modules.get().add(new ChatLoggerModule());
         Modules.get().add(new ChatMonitorModule());
@@ -77,6 +78,9 @@ public class LogClient {
         // Autonomous bot: the core is Minecraft-free; this is its Minecraft-facing shell.
         Modules.get().add(new com.logvex.addon.bot.BotModule());
         Hud.get().register(com.logvex.addon.bot.hud.BotStatusHud.INFO);
+
+        // World intelligence: remembers discovered places, biomes, resources and chunks per world.
+        Modules.get().add(new com.logvex.addon.world.modules.WorldIntelligenceModule());
 
         // Configurable chat assistant: keyword triggers, memory and memory commands. The decision
         // logic is Minecraft-free; this is its Minecraft-facing shell.
@@ -131,6 +135,7 @@ public class LogClient {
         Modules.get().disableAll();
         com.logvex.addon.chatlog.mc.SessionTimelineService.get().shutdown();
         com.logvex.addon.chatlog.mc.PlayerIdentityService.get().shutdown();
+        com.logvex.addon.world.mc.WorldService.get().shutdown();
         com.logvex.addon.assistant.mc.AssistantService.get().shutdown();
         com.logvex.addon.update.mc.UpdateService.get().engine().shutdown();
     }
