@@ -9,7 +9,7 @@ package com.logvex.addon.framework.gui;
  */
 public final class GuiThemes {
     private static final GuiTheme THEME = new GuiTheme();
-    private static GuiThemePreset preset = GuiThemePreset.DARK;
+    private static GuiThemePreset preset = GuiThemePreset.BLUE;
 
     private GuiThemes() {
     }
@@ -25,7 +25,7 @@ public final class GuiThemes {
 
     /** Applies a preset to the shared theme. */
     public static void applyPreset(GuiThemePreset next) {
-        if (next == null) next = GuiThemePreset.DARK;
+        if (next == null) next = GuiThemePreset.BLUE;
         preset = next;
         THEME.apply(next.create());
     }

@@ -11,7 +11,9 @@ import com.logvex.addon.framework.settings.SettingGroup;
 import com.logvex.addon.framework.systems.hud.Hud;
 import com.logvex.addon.framework.systems.hud.HudElement;
 import com.logvex.addon.framework.systems.hud.HudElementInfo;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.gui.screen.Screen;
 
 import java.util.List;
 import java.util.Locale;
@@ -23,9 +25,14 @@ public class HudElementSettingsScreen extends WidgetScreen {
     private String query = "";
 
     public HudElementSettingsScreen(HudElementInfo<?> info) {
+        this(info, null);
+    }
+
+    public HudElementSettingsScreen(HudElementInfo<?> info, Screen parent) {
         super(GuiThemes.get(), info.title);
         this.info = info;
         this.element = Hud.get().instance(info);
+        if (parent != null) this.parent = parent;
     }
 
     @Override
@@ -38,11 +45,17 @@ public class HudElementSettingsScreen extends WidgetScreen {
             reload();
         };
 
-        add(theme.button("Back", () -> net.minecraft.client.MinecraftClient.getInstance().setScreen(new ClickGuiScreen()))).expandX();
-        add(theme.button(Hud.get().isActive(info) ? "Hide element" : "Show element", () -> {
+        WButton back = add(theme.button("Back")).expandX().widget();
+        back.action = () -> MinecraftClient.getInstance().setScreen(
+            parent instanceof ClickGuiScreen ? parent : new ClickGuiScreen(1));
+        WButton toggle = add(theme.button(Hud.get().isActive(info) ? "Hide element" : "Show element")).expandX().widget();
+        toggle.action = () -> {
             Hud.get().toggle(info);
+            com.logvex.addon.framework.systems.config.ConfigManager.get().markDirty();
             reload();
-        })).expandX();
+        };
+        WButton arrange = add(theme.button("Arrange in HUD editor")).expandX().widget();
+        arrange.action = () -> MinecraftClient.getInstance().setScreen(new HudEditorScreen(this));
 
         if (element == null) return;
 
@@ -61,6 +74,8 @@ public class HudElementSettingsScreen extends WidgetScreen {
         }
         if (!any && needle.isEmpty()) {
             add(theme.label("This element has no settings.").color(theme.muted)).expandX();
+        } else if (!any) {
+            add(theme.label("No settings match \"" + query + "\".").color(theme.muted)).expandX();
         }
     }
 
@@ -72,7 +87,12 @@ public class HudElementSettingsScreen extends WidgetScreen {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+        context.fill(0, 0, this.width, this.height, argb(theme.screenBackground));
         root.maxHeight = Math.max(40, this.height - 20);
         super.render(context, mouseX, mouseY, delta);
+    }
+
+    private static int argb(com.logvex.addon.framework.utils.render.color.Color c) {
+        return ((c.a == 0 ? 255 : c.a) << 24) | (c.r << 16) | (c.g << 8) | c.b;
     }
 }

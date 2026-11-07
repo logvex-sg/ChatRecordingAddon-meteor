@@ -3,12 +3,14 @@ package com.logvex.addon.framework.gui;
 import com.logvex.addon.framework.gui.widgets.WHorizontalSeparator;
 import com.logvex.addon.framework.gui.widgets.WLabel;
 import com.logvex.addon.framework.gui.widgets.WWidget;
+import com.logvex.addon.framework.gui.widgets.containers.WCard;
 import com.logvex.addon.framework.gui.widgets.containers.WHorizontalList;
 import com.logvex.addon.framework.gui.widgets.containers.WTable;
 import com.logvex.addon.framework.gui.widgets.containers.WVerticalList;
 import com.logvex.addon.framework.gui.widgets.containers.WWindow;
 import com.logvex.addon.framework.gui.widgets.input.WTextBox;
 import com.logvex.addon.framework.gui.widgets.pressable.WButton;
+import com.logvex.addon.framework.gui.widgets.pressable.WToggle;
 import com.logvex.addon.framework.utils.render.color.Color;
 
 /**
@@ -47,6 +49,14 @@ public class GuiTheme {
     public Color bad = new Color(255, 140, 140);
     /** Background drawn behind the whole screen, before the window. */
     public Color screenBackground = new Color(0, 0, 0, 0x66);
+    /** Fill behind a list row, so rows read as cards rather than floating text. */
+    public Color row = new Color(24, 30, 44, 0xB4);
+    /** Fill behind a row under the pointer. */
+    public Color rowHover = new Color(38, 52, 78, 0xC8);
+    /** Fill behind an enabled toggle, in the accent colour. */
+    public Color toggleOn = new Color(96, 165, 250);
+    /** Fill behind a disabled toggle. */
+    public Color toggleOff = new Color(48, 56, 72);
 
     /** Copies every colour from {@code other} so a preset applies without replacing the instance. */
     public void apply(GuiTheme other) {
@@ -68,6 +78,10 @@ public class GuiTheme {
         warn = other.warn.copy();
         bad = other.bad.copy();
         screenBackground = other.screenBackground.copy();
+        row = other.row.copy();
+        rowHover = other.rowHover.copy();
+        toggleOn = other.toggleOn.copy();
+        toggleOff = other.toggleOff.copy();
     }
 
     public WLabel label(String text) {
@@ -118,6 +132,16 @@ public class GuiTheme {
         WWindow window = stamp(new WWindow(title));
         window.view.theme = this;
         return window;
+    }
+
+    /** A labelled on/off switch. */
+    public WToggle toggle(String label, java.util.function.BooleanSupplier getter, java.util.function.Consumer<Boolean> setter) {
+        return stamp(new WToggle(label, getter, setter));
+    }
+
+    /** A row card that groups the widgets of one list entry. */
+    public WCard card() {
+        return stamp(new WCard());
     }
 
     private <W extends WWidget> W stamp(W widget) {

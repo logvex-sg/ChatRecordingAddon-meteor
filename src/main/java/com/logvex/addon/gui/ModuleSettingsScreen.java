@@ -4,13 +4,14 @@ import com.logvex.addon.framework.gui.GuiTheme;
 import com.logvex.addon.framework.gui.GuiThemes;
 import com.logvex.addon.framework.gui.WidgetScreen;
 import com.logvex.addon.framework.gui.widgets.WWidget;
-import com.logvex.addon.framework.gui.widgets.containers.WVerticalList;
 import com.logvex.addon.framework.gui.widgets.input.WTextBox;
 import com.logvex.addon.framework.gui.widgets.pressable.WButton;
 import com.logvex.addon.framework.settings.Setting;
 import com.logvex.addon.framework.settings.SettingGroup;
 import com.logvex.addon.framework.systems.modules.Module;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.gui.screen.Screen;
 
 import java.util.List;
 import java.util.Locale;
@@ -18,8 +19,8 @@ import java.util.Locale;
 /**
  * Settings for one module.
  *
- * <p>Settings are grouped exactly as the module declares them, and a search box filters by name so
- * a module with forty settings is still navigable. The module's own custom controls
+ * <p>Settings are grouped exactly as the module declares them, and a search box filters by name so a
+ * module with forty settings is still navigable. The module's own custom controls
  * ({@link Module#getWidget}) are shown first, above the generic settings, because that is where the
  * module's primary actions live.
  */
@@ -28,8 +29,13 @@ public class ModuleSettingsScreen extends WidgetScreen {
     private String query = "";
 
     public ModuleSettingsScreen(Module module) {
+        this(module, null);
+    }
+
+    public ModuleSettingsScreen(Module module, Screen parent) {
         super(GuiThemes.get(), module.title);
         this.module = module;
+        if (parent != null) this.parent = parent;
     }
 
     @Override
@@ -42,8 +48,9 @@ public class ModuleSettingsScreen extends WidgetScreen {
             reload();
         };
 
-        WButton back = add(theme.button("Back", () -> net.minecraft.client.MinecraftClient.getInstance().setScreen(new ClickGuiScreen()))).expandX().widget();
-        back.action = () -> net.minecraft.client.MinecraftClient.getInstance().setScreen(new ClickGuiScreen());
+        WButton back = add(theme.button("Back")).expandX().widget();
+        back.action = () -> MinecraftClient.getInstance().setScreen(
+            parent instanceof ClickGuiScreen ? parent : new ClickGuiScreen());
 
         WWidget custom = module.getWidget(theme);
         if (custom != null) {
@@ -52,20 +59,23 @@ public class ModuleSettingsScreen extends WidgetScreen {
         }
 
         String needle = query.trim().toLowerCase(Locale.ROOT);
+        boolean any = false;
         for (SettingGroup group : module.settings.groups()) {
             List<Setting<?>> matching = group.settings().stream()
                 .filter(setting -> matches(setting, needle))
                 .toList();
             if (matching.isEmpty()) continue;
-
+            any = true;
             add(theme.horizontalSeparator(group.name())).expandX();
             for (WWidget row : SettingsWidgets.rows(theme, matching)) {
                 add(row).expandX();
             }
         }
 
-        if (needle.isEmpty() && module.settings.all().isEmpty() && custom == null) {
+        if (!any && needle.isEmpty() && custom == null) {
             add(theme.label("This module has no settings.").color(theme.muted)).expandX();
+        } else if (!any && !needle.isEmpty()) {
+            add(theme.label("No settings match \"" + query + "\".").color(theme.muted)).expandX();
         }
     }
 
@@ -77,7 +87,12 @@ public class ModuleSettingsScreen extends WidgetScreen {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+        context.fill(0, 0, this.width, this.height, argb(theme.screenBackground));
         root.maxHeight = Math.max(40, this.height - 20);
         super.render(context, mouseX, mouseY, delta);
+    }
+
+    private static int argb(com.logvex.addon.framework.utils.render.color.Color c) {
+        return ((c.a == 0 ? 255 : c.a) << 24) | (c.r << 16) | (c.g << 8) | c.b;
     }
 }

@@ -1,6 +1,7 @@
 package com.logvex.addon.framework.systems.hud;
 
 import com.logvex.addon.LogAddon;
+import net.minecraft.client.MinecraftClient;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -11,10 +12,14 @@ import java.util.Map;
 /**
  * Owns every registered HUD element.
  *
- * <p>One instance of each element kind is created lazily and kept for the lifetime of the addon, so
- * an element's settings survive being hidden and a settings screen always edits the live instance
- * rather than a throwaway copy. Only active elements are ticked and drawn, so a hidden element costs
- * nothing per frame.
+ * <p>One instance of each element kind is created lazily and kept for the lifetime of the addon, so an
+ * element's settings survive being hidden and a settings screen always edits the live instance rather
+ * than a throwaway copy. Only active elements are ticked and drawn, so a hidden element costs nothing
+ * per frame.
+ *
+ * <p>The screen size is read once per frame from Minecraft and handed to every element so it can
+ * resolve its anchor; that keeps the layout maths testable in isolation and out of the render loop.
+ * Elements that overlap are drawn with the dragged one last, so a drag is always visible on top.
  */
 public final class Hud implements Iterable<HudElement> {
     private static final Hud INSTANCE = new Hud();
@@ -24,6 +29,8 @@ public final class Hud implements Iterable<HudElement> {
     private final List<HudElement> active = new ArrayList<>();
 
     private double textScale = 1;
+    private int screenWidth = 1920;
+    private int screenHeight = 1080;
 
     private Hud() {
     }
@@ -120,15 +127,55 @@ public final class Hud implements Iterable<HudElement> {
         this.textScale = textScale <= 0 ? 1 : textScale;
     }
 
+    /** The current HUD surface size, refreshed from the window each frame. */
+    public int screenWidth() {
+        return screenWidth;
+    }
+
+    public int screenHeight() {
+        return screenHeight;
+    }
+
+    /** Refreshes the cached screen size from the game window. */
+    public void updateScreenSize() {
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc == null) return;
+        var window = mc.getWindow();
+        if (window != null) {
+            this.screenWidth = Math.max(1, window.getScaledWidth());
+            this.screenHeight = Math.max(1, window.getScaledHeight());
+        }
+    }
+
     /** Per-frame tick and render of every active element, on the render thread. */
     public void render(HudRenderer renderer) {
-        for (HudElement element : List.copyOf(active)) {
+        updateScreenSize();
+
+        List<HudElement> order = new ArrayList<>(active);
+        // Draw a dragged element last so it is never hidden behind a neighbour.
+        order.sort((a, b) -> Boolean.compare(a.isDragging(), b.isDragging()));
+
+        for (HudElement element : order) {
             try {
+                element.reposition(screenWidth, screenHeight);
                 element.tick(renderer);
+                element.reposition(screenWidth, screenHeight);
                 element.render(renderer);
             } catch (RuntimeException e) {
                 LogAddon.LOG.error("HUD element {} failed to render", element.info.name, e);
             }
         }
+    }
+
+    /**
+     * Applies a chosen anchor to an element by converting its current absolute position into the
+     * matching offset, so switching anchor from the editor does not jump the element across the
+     * screen.
+     */
+    public void applyAnchor(HudElement element, com.logvex.addon.framework.systems.hud.layout.HudAnchor anchor) {
+        if (element == null || anchor == null) return;
+        updateScreenSize();
+        element.setAnchor(anchor);
+        element.setPos(element.getX(), element.getY());
     }
 }

@@ -138,11 +138,12 @@ public final class ConfigManager {
         root.add("modules", modules);
 
         JsonObject hud = new JsonObject();
-        for (HudElement element : Hud.get().elements()) {
+        for (HudElement element : Hud.get().allInstances()) {
             JsonObject entry = new JsonObject();
-            entry.addProperty("active", true);
-            entry.addProperty("x", element.getX());
-            entry.addProperty("y", element.getY());
+            entry.addProperty("active", element.isActive());
+            entry.addProperty("anchor", element.anchor().name());
+            entry.addProperty("offset-x", element.offsetX());
+            entry.addProperty("offset-y", element.offsetY());
             entry.add("settings", settingsToJson(element.settings));
             hud.add(element.info.name, entry);
         }
@@ -202,17 +203,30 @@ public final class ConfigManager {
             if (raw == null || !raw.isJsonObject()) continue;
             JsonObject entry = raw.getAsJsonObject();
 
-            HudElement element = findHud(info);
-            if (element == null) {
-                if (!booleanOr(entry, "active", false)) continue;
-                element = Hud.get().add(info, integerOr(entry, "x", 4), integerOr(entry, "y", 4));
-            }
+            HudElement element = Hud.get().instance(info);
             if (element == null) continue;
-            if (entry.has("x") || entry.has("y")) {
-                element.setPos(integerOr(entry, "x", element.getX()), integerOr(entry, "y", element.getY()));
+
+            // Restore the anchor and offset. A config written before anchors existed stored an
+            // absolute x/y; that is converted to a top-left offset so the element does not jump.
+            if (entry.has("anchor")) {
+                element.setAnchor(com.logvex.addon.framework.systems.hud.layout.HudAnchor.parse(
+                    stringOr(entry, "anchor", element.anchor().name()), element.anchor()));
             }
+            element.setOffset(integerOr(entry, "offset-x", migrationOffset(entry, "x")),
+                integerOr(entry, "offset-y", migrationOffset(entry, "y")));
+
             applySettings(element.settings, entry);
+
+            boolean active = booleanOr(entry, "active", element.isActive());
+            if (active) Hud.get().add(element);
+            else Hud.get().remove(element);
         }
+    }
+
+    /** Old configs stored absolute pixels; convert to a top-left offset, keeping a sensible default. */
+    private static int migrationOffset(JsonObject entry, String axis) {
+        if (!entry.has(axis)) return 0;
+        return integerOr(entry, axis, 0) - com.logvex.addon.framework.systems.hud.layout.HudLayout.DEFAULT_MARGIN;
     }
 
     private void applyClient(JsonObject root) {
@@ -241,13 +255,6 @@ public final class ConfigManager {
                 LogAddon.LOG.warn("Ignoring invalid value for setting {}", setting.name, e);
             }
         }
-    }
-
-    private HudElement findHud(HudElementInfo<?> info) {
-        for (HudElement element : Hud.get().elements()) {
-            if (element.info == info) return element;
-        }
-        return null;
     }
 
     // ------------------------------------------------------------------ json helpers

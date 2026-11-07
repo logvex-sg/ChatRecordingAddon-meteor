@@ -10,7 +10,7 @@ public final class ClientConfig {
     private String prefix = ".";
 
     /** The GUI colour scheme, applied to the shared theme on load and when changed in the GUI. */
-    private GuiThemePreset themePreset = GuiThemePreset.DARK;
+    private GuiThemePreset themePreset = GuiThemePreset.BLUE;
 
     private ClientConfig() {
     }

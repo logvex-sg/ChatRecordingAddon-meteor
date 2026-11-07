@@ -32,8 +32,9 @@ history with a HUD and a GUI, and can echo them to chat and play a sound.
 (`!remember`, `!fact`, `!forget`, ...) store and recall facts, and everything the assistant knows is
 persisted to a JSON file that survives a restart.
 
-**GUI** — Right Shift (or `.log gui`) opens the addon window: every module and HUD element with a
-toggle, a search box and a settings page. Module settings are grouped and searchable, and every
+**GUI** — Right Shift (or `.log gui`) opens the addon window: a blue-themed, card-based interface
+listing every module and HUD element with an on/off switch, a search box and a settings page, plus a
+theme picker and a drag-and-drop HUD editor. Module settings are grouped and searchable, and every
 value is persisted to `<gamedir>/logaddon/config.json`.
 
 **Commands** — a `.log` (alias `.la`) command tree exposes status, the module list, session
@@ -654,15 +655,16 @@ segment rescued from a backup) is searchable again.
 
 ## GUI
 
-Press **Right Shift** in-game (or run `.log gui`) to open the addon window. It is tabbed:
+Press **Right Shift** in-game (or run `.log gui`) to open the addon window. It is a card-based,
+blue-themed interface with three tabs:
 
-- **Modules** — every module grouped by category, each with an on/off toggle and a **Settings**
-  button. The header shows how many modules are currently on, and each category heading shows how
-  many of its modules are on.
-- **HUD** — every HUD element with an on/off toggle and a **Settings** button, plus **Open HUD
-  Editor** and **Hide All**.
-- **Theme** — the colour scheme, the HUD text scale and the command prefix.
-- **About** — version, module and HUD counts, the config path, keys and links.
+- **Modules** — every module grouped by category, each row a card with an on/off switch and a
+  **Settings** button. The header shows how many modules are currently on, and each category heading
+  shows how many of its modules are on.
+- **HUD** — every HUD element with an on/off switch and a **Settings** button, plus **Arrange HUD**
+  (the editor), **Show all** and **Hide all**.
+- **Theme** — the colour scheme, the HUD text scale and the command prefix, plus an **About** block
+  with the version, counts, the config path and links.
 
 **Search** filters the module or HUD list by name, title or description, and shows a clear empty
 state when nothing matches. Long pages scroll with the mouse wheel; the list is clipped to the
@@ -673,16 +675,20 @@ as the module declares it. A second search box filters the settings on that page
 
 ### HUD editor
 
-**Open HUD Editor** (HUD tab) shows every active element at its real position and lets you drag it
-with the mouse, with arrow buttons for precise nudges and a **Hide** button per element. Positions
-are saved to the config, so an arrangement survives a restart.
+**Arrange HUD** (HUD tab) shows every active element at its real position on a live canvas and
+lets you drag it with the mouse, with arrow buttons for precise nudges, one-click anchor buttons
+(any of the nine screen anchors), align/centre buttons, and a **Hide** button per element. Elements
+are drawn exactly as they appear in game, so the editor is a real preview rather than a set of empty
+boxes. Positions are saved to the config, so an arrangement survives a restart. The HUD tab also has
+**Show all** and **Hide all** to enable or disable every element at once.
 
 ### Themes
 
-The **Theme** tab switches between built-in colour schemes — Dark, Light, Midnight, Rose, Forest and
-High Contrast. Applying one restyles every open screen on its next frame (the shared theme instance
-is updated in place), and the choice is saved in `config.json`, so the GUI opens in your scheme on
-the next launch.
+The **Theme** tab switches between built-in colour schemes — Blue (the default), Midnight, Azure,
+Light, Violet, Teal and High Contrast. Applying one restyles every open screen on its next frame
+(the shared theme instance is updated in place), and the choice is saved in `config.json`, so the
+GUI opens in your scheme on the next launch. A scheme named by an older build (`DARK`, `ROSE`,
+`FOREST`) is migrated onto its nearest replacement rather than silently reset.
 
 The chat-intelligence modules open their own screens: **Session Timeline** (searchable, paged
 milestone list with per-kind counts), **Chat Digest** (per-type totals and the most active players),
@@ -840,6 +846,13 @@ archive with in-memory doubles (no Minecraft runtime required):
 - `AutoCreativeImportTest` — the whole import path: the supplied 367-entry list becomes 367 ordered
   acquisition requests, the table report excludes raw resources, and `parseItems` tolerates
   whitespace, missing amounts and malformed lines while preserving large quantities.
+- `ScreenRebuildTest` — a screen rebuild keeps the window frame and replaces its content instead of
+  dropping or duplicating it, and re-lays the new widgets out. This guards the regression where a
+  window-based screen (the file browser, the import preview) rendered empty after its first click.
+- `GuiThemePresetTest` — every preset builds a complete theme with no null colours, the blue default
+  is the signature scheme, presets have distinct accents, applying a preset mutates the shared
+  instance in place, names round-trip through save/load, and pre-blue names (`DARK`, `ROSE`,
+  `FOREST`) migrate onto their nearest replacement.
 - `ConfigManagerTest` — save/load round-trip, missing and corrupt files, unknown-key preservation
   and the dirty flag, all against a real temp file.
 - `PlayerIdentityTrackerTest` — observed-name tracking: a first observation is not a rename, a
@@ -864,6 +877,33 @@ archive with in-memory doubles (no Minecraft runtime required):
   that an unknown or malformed placeholder is left verbatim instead of throwing.
 - `FileAssistantStoreTest` — memory round-trip, a missing file loading as empty, corruption
   recovery, refusal of a newer-version file and no temporary file left behind.
+
+## Troubleshooting
+
+- **A screen opens but is empty, or a button seems to do nothing.** This was a real bug: a
+  window-based screen cleared its whole widget tree on rebuild, which dropped the window frame, so
+  the file browser, the import preview and the log viewer rendered nothing after the first click.
+  Fixed by re-attaching the frame on every rebuild; `ScreenRebuildTest` guards it.
+- **The OS file dialog does not open.** Expected on some Linux desktops and on headless setups:
+  `tinyfd` returns nothing there. Use the addon's own file browser (**Import Material List...** /
+  **Load Schematic...**), or set the `material-file` / `schematic-file` setting to a full path and
+  press the matching *Path* button. The typed-path route and the `.log import` /
+  `.log schematic load` commands never touch the native dialog.
+- **Loading or importing does nothing.** The work is driven from the module's client tick, so the
+  module has to be enabled and you have to be in a world. The buttons enable the module for you when
+  they can, and otherwise say why.
+- **Creative acquisition reports "not in Creative mode" or "no creative permission".** The module
+  refuses to fake items: it needs genuine Creative mode and a server that accepts creative inventory
+  changes. On a server that rejects them, that is reported instead of a ghost item.
+- **A schematic loads but has no blocks.** Water, lava, fire and similar blocks have no item form
+  and are filtered out of the material list; they are counted and reported rather than silently
+  dropped.
+- **The HUD element is missing.** Open the addon window (Right Shift), go to the **HUD** tab and
+  check the element is on, or press **Show all**. A hidden element costs nothing per frame.
+- **A config written by a newer build.** Unknown keys are preserved on save, so downgrading does not
+  truncate them, and a missing or invalid value falls back to its default rather than aborting the
+  load. A theme name from an older build (`DARK`, `ROSE`, `FOREST`) migrates to its nearest
+  replacement.
 
 ## Known limitations
 

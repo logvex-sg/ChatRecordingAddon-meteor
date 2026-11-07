@@ -26,7 +26,8 @@ public abstract class WidgetScreen extends Screen {
     protected WidgetScreen(GuiTheme theme, String title) {
         super(Text.literal(title == null ? "" : title));
         this.theme = theme;
-        this.parent = MinecraftClient.getInstance().currentScreen;
+        MinecraftClient client = MinecraftClient.getInstance();
+        this.parent = client == null ? null : client.currentScreen;
         root.theme = theme;
     }
 
@@ -39,10 +40,20 @@ public abstract class WidgetScreen extends Screen {
         root.clear();
     }
 
-    /** Rebuilds the screen contents. Safe to call from a render task. */
+    /** Rebuilds the screen contents and re-lays them out. Safe to call from a render task. */
     public void reload() {
         root.clear();
+        // Subclasses that keep permanent children in the root (a window frame, a header) re-add them
+        // here; without this a reload would drop them and the screen would render empty.
+        populateRoot();
         initWidgets();
+        // Rebuilding replaces every widget, so the layout must be recomputed here; otherwise the new
+        // widgets keep the previous tree's positions and the screen appears frozen after an action.
+        layoutRoot();
+    }
+
+    /** Adds any children that must survive a rebuild. Called at the start of every {@link #reload()}. */
+    protected void populateRoot() {
     }
 
     public abstract void initWidgets();
@@ -74,6 +85,10 @@ public abstract class WidgetScreen extends Screen {
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         super.render(context, mouseX, mouseY, delta);
+        // Lay out every frame. A list can be rebuilt from a button action (a tab switch, a filter, a
+        // refresh) rather than through reload(), and without a layout pass those new widgets would
+        // keep the previous frame's positions and the screen would look frozen.
+        layoutRoot();
         root.render(context, mouseX, mouseY, delta);
         runAfterRenderTasks();
     }
