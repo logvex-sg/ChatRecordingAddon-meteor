@@ -366,6 +366,37 @@ public class LogCommand extends Command {
                 return SINGLE_SUCCESS;
             }))
         );
+
+        builder.then(literal("companion")
+            .executes(context -> {
+                companion();
+                return SINGLE_SUCCESS;
+            })
+            .then(literal("status").executes(context -> {
+                companion();
+                return SINGLE_SUCCESS;
+            }))
+            .then(literal("start").executes(context -> {
+                companionSet(true);
+                return SINGLE_SUCCESS;
+            }))
+            .then(literal("stop").executes(context -> {
+                companionSet(false);
+                return SINGLE_SUCCESS;
+            }))
+            .then(literal("token").executes(context -> {
+                companionToken();
+                return SINGLE_SUCCESS;
+            }))
+            .then(literal("regenerate").executes(context -> {
+                companionRegenerate();
+                return SINGLE_SUCCESS;
+            }))
+            .then(literal("gui").executes(context -> {
+                companionGui();
+                return SINGLE_SUCCESS;
+            }))
+        );
     }
 
     // ------------------------------------------------------------------ sections
@@ -393,6 +424,7 @@ public class LogCommand extends Command {
         info("  (highlight).log notes [list|add <player> <text>|remove <player>|search <filter>](default).");
         info("  (highlight).log identities [renamed|watch|unwatch|watchlist|clear|<filter>](default) - observed name changes.");
         info("  (highlight).log sessions [list|clear](default) - past recording sessions.");
+        info("  (highlight).log companion [status|start|stop|token|regenerate|gui](default) - the companion web app.");
         info("  (highlight).ai [status|triggers|facts|remember|forget|test|gui](default) - the chat assistant.");
     }
 
@@ -913,6 +945,87 @@ public class LogCommand extends Command {
                 record.uniquePlayers() == 1 ? "" : "s");
         }
         if (records.size() > shown) info("  ... and %d more.", records.size() - shown);
+    }
+
+    // ------------------------------------------------------------------ companion
+
+    private static com.logvex.addon.companion.mc.CompanionModule companionModule() {
+        return Modules.get().get(com.logvex.addon.companion.mc.CompanionModule.class);
+    }
+
+    private void companion() {
+        var module = companionModule();
+        if (module == null) {
+            warning("The companion module is not available.");
+            return;
+        }
+        if (!module.isActive()) {
+            info("The companion is off. Use .log companion start to turn it on.");
+            return;
+        }
+        if (!module.isRunning()) {
+            warning("The companion is on but not listening. Use .log companion start to retry.");
+            return;
+        }
+        info("Companion listening on port %d with %s connected.",
+            module.boundPort(), Messages.plural(module.connectedClients(), "app client"));
+        info("Address: %s", module.url());
+    }
+
+    private void companionSet(boolean on) {
+        var module = companionModule();
+        if (module == null) {
+            warning("The companion module is not available.");
+            return;
+        }
+        if (module.isActive() == on) {
+            info("The companion is already %s.", on ? "on" : "off");
+            return;
+        }
+        module.toggle();
+        if (on) {
+            if (module.isRunning()) {
+                info("Companion started on port %d.", module.boundPort());
+                info("Open %s in a browser.", module.url());
+            } else {
+                warning("The companion could not start. Is port %d already in use?",
+                    module.settings.get("port") == null ? 8765 : module.settings.get("port").get());
+            }
+        } else {
+            info("Companion stopped.");
+        }
+    }
+
+    private void companionToken() {
+        var module = companionModule();
+        if (module == null) {
+            warning("The companion module is not available.");
+            return;
+        }
+        info("Companion token: %s", module.accessToken());
+        info("Treat this like a password: anyone with it can control this client.");
+    }
+
+    private void companionRegenerate() {
+        var module = companionModule();
+        if (module == null) {
+            warning("The companion module is not available.");
+            return;
+        }
+        module.regenerateToken();
+        info("A new token was generated. Re-add the client in the app.");
+    }
+
+    private void companionGui() {
+        var module = companionModule();
+        if (module == null) {
+            warning("The companion module is not available.");
+            return;
+        }
+        var mc = net.minecraft.client.MinecraftClient.getInstance();
+        if (mc != null) {
+            mc.setScreen(new com.logvex.addon.companion.gui.CompanionScreen(module));
+        }
     }
 
     private void recording(boolean on) {

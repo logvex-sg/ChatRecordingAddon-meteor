@@ -32,6 +32,12 @@ history with a HUD and a GUI, and can echo them to chat and play a sound.
 (`!remember`, `!fact`, `!forget`, ...) store and recall facts, and everything the assistant knows is
 persisted to a JSON file that survives a restart.
 
+**Companion** — `companion` serves a small web dashboard and JSON API from inside the client, so a
+phone or another computer on the same network can watch and control the bots: live events over
+server-sent events, the bot controls, the task queue, the module switches, chat and player search,
+statistics and storage usage. It is off by default, binds to loopback, and needs an access token.
+See [Companion (web app)](#companion-web-app).
+
 **GUI** — Right Shift (or `.log gui`) opens the addon window: a blue-themed, card-based interface
 listing every module and HUD element with an on/off switch, a search box and a settings page, plus a
 theme picker and a drag-and-drop HUD editor. Module settings are grouped and searchable, and every
@@ -603,6 +609,94 @@ the total uncompressed size, the report count and the space saved.
 Webhook URLs are treated as secrets: they are never written into a report, never included in
 error messages, and the Discord payload explicitly disables mentions.
 
+## Companion (web app)
+
+`companion` serves a small web dashboard from inside the client so a phone, tablet or another
+computer on the same network can watch and control this client. It is the "app" that connects to
+the bots: the client is the server, the browser is the app, and nothing is installed on the phone.
+
+Enable **Companion** in the addon window (or run `.log companion start`). The server listens on
+**127.0.0.1** by default; the module widget, the Companion screen and the command all offer a
+**Copy address** action that includes the access token, so you can paste one URL into a browser.
+
+### What the app shows
+
+- **Overview** — the player, server address, game mode, in-world state and how long the client has
+  been running.
+- **Live events** — a server-sent event stream (`/api/v1/events`) that pushes chat lines, bot state
+  changes and session changes as they happen. It reconnects on its own and can replay the events it
+  missed from a bounded history.
+- **Bot** — the bot state, the active task, the queue length and the recent events, with **Start**,
+  **Pause**, **Resume**, **Stop** and **Emergency stop**.
+- **Tasks** — the queue and the history counters, with **Queue objective** (the same forgiving
+  parser the dashboard uses, e.g. `gather 256 oak_log`) and **Cancel** per task.
+- **Modules** — every module with an on/off switch, searched by name.
+- **Chat** — the recent chat with a search box and a player filter.
+- **Players** — observed players with their message counts and last-seen times, marked online when
+  the client's player list currently contains them.
+- **Stats** — session message, player, join, leave and death totals.
+- **Storage** — the segment count, the compressed size and the oldest/newest timestamps.
+
+### Security
+
+- The server is **off unless the module is on**, and binds to loopback only by default. Turning on
+  **allow-remote** binds every interface and is a deliberate choice: anyone who can reach the port
+  and knows the token can control the client.
+- Every request except the app shell and the health probe needs the token, as an
+  `Authorization: Bearer <token>` header or a `?token=` query parameter (the query form is what a
+  browser and an `EventSource` can send).
+- The token is generated on first start and stored in the config. **Generate a new token** (module
+  widget, Companion screen or `.log companion regenerate`) replaces it and restarts the server.
+- Requests are rate limited per client, and every action runs on the client thread, so the app can
+  only do what a user could do by hand — it never edits the inventory, never fabricates state and
+  never blocks the game.
+
+### `.log companion`
+
+| Command | Effect |
+| --- | --- |
+| `.log companion [status]` | Whether the server is listening, the port, the client count and the address. |
+| `.log companion start` | Turns the module on and starts the server. |
+| `.log companion stop` | Turns the module off and closes the port. |
+| `.log companion token` | Prints the access token (treat it like a password). |
+| `.log companion regenerate` | Replaces the token and restarts the server. |
+| `.log companion gui` | Opens the Companion screen. |
+
+### HTTP API
+
+All responses are JSON. Authenticate with the token unless noted.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/` or `/index.html` | The bundled app (public). |
+| GET | `/health` | Version and liveness (public, never includes the token). |
+| GET | `/api/v1/snapshot` | The full client picture. |
+| GET | `/api/v1/events` | The live event stream (SSE). |
+| GET | `/api/v1/events?since=<id>` | Replays events after the given id, then streams. |
+| GET | `/api/v1/bot` | The bot state on its own. |
+| POST | `/api/v1/bot/start` | Starts the bot. |
+| POST | `/api/v1/bot/pause` | Pauses the bot. |
+| POST | `/api/v1/bot/resume` | Resumes the bot. |
+| POST | `/api/v1/bot/stop` | Stops the bot. |
+| POST | `/api/v1/bot/emergency-stop` | Cancels the active task, the queue and navigation. |
+| GET | `/api/v1/tasks` | The queued tasks. |
+| POST | `/api/v1/tasks` | Queues an objective: `{"objective":"gather 256 oak_log"}`. |
+| DELETE | `/api/v1/tasks/{id}` | Cancels one queued task. |
+| GET | `/api/v1/modules` | Every module with its state. |
+| POST | `/api/v1/modules/{name}` | Toggles a module: `{"active":true}`. |
+| GET | `/api/v1/chat` | The recent chat. |
+| POST | `/api/v1/chat` | Sends a chat line or a `/command`: `{"message":"hello"}`. |
+| GET | `/api/v1/players` | The observed players. |
+| GET | `/api/v1/storage` | The segment count, compressed size and oldest/newest timestamps. |
+| GET | `/api/v1/queries` | The names the query endpoint accepts. |
+| GET | `/api/v1/query/{name}` | `messages`, `players` or `stats`, with `q`, `player` and `limit` filters. |
+| POST | `/api/v1/command` | Runs a client command: `{"command":"log status"}`. |
+| POST | `/api/v1/notify` | Shows a chat line and a notification: `{"message":"..."}`. |
+
+The server answers with a plain message and the right status code when something is wrong — a
+missing token is `401`, a bad body is `400`, a client thread that never answers is `504` — and it
+never puts an internal exception in the response.
+
 ## Log storage locations
 
 Everything the addon writes lives under `<gamedir>/logaddon/`:
@@ -771,6 +865,11 @@ The addon registers a `.log` command (alias `.la`). Run `.log help` for the list
 | `.log identities clear` | Clears the identity index. |
 | `.log sessions [list]` | Totals and the most recent past recording sessions. |
 | `.log sessions clear` | Clears the session history. |
+| `.log companion [status]` | The companion web server: listening state, port, client count and address. |
+| `.log companion <start\|stop>` | Starts or stops the companion server. |
+| `.log companion token` | Prints the companion access token. |
+| `.log companion regenerate` | Replaces the token and restarts the server. |
+| `.log companion gui` | Opens the Companion screen. |
 
 ### Assistant (`.ai`, alias `.assistant`)
 
@@ -877,6 +976,19 @@ archive with in-memory doubles (no Minecraft runtime required):
   that an unknown or malformed placeholder is left verbatim instead of throwing.
 - `FileAssistantStoreTest` — memory round-trip, a missing file loading as empty, corruption
   recovery, refusal of a newer-version file and no temporary file left behind.
+- `CompanionRouterTest` — the HTTP surface driven through a fake API: authentication (header,
+  query token, wrong and missing token), the public app shell and health probe, the SSE content
+  type, every bot control, module toggles, task queueing and cancellation, queries with parameters,
+  404/405/400 handling, a client thread that never answers becoming a 504, the config redacting its
+  token and clamping an out-of-range port, and the rate limiter refusing a flood.
+- `CompanionServerTest` — the real socket: a published event reaches a connected client, the stream
+  replays events a client missed on reconnect, a POST body reaches the API, and the server binds a
+  real port, serves the app and stops cleanly.
+- `CompanionCoreTest` — the event bus (ordered delivery, a bounded ring, backlog replay, a throwing
+  subscriber isolated and dropped, monotonic ids, publish never blocking on a subscriber), the rate
+  limiter (burst then throttle, per-client buckets, pruning), the client-thread seam (inline,
+  scheduler-backed and timeout) and that the bundled app is self-contained and calls the documented
+  endpoints.
 
 ## Troubleshooting
 
@@ -900,6 +1012,12 @@ archive with in-memory doubles (no Minecraft runtime required):
   dropped.
 - **The HUD element is missing.** Open the addon window (Right Shift), go to the **HUD** tab and
   check the element is on, or press **Show all**. A hidden element costs nothing per frame.
+- **The companion app will not connect.** The server only runs while the **Companion** module is
+  on, and it binds to loopback by default. From another device, turn on **allow-remote** and use the
+  machine's LAN address (`http://<host>:8765/?token=...`), and make sure the port is not blocked by a
+  firewall. If the port is already in use the module says so and does not listen; change the port or
+  free it. A `401` means the token is missing or wrong — copy the address again from the widget, the
+  Companion screen or `.log companion token`.
 - **A config written by a newer build.** Unknown keys are preserved on save, so downgrading does not
   truncate them, and a missing or invalid value falls back to its default rather than aborting the
   load. A theme name from an older build (`DARK`, `ROSE`, `FOREST`) migrates to its nearest
@@ -958,6 +1076,13 @@ archive with in-memory doubles (no Minecraft runtime required):
   addon bundles no pathfinder of its own beyond the bounded fallback walker, and navigation quality
   with the fallback is limited — it walks in a straight line and stops when blocked rather than
   solving complex terrain.
+- The companion is a **local** control surface, not a remote-hosting service: it speaks plain HTTP,
+  so over an untrusted network the token would travel in the clear. Use it on loopback or a trusted
+  LAN; if you enable **allow-remote**, treat the token as a password and rotate it if it leaks.
+- The companion's own in-browser dashboard, the Companion screen and the companion HUD element have
+  not been opened in a live Minecraft session from this environment. The HTTP surface, the auth, the
+  event stream, the bot control mapping, the rate limiter and the bundled app resource are covered
+  by unit tests that drive a real server on a real port with a fake API.
 
 ## License
 

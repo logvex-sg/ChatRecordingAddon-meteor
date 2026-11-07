@@ -1,0 +1,814 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Log Addon Companion</title>
+<style>
+  :root {
+    --bg: #0b1020;
+    --panel: #121a2e;
+    --panel-2: #172140;
+    --line: #26324f;
+    --text: #e6ecff;
+    --muted: #8fa0c4;
+    --accent: #60a5fa;
+    --accent-2: #3b82f6;
+    --good: #6ee7a8;
+    --warn: #f0c86e;
+    --bad: #f08a8a;
+    --radius: 10px;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  }
+  a { color: var(--accent); }
+  header {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 12px 16px; background: var(--panel); border-bottom: 1px solid var(--line);
+    position: sticky; top: 0; z-index: 5;
+  }
+  header h1 { font-size: 16px; margin: 0; letter-spacing: .2px; }
+  header .spacer { flex: 1; }
+  .badge {
+    font-size: 11px; padding: 2px 8px; border-radius: 999px;
+    background: var(--panel-2); color: var(--muted); border: 1px solid var(--line);
+  }
+  .badge.good { color: var(--good); border-color: #2c5a45; }
+  .badge.bad { color: var(--bad); border-color: #5a2c2c; }
+  .badge.warn { color: var(--warn); border-color: #5a4d2c; }
+  nav { display: flex; gap: 6px; flex-wrap: wrap; padding: 10px 16px 0; }
+  nav button {
+    background: var(--panel); color: var(--muted); border: 1px solid var(--line);
+    padding: 7px 13px; border-radius: 999px; cursor: pointer; font-size: 13px;
+  }
+  nav button.active { background: var(--accent-2); color: #fff; border-color: var(--accent-2); }
+  main { padding: 16px; max-width: 1280px; margin: 0 auto; }
+  section { display: none; }
+  section.active { display: block; }
+  .grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 14px;
+  }
+  .card h3 { margin: 0 0 10px; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+  .card h3 .spacer { flex: 1; }
+  .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .kv { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; }
+  .kv span:first-child { color: var(--muted); }
+  .muted { color: var(--muted); }
+  .mono { font-family: var(--mono); font-size: 12px; }
+  button.btn {
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
+    padding: 6px 11px; border-radius: 8px; cursor: pointer; font-size: 13px;
+  }
+  button.btn:hover { border-color: var(--accent); }
+  button.btn.primary { background: var(--accent-2); border-color: var(--accent-2); color: #fff; }
+  button.btn.danger { border-color: #7a3333; color: var(--bad); }
+  button.btn:disabled { opacity: .45; cursor: not-allowed; }
+  input, select, textarea {
+    background: #0e1526; color: var(--text); border: 1px solid var(--line);
+    border-radius: 8px; padding: 7px 9px; font: inherit; width: 100%;
+  }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 8px 0 3px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; }
+  tbody tr:hover { background: var(--panel-2); }
+  .log { font-family: var(--mono); font-size: 12px; max-height: 380px; overflow: auto; }
+  .log .line { padding: 2px 0; border-bottom: 1px solid rgba(38,50,79,.5); }
+  .log .t { color: var(--muted); }
+  .empty { color: var(--muted); padding: 14px; text-align: center; }
+  .error { color: var(--bad); }
+  .ok { color: var(--good); }
+  .toast {
+    position: fixed; right: 16px; bottom: 16px; max-width: 360px; z-index: 20;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .toast .item {
+    background: var(--panel-2); border: 1px solid var(--line); border-left: 3px solid var(--accent);
+    border-radius: 8px; padding: 10px 12px; font-size: 13px;
+  }
+  .toast .item.bad { border-left-color: var(--bad); }
+  .toast .item.good { border-left-color: var(--good); }
+  .pill { font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+  .pill.on { color: var(--good); border-color: #2c5a45; }
+  .pill.off { color: var(--muted); }
+  .progress { height: 8px; background: var(--panel-2); border-radius: 999px; overflow: hidden; }
+  .progress > i { display: block; height: 100%; background: var(--accent); width: 0; }
+  dialog { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: var(--radius); max-width: 560px; width: 92%; }
+  dialog::backdrop { background: rgba(0,0,0,.6); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Log Addon Companion</h1>
+  <span class="badge" id="node-count">0 clients</span>
+  <span class="badge" id="link-state">offline</span>
+  <span class="spacer"></span>
+  <button class="btn" id="btn-nodes">Clients</button>
+  <button class="btn" id="btn-refresh">Refresh</button>
+</header>
+
+<nav id="tabs"></nav>
+
+<main>
+  <section id="view-overview" class="active"></section>
+  <section id="view-bot"></section>
+  <section id="view-tasks"></section>
+  <section id="view-chat"></section>
+  <section id="view-players"></section>
+  <section id="view-modules"></section>
+  <section id="view-storage"></section>
+  <section id="view-events"></section>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<dialog id="nodes-dialog">
+  <h3 style="margin-top:0">Clients</h3>
+  <p class="muted" style="font-size:13px">
+    Add each Minecraft client running Log Addon. The token is the one shown in the addon's
+    Companion settings. Tokens are kept only in this browser.
+  </p>
+  <div id="node-list"></div>
+  <label>Client URL</label>
+  <input id="node-url" placeholder="http://127.0.0.1:8765">
+  <label>Access token</label>
+  <input id="node-token" placeholder="paste the token from the addon">
+  <label>Label (optional)</label>
+  <input id="node-label" placeholder="e.g. Main account">
+  <div class="row" style="margin-top:12px">
+    <button class="btn primary" id="node-add">Add client</button>
+    <button class="btn" id="node-close">Close</button>
+  </div>
+</dialog>
+
+<script>
+"use strict";
+/* The companion app. It talks to one or more Log Addon clients over their companion API and never
+   assumes a client is reachable: every call reports its own failure. State lives in localStorage. */
+
+const STORE_KEY = "logaddon.companion.nodes";
+const TAB_KEY = "logaddon.companion.tab";
+const TABS = [
+  ["overview", "Overview"], ["bot", "Bot"], ["tasks", "Tasks"], ["chat", "Chat"],
+  ["players", "Players"], ["modules", "Modules"], ["storage", "Storage"], ["events", "Live feed"]
+];
+
+let nodes = loadNodes();
+let activeNodeId = null;
+let tab = localStorage.getItem(TAB_KEY) || "overview";
+const snapshots = new Map();   // nodeId -> snapshot
+const nodeState = new Map();   // nodeId -> {ok, error, at}
+let eventSource = null;
+const feed = [];
+
+// ---------------------------------------------------------------- storage
+
+function loadNodes() {
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter(n => n && n.url) : [];
+  } catch { return []; }
+}
+
+function saveNodes() {
+  localStorage.setItem(STORE_KEY, JSON.stringify(nodes));
+}
+
+function uid() {
+  return Math.random().toString(36).slice(2, 10);
+}
+
+// ---------------------------------------------------------------- boot
+
+function boot() {
+  // A link with ?token=... (and optionally ?url=...) seeds a node, so a user can open the app
+  // straight from the addon without typing anything.
+  const params = new URLSearchParams(location.search);
+  const token = params.get("token");
+  const url = params.get("url") || location.origin;
+  if (token && !nodes.some(n => n.url === url)) {
+    nodes.push({ id: uid(), url, token, label: "This client" });
+    saveNodes();
+  }
+  if (nodes.length === 0 && location.origin.startsWith("http")) {
+    // When the app is served by a client, that client is reachable at the same origin.
+    const stored = localStorage.getItem("logaddon.companion.lastToken");
+    if (stored) nodes.push({ id: uid(), url: location.origin, token: stored, label: "This client" });
+  }
+  if (nodes.length > 0) activeNodeId = nodes[0].id;
+
+  renderTabs();
+  renderNodeList();
+  wireEvents();
+  refreshAll();
+  setInterval(refreshAll, 3000);
+  connectStream();
+}
+
+// ---------------------------------------------------------------- tabs
+
+function renderTabs() {
+  const nav = document.getElementById("tabs");
+  nav.innerHTML = "";
+  for (const [id, label] of TABS) {
+    const button = document.createElement("button");
+    button.textContent = label;
+    button.className = id === tab ? "active" : "";
+    button.onclick = () => { tab = id; localStorage.setItem(TAB_KEY, id); renderTabs(); render(); };
+    nav.appendChild(button);
+  }
+}
+
+function show(view) {
+  for (const [id] of TABS) {
+    const section = document.getElementById("view-" + id);
+    section.className = id === view ? "active" : "";
+  }
+}
+
+// ---------------------------------------------------------------- api
+
+async function apiCall(node, path, options = {}) {
+  const url = node.url.replace(/\/+$/, "") + path;
+  const init = { method: options.method || "GET", headers: {} };
+  if (node.token) init.headers["Authorization"] = "Bearer " + node.token;
+  if (options.body !== undefined) {
+    init.headers["Content-Type"] = "application/json";
+    init.body = JSON.stringify(options.body);
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), options.timeout || 4000);
+  init.signal = controller.signal;
+  try {
+    const response = await fetch(url, init);
+    const text = await response.text();
+    let json = null;
+    try { json = text ? JSON.parse(text) : null; } catch { /* non-JSON body */ }
+    if (!response.ok) {
+      const message = json && json.message ? json.message : "HTTP " + response.status;
+      return { ok: false, error: message, status: response.status };
+    }
+    return { ok: true, data: json };
+  } catch (e) {
+    return { ok: false, error: e.name === "AbortError" ? "Timed out" : "Unreachable", status: 0 };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function refreshAll() {
+  if (nodes.length === 0) { render(); return; }
+  await Promise.all(nodes.map(async node => {
+    const result = await apiCall(node, "/api/v1/snapshot");
+    if (result.ok) {
+      snapshots.set(node.id, result.data);
+      nodeState.set(node.id, { ok: true, at: Date.now() });
+    } else {
+      nodeState.set(node.id, { ok: false, error: result.error, at: Date.now() });
+    }
+  }));
+  renderHeader();
+  render();
+}
+
+function activeNode() {
+  return nodes.find(n => n.id === activeNodeId) || nodes[0] || null;
+}
+
+function activeSnapshot() {
+  const node = activeNode();
+  return node ? snapshots.get(node.id) : null;
+}
+
+// ---------------------------------------------------------------- live events
+
+function connectStream() {
+  const node = activeNode();
+  if (eventSource) { eventSource.close(); eventSource = null; }
+  if (!node) { setLink("offline"); return; }
+  const url = node.url.replace(/\/+$/, "") + "/api/v1/events?token=" + encodeURIComponent(node.token || "");
+  try {
+    eventSource = new EventSource(url);
+    eventSource.onopen = () => setLink("live");
+    eventSource.onerror = () => setLink("reconnecting");
+    const handler = event => {
+      let data = null;
+      try { data = JSON.parse(event.data); } catch { /* keep the raw text */ }
+      feed.unshift({ at: Date.now(), type: event.type, data: data ?? event.data });
+      if (feed.length > 300) feed.pop();
+      if (tab === "events") render();
+    };
+    for (const type of ["chat", "bot", "task", "module", "player", "notify", "session"]) {
+      eventSource.addEventListener(type, handler);
+    }
+    eventSource.onmessage = handler;
+  } catch {
+    setLink("offline");
+  }
+}
+
+function setLink(state) {
+  const el = document.getElementById("link-state");
+  el.textContent = state;
+  el.className = "badge " + (state === "live" ? "good" : state === "reconnecting" ? "warn" : "bad");
+}
+
+// ---------------------------------------------------------------- rendering
+
+function renderHeader() {
+  const online = nodes.filter(n => (nodeState.get(n.id) || {}).ok).length;
+  document.getElementById("node-count").textContent =
+    nodes.length + (nodes.length === 1 ? " client" : " clients") + (nodes.length ? " · " + online + " online" : "");
+}
+
+function render() {
+  show(tab);
+  const builders = {
+    overview: renderOverview, bot: renderBot, tasks: renderTasks, chat: renderChat,
+    players: renderPlayers, modules: renderModules, storage: renderStorage, events: renderEvents
+  };
+  builders[tab]();
+}
+
+function el(tag, props = {}, children = []) {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(props)) {
+    if (key === "class") node.className = value;
+    else if (key === "text") node.textContent = value;
+    else if (key === "html") node.innerHTML = value;
+    else if (key.startsWith("on")) node.addEventListener(key.slice(2), value);
+    else if (value !== null && value !== undefined) node.setAttribute(key, value);
+  }
+  for (const child of children) node.appendChild(child);
+  return node;
+}
+
+function card(title, children, actions = null) {
+  const head = el("h3", {}, [el("span", { text: title })]);
+  if (actions) { head.appendChild(el("span", { class: "spacer" })); actions.forEach(a => head.appendChild(a)); }
+  return el("div", { class: "card" }, [head, ...children]);
+}
+
+function kv(label, value, cls = "") {
+  return el("div", { class: "kv" }, [
+    el("span", { text: label }),
+    el("span", { class: cls, text: value })
+  ]);
+}
+
+function button(label, onClick, cls = "btn") {
+  return el("button", { class: cls, text: label, onclick: onClick });
+}
+
+function emptyState(text) {
+  return el("div", { class: "empty", text });
+}
+
+function fmtTime(ms) {
+  if (!ms) return "—";
+  return new Date(ms).toLocaleString();
+}
+
+function fmtAgo(ms) {
+  if (!ms) return "never";
+  const seconds = Math.max(0, Math.round((Date.now() - ms) / 1000));
+  if (seconds < 60) return seconds + "s ago";
+  if (seconds < 3600) return Math.round(seconds / 60) + "m ago";
+  if (seconds < 86400) return Math.round(seconds / 3600) + "h ago";
+  return Math.round(seconds / 86400) + "d ago";
+}
+
+function fmtDuration(ms) {
+  if (!ms || ms <= 0) return "—";
+  const s = Math.floor(ms / 1000);
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  if (h > 0) return h + "h " + m + "m";
+  if (m > 0) return m + "m " + sec + "s";
+  return sec + "s";
+}
+
+function fmtBytes(bytes) {
+  if (!bytes) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  let value = bytes, unit = 0;
+  while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++; }
+  return value.toFixed(unit === 0 ? 0 : 1) + " " + units[unit];
+}
+
+function nodeSelect() {
+  if (nodes.length === 0) return null;
+  const select = el("select", {
+    onchange: e => { activeNodeId = e.target.value; connectStream(); refreshAll(); }
+  }, nodes.map(n => {
+    const option = el("option", { value: n.id, text: n.label || n.url });
+    if (n.id === activeNodeId) option.selected = true;
+    return option;
+  }));
+  return select;
+}
+
+function notConnected() {
+  return el("div", { class: "card" }, [
+    el("h3", { text: "No client connected" }),
+    el("p", { class: "muted", text: "Add a client to get started. In Minecraft, enable the Companion module and copy its token." }),
+    button("Add a client", () => document.getElementById("nodes-dialog").showModal(), "btn primary")
+  ]);
+}
+
+// ---------------------------------------------------------------- overview
+
+function renderOverview() {
+  const view = document.getElementById("view-overview");
+  view.innerHTML = "";
+  if (nodes.length === 0) { view.appendChild(notConnected()); return; }
+
+  view.appendChild(card("Clients", [el("div", { class: "grid" }, nodes.map(node => {
+    const state = nodeState.get(node.id) || {};
+    const snap = snapshots.get(node.id);
+    const children = [];
+    if (!state.ok) {
+      children.push(el("div", { class: "error", text: state.error || "Unreachable" }));
+      children.push(el("div", { class: "muted mono", text: node.url }));
+    } else if (snap) {
+      children.push(kv("Player", snap.node.playerName || "not in game"));
+      children.push(kv("Server", snap.node.serverAddress || (snap.node.singleplayer ? "singleplayer" : "—")));
+      children.push(kv("In world", snap.node.inWorld ? "yes" : "no", snap.node.inWorld ? "ok" : "muted"));
+      children.push(kv("Messages", String(snap.stats.messages)));
+      children.push(kv("Bot", snap.bot.state + (snap.bot.paused ? " (paused)" : "")));
+    }
+    children.push(el("div", { class: "row", style: "margin-top:8px" }, [
+      button("Select", () => { activeNodeId = node.id; connectStream(); renderTabs(); refreshAll(); }),
+      button("Remove", () => { nodes = nodes.filter(n => n.id !== node.id); saveNodes(); renderNodeList(); renderHeader(); render(); })
+    ]));
+    const head = el("h3", {}, [
+      el("span", { text: node.label || node.url }),
+      el("span", { class: "spacer" }),
+      el("span", { class: "pill " + (state.ok ? "on" : "off"), text: state.ok ? "online" : "offline" })
+    ]);
+    return el("div", { class: "card" }, [head, ...children]);
+  }))]));
+}
+
+// ---------------------------------------------------------------- bot
+
+function renderBot() {
+  const view = document.getElementById("view-bot");
+  view.innerHTML = "";
+  if (nodes.length === 0) { view.appendChild(notConnected()); return; }
+  const node = activeNode();
+  const snap = activeSnapshot();
+  const state = nodeState.get(node.id) || {};
+
+  view.appendChild(card("Client", [nodeSelect()]));
+
+  if (!state.ok) {
+    view.appendChild(card("Connection", [
+      el("div", { class: "error", text: state.error || "Unreachable" }),
+      el("div", { class: "muted mono", text: node.url })
+    ]));
+    return;
+  }
+  if (!snap) { view.appendChild(card("Bot", [emptyState("Waiting for the first snapshot…")])); return; }
+
+  const bot = snap.bot;
+  const controls = [
+    button("Start", () => act(node, "/api/v1/bot/start", {}, "Bot started."), "btn primary"),
+    button(bot.paused ? "Resume" : "Pause", () => act(node, bot.paused ? "/api/v1/bot/resume" : "/api/v1/bot/pause", {})),
+    button("Stop", () => act(node, "/api/v1/bot/stop", {})),
+    button("Emergency stop", () => act(node, "/api/v1/bot/emergency-stop", {}, "Emergency stop sent."), "btn danger")
+  ];
+
+  const details = [
+    kv("State", bot.state),
+    kv("Active task", bot.activeTask || "none"),
+    kv("Queued", String(bot.queued)),
+    kv("Completed", String(bot.completed), "ok"),
+    kv("Failed", String(bot.failed), bot.failed > 0 ? "error" : "")
+  ];
+
+  view.appendChild(card("Bot control", [...details, el("div", { class: "row", style: "margin-top:10px" }, controls)]));
+
+  const objective = el("input", { placeholder: "e.g. mine oak_log 64" });
+  view.appendChild(card("Queue an objective", [
+    el("label", { text: "Objective (the addon's own grammar)" }),
+    objective,
+    el("div", { class: "row", style: "margin-top:10px" }, [
+      button("Queue", async () => {
+        const value = objective.value.trim();
+        if (!value) { toast("Enter an objective first.", "bad"); return; }
+        const result = await apiCall(node, "/api/v1/tasks", { method: "POST", body: { objective: value } });
+        toastResult(result, "Objective queued.");
+        if (result.ok) { objective.value = ""; refreshAll(); }
+      }, "btn primary")
+    ])
+  ]));
+
+  const chat = el("input", { placeholder: "Message to send as you" });
+  view.appendChild(card("Send chat", [
+    chat,
+    el("div", { class: "row", style: "margin-top:10px" }, [
+      button("Send", async () => {
+        const value = chat.value.trim();
+        if (!value) { toast("The message is empty.", "bad"); return; }
+        const result = await apiCall(node, "/api/v1/chat", { method: "POST", body: { message: value } });
+        toastResult(result, "Sent.");
+        if (result.ok) chat.value = "";
+      }, "btn primary")
+    ])
+  ]));
+
+  if (bot.recentEvents && bot.recentEvents.length > 0) {
+    view.appendChild(card("Recent bot events", [
+      el("div", { class: "log" }, bot.recentEvents.slice(0, 40).map(line =>
+        el("div", { class: "line", text: line })))
+    ]));
+  }
+}
+
+// ---------------------------------------------------------------- tasks
+
+function renderTasks() {
+  const view = document.getElementById("view-tasks");
+  view.innerHTML = "";
+  if (nodes.length === 0) { view.appendChild(notConnected()); return; }
+  const node = activeNode();
+  const snap = activeSnapshot();
+  view.appendChild(card("Client", [nodeSelect()]));
+  if (!snap) { view.appendChild(card("Tasks", [emptyState("No snapshot yet.")])); return; }
+
+  const rows = snap.tasks.map(task => el("tr", {}, [
+    el("td", { text: task.state }),
+    el("td", { text: task.type }),
+    el("td", { text: task.description || "—" }),
+    el("td", { text: task.priority }),
+    el("td", { text: fmtAgo(task.enqueuedAt) }),
+    el("td", {}, [button("Cancel", () => act(node, "/api/v1/tasks/" + encodeURIComponent(task.id), {}, "Cancelled.", "DELETE"), "btn danger")])
+  ]));
+
+  const table = snap.tasks.length === 0
+    ? emptyState("The bot's queue is empty.")
+    : el("table", {}, [
+        el("thead", {}, [el("tr", {}, ["State", "Type", "Description", "Priority", "Queued", ""].map(h => el("th", { text: h })))]),
+        el("tbody", {}, rows)
+      ]);
+
+  view.appendChild(card("Task queue (" + snap.tasks.length + ")", [table]));
+}
+
+// ---------------------------------------------------------------- chat
+
+function renderChat() {
+  const view = document.getElementById("view-chat");
+  view.innerHTML = "";
+  if (nodes.length === 0) { view.appendChild(notConnected()); return; }
+  const node = activeNode();
+  const snap = activeSnapshot();
+  view.appendChild(card("Client", [nodeSelect()]));
+  if (!snap) { view.appendChild(card("Chat", [emptyState("No snapshot yet.")])); return; }
+
+  const filter = el("input", { placeholder: "Filter by player or keyword" });
+  const list = el("div", { class: "log" });
+  const draw = () => {
+    const needle = filter.value.trim().toLowerCase();
+    list.innerHTML = "";
+    const lines = snap.chat.filter(entry => !needle
+      || (entry.message || "").toLowerCase().includes(needle)
+      || (entry.sender || "").toLowerCase().includes(needle));
+    if (lines.length === 0) { list.appendChild(emptyState("No messages match.")); return; }
+    for (const entry of lines) {
+      list.appendChild(el("div", { class: "line" }, [
+        el("span", { class: "t", text: "[" + new Date(entry.timestamp).toLocaleTimeString() + "] " }),
+        el("span", { class: "muted", text: "(" + entry.type + ") " }),
+        el("span", { text: (entry.sender ? entry.sender + ": " : "") + entry.message })
+      ]));
+    }
+  };
+  filter.addEventListener("input", draw);
+  draw();
+
+  view.appendChild(card("Recent chat (" + snap.chat.length + ")", [filter, el("div", { style: "margin-top:10px" }, [list])]));
+}
+
+// ---------------------------------------------------------------- players
+
+function renderPlayers() {
+  const view = document.getElementById("view-players");
+  view.innerHTML = "";
+  if (nodes.length === 0) { view.appendChild(notConnected()); return; }
+  const snap = activeSnapshot();
+  const node = activeNode();
+  view.appendChild(card("Client", [nodeSelect()]));
+  if (!snap) { view.appendChild(card("Players", [emptyState("No snapshot yet.")])); return; }
+
+  const filter = el("input", { placeholder: "Search players" });
+  const body = el("tbody");
+  const draw = () => {
+    const needle = filter.value.trim().toLowerCase();
+    body.innerHTML = "";
+    const players = snap.players.filter(p => !needle || (p.name || "").toLowerCase().includes(needle));
+    if (players.length === 0) {
+      body.appendChild(el("tr", {}, [el("td", { colspan: "6" }, [emptyState("No players match.")])]));
+      return;
+    }
+    for (const player of players) {
+      body.appendChild(el("tr", {}, [
+        el("td", {}, [el("span", { text: player.name }), player.online ? el("span", { class: "pill on", text: " online", style: "margin-left:6px" }) : null]),
+        el("td", { text: String(player.messages) }),
+        el("td", { text: player.onlineMs > 0 ? fmtDuration(player.onlineMs) : "unknown" }),
+        el("td", { text: fmtAgo(player.lastSeen) }),
+        el("td", { text: player.uuid ? player.uuid.slice(0, 8) : "—" }),
+        el("td", {}, [player.excluded ? el("span", { class: "muted", text: "excluded" }) : el("span", { class: "muted", text: "tracked" })])
+      ]));
+    }
+  };
+  filter.addEventListener("input", draw);
+  draw();
+
+  view.appendChild(card("Players (" + snap.players.length + ")", [
+    filter,
+    el("div", { style: "margin-top:10px" }, [
+      el("table", {}, [
+        el("thead", {}, [el("tr", {}, ["Player", "Messages", "Online time", "Last seen", "UUID", "Status"].map(h => el("th", { text: h })))]),
+        body
+      ])
+    ])
+  ]));
+}
+
+// ---------------------------------------------------------------- modules
+
+function renderModules() {
+  const view = document.getElementById("view-modules");
+  view.innerHTML = "";
+  if (nodes.length === 0) { view.appendChild(notConnected()); return; }
+  const node = activeNode();
+  const snap = activeSnapshot();
+  view.appendChild(card("Client", [nodeSelect()]));
+  if (!snap) { view.appendChild(card("Modules", [emptyState("No snapshot yet.")])); return; }
+
+  const filter = el("input", { placeholder: "Search modules" });
+  const grid = el("div", { class: "grid" });
+  const draw = () => {
+    const needle = filter.value.trim().toLowerCase();
+    grid.innerHTML = "";
+    const modules = snap.modules.filter(m => !needle
+      || (m.title || "").toLowerCase().includes(needle)
+      || (m.category || "").toLowerCase().includes(needle)
+      || (m.description || "").toLowerCase().includes(needle));
+    if (modules.length === 0) { grid.appendChild(emptyState("No modules match.")); return; }
+    for (const module of modules) {
+      grid.appendChild(el("div", { class: "card" }, [
+        el("h3", {}, [
+          el("span", { text: module.title }),
+          el("span", { class: "spacer" }),
+          el("span", { class: "pill " + (module.active ? "on" : "off"), text: module.active ? "on" : "off" })
+        ]),
+        el("div", { class: "muted", style: "font-size:12px;min-height:32px", text: module.description || "" }),
+        el("div", { class: "row", style: "margin-top:8px" }, [
+          button(module.active ? "Turn off" : "Turn on", () =>
+            act(node, "/api/v1/modules/" + encodeURIComponent(module.name), { active: !module.active }, null, "POST"))
+        ])
+      ]));
+    }
+  };
+  filter.addEventListener("input", draw);
+  draw();
+
+  view.appendChild(card("Modules (" + snap.modules.length + ")", [filter, el("div", { style: "margin-top:10px" }, [grid])]));
+}
+
+// ---------------------------------------------------------------- storage
+
+function renderStorage() {
+  const view = document.getElementById("view-storage");
+  view.innerHTML = "";
+  if (nodes.length === 0) { view.appendChild(notConnected()); return; }
+  const node = activeNode();
+  const snap = activeSnapshot();
+  view.appendChild(card("Client", [nodeSelect()]));
+  if (!snap) { view.appendChild(card("Storage", [emptyState("No snapshot yet.")])); return; }
+
+  const storage = snap.storage;
+  view.appendChild(card("Log storage", [
+    kv("Segments", String(storage.segments)),
+    kv("Size on disk", fmtBytes(storage.bytes)),
+    kv("Sessions", String(storage.sessions)),
+    kv("Oldest entry", fmtTime(storage.oldestEpochMs)),
+    kv("Newest entry", fmtTime(storage.newestEpochMs))
+  ]));
+
+  view.appendChild(card("Session statistics", [
+    kv("Messages", String(snap.stats.messages)),
+    kv("Players seen", String(snap.stats.players)),
+    kv("Joins", String(snap.stats.joins)),
+    kv("Leaves", String(snap.stats.leaves)),
+    kv("Deaths", String(snap.stats.deaths)),
+    kv("Session started", fmtTime(snap.stats.sessionStartEpochMs))
+  ]));
+}
+
+// ---------------------------------------------------------------- events
+
+function renderEvents() {
+  const view = document.getElementById("view-events");
+  view.innerHTML = "";
+  if (nodes.length === 0) { view.appendChild(notConnected()); return; }
+  view.appendChild(card("Client", [nodeSelect()]));
+
+  const list = el("div", { class: "log" });
+  if (feed.length === 0) {
+    list.appendChild(emptyState("Waiting for live events…"));
+  } else {
+    for (const item of feed.slice(0, 200)) {
+      list.appendChild(el("div", { class: "line" }, [
+        el("span", { class: "t", text: "[" + new Date(item.at).toLocaleTimeString() + "] " }),
+        el("span", { class: "muted", text: item.type + " " }),
+        el("span", { text: typeof item.data === "string" ? item.data : JSON.stringify(item.data) })
+      ]));
+    }
+  }
+  view.appendChild(card("Live feed", [list], [
+    button("Clear", () => { feed.length = 0; render(); })
+  ]));
+}
+
+// ---------------------------------------------------------------- actions
+
+async function act(node, path, body, successMessage, method) {
+  const result = await apiCall(node, path, { method: method || "POST", body });
+  toastResult(result, successMessage);
+  refreshAll();
+}
+
+function toastResult(result, successMessage) {
+  if (result.ok) {
+    const message = successMessage
+      || (result.data && result.data.message)
+      || "Done.";
+    toast(message, "good");
+  } else {
+    toast(result.error || "The request failed.", "bad");
+  }
+}
+
+function toast(message, kind = "") {
+  const box = document.getElementById("toast");
+  const item = el("div", { class: "item " + kind, text: message });
+  box.appendChild(item);
+  setTimeout(() => item.remove(), 4200);
+}
+
+// ---------------------------------------------------------------- node dialog
+
+function renderNodeList() {
+  const list = document.getElementById("node-list");
+  list.innerHTML = "";
+  if (nodes.length === 0) { list.appendChild(el("div", { class: "empty", text: "No clients yet." })); return; }
+  for (const node of nodes) {
+    list.appendChild(el("div", { class: "row", style: "padding:6px 0;border-bottom:1px solid var(--line)" }, [
+      el("span", { class: "mono", text: (node.label || "Client") + " — " + node.url }),
+      el("span", { class: "spacer", style: "flex:1" }),
+      button("Remove", () => {
+        nodes = nodes.filter(n => n.id !== node.id);
+        saveNodes(); renderNodeList(); renderHeader(); render();
+      }, "btn danger")
+    ]));
+  }
+}
+
+function wireEvents() {
+  document.getElementById("btn-nodes").onclick = () => { renderNodeList(); document.getElementById("nodes-dialog").showModal(); };
+  document.getElementById("node-close").onclick = () => document.getElementById("nodes-dialog").close();
+  document.getElementById("btn-refresh").onclick = () => refreshAll();
+  document.getElementById("node-add").onclick = () => {
+    const url = document.getElementById("node-url").value.trim().replace(/\/+$/, "");
+    const token = document.getElementById("node-token").value.trim();
+    const label = document.getElementById("node-label").value.trim();
+    if (!url) { toast("Enter the client URL.", "bad"); return; }
+    if (!token) { toast("Enter the access token.", "bad"); return; }
+    nodes.push({ id: uid(), url, token, label });
+    saveNodes();
+    if (!activeNodeId) activeNodeId = nodes[nodes.length - 1].id;
+    document.getElementById("node-url").value = "";
+    document.getElementById("node-token").value = "";
+    document.getElementById("node-label").value = "";
+    renderNodeList();
+    connectStream();
+    refreshAll();
+    toast("Client added.", "good");
+  };
+}
+
+boot();
+</script>
+</body>
+</html>
