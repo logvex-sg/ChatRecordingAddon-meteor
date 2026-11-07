@@ -2,7 +2,7 @@ package com.logvex.addon.gui;
 
 import com.logvex.addon.framework.gui.GuiTheme;
 import com.logvex.addon.framework.gui.widgets.WCheckbox;
-import com.logvex.addon.framework.gui.widgets.WLabel;
+import com.logvex.addon.framework.gui.widgets.containers.WCard;
 import com.logvex.addon.framework.gui.widgets.WSlider;
 import com.logvex.addon.framework.gui.widgets.WWidget;
 import com.logvex.addon.framework.gui.widgets.containers.WHorizontalList;
@@ -38,18 +38,18 @@ public final class SettingsWidgets {
     public static WWidget row(GuiTheme theme, Setting<?> setting) {
         if (!setting.isVisible()) return null;
 
+        WCard card = theme.card();
         WVerticalList column = theme.verticalList();
 
-        WLabel label = theme.label(setting.name);
-        WLabel titled = label;
-        column.add(titled).expandX();
+        column.add(theme.label(setting.name)).expandX();
         if (setting.description != null && !setting.description.isBlank()) {
             column.add(theme.label(setting.description).color(theme.muted)).expandX();
         }
 
         WWidget control = control(theme, setting);
         if (control != null) column.add(control).expandX();
-        return column;
+        card.add(column).expandX();
+        return card;
     }
 
     @SuppressWarnings("unchecked")

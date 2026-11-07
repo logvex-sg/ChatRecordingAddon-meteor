@@ -1,5 +1,6 @@
 package com.logvex.addon.framework.gui;
 
+import com.logvex.addon.framework.gui.animation.AnimationClock;
 import com.logvex.addon.framework.gui.utils.Cell;
 import com.logvex.addon.framework.gui.widgets.WWidget;
 import com.logvex.addon.framework.gui.widgets.containers.WVerticalList;
@@ -84,6 +85,7 @@ public abstract class WidgetScreen extends Screen {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+        AnimationClock.tick();
         super.render(context, mouseX, mouseY, delta);
         // Lay out every frame. A list can be rebuilt from a button action (a tab switch, a filter, a
         // refresh) rather than through reload(), and without a layout pass those new widgets would

@@ -4,10 +4,15 @@ import com.logvex.addon.framework.gui.GuiTheme;
 import com.logvex.addon.framework.gui.GuiThemes;
 import com.logvex.addon.framework.gui.WidgetScreen;
 import com.logvex.addon.framework.gui.widgets.WWidget;
+import com.logvex.addon.framework.gui.widgets.containers.WCard;
+import com.logvex.addon.framework.gui.widgets.containers.WHorizontalList;
+import com.logvex.addon.framework.gui.widgets.containers.WVerticalList;
 import com.logvex.addon.framework.gui.widgets.input.WTextBox;
 import com.logvex.addon.framework.gui.widgets.pressable.WButton;
+import com.logvex.addon.framework.gui.widgets.pressable.WToggle;
 import com.logvex.addon.framework.settings.Setting;
 import com.logvex.addon.framework.settings.SettingGroup;
+import com.logvex.addon.framework.systems.config.ConfigManager;
 import com.logvex.addon.framework.systems.modules.Module;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
@@ -42,15 +47,28 @@ public class ModuleSettingsScreen extends WidgetScreen {
     public void initWidgets() {
         GuiTheme theme = this.theme;
 
+        WHorizontalList header = theme.horizontalList();
+        WButton back = header.add(theme.button("< Back")).widget();
+        back.action = () -> MinecraftClient.getInstance().setScreen(
+            parent instanceof ClickGuiScreen ? parent : new ClickGuiScreen());
+        header.add(theme.label(module.title).color(theme.accent)).expandX();
+        WToggle enabled = header.add(theme.toggle(module.isActive() ? "On" : "Off", module::isActive, value -> {
+            module.toggle();
+            ConfigManager.get().markDirty();
+            reload();
+        })).widget();
+        enabled.theme = theme;
+        add(header).expandX();
+
+        if (module.description != null && !module.description.isBlank()) {
+            add(theme.label(module.description).color(theme.muted)).expandX();
+        }
+
         WTextBox search = add(theme.textBox(query, "Search settings...")).expandX().widget();
         search.action = () -> {
             query = search.get();
             reload();
         };
-
-        WButton back = add(theme.button("Back")).expandX().widget();
-        back.action = () -> MinecraftClient.getInstance().setScreen(
-            parent instanceof ClickGuiScreen ? parent : new ClickGuiScreen());
 
         WWidget custom = module.getWidget(theme);
         if (custom != null) {
@@ -73,10 +91,19 @@ public class ModuleSettingsScreen extends WidgetScreen {
         }
 
         if (!any && needle.isEmpty() && custom == null) {
-            add(theme.label("This module has no settings.").color(theme.muted)).expandX();
+            emptyState(theme, "This module has no settings.");
         } else if (!any && !needle.isEmpty()) {
-            add(theme.label("No settings match \"" + query + "\".").color(theme.muted)).expandX();
+            emptyState(theme, "No settings match \"" + query + "\".");
         }
+    }
+
+    /** A small card explaining that there is nothing to show, rather than a bare line of text. */
+    private void emptyState(GuiTheme theme, String message) {
+        WCard card = theme.card();
+        WVerticalList column = theme.verticalList();
+        column.add(theme.label(message).color(theme.muted)).expandX();
+        card.add(column).expandX();
+        add(card).expandX();
     }
 
     private boolean matches(Setting<?> setting, String needle) {

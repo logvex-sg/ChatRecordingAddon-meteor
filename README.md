@@ -38,10 +38,14 @@ server-sent events, the bot controls, the task queue, the module switches, chat 
 statistics and storage usage. It is off by default, binds to loopback, and needs an access token.
 See [Companion (web app)](#companion-web-app).
 
-**GUI** — Right Shift (or `.log gui`) opens the addon window: a blue-themed, card-based interface
-listing every module and HUD element with an on/off switch, a search box and a settings page, plus a
-theme picker and a drag-and-drop HUD editor. Module settings are grouped and searchable, and every
-value is persisted to `<gamedir>/logclient/config.json`.
+**GUI** — Right Shift (or `.log gui`) opens the addon window: a Meteor-style interface with a
+navigation rail on the left (Modules, HUD, Theme, About) and a card list on the right. Every module
+and HUD element has an on/off switch and a Settings page, the list is searchable, and an enabled
+entry is marked with an accent bar. Rounded panels, eased hover and toggle animations and a soft
+glow on active controls are shared by every screen through one theme, and there are Meteor-style
+presets (Neon, Matrix, Amber, Crimson, Cyan) with a live swatch preview on the Appearance page.
+Module settings are grouped and searchable, and every value is persisted to
+`<gamedir>/logclient/config.json`.
 
 **Commands** — a `.log` (alias `.la`) command tree exposes status, the module list, session
 statistics, notifications, the automation task queue, waypoints and schematic control from chat.
@@ -52,7 +56,7 @@ statistics, notifications, the automation task queue, waypoints and schematic co
 ./gradlew clean test build
 ```
 
-The jar is written to `build/libs/log-client-13.0.0.jar`. Drop it into `.minecraft/mods`. No other
+The jar is written to `build/libs/log-client-14.0.0.jar`. Drop it into `.minecraft/mods`. No other
 mod is required; Baritone is optional and only affects bot navigation.
 
 ### Java 21 is required for the Gradle daemon
@@ -91,27 +95,35 @@ cannot report progress for a drop the server rejected or that only existed as a 
 
 ### Controls (module widget)
 
+The widget groups its controls under four headings so the whole workflow reads top to bottom, and
+the primary action of each group is drawn in the accent colour.
+
 | Control | Effect |
 | --- | --- |
+| **Material list** | |
+| Import file... | Opens the built-in file browser and imports a whole material report (or a schematic). |
+| Import from path... | Imports the file named by **material-file**, for scripted or command-line use. |
+| Preview import | Reopens the import preview of the last file. |
+| Material overview | Opens the material overview screen. |
+| **Dropping** | |
 | Start | Begins a run from the current confirmed progress. |
 | Pause / Resume | Suspends and continues a run. A run with an in-flight confirmation finishes that confirmation before pausing. |
 | Stop | Cancels the pending operation and returns to idle. |
-| Reset Progress | Clears confirmed counters without touching the plan or the inventory. |
-| Rescan Inventory | Forces a fresh inventory scan. |
-| Material Overview | Opens the material overview screen. |
-| Acquire Materials | Starts automatic Creative acquisition from the imported list. |
-| Acquisition... | Opens the acquisition screen (progress, per-material status, controls). |
-| Import Material List... | Opens the built-in file browser and imports a whole material report (or a schematic). |
-| Import Material Path | Imports the file named by **material-file**, for scripted or command-line use. |
-| Load Schematic... | Opens the built-in file browser and loads a `.schem` / `.schematic` / `.litematic` build. |
-| Load Path | Loads the file named by **schematic-file**, for scripted or command-line use. |
-| Start Build | Places the loaded schematic block by block, verifying each placement. |
-| Pause / Resume / Stop (build row) | Controls a schematic build. |
-| Schematic Builder... | Opens the build screen (progress, problems, history, checkpoints). |
+| Reset progress | Clears confirmed counters without touching the plan or the inventory. |
+| Rescan inventory | Forces a fresh inventory scan. |
+| **Creative acquisition** | |
+| Acquire materials | Starts automatic Creative acquisition from the imported list. |
+| Acquisition window... | Opens the acquisition screen (progress, per-material status, controls). |
+| **Schematic building** | |
+| Load schematic... | Opens the built-in file browser and loads a `.schem` / `.schematic` / `.litematic` build. |
+| Load from path... | Loads the file named by **schematic-file**, for scripted or command-line use. |
+| Start build | Places the loaded schematic block by block, verifying each placement. |
+| Pause build / Resume build / Stop build | Controls a schematic build. |
+| Builder window... | Opens the build screen (progress, problems, history, checkpoints). |
 
 ### Importing a material list
 
-**Import Material List...** opens the built-in file browser and parses the
+**Import file...** opens the built-in file browser and parses the
 **entire** file: the importer never stops at a fixed entry count and never silently truncates.
 Two input formats are supported.
 
@@ -144,7 +156,7 @@ so both the drop workflow and the acquisition workflow operate on exactly what w
 ### Import preview
 
 After a file is parsed the **Import Preview** screen opens (and can be reopened any time from the
-module's **Import Preview** button). It shows the material count, total item count, valid entries,
+module's **Preview import** button). It shows the material count, total item count, valid entries,
 duplicates merged and invalid entries, then the **first and last entries** so the range can be
 confirmed, and the complete ordered list with a filter box and paging for long lists. Nothing is
 acquired or dropped until **Start Acquisition** or **Start Drop Run** is pressed, so a bad import
@@ -152,7 +164,7 @@ costs a click rather than a wrong build.
 
 ### Choosing files
 
-**Import Material List...** and **Load Schematic...** open the addon's own file browser, built from
+**Import file...** and **Load schematic...** open the addon's own file browser, built from
 the same widgets as the rest of the GUI. It has no native dependency, so it works on every desktop
 and on headless setups where the OS file dialog (`tinyfd`) returns nothing — which is what used to
 make loading a file look broken. The browser starts in `<gamedir>/schematicdropper`, pages
@@ -751,23 +763,37 @@ segment rescued from a backup) is searchable again.
 
 ## GUI
 
-Press **Right Shift** in-game (or run `.log gui`) to open the addon window. It is a card-based,
-blue-themed interface with three tabs:
+Press **Right Shift** in-game (or run `.log gui`) to open the addon window. It has a navigation
+rail on the left and a card list on the right, in the style of a modern Meteor-client interface:
 
 - **Modules** — every module grouped by category, each row a card with an on/off switch and a
-  **Settings** button. The header shows how many modules are currently on, and each category heading
-  shows how many of its modules are on.
+  **Settings** button. The rail shows how many modules are currently on, and each category heading
+  shows how many of its modules are on. An enabled entry carries an accent bar down its left edge.
 - **HUD** — every HUD element with an on/off switch and a **Settings** button, plus **Arrange HUD**
   (the editor), **Show all** and **Hide all**.
-- **Theme** — the colour scheme, the HUD text scale and the command prefix, plus an **About** block
-  with the version, counts, the config path and links.
+- **Theme** — the colour scheme, a live swatch preview of the derived colours, the HUD text scale and
+  the command prefix.
+- **About** — the version, registration counts, the config path, the shortcuts and the licence.
 
 **Search** filters the module or HUD list by name, title or description, and shows a clear empty
-state when nothing matches. Long pages scroll with the mouse wheel; the list is clipped to the
-screen so nothing runs off the bottom.
+state when nothing matches. Long pages scroll with the mouse wheel; the content column is clipped to
+the screen so nothing runs off the bottom, while the rail stays fully visible.
 
 **Settings** opens a page with the module's own controls first, then every setting grouped exactly
-as the module declares it. A second search box filters the settings on that page.
+as the module declares it. Each setting is a card with its name, description and control. The page
+header carries a **Back** button and an on/off switch for the module itself, and a second search box
+filters the settings on that page.
+
+### Look and feel
+
+Every screen is drawn through one theme, so the whole addon is visually consistent. Panels, buttons,
+toggles and text fields have rounded corners and a hairline border; hover, selection and toggle
+changes are eased over a fraction of a second rather than snapped; and active controls carry a soft
+glow in the theme's accent colour. The navigation rail draws its own glyphs from primitives, so
+there are no icon textures to keep in sync and the rail recolours with the theme.
+
+Animations run off a shared real-time clock that both the GUI and the HUD advance once per frame, so
+an animation looks the same whether it is drawn in a screen or on the HUD.
 
 ### HUD editor
 
@@ -780,11 +806,14 @@ boxes. Positions are saved to the config, so an arrangement survives a restart. 
 
 ### Themes
 
-The **Theme** tab switches between built-in colour schemes — Blue (the default), Midnight, Azure,
-Light, Violet, Teal and High Contrast. Applying one restyles every open screen on its next frame
-(the shared theme instance is updated in place), and the choice is saved in `config.json`, so the
-GUI opens in your scheme on the next launch. A scheme named by an older build (`DARK`, `ROSE`,
-`FOREST`) is migrated onto its nearest replacement rather than silently reset.
+The **Theme** page switches between built-in colour schemes — Blue (the default), Midnight, Azure,
+Light, Violet, Teal, High Contrast, and the Meteor-style **Neon**, **Matrix**, **Amber**,
+**Crimson** and **Cyan**. Applying one restyles every open screen on its next frame (the shared
+theme instance is updated in place) and the HUD with it, and the choice is saved in `config.json`,
+so the GUI opens in your scheme on the next launch. A scheme named by an older build (`DARK`,
+`ROSE`, `FOREST`) is migrated onto its nearest replacement rather than silently reset. The
+**Preview** strip shows the accent, secondary, glow and status colours the selected preset derives,
+so a scheme can be judged without leaving the page.
 
 The chat-intelligence modules open their own screens: **Session Timeline** (searchable, paged
 milestone list with per-kind counts), **Chat Digest** (per-type totals and the most active players),
@@ -1005,7 +1034,7 @@ archive with in-memory doubles (no Minecraft runtime required):
   the file browser, the import preview and the log viewer rendered nothing after the first click.
   Fixed by re-attaching the frame on every rebuild; `ScreenRebuildTest` guards it.
 - **The OS file dialog does not open.** Expected on some Linux desktops and on headless setups:
-  `tinyfd` returns nothing there. Use the addon's own file browser (**Import Material List...** /
+  `tinyfd` returns nothing there. Use the addon's own file browser (**Import file...** /
   **Load Schematic...**), or set the `material-file` / `schematic-file` setting to a full path and
   press the matching *Path* button. The typed-path route and the `.log import` /
   `.log schematic load` commands never touch the native dialog.

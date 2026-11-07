@@ -1,10 +1,12 @@
 package com.logvex.addon.framework.gui.widgets.input;
 
 import com.logvex.addon.framework.gui.GuiTheme;
+import com.logvex.addon.framework.gui.animation.AnimationClock;
+import com.logvex.addon.framework.gui.animation.Animator;
 import com.logvex.addon.framework.gui.widgets.WWidget;
+import com.logvex.addon.framework.utils.render.Render2D;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
-import net.minecraft.util.Formatting;
 
 /**
  * A single-line text field.
@@ -12,7 +14,8 @@ import net.minecraft.util.Formatting;
  * <p>The field only consumes keyboard input while focused, which it becomes on click. The
  * {@link #action} callback fires on every change, so a search screen can filter as the user types.
  * Editing keys (backspace, delete, arrows, home, end) are handled here rather than leaking to the
- * screen.
+ * screen. The border eases towards the accent while focused and a blinking caret marks the insertion
+ * point.
  */
 public class WTextBox extends WWidget {
     public Runnable action;
@@ -21,6 +24,7 @@ public class WTextBox extends WWidget {
     private final String placeholder;
     private boolean focused;
     private int cursor;
+    private final Animator fillAnim = Animator.of(0);
 
     public WTextBox(String text, String placeholder) {
         setText(text);
@@ -55,27 +59,45 @@ public class WTextBox extends WWidget {
 
     @Override
     public void calculateSize() {
-        height = MinecraftClient.getInstance().textRenderer.fontHeight + 6;
-        width = Math.max(100, MinecraftClient.getInstance().textRenderer.getWidth(text) + 10);
+        height = MinecraftClient.getInstance().textRenderer.fontHeight + 8;
+        width = Math.max(100, MinecraftClient.getInstance().textRenderer.getWidth(text) + 12);
     }
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, double delta) {
         GuiTheme theme = this.theme;
-        int fill = theme == null ? 0xFF202028 : argb(theme.textBoxBackground);
-        int border = theme == null ? 0xFF505060 : argb(focused ? theme.textBoxFocused : theme.textBoxBorder);
-        context.fill((int) x, (int) y, (int) (x + width), (int) (y + height), fill);
-        context.drawBorder((int) x, (int) y, (int) width, (int) height, border);
+        double radius = 3;
+        boolean hovered = isMouseOver(mouseX, mouseY);
+        fillAnim.target(focused ? 1 : 0);
+        fillAnim.update(AnimationClock.delta());
+
+        int fill = theme == null ? 0xFF202028 : Render2D.argb(theme.textBoxBackground);
+        Render2D.roundedRect(context, x, y, width, height, radius, fill);
+
+        int border = theme == null
+            ? (focused ? 0xFF8CC8FF : 0xFF505060)
+            : Render2D.blend(
+                Render2D.argb(hovered ? theme.textBoxFocused : theme.textBoxBorder),
+                Render2D.argb(theme.accent), fillAnim.value());
+        Render2D.roundedOutline(context, x, y, width, height, radius, border, focused ? 1.4 : 1);
+        if (focused) {
+            Render2D.glow(context, x, y, width, height, radius, Render2D.argb(theme == null
+                ? new com.logvex.addon.framework.utils.render.color.Color(120, 160, 255) : theme.glow, 70), 3, 2);
+        }
 
         var tr = MinecraftClient.getInstance().textRenderer;
         String shown = text.isEmpty() && !focused ? placeholder : text;
-        int color = theme == null ? 0xFFE0E0E0 : argb(theme.text);
-        if (text.isEmpty() && !focused) color = 0xFF808080;
-        context.drawTextWithShadow(tr, shown, (int) x + 4, (int) y + 3, color);
+        int color = theme == null ? 0xFFE0E0E0 : Render2D.argb(theme.text);
+        if (text.isEmpty() && !focused) color = theme == null ? 0xFF808080 : Render2D.argb(theme.muted, 200);
+        context.drawTextWithShadow(tr, shown, (int) x + 5, (int) y + 4, color);
 
         if (focused) {
-            int caretX = (int) x + 4 + tr.getWidth(text.substring(0, Math.min(cursor, text.length())));
-            context.fill(caretX, (int) y + 2, caretX + 1, (int) (y + height - 2), 0xFFE0E0E0);
+            // A caret that blinks on a one-second cycle so it reads as a live cursor.
+            if ((AnimationClock.time() % 1.0) < 0.5) {
+                int caretX = (int) x + 5 + tr.getWidth(text.substring(0, Math.min(cursor, text.length())));
+                Render2D.rect(context, caretX, y + 3, 1, height - 6, Render2D.argb(theme == null
+                    ? new com.logvex.addon.framework.utils.render.color.Color(224, 224, 224) : theme.accent));
+            }
         }
     }
 

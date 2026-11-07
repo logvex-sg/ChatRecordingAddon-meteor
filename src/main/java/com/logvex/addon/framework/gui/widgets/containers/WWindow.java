@@ -3,15 +3,23 @@ package com.logvex.addon.framework.gui.widgets.containers;
 import com.logvex.addon.framework.gui.GuiTheme;
 import com.logvex.addon.framework.gui.utils.Cell;
 import com.logvex.addon.framework.gui.widgets.WWidget;
+import com.logvex.addon.framework.utils.render.Render2D;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 
-/** A titled panel whose body stacks widgets vertically. */
+/**
+ * A titled panel whose body stacks widgets vertically.
+ *
+ * <p>The frame is a rounded, translucent surface with a tinted title bar, matching the look of the
+ * rest of the interface. The title carries a small accent dot and a hairline rule runs along the
+ * bottom of the bar, which is what makes a window read as a "panel" rather than a floating rectangle.
+ */
 public class WWindow extends WContainer {
     public final WVerticalList view = new WVerticalList();
     public final String title;
 
-    private static final double TITLE_HEIGHT = 14;
+    private static final double TITLE_HEIGHT = 16;
+    private static final double RADIUS = 5;
 
     public WWindow(String title) {
         this.title = title == null ? "" : title;
@@ -44,21 +52,35 @@ public class WWindow extends WContainer {
     @Override
     public void layout(double x, double y, double width) {
         super.layout(x, y, width);
-        view.layout(this.x, this.y + TITLE_HEIGHT, this.width);
+        view.layout(this.x + 2, this.y + TITLE_HEIGHT, this.width - 4);
     }
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, double delta) {
         GuiTheme theme = this.theme;
-        int bg = theme == null ? 0xCC101014 : argb(theme.windowBackground);
-        int border = theme == null ? 0xFF606070 : argb(theme.windowBorder);
-        int titleColor = theme == null ? 0xFF8CC8FF : argb(theme.windowTitle);
+        if (theme == null) {
+            context.fill((int) x, (int) y, (int) (x + width), (int) (y + height), 0xCC101014);
+            context.drawBorder((int) x, (int) y, (int) width, (int) height, 0xFF606070);
+            context.drawTextWithShadow(MinecraftClient.getInstance().textRenderer, this.title,
+                (int) x + 4, (int) y + 4, 0xFF8CC8FF);
+            view.render(context, mouseX, mouseY, delta);
+            return;
+        }
 
-        context.fill((int) x, (int) y, (int) (x + width), (int) (y + height), bg);
-        context.drawBorder((int) x, (int) y, (int) width, (int) height, border);
+        // Body, then the tinted title bar clipped to the top rounded corners.
+        Render2D.roundedRect(context, x, y, width, height, RADIUS, Render2D.argb(theme.windowBackground));
+        Render2D.roundedRect(context, x, y, width, TITLE_HEIGHT, RADIUS, Render2D.argb(theme.header));
+        Render2D.roundedRect(context, x, y + TITLE_HEIGHT - RADIUS, width, RADIUS, 0, Render2D.argb(theme.header));
+        Render2D.gradientVertical(context, x + 1, y + 1, width - 2, TITLE_HEIGHT - 1,
+            Render2D.argb(theme.accent, 26), Render2D.argb(theme.accent, 0));
+        // Hairline under the bar, and the outer border.
+        Render2D.rect(context, x + 1, y + TITLE_HEIGHT - 1, width - 2, 1, Render2D.argb(theme.accent, 60));
+        Render2D.roundedOutline(context, x, y, width, height, RADIUS, Render2D.argb(theme.windowBorder, 190), 1);
 
+        // Accent dot and title.
+        Render2D.roundedRect(context, x + 6, y + 5, 5, 5, 2, Render2D.argb(theme.accent));
         var tr = MinecraftClient.getInstance().textRenderer;
-        context.drawTextWithShadow(tr, this.title, (int) x + 4, (int) y + 3, titleColor);
+        context.drawTextWithShadow(tr, this.title, (int) x + 15, (int) y + 4, Render2D.argb(theme.windowTitle));
 
         view.render(context, mouseX, mouseY, delta);
     }
@@ -86,9 +108,5 @@ public class WWindow extends WContainer {
     @Override
     public boolean charTyped(char chr, int modifiers) {
         return view.charTyped(chr, modifiers);
-    }
-
-    private static int argb(com.logvex.addon.framework.utils.render.color.Color c) {
-        return 0xFF000000 | (c.r << 16) | (c.g << 8) | c.b;
     }
 }
