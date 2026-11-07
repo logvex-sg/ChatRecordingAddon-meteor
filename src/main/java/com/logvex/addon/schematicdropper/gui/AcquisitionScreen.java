@@ -77,6 +77,16 @@ public class AcquisitionScreen extends WindowScreen {
             refresh();
         };
 
+        WHorizontalList toggles = add(theme.horizontalList()).expandX().widget();
+        toggles.add(theme.toggle("Auto Acquisition", module::isAutoAcquireEnabled, value -> {
+            module.setAutoAcquire(value);
+            refresh();
+        })).expandX();
+        toggles.add(theme.toggle("Auto Drop", module::isAutoDropEnabled, value -> {
+            module.setAutoDrop(value);
+            refresh();
+        })).expandX();
+
         search = add(theme.textBox("", "Search materials...")).minWidth(400).expandX().widget();
         search.action = () -> {
             filter = search.get().trim().toLowerCase(Locale.ROOT);
@@ -151,6 +161,7 @@ public class AcquisitionScreen extends WindowScreen {
         table.add(theme.label("Held"));
         table.add(theme.label("Needed"));
         table.add(theme.label("Acquired"));
+        table.add(theme.label("Dropped"));
         table.row();
 
         for (MaterialAcquisition m : rows) {
@@ -160,6 +171,7 @@ public class AcquisitionScreen extends WindowScreen {
             table.add(theme.label(m.held() < 0 ? "--" : Messages.number(m.held())));
             table.add(theme.label(Messages.number(m.needed())));
             table.add(theme.label(Messages.number(m.acquired())));
+            table.add(theme.label(dropText(m)).color(dropColor(m)));
             table.row();
         }
     }
@@ -174,5 +186,21 @@ public class AcquisitionScreen extends WindowScreen {
         if (m.complete()) return "Complete";
         if (m.acquired() > 0) return "In Progress";
         return "Pending";
+    }
+
+    private Color dropColor(MaterialAcquisition m) {
+        return switch (m.dropStatus()) {
+            case DROPPED -> GREEN;
+            case PARTIAL -> AMBER;
+            case NONE -> GREY;
+        };
+    }
+
+    private String dropText(MaterialAcquisition m) {
+        return switch (m.dropStatus()) {
+            case DROPPED -> "Dropped";
+            case PARTIAL -> Messages.number(m.dropped());
+            case NONE -> "-";
+        };
     }
 }

@@ -524,4 +524,63 @@ class AcquisitionEngineTest {
         assertNotNull(h.engine.snapshot());
         assertTrue(h.engine.snapshot().percent() >= 0);
     }
+
+    @Test
+    @DisplayName("a dropped batch shows up as Dropped in the per-material snapshot")
+    void snapshotReportsDropStatus() {
+        Harness h = new Harness();
+        h.engine.setConfig(new AcquisitionConfig(true, true, 0, 3, 0, 5000, 0));
+        h.plan(new Requirement("minecraft:stone", "Stone", 64));
+        h.start();
+
+        // Act like the drop engine each time a drain starts: report the batch and free the space.
+        for (int i = 0; i < 100 && h.state() != AcquisitionState.COMPLETED; i++) {
+            h.tick(10);
+            if (h.drain.active && h.drain.draining) {
+                h.drain.complete(Map.of("minecraft:stone", 64));
+                for (int s = 0; s < AcquisitionFakes.FakeEnv.SLOTS; s++) h.env.put(s, null, 0);
+            }
+        }
+
+        assertEquals(AcquisitionState.COMPLETED, h.state());
+        MaterialAcquisition stone = h.engine.snapshot().materials().get(0);
+        assertEquals(64, stone.dropped(), "the dropped quantity must be reported per material");
+        assertEquals(MaterialAcquisition.DropStatus.DROPPED, stone.dropStatus());
+        assertEquals(64, stone.acquired());
+    }
+
+    @Test
+    @DisplayName("with auto-drop off nothing is reported as dropped")
+    void snapshotNoDropWhenAutoDropOff() {
+        Harness h = new Harness();
+        h.plan(new Requirement("minecraft:stone", "Stone", 64));
+        h.start();
+        h.run(20, 10);
+
+        MaterialAcquisition stone = h.engine.snapshot().materials().get(0);
+        assertEquals(0, stone.dropped());
+        assertEquals(MaterialAcquisition.DropStatus.NONE, stone.dropStatus());
+    }
+
+    @Test
+    @DisplayName("the acquired total counts a drained batch exactly once")
+    void drainedBatchIsNotDoubleCounted() {
+        Harness h = new Harness();
+        h.engine.setConfig(new AcquisitionConfig(true, true, 0, 3, 0, 5000, 0));
+        h.plan(new Requirement("minecraft:stone", "Stone", 64));
+        h.start();
+
+        for (int i = 0; i < 100 && h.state() != AcquisitionState.COMPLETED; i++) {
+            h.tick(10);
+            if (h.drain.active && h.drain.draining) {
+                h.drain.complete(Map.of("minecraft:stone", 64));
+                for (int s = 0; s < AcquisitionFakes.FakeEnv.SLOTS; s++) h.env.put(s, null, 0);
+            }
+        }
+
+        // The material was created once and dropped once. A regression here means the engine
+        // credited the drain on top of the confirmed give, which would inflate every statistic.
+        assertEquals(AcquisitionState.COMPLETED, h.state());
+        assertEquals(64, h.engine.snapshot().totalAcquired());
+    }
 }
