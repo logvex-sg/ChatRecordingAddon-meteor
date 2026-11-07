@@ -2,7 +2,9 @@ package com.logvex.addon.companion;
 
 import com.logvex.addon.companion.core.CompanionClientThread;
 import com.logvex.addon.companion.core.CompanionEventBus;
+import com.logvex.addon.companion.core.CompanionJson;
 import com.logvex.addon.companion.core.CompanionRateLimiter;
+import com.logvex.addon.companion.core.CompanionSnapshot;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -194,5 +196,37 @@ class CompanionCoreTest {
         long elapsedMs = (System.nanoTime() - before) / 1_000_000;
         assertTrue(release.await(1, TimeUnit.SECONDS));
         assertTrue(elapsedMs < 500, "publish must return promptly");
+    }
+
+    // ------------------------------------------------------------------ app contract
+
+    @Test
+    @DisplayName("the snapshot's JSON keys are exactly the ones the bundled app reads")
+    void snapshotKeysMatchTheApp() {
+        String json = CompanionJson.write(CompanionSnapshot.empty("node", "Log Addon", "12.0.0"));
+        com.google.gson.JsonObject root = com.google.gson.JsonParser.parseString(json).getAsJsonObject();
+        for (String key : List.of("node", "modules", "tasks", "players", "chat", "stats", "storage",
+            "bot", "capabilities")) {
+            assertTrue(root.has(key), "the app reads snapshot." + key);
+        }
+        com.google.gson.JsonObject node = root.getAsJsonObject("node");
+        for (String key : List.of("id", "name", "addonVersion", "minecraftVersion", "playerName",
+            "serverAddress", "inWorld", "singleplayer", "gameMode", "uptimeMs", "nowEpochMs")) {
+            assertTrue(node.has(key), "the app reads node." + key);
+        }
+        com.google.gson.JsonObject stats = root.getAsJsonObject("stats");
+        for (String key : List.of("messages", "players", "joins", "leaves", "deaths",
+            "sessionStartEpochMs")) {
+            assertTrue(stats.has(key), "the app reads stats." + key);
+        }
+        com.google.gson.JsonObject storage = root.getAsJsonObject("storage");
+        for (String key : List.of("segments", "bytes", "sessions", "oldestEpochMs", "newestEpochMs")) {
+            assertTrue(storage.has(key), "the app reads storage." + key);
+        }
+        com.google.gson.JsonObject bot = root.getAsJsonObject("bot");
+        for (String key : List.of("state", "activeTask", "queued", "completed", "failed", "paused",
+            "recentEvents")) {
+            assertTrue(bot.has(key), "the app reads bot." + key);
+        }
     }
 }
