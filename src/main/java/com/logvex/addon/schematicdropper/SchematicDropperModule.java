@@ -671,6 +671,25 @@ public class SchematicDropperModule extends Module {
         tracker.setPlan(plan);
     }
 
+    /**
+     * Replaces the material list with {@code entries} (each {@code "id amount"}) and rebuilds the
+     * plan, so another module can hand this one an ordered queue. The entries are parsed through the
+     * same {@link MaterialListParser} the settings use, so nothing bypasses validation.
+     *
+     * @return the number of entries that parsed, or -1 when the module is not enabled
+     */
+    public int setMaterialEntries(List<String> entries) {
+        if (!isActive()) return -1;
+        materialList.set(entries == null ? List.of() : List.copyOf(entries));
+        rebuildPlan();
+        return plan.requirements().size();
+    }
+
+    /** The current ordered material list, in {@code "id amount"} form. */
+    public List<String> materialEntries() {
+        return List.copyOf(materialList.get());
+    }
+
     /** The folder the file pickers open in, created up front so the dialog never starts nowhere. */
     private static File dataDirectory() {
         return new File(Addon.FOLDER(), "schematicdropper");

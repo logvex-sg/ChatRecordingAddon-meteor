@@ -298,6 +298,69 @@ dashboard and HUD use, so a command never diverges from the GUI:
 | `.bot profile [list\|apply\|save\|delete] <name>` | Manages bot profiles. |
 
 
+## Automation modules
+
+These modules automate small, legitimate client actions. Each one is a thin Minecraft shell over a
+Minecraft-free controller in `com.logvex.addon.automation.core`, so the decision logic is unit-tested
+without a running client. Every module stops acting when the world goes away, resets on a reconnect
+and releases any input it pressed when it is disabled.
+
+| Module | What it does |
+| --- | --- |
+| `auto-eat` | Eats from the hotbar when hunger drops to a threshold, preferring the held food with the highest nutrition. Only selects a slot and uses the item; it never creates food. |
+| `auto-tool` | Swaps to the best hotbar tool for the block being mined (suitability, then speed), optionally swapping back afterwards. It only changes the selected slot. |
+| `auto-replenish` | Keeps the items you list stocked on the hotbar by moving a stack into place with a normal slot swap. It never invents items and never takes a stack another requested slot needs. |
+| `auto-sprint` | Holds sprint on while you move forward, optionally only above a food threshold. |
+| `safe-walk` | Releases the forward key at the edge of a drop, exactly as a cautious player would. It only ever removes movement input. |
+| `anti-afk` | Performs small, genuine client actions on a randomised schedule (look, jump, sneak, swing, step, swap hand) so you are not kicked for idling. |
+| `armor-guard` | Warns when a piece of armour is close to breaking. A missing piece is reported as unavailable, never as "0 % durability". |
+| `auto-log` | Disconnects when health, food, inventory space, a hostile mob or another player crosses a rule you enabled. Off by default; every rule is opt-in, and there is a grace period after joining. |
+| `auto-reconnect` | Reconnects to the last **multiplayer** server after a disconnect, using vanilla's own connection screen, with a bounded backoff and a retry cap. |
+| `server-monitor` | Prints a periodic status line (duration, game mode, latency, free slots) and a session summary on leave, using only what the client can observe. |
+| `auto-creative` | Imports a material list (or takes typed entries), acquires the items in Creative mode and can hand the ordered list to the Schematic Dropper queue. See below. |
+
+### Automatic Creative acquisition
+
+`auto-creative` and the Schematic Dropper's acquisition workflow both use the same real give path:
+`clickCreativeStack`, the call vanilla's Creative inventory uses, which sends a
+`CreativeInventoryActionC2SPacket`. A give is only counted once the **server** acknowledges it and the
+slot really holds the requested item, so a client-only prediction is never reported as success.
+
+The workflow is `IMPORT → VALIDATE → CALCULATE → ACQUIRE → VERIFY → DROP → VERIFY DROP → NEXT`.
+Materials are processed in imported order; only the missing quantity is acquired; a give is targeted
+at a slot that can actually make progress (a full stack is skipped for an empty slot); a rejected give
+is retried a bounded number of times before the item is reported failed. In Survival, or without the
+creative permission, the module says so and does nothing.
+
+Open the acquisition manager from the module widget (**Open Acquisition Manager**) or run
+`.log acquire`. It shows each material with its icon, required/held/still-needed quantities, status
+and the overall progress, and provides Start, Pause, Resume, Stop, Retry Failed, Restart Current and
+the two import buttons.
+
+### Importing a material list into the acquisition queue
+
+Both the Schematic Dropper and `auto-creative` accept the same two input shapes (auto-detected):
+
+```text
+# Format A - simplified
+minecraft:quartz_pillar 3861
+minecraft:spruce_planks 3420
+```
+
+```text
+| Material | Quantity |
+| quartz pillar | 3861 (60 stacks + 21) |
+| spruce planks | 3420 (53 stacks + 28) |
+```
+
+The whole file is read to EOF — no line or entry cap — with tabs, CRLF and blank lines tolerated,
+quantities above one stack preserved, duplicates merged onto their first occurrence and the original
+order kept. In a multi-section report only the **Material List** section is imported; *Raw Resources
+Required* and *Choice Requirements* are ignored. Every id is validated against the 1.21.1 item
+registry and invalid entries are reported separately. The import is followed by a preview (unique
+materials, total required, valid/invalid counts, duplicates merged, first and last entry) before
+anything is acquired.
+
 ## Chat intelligence modules
 
 These modules extend the chat toolkit. They share the same output formatter (`com.logvex.addon.common.Messages`)
@@ -564,6 +627,10 @@ The addon registers a `.log` command (alias `.la`). Run `.log help` for the list
 | `.log schematic [status]` | The current build state and progress. |
 | `.log schematic load <path>` | Loads a schematic from a path (no file dialog). |
 | `.log schematic <start\|pause\|resume\|stop>` | Controls a build. |
+| `.log acquire [start\|pause\|resume\|stop\|status\|retry]` | Controls automatic Creative material acquisition. |
+| `.log acquire import <path>` | Imports a material list into the acquisition queue. |
+| `.log schematic acquire` | Starts acquisition from the current schematic/material list. |
+| `.log schematic import <path>` | Imports a material list into the Schematic Dropper queue. |
 | `.log digest` | Prints a summary of recent chat activity. |
 | `.log timeline [filter]` | Recent session milestones, optionally filtered. |
 | `.log filter [stats]` | Chat filter rule count, default action and how many messages were hidden. |
@@ -630,6 +697,17 @@ archive with in-memory doubles (no Minecraft runtime required):
   persistence, index rebuild, search, cleanup, deletion and payload safety.
 - `SettingsTest` — clamping, immutability, dependency visibility, declaration order, JSON
   round-trip and rejection of an invalid stored value.
+- `CreativeControllerTest` — the automation acquisition state machine driven through fakes: a single
+  item, quantities larger than a stack, an existing partial quantity, an unacknowledged give (never
+  reported as success), a rejected give failing after the retry budget, an unknown id, missing
+  creative mode, a full inventory waiting rather than failing, progress and ordering.
+- `AutomationControllersTest` — every automation controller: eat thresholds/nutrition/cooldown, tool
+  scoring and swap-back, sprint gating, safe-walk edge rules, armour classification and urgency,
+  the anti-AFK schedule and action set, hotbar replenish planning, and the auto-log rules and grace
+  period.
+- `AutoCreativeImportTest` — the whole import path: the supplied 367-entry list becomes 367 ordered
+  acquisition requests, the table report excludes raw resources, and `parseItems` tolerates
+  whitespace, missing amounts and malformed lines while preserving large quantities.
 - `ConfigManagerTest` — save/load round-trip, missing and corrupt files, unknown-key preservation
   and the dirty flag, all against a real temp file.
 - `PlayerIdentityTrackerTest` — observed-name tracking: a first observation is not a rename, a
@@ -657,8 +735,14 @@ archive with in-memory doubles (no Minecraft runtime required):
 - In-game behaviour (the acquisition/build screens, the file browser, the import screen, HUD and chat
   filter) has not been verified in a live Minecraft session from this environment; the core engines,
   the importer, the readers, the checkpoint store, the filter rules, the digest, the timeline, the
-  notes store, the activity histogram and the log importer are covered by unit tests that use fakes
-  and the real 1.21.1 registries.
+  notes store, the activity histogram, the automation controllers and the log importer are covered by
+  unit tests that use fakes and the real 1.21.1 registries.
+- `auto-reconnect` only reconnects to a server the client already has a saved entry for, and does
+  nothing for a single-player world (which cannot be resumed through the connection screen). It uses
+  the same path the multiplayer list uses, so the server sees an ordinary client.
+- `server-monitor` reports only what the client can observe (duration, game mode, latency from the
+  player list, free slots). It does not report server tick rate or a player count it cannot see.
+- `armor-guard` only reads the four vanilla armour slots; it never moves or replaces armour.
 - The chat filter cancels a message in `ChatHud.addMessage`. A server that sends the same message
   through a path this mixin does not cover (for example a custom chat mod that renders its own
   overlay) is outside its reach; the vanilla chat HUD is what it targets.

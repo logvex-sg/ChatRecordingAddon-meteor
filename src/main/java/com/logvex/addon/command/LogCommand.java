@@ -207,7 +207,39 @@ public class LogCommand extends Command {
         })).then(literal("stop").executes(context -> {
             schematicAction("stop");
             return SINGLE_SUCCESS;
-        })));
+        })).then(literal("acquire").executes(context -> {
+            acquisitionAction("start");
+            return SINGLE_SUCCESS;
+        })).then(literal("import").then(argument("path", StringArgumentType.greedyString()).executes(context -> {
+            importMaterials(StringArgumentType.getString(context, "path"));
+            return SINGLE_SUCCESS;
+        }))));
+
+        builder.then(literal("acquire").executes(context -> {
+            acquisitionAction("start");
+            return SINGLE_SUCCESS;
+        }).then(literal("start").executes(context -> {
+            acquisitionAction("start");
+            return SINGLE_SUCCESS;
+        })).then(literal("pause").executes(context -> {
+            acquisitionAction("pause");
+            return SINGLE_SUCCESS;
+        })).then(literal("resume").executes(context -> {
+            acquisitionAction("resume");
+            return SINGLE_SUCCESS;
+        })).then(literal("stop").executes(context -> {
+            acquisitionAction("stop");
+            return SINGLE_SUCCESS;
+        })).then(literal("status").executes(context -> {
+            acquisitionAction("status");
+            return SINGLE_SUCCESS;
+        })).then(literal("retry").executes(context -> {
+            acquisitionAction("retry");
+            return SINGLE_SUCCESS;
+        })).then(literal("import").then(argument("path", StringArgumentType.greedyString()).executes(context -> {
+            importMaterials(StringArgumentType.getString(context, "path"));
+            return SINGLE_SUCCESS;
+        }))));
 
         builder.then(literal("record")
             .executes(context -> {
@@ -354,6 +386,7 @@ public class LogCommand extends Command {
         info("  (highlight).log alerts [count|clear](default) - recent keyword/webhook/error alerts.");
         info("  (highlight).log playtime [player](default) - observed player session durations.");
         info("  (highlight).log schematic [status|load <path>|start|pause|resume|stop](default).");
+        info("  (highlight).log acquire [start|pause|resume|stop|status|retry|import <path>](default) - Creative material acquisition.");
         info("  (highlight).log digest(default) - summarise recent chat activity.");
         info("  (highlight).log timeline [filter](default) - recent session milestones.");
         info("  (highlight).log filter [stats|reset](default) - chat filter status.");
@@ -611,6 +644,9 @@ public class LogCommand extends Command {
             error("The schematic dropper module is not available.");
             return;
         }
+        if (!module.isActive()) {
+            warning("Enable Schematic Dropper before importing, so the queue persists.");
+        }
         module.importMaterialFromPath(path);
     }
 
@@ -665,6 +701,43 @@ public class LogCommand extends Command {
             case "resume" -> module.resumeBuild();
             case "stop" -> module.stopBuild();
             default -> warning("Unknown action \"%s\".", action);
+        }
+    }
+
+    /**
+     * Drives the automatic Creative acquisition workflow: the same public methods the GUI uses, so a
+     * command can never take a different path from the interface.
+     */
+    private void acquisitionAction(String action) {
+        SchematicDropperModule module = Modules.get().get(SchematicDropperModule.class);
+        if (module == null) {
+            error("The schematic dropper module is not available.");
+            return;
+        }
+        switch (action) {
+            case "start" -> module.startAcquisition();
+            case "pause" -> module.pauseAcquisition();
+            case "resume" -> module.resumeAcquisition();
+            case "stop" -> module.stopAcquisition();
+            case "retry" -> module.retryAcquisition();
+            case "status" -> acquisitionStatus(module);
+            default -> warning("Unknown action \"%s\".", action);
+        }
+    }
+
+    private void acquisitionStatus(SchematicDropperModule module) {
+        var snapshot = module.acquisitionSnapshot();
+        info("Acquisition: %s, %s",
+            module.acquisitionState().name().toLowerCase(Locale.ROOT),
+            Messages.percent(snapshot.percent() / 100.0));
+        info("  %s acquired, %s remaining, %s.",
+            Messages.number(snapshot.totalAcquired()), Messages.number(snapshot.totalRemaining()),
+            snapshot.failedOperations() == 0 ? "no failures"
+                : Messages.plural(snapshot.failedOperations(), "failure"));
+        var current = snapshot.current();
+        if (current != null) {
+            info("  Current: %s (%s required).", Messages.prettyId(current.itemId()),
+                Messages.number(current.required()));
         }
     }
 
