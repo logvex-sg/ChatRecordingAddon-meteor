@@ -42,14 +42,14 @@ public final class LitematicSchematicReader implements SchematicImporter {
             NbtNode region = entry.getValue();
             if (region == null || !region.isCompound()) continue;
 
-            int[] size = region.getIntArray("Size");
+            int[] size = region.getIntArrayLoose("Size");
             if (size.length < 3) continue;
             int sx = Math.abs(size[0]);
             int sy = Math.abs(size[1]);
             int sz = Math.abs(size[2]);
             if (sx == 0 || sy == 0 || sz == 0) continue;
 
-            int[] position = region.getIntArray("Position");
+            int[] position = region.getIntArrayLoose("Position");
             int px = position.length >= 1 ? position[0] : 0;
             int py = position.length >= 2 ? position[1] : 0;
             int pz = position.length >= 3 ? position[2] : 0;
@@ -59,7 +59,7 @@ public final class LitematicSchematicReader implements SchematicImporter {
 
             long[] states = region.getList("BlockStates") != null
                 ? longsOf(region.getList("BlockStates"))
-                : region.getLongArray("BlockStates");
+                : region.getLongArrayLoose("BlockStates");
             if (states.length == 0) continue;
 
             long volume = (long) sx * sy * sz;

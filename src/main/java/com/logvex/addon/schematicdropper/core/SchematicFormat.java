@@ -10,6 +10,8 @@ public enum SchematicFormat {
     MCEDIT,
     /** Litematica {@code .litematic}: region compounds with packed {@code BlockStates} longs. */
     LITEMATIC,
+    /** Vanilla structure NBT: a {@code palette} list plus a {@code blocks} list of positioned states. */
+    STRUCTURE,
     /** The addon's own text material list; contains no geometry, only quantities. */
     MATERIAL_LIST,
     UNKNOWN;
@@ -21,14 +23,14 @@ public enum SchematicFormat {
         if (lower.endsWith(".schem")) return SPONGE;
         if (lower.endsWith(".schematic")) return MCEDIT;
         if (lower.endsWith(".txt") || lower.endsWith(".md") || lower.endsWith(".csv")) return MATERIAL_LIST;
-        // ".nbt" is used for litematics, WorldEdit exports and structure files alike; the content
-        // decides, so it is reported as UNKNOWN here and resolved by {@link #detect}.
+        // ".nbt" is used for litematics, WorldEdit exports and vanilla structure files alike; the
+        // content decides, so it is reported as UNKNOWN here and resolved by {@link #detect}.
         return UNKNOWN;
     }
 
     /** True when the format carries block geometry rather than just a material list. */
     public boolean isSchematic() {
-        return this == SPONGE || this == MCEDIT || this == LITEMATIC;
+        return this == SPONGE || this == MCEDIT || this == LITEMATIC || this == STRUCTURE;
     }
 
     /**
@@ -52,6 +54,12 @@ public enum SchematicFormat {
         NbtNode regions = root.getCompound("Regions");
         if (regions != null && !regions.children().isEmpty()) return LITEMATIC;
 
+        // Vanilla structure files (structure blocks / data packs) have no Regions or Palette: they
+        // carry a "palette" list of block states and a "blocks" list of positioned entries. They are
+        // checked before the Sponge test because a structure has no Sponge palette compound, but
+        // checked after Regions so a litematic is never mistaken for one.
+        if (isStructure(root)) return STRUCTURE;
+
         if (hasPalette(root) || hasPalette(root.getCompound("Blocks"))) return SPONGE;
 
         // MCEdit: numeric block arrays plus short dimensions and no palette.
@@ -71,5 +79,24 @@ public enum SchematicFormat {
         if (palette == null) palette = container.getCompound("BlockPalette");
         if (palette == null) return false;
         return !palette.children().isEmpty();
+    }
+
+    /**
+     * True when the tree has the shape of a vanilla structure: a {@code palette} list of block-state
+     * compounds (each with a {@code Name}) and a {@code blocks} list of positioned entries. The
+     * palette is a list here, not a compound, which is what separates it from a Sponge palette.
+     */
+    private static boolean isStructure(NbtNode root) {
+        NbtNode palette = root.getList("palette");
+        if (palette == null) palette = root.getList("Palette");
+        if (palette == null || palette.items().isEmpty()) return false;
+
+        NbtNode blocks = root.getList("blocks");
+        if (blocks == null) blocks = root.getList("Blocks");
+        if (blocks == null || blocks.items().isEmpty()) return false;
+
+        // Confirm the palette really holds block-state compounds, not arbitrary numbers.
+        NbtNode first = palette.items().get(0);
+        return first.isCompound() && (first.has("Name") || first.has("name"));
     }
 }

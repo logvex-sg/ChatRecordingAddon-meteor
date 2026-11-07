@@ -6,6 +6,7 @@ import com.logvex.addon.schematicdropper.core.Schematic;
 import com.logvex.addon.schematicdropper.core.SchematicFormat;
 import com.logvex.addon.schematicdropper.core.SchematicParseException;
 import com.logvex.addon.schematicdropper.core.SpongeSchematicReader;
+import com.logvex.addon.schematicdropper.core.StructureSchematicReader;
 import com.logvex.addon.schematicdropper.core.LitematicSchematicReader;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtIo;
@@ -51,7 +52,7 @@ public final class SchematicFileLoader {
             format = SchematicFormat.detect(root);
             if (!format.isSchematic()) {
                 throw new SchematicParseException(
-                    "Could not recognise " + fileName + " as a schematic (.schem, .schematic or .litematic).");
+                    "Could not recognise " + fileName + " as a schematic (.schem, .schematic, .litematic or .nbt).");
             }
         }
 
@@ -77,6 +78,7 @@ public final class SchematicFileLoader {
                 case SPONGE -> new SpongeSchematicReader().read(fileName, format, root);
                 case MCEDIT -> new MceditSchematicReader(new LegacyBlockIdTable()).read(fileName, format, root);
                 case LITEMATIC -> new LitematicSchematicReader().read(fileName, format, root);
+                case STRUCTURE -> new StructureSchematicReader().read(fileName, format, root);
                 default -> throw new SchematicParseException("Unsupported schematic format.");
             };
         } catch (SchematicParseException e) {
@@ -113,13 +115,14 @@ public final class SchematicFileLoader {
     private static boolean looksLikePayload(NbtNode node) {
         return node.has("Palette") || node.has("palette") || node.has("BlockPalette")
             || node.has("Blocks") || node.has("BlockData") || node.has("Data")
-            || node.has("Width") || node.has("Size") || node.has("Regions");
+            || node.has("Width") || node.has("Size") || node.has("Regions")
+            || (node.has("blocks") && node.has("palette"));
     }
 
     private NbtNode readNbt(Path path, String fileName) throws SchematicParseException {
         try (InputStream raw = Files.newInputStream(path);
              InputStream buffered = new BufferedInputStream(raw);
-             InputStream decompressed = maybeGzip(buffered);
+             InputStream decompressed = decompress(buffered);
              DataInputStream data = new DataInputStream(decompressed)) {
             NbtCompound compound = NbtIo.readCompound(data, NbtSizeTracker.ofUnlimitedBytes());
             if (compound == null) {
@@ -134,15 +137,24 @@ public final class SchematicFileLoader {
     }
 
     /**
-     * Litematic files are gzip-compressed; Sponge files are often gzipped too. Files without the
-     * magic bytes are read as-is, so an uncompressed schematic still loads.
+     * Wraps the stream in the right decompressor.
+     *
+     * <p>Gzip ({@code 1F 8B}) is the usual container, but WorldEdit and some tools write zlib
+     * instead, and vanilla structure files are sometimes stored uncompressed. Only wrapping on the
+     * magic bytes means an uncompressed file is still read as-is rather than failing on a decompress
+     * error, which is what makes an uncompressed {@code .nbt} structure load.
      */
-    private static InputStream maybeGzip(InputStream in) throws IOException {
+    private static InputStream decompress(InputStream in) throws IOException {
         in.mark(2);
         int b1 = in.read();
         int b2 = in.read();
         in.reset();
         if (b1 == 0x1F && b2 == 0x8B) return new GZIPInputStream(in);
+        if (b1 == 0x78 && b2 >= 0) {
+            // zlib header: CMF/FLG pair whose big-endian value is a multiple of 31.
+            int header = (b1 << 8) | b2;
+            if (header % 31 == 0) return new java.util.zip.InflaterInputStream(in);
+        }
         return in;
     }
 
