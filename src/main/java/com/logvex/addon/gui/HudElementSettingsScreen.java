@@ -14,6 +14,7 @@ import com.logvex.addon.framework.systems.config.ConfigManager;
 import com.logvex.addon.framework.systems.hud.Hud;
 import com.logvex.addon.framework.systems.hud.HudElement;
 import com.logvex.addon.framework.systems.hud.HudElementInfo;
+import com.logvex.addon.framework.utils.render.Render2D;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
@@ -104,12 +105,8 @@ public class HudElementSettingsScreen extends WidgetScreen {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        context.fill(0, 0, this.width, this.height, argb(theme.screenBackground));
+        context.fill(0, 0, this.width, this.height, Render2D.argb(theme.screenBackground));
         root.maxHeight = Math.max(40, this.height - 20);
         super.render(context, mouseX, mouseY, delta);
-    }
-
-    private static int argb(com.logvex.addon.framework.utils.render.color.Color c) {
-        return ((c.a == 0 ? 255 : c.a) << 24) | (c.r << 16) | (c.g << 8) | c.b;
     }
 }
