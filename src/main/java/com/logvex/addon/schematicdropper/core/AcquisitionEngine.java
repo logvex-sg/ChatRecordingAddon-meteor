@@ -530,13 +530,19 @@ public final class AcquisitionEngine {
      * Credits a finished drain. Drained items left the inventory through the drop engine, so they
      * are counted toward the requirement here; without this the engine would create them again
      * because the inventory no longer shows them.
+     *
+     * <p>Only {@code drained} is updated. {@code acquired} is incremented when a give is confirmed,
+     * so the drained items are already part of it; adding them again here would double-count the
+     * total. The two maps answer different questions: {@code acquired} is how much was created,
+     * {@code drained} is how much of it has already left through the drop workflow.
      */
     private void recordDrained() {
-        Map<String, Integer> drained = drain.lastDrain();
-        if (drained == null || drained.isEmpty()) return;
-        for (Map.Entry<String, Integer> entry : drained.entrySet()) {
+        Map<String, Integer> dropped = drain.lastDrain();
+        if (dropped == null || dropped.isEmpty()) return;
+        for (Map.Entry<String, Integer> entry : dropped.entrySet()) {
             if (entry.getKey() == null || entry.getValue() == null || entry.getValue() <= 0) continue;
-            acquired.merge(entry.getKey(), entry.getValue(), Integer::sum);
+            // Update the field, not the map we just read: the field is what progressOf() credits,
+            // and it is what stops the engine from re-acquiring material it has already dropped.
             drained.merge(entry.getKey(), entry.getValue(), Integer::sum);
         }
     }
@@ -636,6 +642,7 @@ public final class AcquisitionEngine {
                 inInventory,
                 Math.max(0, r.required() - have),
                 acquired.getOrDefault(r.itemId(), 0),
+                drained.getOrDefault(r.itemId(), 0),
                 isComplete
             ));
         }

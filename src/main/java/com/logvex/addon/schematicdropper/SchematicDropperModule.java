@@ -994,6 +994,26 @@ public class SchematicDropperModule extends Module {
         acquisition.restartCurrent();
     }
 
+    /** True when the auto-acquire setting is on. */
+    public boolean isAutoAcquireEnabled() {
+        return autoAcquire.get();
+    }
+
+    /** Mirrors the auto-acquire setting so the GUI toggle and the module setting always agree. */
+    public void setAutoAcquire(boolean enabled) {
+        autoAcquire.set(enabled);
+    }
+
+    /** True when the auto-drop setting is on. */
+    public boolean isAutoDropEnabled() {
+        return autoDrop.get();
+    }
+
+    /** Mirrors the auto-drop setting. */
+    public void setAutoDrop(boolean enabled) {
+        autoDrop.set(enabled);
+    }
+
     public AcquisitionSnapshot acquisitionSnapshot() {
         return acquisition.snapshot();
     }
