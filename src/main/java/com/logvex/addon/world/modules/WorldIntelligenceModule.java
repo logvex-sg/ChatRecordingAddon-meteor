@@ -105,7 +105,8 @@ public class WorldIntelligenceModule extends Module {
 
         List<String> watch = trackResources.get() ? resources.get() : List.of();
         Map<String, String> structures = trackResources.get() ? parseStructures(structureBlocks.get()) : Map.of();
-        WorldService.get().sample(scanRadius.get(), watch, structures);
+        WorldService.get().sample(scanRadius.get(), watch, structures,
+            trackChunks.get(), trackBiomes.get());
 
         if (markSpawn.get() && !spawnMarked) markSpawnOnce();
     }

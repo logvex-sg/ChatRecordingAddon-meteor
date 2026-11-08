@@ -66,6 +66,7 @@ public final class SchematicBuildController {
     private final FailureLog failures = new FailureLog();
     private final BuildZoneManager zones = new BuildZoneManager();
     private ExecutorService loader = newLoader();
+    private volatile boolean checkpointsEnabled = true;
 
     private volatile LoadedFile pending;
     private volatile String loadError;
@@ -326,7 +327,17 @@ public final class SchematicBuildController {
             completed));
     }
 
+    /** Enables or disables writing progress checkpoints for interrupted builds. */
+    public void setCheckpointsEnabled(boolean enabled) {
+        this.checkpointsEnabled = enabled;
+    }
+
     private void checkpoint(long nowMs) {
+        if (!checkpointsEnabled) return;
+        saveCheckpoint(nowMs);
+    }
+
+    private void saveCheckpoint(long nowMs) {
         if (schematic == null || activeName == null) return;
         try {
             Checkpoint capture = Checkpoint.capture(schematic.name(), Checkpoint.fingerprint(schematic),
@@ -340,7 +351,7 @@ public final class SchematicBuildController {
 
     /** Saves a checkpoint right now, e.g. from the GUI before closing. */
     public void saveCheckpointNow() {
-        checkpoint(System.currentTimeMillis());
+        saveCheckpoint(System.currentTimeMillis());
     }
 
     // ------------------------------------------------------------------ readers

@@ -25,6 +25,8 @@ import java.util.List;
 public class SessionTimelineModule extends Module {
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
 
+    private final SessionTimelineService service = SessionTimelineService.get();
+
     private final Setting<Boolean> recordJoins = sgGeneral.add(new BoolSetting.Builder()
         .name("record-joins")
         .description("Record player joins on the timeline.")
@@ -49,13 +51,12 @@ public class SessionTimelineModule extends Module {
     private final Setting<Integer> maxEvents = sgGeneral.add(new IntSetting.Builder()
         .name("max-events")
         .description("How many milestones the timeline keeps before dropping the oldest.")
-        .defaultValue(500)
+        .defaultValue(SessionTimeline.DEFAULT_CAPACITY)
         .min(50)
         .sliderRange(50, 2000)
+        .onChanged(service::setCapacity)
         .build()
     );
-
-    private final SessionTimelineService service = SessionTimelineService.get();
 
     public SessionTimelineModule() {
         super(LogClient.CATEGORY, "session-timeline",
@@ -65,6 +66,7 @@ public class SessionTimelineModule extends Module {
     @Override
     public void onActivate() {
         service.setRecording(true);
+        service.setCapacity(maxEvents.get());
         info("Timeline recording started.");
     }
 

@@ -1,5 +1,7 @@
 package com.logvex.addon.assistant.core;
 
+import com.logvex.addon.ai.core.AiEngine;
+
 import java.util.List;
 import java.util.Locale;
 
@@ -48,6 +50,7 @@ public final class AssistantBrain {
     }
 
     private final AssistantMemory memory;
+    private AiEngine engine;
 
     public AssistantBrain(AssistantMemory memory) {
         this.memory = memory == null ? new AssistantMemory() : memory;
@@ -57,14 +60,17 @@ public final class AssistantBrain {
         return memory;
     }
 
+    /** Attaches the local AI. Without one the brain only answers triggers and memory commands. */
+    public void setEngine(AiEngine engine) {
+        this.engine = engine;
+    }
+
     /**
-     * Evaluates one incoming message against {@code triggers}.
+     * Evaluates one incoming message, trying every source in priority order.
      *
-     * @param sender   the player the message came from, or an empty string when unknown
-     * @param content  the message text
-     * @param triggers the rules to match, already filtered
-     * @param config   the current configuration
-     * @param now      the current time in epoch milliseconds
+     * <p>Kept for callers that want the whole decision in one call (and for tests). The live runtime
+     * uses the granular {@link #trigger}, {@link #command} and {@link #ai} methods instead, because
+     * each source has its own cooldown and rate-limit treatment.
      */
     public Decision evaluate(String sender, String content, TriggerSet triggers,
                              AssistantConfig config, long now) {
@@ -74,13 +80,67 @@ public final class AssistantBrain {
 
         if (cfg.respondToTriggers()) {
             TriggerRule rule = set.firstMatch(sender, content);
-            if (rule != null) return fromTrigger(rule, sender, content, cfg, now);
+            if (rule != null) return trigger(rule, sender, content, cfg, now);
         }
         if (cfg.memoryCommands()) {
-            Decision command = fromCommand(sender, content, cfg, now);
+            Decision command = command(sender, content, cfg, now);
             if (command != null) return command;
         }
+        if (cfg.localAi()) {
+            Decision ai = ai(sender, content, cfg, now);
+            if (ai != null) return ai;
+        }
         return Decision.NONE;
+    }
+
+    /** The decision for an already-matched trigger rule. */
+    public Decision trigger(TriggerRule rule, String sender, String content,
+                            AssistantConfig config, long now) {
+        return fromTrigger(rule, sender, content, config, now);
+    }
+
+    /** The decision for a memory command, or null when {@code content} is not one. */
+    public Decision command(String sender, String content, AssistantConfig config, long now) {
+        return fromCommand(sender, content, config, now);
+    }
+
+    /** Asks the local AI for a reply, or null when it declines. See {@link #fromAi}. */
+    public Decision ai(String sender, String content, AssistantConfig config, long now) {
+        return fromAi(sender, content, config, now);
+    }
+
+    /**
+     * Asks the local AI for a reply.
+     *
+     * <p>Returns null when the AI is not attached, is not confident enough, or produced nothing, so
+     * the caller falls through to no-op. The reply mode decides whether it is spoken, notified or
+     * kept silent; a chat reply that ends up empty is downgraded to silent rather than sent blank.
+     */
+    private Decision fromAi(String sender, String content, AssistantConfig config, long now) {
+        if (engine == null || !engine.enabled()) return null;
+
+        java.util.Map<String, String> context = new java.util.HashMap<>(4);
+        context.put("name", config.name());
+        context.put("prefix", config.commandPrefix());
+        context.put("factcount", Integer.toString(memory.facts().size()));
+        context.put("time", java.time.LocalTime.now()
+            .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")));
+
+        String text = engine.respond(content, sender, context, now);
+        if (text == null || text.isBlank()) return null;
+        text = clamp(text, config.maxReplyLength());
+
+        Delivery delivery = switch (config.aiReplyMode()) {
+            case CHAT -> Delivery.CHAT;
+            case NOTIFY -> Delivery.NOTIFY;
+            case SILENT -> Delivery.SILENT;
+        };
+        boolean remember = config.rememberConversations();
+        if (remember) {
+            memory.recordConversation(sender, content, text, now);
+            memory.incrementCounter("ai-replies", 1);
+        }
+        return new Decision(delivery, text, null, false, remember, false);
     }
 
     // ------------------------------------------------------------------ triggers

@@ -28,6 +28,7 @@ public final class AssistantRuntime {
     private long handled;
     private long ignored;
     private long rateLimited;
+    private long aiReplies;
 
     public AssistantRuntime(AssistantMemory memory) {
         this.memory = memory == null ? new AssistantMemory() : memory;
@@ -84,20 +85,32 @@ public final class AssistantRuntime {
                 return AssistantBrain.Decision.NONE;
             }
             handled++;
-            return brain.evaluate(sender, content, triggers, cfg, now);
+            return brain.trigger(rule, sender, content, cfg, now);
         }
 
         if (cfg.memoryCommands()) {
-            // Empty rule set: the trigger path already declined, so this only runs commands.
-            AssistantBrain.Decision command =
-                brain.evaluate(sender, content, TriggerSet.empty(), cfg, now);
-            if (command.acts()) {
+            // Only the command parser runs here: the trigger path already declined, and the AI must
+            // not be reached from this branch or its reply would be counted as a command.
+            AssistantBrain.Decision command = brain.command(sender, content, cfg, now);
+            if (command != null && command.acts()) {
                 if (!allowGlobalReply(cfg, now)) {
                     rateLimited++;
                     return AssistantBrain.Decision.NONE;
                 }
                 handled++;
                 return command;
+            }
+        }
+        if (cfg.localAi()) {
+            AssistantBrain.Decision ai = brain.ai(sender, content, cfg, now);
+            if (ai != null && ai.acts()) {
+                if (!allowGlobalReply(cfg, now)) {
+                    rateLimited++;
+                    return AssistantBrain.Decision.NONE;
+                }
+                handled++;
+                aiReplies++;
+                return ai;
             }
         }
         ignored++;
@@ -128,6 +141,11 @@ public final class AssistantRuntime {
         return rateLimited;
     }
 
+    /** How many of the handled messages were answered by the local AI. */
+    public long aiReplies() {
+        return aiReplies;
+    }
+
     /** Clears session state (cooldowns, rate window) but keeps the persistent memory. */
     public void resetSession() {
         cooldowns.reset();
@@ -135,6 +153,7 @@ public final class AssistantRuntime {
         handled = 0;
         ignored = 0;
         rateLimited = 0;
+        aiReplies = 0;
     }
 
     /** A one-line summary for the HUD. */

@@ -242,6 +242,12 @@ block. The pipeline is:
   game was closed.
 - **Schematic Builder...** shows progress, the active queue, recorded problems, session history and
   the saved checkpoints.
+- Pressing **Start build** turns **build-enabled** on for you when it is off, the same way the load
+  and import buttons enable the module. Refusing to build until a separate switch was flipped looked
+  like "I can't build schematics" even after the file had loaded.
+- **checkpoints** (on by default) controls whether progress is written after each confirmed block.
+  Turning it off keeps the run working but leaves nothing to resume from after a restart;
+  **Save checkpoint** on the builder screen always writes one on demand.
 
 ### Settings
 
@@ -711,6 +717,28 @@ The server answers with a plain message and the right status code when something
 missing token is `401`, a bad body is `400`, a client thread that never answers is `504` — and it
 never puts an internal exception in the response.
 
+## Updates
+
+The **Updates** module checks GitHub Releases for a newer build of Log Client and, on request,
+downloads the verified jar. It never installs anything itself: the jar is written to
+`<gamedir>/logclient/updates` and the module tells you the path. All network work runs on a daemon
+worker, so the game thread is never blocked.
+
+### Settings
+
+- **channel** — *Stable* offers full releases only; *Beta* also offers pre-releases.
+- **check-on-join** — check once after joining a world.
+- **auto-download** — download a newer release automatically as soon as one is found. Off by
+  default; when on, the module reacts to the "update available" state and fetches the jar without
+  further prompting.
+- **check-interval-minutes** — how often to check while the game runs; `0` disables the periodic
+  check.
+- **chat-feedback** — a short line when a check finishes or a download completes.
+
+The **Updates** screen shows the current state, the newest version, the download progress and the
+result, with buttons to check now, download and open the release page. A failed check or download is
+reported with the reason instead of an exception.
+
 ## Log storage locations
 
 Everything the addon writes lives under `<gamedir>/logclient/`:
@@ -1026,6 +1054,14 @@ archive with in-memory doubles (no Minecraft runtime required):
   limiter (burst then throttle, per-client buckets, pruning), the client-thread seam (inline,
   scheduler-backed and timeout) and that the bundled app is self-contained and calls the documented
   endpoints.
+- `VersionTest` — release-tag parsing, channel filtering (stable vs. beta) and ordering.
+- `GitHubReleaseSourceTest` — the release feed parsed into candidates, channel selection and a
+  malformed feed failing cleanly rather than throwing.
+- `UpdateEngineTest` — the check/download state machine: an up-to-date check, a newer release
+  becoming available, a download reaching READY, a checksum mismatch rejected, and a source failure
+  reported as FAILED with a message instead of a thrown exception.
+- `AiCoreTest` — the local model: tokenisation, intent classification, the bigram model's
+  teach/generate path, the naive-Bayes classifier, confidence gating and JSON round-trip.
 
 ## Troubleshooting
 
@@ -1041,6 +1077,9 @@ archive with in-memory doubles (no Minecraft runtime required):
 - **Loading or importing does nothing.** The work is driven from the module's client tick, so the
   module has to be enabled and you have to be in a world. The buttons enable the module for you when
   they can, and otherwise say why.
+- **"Start build" appeared to do nothing.** It used to refuse until **build-enabled** was turned on
+  by hand. It now switches that on for you when you press it, so a loaded schematic builds straight
+  away.
 - **Creative acquisition reports "not in Creative mode" or "no creative permission".** The module
   refuses to fake items: it needs genuine Creative mode and a server that accepts creative inventory
   changes. On a server that rejects them, that is reported instead of a ghost item.

@@ -134,6 +134,37 @@ public class AssistantCommand extends Command {
             info("Assistant memory saved.");
             return SINGLE_SUCCESS;
         }));
+
+        builder.then(literal("model").executes(context -> {
+            modelStatus();
+            return SINGLE_SUCCESS;
+        })
+            .then(literal("status").executes(context -> {
+                modelStatus();
+                return SINGLE_SUCCESS;
+            }))
+            .then(literal("ask")
+                .then(argument("message", StringArgumentType.greedyString()).executes(context -> {
+                    modelAsk(StringArgumentType.getString(context, "message"));
+                    return SINGLE_SUCCESS;
+                })))
+            .then(literal("teach")
+                .then(argument("intent", StringArgumentType.word())
+                    .then(argument("example", StringArgumentType.greedyString()).executes(context -> {
+                        modelTeach(StringArgumentType.getString(context, "intent"),
+                            StringArgumentType.getString(context, "example"));
+                        return SINGLE_SUCCESS;
+                    }))))
+            .then(literal("save").executes(context -> {
+                AssistantModule module = assistant();
+                if (module == null) {
+                    error("The assistant module is not available.");
+                    return SINGLE_SUCCESS;
+                }
+                module.saveAi();
+                info("Local AI model saved.");
+                return SINGLE_SUCCESS;
+            })));
     }
 
     private void help() {
@@ -146,7 +177,58 @@ public class AssistantCommand extends Command {
         info("  (highlight).ai forget <key>(default) - remove a fact.");
         info("  (highlight).ai test <message>(default) - see what the assistant would do.");
         info("  (highlight).ai history(default) - recent remembered exchanges.");
+        info("  (highlight).ai model [status|ask <text>|teach <intent> <example>|save](default).");
         info("  (highlight).ai clear(default) - clear all memory.");
+    }
+
+    private void modelStatus() {
+        AssistantModule module = assistant();
+        if (module == null) {
+            error("The assistant module is not available.");
+            return;
+        }
+        com.logvex.addon.ai.core.AiEngine engine = module.aiEngine();
+        info("Local AI: %s, %d%% confidence, %s intents",
+            engine.enabled() ? "on" : "off",
+            Math.round(engine.threshold() * 100),
+            Messages.number(engine.model().intentCount()));
+        info("  Classified %s, understood %s (%s%%), cache hits %s",
+            Messages.number(engine.classified()),
+            Messages.number(engine.understood()),
+            Messages.number(Math.round(engine.understandingRate() * 100)),
+            Messages.number(engine.cacheHits()));
+        info("  Intents: %s", String.join(", ", engine.model().intentNames()));
+    }
+
+    private void modelAsk(String message) {
+        AssistantModule module = assistant();
+        if (module == null) {
+            error("The assistant module is not available.");
+            return;
+        }
+        com.logvex.addon.ai.core.AiEngine engine = module.aiEngine();
+        String intent = engine.intentOf(message);
+        if (intent == null) {
+            warning("The model does not understand \"%s\".", Messages.truncate(message, 60));
+            return;
+        }
+        String reply = engine.respond(message, "Tester", java.util.Map.of(), System.currentTimeMillis());
+        info("Intent '%s' (%.0f%%): %s", intent, engine.confidence(message) * 100,
+            Messages.truncate(reply, 120));
+    }
+
+    private void modelTeach(String intent, String example) {
+        AssistantModule module = assistant();
+        if (module == null) {
+            error("The assistant module is not available.");
+            return;
+        }
+        if (module.aiEngine().model().teach(intent, example)) {
+            module.saveAi();
+            info("Taught '%s' the phrase \"%s\".", intent, Messages.truncate(example, 60));
+        } else {
+            warning("Could not teach that; the model may be full.");
+        }
     }
 
     private void status() {

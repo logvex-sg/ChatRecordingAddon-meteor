@@ -64,10 +64,26 @@ public class UpdateModule extends Module {
     private long lastCheckMs;
     private boolean checkedThisSession;
 
+    /**
+     * Reacts to state changes so {@code auto-download} can fetch a newer release as soon as one is
+     * found. The listener is registered while the module is active and removed on deactivate, so the
+     * service never holds a reference to a disabled module.
+     */
+    private final Runnable stateListener = this::onUpdateStateChanged;
+
     public UpdateModule() {
         super(com.logvex.addon.LogClient.CATEGORY, "updates",
             "Checks GitHub Releases for a newer build and downloads it on request.");
         UpdateService.get().setChannel(channel.get());
+    }
+
+    private void onUpdateStateChanged() {
+        if (!isActive() || !autoDownload.get()) return;
+        UpdateSnapshot snapshot = UpdateService.get().snapshot();
+        if (snapshot.state() == UpdateState.AVAILABLE && snapshot.hasUpdate()) {
+            if (notifyInChat.get()) info("Downloading version %s.", snapshot.latestVersion());
+            UpdateService.get().download();
+        }
     }
 
     @Override
@@ -75,12 +91,14 @@ public class UpdateModule extends Module {
         checkedThisSession = false;
         lastCheckMs = 0;
         UpdateService.get().setChannel(channel.get());
+        UpdateService.get().addListener(stateListener);
         if (notifyInChat.get()) info("Update checks on. Channel: %s.", channel.get().label());
         if (checkOnJoin.get() && mc.world != null) triggerCheck();
     }
 
     @Override
     public void onDeactivate() {
+        UpdateService.get().removeListener(stateListener);
         if (notifyInChat.get()) info("Update checks off.");
     }
 

@@ -117,8 +117,11 @@ public final class WorldService {
      * @param radius          horizontal scan radius for the block search, in blocks
      * @param resources       block ids to watch for and record when seen
      * @param structureBlocks block ids that indicate a structure, mapped to the structure's name
+     * @param trackChunks     whether to record the visited chunk
+     * @param trackBiomes     whether to record the biome under the player
      */
-    public void sample(int radius, List<String> resources, Map<String, String> structureBlocks) {
+    public void sample(int radius, List<String> resources, Map<String, String> structureBlocks,
+                       boolean trackChunks, boolean trackBiomes) {
         if (!enabled) return;
         var mc = LogClientContext.mc;
         if (mc == null || mc.player == null || mc.world == null) return;
@@ -129,8 +132,8 @@ public final class WorldService {
         int py = mc.player.getBlockY();
         int pz = mc.player.getBlockZ();
 
-        intelligence.recordChunk(dimension, px >> 4, pz >> 4, now);
-        recordBiome(dimension, px, py, pz, now);
+        if (trackChunks) intelligence.recordChunk(dimension, px >> 4, pz >> 4, now);
+        if (trackBiomes) recordBiome(dimension, px, py, pz, now);
 
         if (radius > 0 && (!resources.isEmpty() || !structureBlocks.isEmpty())) {
             BlockIterator.register(radius, Math.min(32, radius), (pos, state) -> {

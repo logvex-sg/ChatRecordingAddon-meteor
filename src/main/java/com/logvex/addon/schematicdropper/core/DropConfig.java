@@ -22,7 +22,8 @@ public record DropConfig(
     InventoryMode inventoryMode,
     DropAction dropAction,
     StackStrategy stackStrategy,
-    int syncTimeoutMs
+    int syncTimeoutMs,
+    boolean validateTarget
 ) {
     public static DropConfig defaults() {
         return new DropConfig(
@@ -30,7 +31,8 @@ public record DropConfig(
             true, RotationMode.SMOOTH, 30f, true,
             TargetMode.PLAYER_POSITION, 100,
             OrderingMode.SCHEMATIC_ORDER, RecoveryMode.STRICT_ORDER,
-            InventoryMode.SILENT, DropAction.DROP_ONE, StackStrategy.LARGEST_FIRST, 1500
+            InventoryMode.SILENT, DropAction.DROP_ONE, StackStrategy.LARGEST_FIRST, 1500,
+            true
         );
     }
 }

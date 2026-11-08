@@ -518,6 +518,7 @@ public class SchematicDropperModule extends Module {
 
         if (hudEnabled.get()) SchematicProgressHud.enable();
         build.activate();
+        build.setCheckpointsEnabled(buildCheckpoints.get());
         build.setConfig(buildConfig());
         build.setOrigin(currentBuildOrigin());
         if (autoAcquire.get()) {
@@ -555,6 +556,7 @@ public class SchematicDropperModule extends Module {
         acquisition.tick(System.currentTimeMillis());
 
         build.setConfig(buildConfig());
+        build.setCheckpointsEnabled(buildCheckpoints.get());
         build.setOrigin(currentBuildOrigin());
         build.tick(System.currentTimeMillis());
         syncSchematicMaterials();
@@ -672,7 +674,8 @@ public class SchematicDropperModule extends Module {
             inventoryMode.get(),
             dropAction.get(),
             stackStrategy.get(),
-            syncTimeout.get()
+            syncTimeout.get(),
+            validateTarget.get()
         );
     }
 
@@ -842,13 +845,16 @@ public class SchematicDropperModule extends Module {
             error("Enable the module before starting a build.");
             return;
         }
-        if (!buildEnabled.get()) {
-            error("Enable \"build-enabled\" in Schematic Building first.");
-            return;
-        }
         if (!build.hasSchematic()) {
             error("Load a schematic file first.");
             return;
+        }
+        // Pressing "Start build" is an explicit request to build, so honour it the same way the
+        // import and load actions enable the module: turn the build switch on rather than refusing.
+        // Refusing here looked like "I can't build schematics" even though the schematic had loaded.
+        if (!buildEnabled.get()) {
+            buildEnabled.set(true);
+            info("Enabled \"build-enabled\" in Schematic Building to start the build.");
         }
         build.setOrigin(currentBuildOrigin());
         build.startBuild(System.currentTimeMillis());

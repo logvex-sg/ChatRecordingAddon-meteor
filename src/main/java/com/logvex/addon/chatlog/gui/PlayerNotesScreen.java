@@ -94,6 +94,7 @@ public class PlayerNotesScreen extends WindowScreen {
 
     /** A one-line activity summary, or an explicit "not observed" when the client has no data. */
     private String activitySummary(String player) {
+        if (!module.showActivity()) return "-";
         PlayerActivity activity = module.activity(player);
         if (activity == null) return "not observed";
         return activity.messageCount() + " msgs, " + activity.joinCount() + " joins";

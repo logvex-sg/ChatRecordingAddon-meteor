@@ -137,6 +137,7 @@ public class LogClient {
         com.logvex.addon.chatlog.mc.PlayerIdentityService.get().shutdown();
         com.logvex.addon.world.mc.WorldService.get().shutdown();
         com.logvex.addon.assistant.mc.AssistantService.get().shutdown();
+        com.logvex.addon.ai.mc.AiService.get().shutdown();
         com.logvex.addon.update.mc.UpdateService.get().engine().shutdown();
     }
 

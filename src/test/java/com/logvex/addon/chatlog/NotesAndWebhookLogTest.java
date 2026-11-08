@@ -77,6 +77,74 @@ class NotesAndWebhookLogTest {
         assertNotNull(store.get("p5"));
     }
 
+    @Test
+    void notesRoundTripThroughConfigLines() {
+        PlayerNote.Store store = new PlayerNote.Store();
+        store.put("Notch", "friendly trader", 100);
+        store.put("Alex", "griefer?\tkeeps changing skins", 200);
+
+        List<String> encoded = store.encodeAll();
+        assertEquals(2, encoded.size());
+
+        PlayerNote.Store restored = new PlayerNote.Store();
+        restored.loadAll(encoded);
+        assertEquals(2, restored.size());
+        assertEquals("friendly trader", restored.get("Notch").text());
+        assertEquals(100, restored.get("Notch").updatedAt());
+        // A note body that itself contains a tab must survive the round trip intact.
+        assertEquals("griefer?\tkeeps changing skins", restored.get("alex").text());
+    }
+
+    @Test
+    void loadAllIgnoresMalformedLinesAndAppliesTheCap() {
+        PlayerNote.Store store = new PlayerNote.Store();
+        store.loadAll(List.of(
+            "Notch\t100\tvalid",
+            "no-separators",
+            "\t\tblank player",
+            "Alex\tnot-a-number\tstill kept"
+        ));
+        assertEquals(2, store.size());
+        assertNotNull(store.get("Notch"));
+        assertNotNull(store.get("Alex"));
+    }
+
+    @Test
+    void capacityCanBeLoweredAtRuntime() {
+        PlayerNote.Store store = new PlayerNote.Store(10);
+        for (int i = 0; i < 8; i++) store.put("p" + i, "n", i);
+        assertEquals(8, store.size());
+        store.setCapacity(3);
+        assertEquals(3, store.size());
+    }
+
+    @Test
+    void loadingHonoursACapacitySetFirst() {
+        // Mirrors PlayerNotesModule.onActivate: the cap is applied before the saved notes load, so a
+        // config value that lowered it actually trims the restored notes instead of being ignored.
+        PlayerNote.Store store = new PlayerNote.Store();
+        store.setCapacity(2);
+        store.loadAll(List.of(
+            "A\t1\ta",
+            "B\t2\tb",
+            "C\t3\tc",
+            "D\t4\td"
+        ));
+        assertEquals(2, store.size(), "the store is trimmed to the cap after loading");
+        assertNotNull(store.get("D"));
+        assertNotNull(store.get("C"));
+    }
+
+    @Test
+    void aNoteRoundTripsThroughItsOwnEncoding() {
+        PlayerNote note = new PlayerNote("Notch", "hello\tworld", 42);
+        PlayerNote decoded = PlayerNote.decode(note.encode());
+        assertNotNull(decoded);
+        assertEquals("Notch", decoded.player());
+        assertEquals("hello\tworld", decoded.text());
+        assertEquals(42, decoded.updatedAt());
+    }
+
     // ------------------------------------------------------------------ WebhookDeliveryLog
 
     @Test

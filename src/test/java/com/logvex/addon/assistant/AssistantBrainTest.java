@@ -78,8 +78,7 @@ class AssistantBrainTest {
         TriggerRule rule = new TriggerRule("ping", false, false, "", "pong",
             TriggerRule.ReplyMode.CHAT, 0L, 0, false, false, true);
         AssistantRuntime runtime = runtime(rule);
-        runtime.setConfig(new AssistantConfig("A", true, true, "!", TriggerRule.ReplyMode.NOTIFY,
-            true, 2, 200));
+        runtime.setConfig(AssistantConfig.basic("A", true, true, "!", TriggerRule.ReplyMode.NOTIFY, true, 2, 200));
 
         assertTrue(runtime.handle("p", "ping", 1_000L).acts());
         assertTrue(runtime.handle("p", "ping", 1_100L).acts());
@@ -132,8 +131,7 @@ class AssistantBrainTest {
     @DisplayName("turning memory commands off makes them inert")
     void memoryCommandsCanBeDisabled() {
         AssistantRuntime runtime = runtime();
-        runtime.setConfig(new AssistantConfig("A", true, false, "!", TriggerRule.ReplyMode.NOTIFY,
-            true, 20, 200));
+        runtime.setConfig(AssistantConfig.basic("A", true, false, "!", TriggerRule.ReplyMode.NOTIFY, true, 20, 200));
         assertFalse(runtime.handle("p", "!remember x = y", 1L).acts());
     }
 
@@ -163,10 +161,77 @@ class AssistantBrainTest {
     @DisplayName("a long reply is clamped to the configured maximum")
     void replyClamped() {
         AssistantRuntime runtime = runtime(TriggerRule.of("ping", "x".repeat(500)));
-        runtime.setConfig(new AssistantConfig("A", true, true, "!", TriggerRule.ReplyMode.NOTIFY,
-            true, 20, 50));
+        runtime.setConfig(AssistantConfig.basic("A", true, true, "!", TriggerRule.ReplyMode.NOTIFY, true, 20, 50));
         AssistantBrain.Decision decision = runtime.handle("p", "ping", 1L);
         assertEquals(50, decision.text().length());
+    }
+
+    // ------------------------------------------------------------------ local AI
+
+    private AssistantRuntime aiRuntime() {
+        AssistantRuntime runtime = new AssistantRuntime(new AssistantMemory());
+        runtime.brain().setEngine(new com.logvex.addon.ai.core.AiEngine());
+        runtime.setTriggers(TriggerSet.empty());
+        runtime.setConfig(new AssistantConfig("A", true, true, "!", TriggerRule.ReplyMode.NOTIFY,
+            true, 20, 200, true, 0.45, TriggerRule.ReplyMode.CHAT, false));
+        return runtime;
+    }
+
+    @Test
+    @DisplayName("the local AI answers a plain greeting when it is enabled")
+    void aiAnswersGreeting() {
+        AssistantRuntime runtime = aiRuntime();
+        AssistantBrain.Decision decision = runtime.handle("Notch", "hello there", 1L);
+        assertTrue(decision.acts());
+        assertEquals(AssistantBrain.Delivery.CHAT, decision.delivery());
+        assertFalse(decision.text().isBlank());
+        assertEquals(1, runtime.aiReplies());
+    }
+
+    @Test
+    @DisplayName("the AI stays silent on a message it does not understand")
+    void aiStaysSilentOnUnknown() {
+        AssistantRuntime runtime = aiRuntime();
+        AssistantBrain.Decision decision = runtime.handle("Notch", "xylophone quokka zzzzz", 1L);
+        assertFalse(decision.acts());
+        assertEquals(0, runtime.aiReplies());
+    }
+
+    @Test
+    @DisplayName("an explicit trigger wins over the AI")
+    void triggerBeatsAi() {
+        AssistantRuntime runtime = new AssistantRuntime(new AssistantMemory());
+        runtime.brain().setEngine(new com.logvex.addon.ai.core.AiEngine());
+        runtime.setTriggers(TriggerSet.of(List.of(TriggerRule.of("hello there", "configured reply"))));
+        runtime.setConfig(new AssistantConfig("A", true, true, "!", TriggerRule.ReplyMode.NOTIFY,
+            true, 20, 200, true, 0.45, TriggerRule.ReplyMode.CHAT, false));
+
+        AssistantBrain.Decision decision = runtime.handle("Notch", "hello there", 1L);
+        assertTrue(decision.acts());
+        assertNotNull(decision.rule());
+        assertEquals("configured reply", decision.text());
+        assertEquals(0, runtime.aiReplies());
+    }
+
+    @Test
+    @DisplayName("the AI is inert while the feature is off")
+    void aiOffByDefault() {
+        AssistantRuntime runtime = runtime();
+        assertFalse(runtime.handle("Notch", "hello there", 1L).acts());
+    }
+
+    @Test
+    @DisplayName("the AI reply budget is the same global rate limit as everything else")
+    void aiRateLimited() {
+        AssistantRuntime runtime = new AssistantRuntime(new AssistantMemory());
+        runtime.brain().setEngine(new com.logvex.addon.ai.core.AiEngine());
+        runtime.setTriggers(TriggerSet.empty());
+        runtime.setConfig(new AssistantConfig("A", true, true, "!", TriggerRule.ReplyMode.NOTIFY,
+            true, 1, 200, true, 0.45, TriggerRule.ReplyMode.CHAT, false));
+
+        assertTrue(runtime.handle("Notch", "hello there", 1_000L).acts());
+        assertFalse(runtime.handle("Notch", "goodbye now", 1_100L).acts());
+        assertEquals(1, runtime.rateLimited());
     }
 
     @Test
