@@ -34,7 +34,13 @@ public final class LogClientContext {
 
     /** The Minecraft run directory, e.g. {@code .minecraft}. */
     public static File FOLDER() {
-        return FabricLoader.getInstance().getGameDir().toFile();
+        try {
+            return FabricLoader.getInstance().getGameDir().toFile();
+        } catch (Throwable t) {
+            // Fabric is not ready yet (very early bootstrap, or a plain unit test). Falling back to
+            // ./run keeps path resolution from throwing; at real runtime the loader is always ready.
+            return new File("run");
+        }
     }
 
     /** The addon's own data folder, {@code <gamedir>/logclient}. */

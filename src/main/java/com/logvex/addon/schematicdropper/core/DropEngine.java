@@ -305,7 +305,14 @@ public final class DropEngine {
 
         Rotation target = desiredRotation(nowMs);
         if (target == null) {
-            fail(nowMs, FailureType.TARGET_INVALID, "No valid target to rotate toward.");
+            // With target validation on, an unresolvable target is a real failure. With it off the
+            // run keeps going by dropping without rotating, which suits a server where the aim is
+            // not what matters.
+            if (config.validateTarget()) {
+                fail(nowMs, FailureType.TARGET_INVALID, "No valid target to rotate toward.");
+            } else {
+                transition(State.DROPPING);
+            }
             return;
         }
 

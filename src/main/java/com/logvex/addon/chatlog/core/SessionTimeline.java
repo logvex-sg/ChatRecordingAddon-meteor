@@ -66,7 +66,7 @@ public final class SessionTimeline {
 
     public static final int DEFAULT_CAPACITY = 500;
 
-    private final int capacity;
+    private int capacity;
     private final Deque<Event> events = new ArrayDeque<>();
 
     public SessionTimeline() {
@@ -75,6 +75,16 @@ public final class SessionTimeline {
 
     public SessionTimeline(int capacity) {
         this.capacity = Math.max(1, capacity);
+    }
+
+    /** Changes the cap, dropping the oldest milestones when the new cap is smaller. */
+    public synchronized void setCapacity(int capacity) {
+        this.capacity = Math.max(1, capacity);
+        while (events.size() > this.capacity) events.removeFirst();
+    }
+
+    public synchronized int capacity() {
+        return capacity;
     }
 
     public synchronized void add(long timestamp, Kind kind, String subject, String detail) {

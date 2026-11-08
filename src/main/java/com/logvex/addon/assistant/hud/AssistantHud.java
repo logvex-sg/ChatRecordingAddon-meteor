@@ -34,6 +34,9 @@ public class AssistantHud extends HudElement {
         .name("show-triggers").description("Show how many triggers are loaded.").defaultValue(true).build());
     private final Setting<Boolean> showHandled = sgGeneral.add(new BoolSetting.Builder()
         .name("show-handled").description("Show how many messages the assistant handled.").defaultValue(true).build());
+    private final Setting<Boolean> showAi = sgGeneral.add(new BoolSetting.Builder()
+        .name("show-ai").description("Show the local AI's state and how many messages it answered.")
+        .defaultValue(false).build());
 
     public AssistantHud() {
         super(INFO);
@@ -49,6 +52,10 @@ public class AssistantHud extends HudElement {
         if (showTriggers.get()) out.add("Triggers: " + module.triggers().rules().size());
         if (showMemory.get()) out.add("Facts: " + module.memory().facts().size());
         if (showHandled.get()) out.add("Handled: " + module.runtime().handled());
+        if (showAi.get()) {
+            var engine = module.aiEngine();
+            out.add("AI: " + (engine.enabled() ? engine.understood() + " understood" : "off"));
+        }
         return out;
     }
 

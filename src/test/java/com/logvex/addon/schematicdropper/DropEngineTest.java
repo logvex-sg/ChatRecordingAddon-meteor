@@ -108,7 +108,8 @@ class DropEngineTest {
             d.autoContinue(), 0, retryLimit, 0, 50, d.pauseOnMissing(),
             false, RotationMode.INSTANT, d.rotationSpeed(), d.restoreRotation(),
             d.targetMode(), d.targetUpdateMs(), d.orderingMode(), recovery,
-            d.inventoryMode(), DropAction.DROP_ONE, d.stackStrategy(), d.syncTimeoutMs()
+            d.inventoryMode(), DropAction.DROP_ONE, d.stackStrategy(), d.syncTimeoutMs(),
+            d.validateTarget()
         );
     }
 
@@ -199,7 +200,7 @@ class DropEngineTest {
             d.autoContinue(), 0, 3, 0, 50, d.pauseOnMissing(), false, d.rotationMode(),
             d.rotationSpeed(), d.restoreRotation(), d.targetMode(), d.targetUpdateMs(),
             d.orderingMode(), d.recoveryMode(), d.inventoryMode(), DropAction.DROP_STACK,
-            d.stackStrategy(), d.syncTimeoutMs());
+            d.stackStrategy(), d.syncTimeoutMs(), d.validateTarget());
 
         Harness h = new Harness(stack);
         h.plan(new Requirement("minecraft:cobblestone", "Cobblestone", 10));
@@ -450,7 +451,7 @@ class DropEngineTest {
             true, 0, 3, 0, 50, true,
             true, RotationMode.INSTANT, 30f, true,
             d.targetMode(), 0, d.orderingMode(), d.recoveryMode(),
-            d.inventoryMode(), DropAction.DROP_ONE, d.stackStrategy(), d.syncTimeoutMs());
+            d.inventoryMode(), DropAction.DROP_ONE, d.stackStrategy(), d.syncTimeoutMs(), d.validateTarget());
 
         Harness h = new Harness(rotating);
         h.plan(new Requirement("minecraft:cobblestone", "Cobblestone", 1));
@@ -476,7 +477,7 @@ class DropEngineTest {
             true, 0, 3, 0, 50, true,
             true, RotationMode.INSTANT, 30f, true,
             d.targetMode(), 0, d.orderingMode(), d.recoveryMode(),
-            d.inventoryMode(), DropAction.DROP_ONE, d.stackStrategy(), d.syncTimeoutMs());
+            d.inventoryMode(), DropAction.DROP_ONE, d.stackStrategy(), d.syncTimeoutMs(), d.validateTarget());
 
         Harness h = new Harness(rotating);
         h.plan(new Requirement("minecraft:cobblestone", "Cobblestone", 1));
@@ -500,7 +501,7 @@ class DropEngineTest {
             true, 0, 1, 0, 50, true,
             true, RotationMode.INSTANT, 30f, true,
             d.targetMode(), 0, d.orderingMode(), d.recoveryMode(),
-            d.inventoryMode(), DropAction.DROP_ONE, d.stackStrategy(), d.syncTimeoutMs());
+            d.inventoryMode(), DropAction.DROP_ONE, d.stackStrategy(), d.syncTimeoutMs(), d.validateTarget());
 
         Harness h = new Harness(rotating);
         h.plan(new Requirement("minecraft:cobblestone", "Cobblestone", 1));
@@ -513,6 +514,30 @@ class DropEngineTest {
         assertTrue(h.failures.contains(FailureType.TARGET_INVALID));
         assertEquals(0, h.rotation.applyCount, "never rotated toward an invalid target");
         assertEquals(0, h.tracker.totalConfirmed());
+    }
+
+    @Test
+    @DisplayName("with target validation off an unresolvable target is skipped, not fatal")
+    void invalidTargetSkippedWhenValidationOff() {
+        DropConfig d = DropConfig.defaults();
+        DropConfig rotating = new DropConfig(
+            true, 0, 3, 0, 50, true,
+            true, RotationMode.INSTANT, 30f, true,
+            d.targetMode(), 0, d.orderingMode(), d.recoveryMode(),
+            d.inventoryMode(), DropAction.DROP_ONE, d.stackStrategy(), d.syncTimeoutMs(), false);
+
+        Harness h = new Harness(rotating);
+        h.plan(new Requirement("minecraft:cobblestone", "Cobblestone", 3));
+        h.env.set("minecraft:cobblestone", 5);
+        h.env.desired = null; // no valid target, but validation is off
+        h.start();
+
+        h.run(30, 10);
+
+        assertFalse(h.failures.contains(FailureType.TARGET_INVALID),
+            "an invalid target must not fail the run when validation is off");
+        assertEquals(0, h.rotation.applyCount, "still never rotated");
+        assertEquals(State.COMPLETED, h.state(), "the material is dropped anyway");
     }
 
     @Test

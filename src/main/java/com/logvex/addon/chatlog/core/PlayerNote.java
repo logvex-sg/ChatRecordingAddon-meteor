@@ -64,6 +64,34 @@ public final class PlayerNote {
         return new PlayerNote(player, str(map.get("text")), num(map.get("updated")));
     }
 
+    /**
+     * Encodes a note as a single config line: {@code player \t updatedAt \t text}.
+     *
+     * <p>A tab is a safe separator because a Minecraft name cannot contain one, and the text is kept
+     * verbatim as the remainder, so a note that itself contains tabs still round-trips. This is what
+     * lets notes live in a plain {@code StringListSetting} and survive a restart.
+     */
+    public String encode() {
+        return player + "\t" + updatedAt + "\t" + text;
+    }
+
+    public static PlayerNote decode(String encoded) {
+        if (encoded == null) return null;
+        int first = encoded.indexOf('\t');
+        if (first < 0) return null;
+        int second = encoded.indexOf('\t', first + 1);
+        if (second < 0) return null;
+        String player = encoded.substring(0, first);
+        if (player.isBlank()) return null;
+        long updated;
+        try {
+            updated = Long.parseLong(encoded.substring(first + 1, second));
+        } catch (NumberFormatException e) {
+            updated = 0L;
+        }
+        return new PlayerNote(player, encoded.substring(second + 1), updated);
+    }
+
     private static String str(Object value) {
         return value == null ? "" : String.valueOf(value);
     }
@@ -82,7 +110,7 @@ public final class PlayerNote {
     public static final class Store {
         public static final int DEFAULT_CAPACITY = 1000;
 
-        private final int capacity;
+        private int capacity;
         private final Map<String, PlayerNote> byPlayer = new LinkedHashMap<>();
 
         public Store() {
@@ -91,6 +119,12 @@ public final class PlayerNote {
 
         public Store(int capacity) {
             this.capacity = Math.max(1, capacity);
+        }
+
+        /** Changes the cap, dropping the oldest notes when the new cap is smaller. */
+        public synchronized void setCapacity(int capacity) {
+            this.capacity = Math.max(1, capacity);
+            trim();
         }
 
         /** Adds or replaces a note. Returns the stored note, or null for a blank player name. */
@@ -134,6 +168,26 @@ public final class PlayerNote {
 
         public synchronized void clear() {
             byPlayer.clear();
+        }
+
+        /** The notes as config lines, oldest first so a round trip preserves the display order. */
+        public synchronized List<String> encodeAll() {
+            List<PlayerNote> all = new ArrayList<>(byPlayer.values());
+            all.sort((a, b) -> Long.compare(a.updatedAt(), b.updatedAt()));
+            List<String> out = new ArrayList<>(all.size());
+            for (PlayerNote note : all) out.add(note.encode());
+            return out;
+        }
+
+        /** Replaces the store's contents from config lines; invalid lines are ignored. */
+        public synchronized void loadAll(List<String> lines) {
+            byPlayer.clear();
+            if (lines == null) return;
+            for (String line : lines) {
+                PlayerNote note = decode(line);
+                if (note != null) byPlayer.put(note.player().toLowerCase(Locale.ROOT), note);
+            }
+            trim();
         }
 
         private void trim() {

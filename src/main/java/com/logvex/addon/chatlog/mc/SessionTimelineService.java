@@ -37,6 +37,11 @@ public final class SessionTimelineService {
         return timeline;
     }
 
+    /** Applies the configured milestone cap to the shared timeline. */
+    public void setCapacity(int capacity) {
+        timeline.setCapacity(capacity);
+    }
+
     public boolean isRecording() {
         return recording;
     }
