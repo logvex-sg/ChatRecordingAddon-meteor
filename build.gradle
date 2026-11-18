@@ -9,6 +9,14 @@ base {
 }
 
 repositories {
+    maven {
+        name = 'meteor-maven'
+        url = 'https://maven.meteordev.org/releases'
+    }
+    maven {
+        name = 'meteor-maven-snapshots'
+        url = 'https://maven.meteordev.org/snapshots'
+    }
     mavenCentral()
 }
 
@@ -16,6 +24,9 @@ dependencies {
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
     mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
     modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+
+    // Meteor Client
+    modImplementation "meteordevelopment:meteor-client:${project.meteor_version}"
 
     // Unit tests (pure logic, no Minecraft runtime required)
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
