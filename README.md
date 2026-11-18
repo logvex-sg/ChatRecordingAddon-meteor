@@ -17,9 +17,11 @@ filtered message never reaches chat, the recorder or the log), `chat-digest` (on
 summaries of chat activity), `session-timeline` (a bounded timeline of joins, leaves, deaths and
 keyword hits), `webhook-monitor` (delivery health, queue depth and a bounded delivery history),
 `webhook-relay` (one shared webhook and a consistent Discord **embed** look, with cards for keyword
-hits, reports, digests, session ends, renames, deaths and announcements),
+hits, reports, digests, session ends, renames, deaths, announcements, mentions, leaderboards and
+player profiles),
 `player-notes` (your own notes about players, shown next to their observed activity),
-`player-identity` (observed account name changes and a watchlist) and `session-history` (a
+`player-identity` (observed account name changes and a watchlist), `mention-alerts` (alerts when
+your name or a watched name is used in chat) and `session-history` (a
 browsable history of past recording sessions).
 
 **Schematic Dropper** — imports a material report or a schematic, acquires missing materials in
@@ -58,7 +60,7 @@ statistics, notifications, the automation task queue, waypoints and schematic co
 ./gradlew clean test build
 ```
 
-The jar is written to `build/libs/log-client-15.0.0.jar`. Drop it into `.minecraft/mods`. No other
+The jar is written to `build/libs/log-client-16.0.0.jar`. Drop it into `.minecraft/mods`. No other
 mod is required; Baritone is optional and only affects bot navigation.
 
 ### Java 21 is required for the Gradle daemon
@@ -520,7 +522,8 @@ pluralisation.
 | `session-timeline` | A bounded timeline of milestones the client can actually observe: session start/end, joins, leaves, deaths and keyword hits. Browsable in a GUI (`.log timeline`). |
 | `session-stats` | Live session counters, and a short **session summary printed when you leave a world** (messages, unique players, duration, rate, joins/leaves, deaths, keyword alerts and the most active players). |
 | `webhook-monitor` | Watches the shared webhook queue and reports its health. Keeps a bounded delivery history, warns in chat when a delivery fails and can note a recovery. The URL is never stored or shown — only the host. |
-| `webhook-relay` | Owns the single webhook target and the embed appearance every other feature sends through, and raises its own cards for session end, renames, watchlist presence, deaths and announcements. See **Webhook relay and embeds**. |
+| `webhook-relay` | Owns the single webhook target and the embed appearance every other feature sends through, and raises its own cards for session end, renames, watchlist presence, deaths and announcements. Can send a **leaderboard** card and a per-player **profile** card on demand. See **Webhook relay and embeds**. |
+| `mention-alerts` | Alerts when your own name or a watched name is used as a whole word in chat. Raises a notification, an optional sound, an optional chat note and an optional mention embed, and records each hit in the alert log. |
 | `player-notes` | Your own notes about players, with the observed activity shown beside each note. A note is always explicit user input; the addon never infers one. |
 | `player-activity` | Per-player joins, leaves, deaths and message counts, rebuilt from the archive on demand. Supports an **exclude list** so bots or your own alts are never tracked, and shows observed online time per player. |
 | `player-identity` | Tracks the names each **account** (by UUID) is seen using, and reports a rename only when the same UUID is later announced under a different name. Includes a per-account **watchlist**; watched renames are highlighted. Never merges two accounts that share a name. |
@@ -597,6 +600,20 @@ hit, webhook delivery failure and internal error is also written to a bounded al
   title or detail, and can be cleared.
 - The log never grows without bound and holds no more than the configured capacity.
 
+### Mention alerts
+
+`mention-alerts` watches for your own player name and any names you list, and fires only when one
+appears as a whole word, so `Steve` does not trigger on `SteveJobs` or `Steve_99`. On a busy server
+this answers "did anyone mention me?" without reading every line.
+
+Each hit can raise a notification, play a note, print a chat line and forward a mention embed to the
+shared webhook, and it is recorded in the alert log like any other noteworthy event.
+
+- **names** — the names to watch, one per line.
+- **include-own-name** — also watch your own player name (on by default).
+- **others-only** — ignore lines you sent yourself (on by default).
+- **sound**, **notification**, **chat-feedback**, **webhook** — the output channels.
+
 ### Chat filter rules
 
 A rule is one line of `pattern;sender=NAME;type=TYPE;action=hide|allow;case=true;whole=false;enabled=true`. Any part may
@@ -624,6 +641,9 @@ instead of a paste. Embeds are also not collapsed behind a "show more" link the 
 | Watchlist join/leave | A watched player joins or leaves (opt-in). |
 | Death | A death message is observed (opt-in). |
 | Announcement | A server announcement is observed (opt-in). |
+| Mention | `mention-alerts` sees your name or a watched name used in chat (opt-in). |
+| Leaderboard | `.log webhook leaderboard`, the relay widget's **Leaderboard** button. |
+| Player profile | `.log webhook profile <player>`, or **Profile...** on the relay widget. |
 | Test | The **Test Embed** button or `.log webhook test`. |
 
 ### Settings
@@ -645,7 +665,8 @@ instead of a paste. Embeds are also not collapsed behind a "show more" link the 
 **Preview Embeds...** (the relay's widget, the dashboard **Webhook** tab, or `.log webhook preview`)
 renders every card type exactly as Discord would — accent stripe, title and fields — so the
 appearance can be checked without a webhook. **Copy JSON** puts the exact payload on the clipboard
-for a webhook tester.
+for a webhook tester. The card selector covers keyword alerts, summaries, digests, session
+summaries, renames, mentions, leaderboards, profiles and the test card.
 
 ### `.log webhook`
 
@@ -655,6 +676,8 @@ for a webhook tester.
 | `.log webhook test` | Sends a test embed. |
 | `.log webhook preview` | Opens the embed preview. |
 | `.log webhook digest` | Sends a digest embed now. |
+| `.log webhook leaderboard` | Sends the most active players as a leaderboard embed. |
+| `.log webhook profile <player>` | Sends one player's observed activity as a profile embed. |
 | `.log webhook set <url>` | Sets the webhook URL. |
 | `.log webhook accent <name>` | Sets the accent (or `auto`). |
 

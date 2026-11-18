@@ -32,6 +32,9 @@ public class EmbedPreviewScreen extends WindowScreen {
         DIGEST("Chat digest"),
         SESSION("Session summary"),
         RENAME("Player rename"),
+        MENTION("Mention"),
+        LEADERBOARD("Leaderboard"),
+        PROFILE("Player profile"),
         TEST("Webhook test");
 
         private final String label;
@@ -140,8 +143,28 @@ public class EmbedPreviewScreen extends WindowScreen {
                 new SessionRecord("s-preview", service.serverName(), now - 3_600_000, now,
                     248, 12, 9, 7, 3, 4), now);
             case RENAME -> WebhookEmbeds.rename(style, "OldName", "NewName", now);
+            case MENTION -> WebhookEmbeds.mention(style, List.of("YourName", "Ally"),
+                sampleEntry(MessageType.PUBLIC_CHAT, "Steve", "hey YourName, are you online?"));
+            case LEADERBOARD -> WebhookEmbeds.leaderboard(style,
+                List.of(new ChatDigest.PlayerLine("Steve", 128, 0, 0, 0),
+                    new ChatDigest.PlayerLine("Alex", 96, 0, 0, 0),
+                    new ChatDigest.PlayerLine("Herobrine", 41, 0, 0, 0)),
+                service.serverName());
+            case PROFILE -> {
+                com.logvex.addon.chatlog.core.PlayerActivity activity =
+                    sampleProfile();
+                yield WebhookEmbeds.profile(style, activity, service.serverName());
+            }
             case TEST -> WebhookEmbeds.test(style, "preview");
         };
+    }
+
+    private com.logvex.addon.chatlog.core.PlayerActivity sampleProfile() {
+        com.logvex.addon.chatlog.core.PlayerActivity activity =
+            service.players().get("Steve");
+        if (activity != null) return activity;
+        activity = new com.logvex.addon.chatlog.core.PlayerActivity("Steve");
+        return activity;
     }
 
     private ChatEntry sampleEntry(MessageType type, String sender, String content) {

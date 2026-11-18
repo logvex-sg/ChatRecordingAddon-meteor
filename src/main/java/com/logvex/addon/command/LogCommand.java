@@ -434,6 +434,14 @@ public class LogCommand extends Command {
                 webhookAccent(StringArgumentType.getString(context, "name"));
                 return SINGLE_SUCCESS;
             })))
+            .then(literal("leaderboard").executes(context -> {
+                webhookLeaderboard();
+                return SINGLE_SUCCESS;
+            }))
+            .then(literal("profile").then(argument("player", StringArgumentType.greedyString()).executes(context -> {
+                webhookProfile(StringArgumentType.getString(context, "player"));
+                return SINGLE_SUCCESS;
+            })))
         );
 
         builder.then(literal("update")
@@ -525,7 +533,7 @@ public class LogCommand extends Command {
         info("  (highlight).log notes [list|add <player> <text>|remove <player>|search <filter>](default).");
         info("  (highlight).log identities [renamed|watch|unwatch|watchlist|clear|<filter>](default) - observed name changes.");
         info("  (highlight).log sessions [list|clear](default) - past recording sessions.");
-        info("  (highlight).log webhook [status|test|preview|digest|set <url>|accent <name>](default) - webhook embeds.");
+        info("  (highlight).log webhook [status|test|preview|digest|leaderboard|profile <player>|set <url>|accent <name>](default) - webhook embeds.");
         info("  (highlight).log companion [status|start|stop|token|regenerate|gui](default) - the companion web app.");
         info("  (highlight).log update [status|check|download|channel <stable|beta>|gui](default) - GitHub release updates.");
         info("  (highlight).log world [status|map|places [query]|nearest [category]|mark <name>|export](default) - world intelligence.");
@@ -1437,6 +1445,24 @@ public class LogCommand extends Command {
         typed.set(url == null ? "" : url.trim());
         if (url == null || url.isBlank()) info("Webhook URL cleared.");
         else info("Webhook URL set (%s).", com.logvex.addon.chatlog.core.WebhookDeliveryLog.hostOf(url));
+    }
+
+    private void webhookLeaderboard() {
+        var relay = relayModule();
+        if (relay == null) {
+            warning("The webhook-relay module is not available.");
+            return;
+        }
+        relay.sendLeaderboard();
+    }
+
+    private void webhookProfile(String player) {
+        var relay = relayModule();
+        if (relay == null) {
+            warning("The webhook-relay module is not available.");
+            return;
+        }
+        relay.sendProfile(player == null ? "" : player.trim());
     }
 
     private void webhookAccent(String name) {

@@ -62,6 +62,21 @@ public final class WebhookPayload {
         return WebhookEmbeds.payload(username, WebhookEmbeds.presence(style, joined, player, server));
     }
 
+    /** A mention-alert card. */
+    public static String mention(String username, List<String> names, ChatEntry entry, WebhookEmbeds.Style style) {
+        return WebhookEmbeds.payload(username, WebhookEmbeds.mention(style, names, entry));
+    }
+
+    /** A leaderboard card. */
+    public static String leaderboard(String username, List<ChatDigest.PlayerLine> players, String server, WebhookEmbeds.Style style) {
+        return WebhookEmbeds.payload(username, WebhookEmbeds.leaderboard(style, players, server));
+    }
+
+    /** A player-profile card. */
+    public static String profile(String username, PlayerActivity activity, String server, WebhookEmbeds.Style style) {
+        return WebhookEmbeds.payload(username, WebhookEmbeds.profile(style, activity, server));
+    }
+
     /** A test card. */
     public static String test(String username) {
         return test(username, "", WebhookEmbeds.Style.defaults());

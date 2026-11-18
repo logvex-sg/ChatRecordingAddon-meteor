@@ -21,7 +21,7 @@ public final class LogClientContext {
     private static final Logger LOG = LogUtils.getLogger();
     public static final String MOD_ID = "logclient";
     public static final String NAME = "Log Client";
-    public static final String VERSION = "15.0.0";
+    public static final String VERSION = "16.0.0";
 
     /** The addon-wide event bus: modules, HUD and the recorder all publish and listen here. */
     public static final EventBus EVENT_BUS = new EventBus();

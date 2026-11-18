@@ -312,6 +312,49 @@ public class WebhookRelayModule extends Module {
         });
     }
 
+    /** Sends the most active players as a leaderboard embed. */
+    public void sendLeaderboard() {
+        if (!configured()) {
+            warning("Set a webhook URL first.");
+            return;
+        }
+        var players = service.snapshot().topPlayers();
+        java.util.List<com.logvex.addon.chatlog.core.ChatDigest.PlayerLine> lines = new java.util.ArrayList<>();
+        int rank = 1;
+        for (String name : players) {
+            com.logvex.addon.chatlog.core.PlayerActivity activity = service.players().get(name);
+            long messages = activity == null ? 0 : activity.messageCount();
+            lines.add(new com.logvex.addon.chatlog.core.ChatDigest.PlayerLine(name, messages, 0, 0, 0));
+            if (rank++ >= 10) break;
+        }
+        if (lines.isEmpty()) {
+            warning("No players to rank yet.");
+            return;
+        }
+        service.notifyLeaderboard(url(), username(), lines, (success, message) -> {
+            if (success) info("Leaderboard embed sent.");
+            else warning("Leaderboard send failed: %s", message);
+        });
+    }
+
+    /** Sends one player's observed activity as a profile embed. */
+    public void sendProfile(String name) {
+        if (!configured()) {
+            warning("Set a webhook URL first.");
+            return;
+        }
+        com.logvex.addon.chatlog.core.PlayerActivity activity =
+            name == null ? null : service.players().get(name);
+        if (activity == null) {
+            warning("No activity recorded for %s.", name == null ? "?" : name);
+            return;
+        }
+        service.notifyProfile(url(), username(), activity, (success, message) -> {
+            if (success) info("Profile embed sent.");
+            else warning("Profile send failed: %s", message);
+        });
+    }
+
     @Override
     public String getInfoString() {
         return configured() ? (enabled.get() ? "on" : "muted") : null;
@@ -345,6 +388,12 @@ public class WebhookRelayModule extends Module {
                 else warning("Digest send failed: %s", message);
             });
         };
+
+        WHorizontalList extra = list.add(theme.horizontalList()).expandX().widget();
+        WButton leaderboard = extra.add(theme.button("Leaderboard")).expandX().widget();
+        leaderboard.action = this::sendLeaderboard;
+        WButton profile = extra.add(theme.button("Profile...")).expandX().widget();
+        profile.action = () -> mc.setScreen(new com.logvex.addon.chatlog.gui.PlayerProfileScreen(this));
 
         list.add(theme.label(configured()
             ? "Target: " + Messages.truncate(com.logvex.addon.chatlog.core.WebhookDeliveryLog.hostOf(url()), 40)

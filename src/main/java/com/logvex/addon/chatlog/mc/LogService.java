@@ -9,6 +9,7 @@ import com.logvex.addon.chatlog.core.LogSession;
 import com.logvex.addon.chatlog.core.MessageType;
 import com.logvex.addon.chatlog.core.ActivityHistogram;
 import com.logvex.addon.chatlog.core.AlertLog;
+import com.logvex.addon.chatlog.core.PlayerActivity;
 import com.logvex.addon.chatlog.core.PlayerTracker;
 import com.logvex.addon.chatlog.core.PlayerSessionTracker;
 import com.logvex.addon.chatlog.core.PlayerIdentityTracker;
@@ -409,6 +410,29 @@ public final class LogService {
         if (url == null || url.isBlank()) return false;
         String payload = WebhookPayload.presence(username, joined, player, serverName, embedStyle);
         return webhook.enqueue(url, payload, null);
+    }
+
+    /** Sends a mention-alert card. */
+    public boolean notifyMention(String url, String username, List<String> names, ChatEntry entry) {
+        if (url == null || url.isBlank() || entry == null || names == null || names.isEmpty()) return false;
+        String payload = WebhookPayload.mention(username, names, entry, embedStyle);
+        return webhook.enqueue(url, payload, null);
+    }
+
+    /** Sends a chat leaderboard card. */
+    public boolean notifyLeaderboard(String url, String username, List<ChatDigest.PlayerLine> players,
+                                     WebhookQueue.Listener listener) {
+        if (url == null || url.isBlank() || players == null || players.isEmpty()) return false;
+        String payload = WebhookPayload.leaderboard(username, players, serverName, embedStyle);
+        return webhook.enqueue(url, payload, listener);
+    }
+
+    /** Sends a player-profile card. */
+    public boolean notifyProfile(String url, String username, PlayerActivity activity,
+                                 WebhookQueue.Listener listener) {
+        if (url == null || url.isBlank() || activity == null) return false;
+        String payload = WebhookPayload.profile(username, activity, serverName, embedStyle);
+        return webhook.enqueue(url, payload, listener);
     }
 
     /** Sends a death notice card. */

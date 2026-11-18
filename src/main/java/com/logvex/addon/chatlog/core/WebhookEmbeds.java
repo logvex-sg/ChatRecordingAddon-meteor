@@ -172,6 +172,55 @@ public final class WebhookEmbeds {
         return decorate(embed, style, MessageType.SYSTEM);
     }
 
+    /** A mention-alert card: a watched or own name was used in chat. */
+    public static DiscordEmbed mention(Style style, List<String> names, ChatEntry entry) {
+        DiscordEmbed embed = new DiscordEmbed()
+            .title("\uD83D\uDD0E Mention")
+            .description(neutralize(entry.content()))
+            .color(EmbedColor.YELLOW);
+        embed.field("Names", String.join(", ", names), true);
+        if (!entry.sender().isBlank()) embed.field("Sender", entry.sender(), true);
+        if (style.showServer()) embed.field("Server", server(entry.server()), true);
+        embed.field("When", ReportFormatting.time(entry.timestamp()), true);
+        return decorate(embed, style, MessageType.PUBLIC_CHAT);
+    }
+
+    /** A leaderboard card: the most active players in the current window. */
+    public static DiscordEmbed leaderboard(Style style, List<ChatDigest.PlayerLine> players, String server) {
+        DiscordEmbed embed = new DiscordEmbed()
+            .title("\uD83C\uDFC6 Chat leaderboard")
+            .color(EmbedColor.PURPLE);
+
+        StringBuilder body = new StringBuilder();
+        int rank = 1;
+        for (ChatDigest.PlayerLine player : players) {
+            if (body.length() > 0) body.append('\n');
+            body.append("**").append(rank++).append(".** ").append(player.name())
+                .append(" \u2014 ").append(Messages.number(player.messages())).append(" msg");
+        }
+        if (body.length() > 0) embed.description(body.toString());
+        embed.field("Players", Messages.number(players.size()), true);
+        if (style.showServer()) embed.field("Server", server(server), true);
+        return decorate(embed, style, MessageType.SYSTEM);
+    }
+
+    /** A player-profile card built from the observed activity of one player. */
+    public static DiscordEmbed profile(Style style, PlayerActivity activity, String server) {
+        DiscordEmbed embed = new DiscordEmbed()
+            .title("\uD83D\uDC64 Player profile")
+            .description("**" + activity.name() + "**")
+            .color(EmbedColor.TEAL);
+        embed.field("Messages", Messages.number(activity.messageCount()), true);
+        embed.field("Joins", Messages.number(activity.joinCount()), true);
+        embed.field("Leaves", Messages.number(activity.leaveCount()), true);
+        embed.field("Deaths", Messages.number(activity.deathCount()), true);
+        embed.field("Sessions", Messages.number(activity.sessionCount()), true);
+        if (activity.firstSeen() > 0) embed.field("First seen", ReportFormatting.time(activity.firstSeen()), true);
+        if (activity.lastSeen() > 0) embed.field("Last seen", ReportFormatting.time(activity.lastSeen()), true);
+        if (style.showServer()) embed.field("Server", server(server), true);
+        return decorate(embed, style, MessageType.PLAYER_MESSAGE);
+    }
+
     /** A death notice card. */
     public static DiscordEmbed death(Style style, ChatEntry entry) {
         DiscordEmbed embed = new DiscordEmbed()
