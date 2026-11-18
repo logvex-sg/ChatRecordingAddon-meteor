@@ -2,7 +2,7 @@ package com.logvex.addon.bot.mc;
 
 import com.logvex.addon.bot.core.BlockPos3;
 import com.logvex.addon.bot.core.WorldPort;
-import com.logvex.addon.framework.utils.world.BlockIterator;
+import meteordevelopment.meteorclient.utils.world.BlockIterator;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.block.entity.LootableContainerBlockEntity;

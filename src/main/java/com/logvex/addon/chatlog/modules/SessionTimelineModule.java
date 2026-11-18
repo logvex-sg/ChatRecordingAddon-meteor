@@ -1,5 +1,6 @@
 package com.logvex.addon.chatlog.modules;
 
+import com.logvex.addon.framework.systems.modules.AddonModule;
 import com.logvex.addon.LogClient;
 import com.logvex.addon.chatlog.core.SessionTimeline;
 import com.logvex.addon.chatlog.mc.SessionTimelineService;
@@ -7,11 +8,11 @@ import com.logvex.addon.framework.gui.GuiTheme;
 import com.logvex.addon.framework.gui.widgets.WWidget;
 import com.logvex.addon.framework.gui.widgets.containers.WVerticalList;
 import com.logvex.addon.framework.gui.widgets.pressable.WButton;
-import com.logvex.addon.framework.settings.BoolSetting;
-import com.logvex.addon.framework.settings.IntSetting;
-import com.logvex.addon.framework.settings.Setting;
-import com.logvex.addon.framework.settings.SettingGroup;
-import com.logvex.addon.framework.systems.modules.Module;
+import meteordevelopment.meteorclient.settings.BoolSetting;
+import meteordevelopment.meteorclient.settings.IntSetting;
+import meteordevelopment.meteorclient.settings.Setting;
+import meteordevelopment.meteorclient.settings.SettingGroup;
+import meteordevelopment.meteorclient.systems.modules.Module;
 
 import java.util.List;
 
@@ -22,7 +23,7 @@ import java.util.List;
  * {@link SessionTimelineService}, which runs regardless of this module, so milestones from before
  * the module was enabled are still present.
  */
-public class SessionTimelineModule extends Module {
+public class SessionTimelineModule extends AddonModule {
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
 
     private final SessionTimelineService service = SessionTimelineService.get();

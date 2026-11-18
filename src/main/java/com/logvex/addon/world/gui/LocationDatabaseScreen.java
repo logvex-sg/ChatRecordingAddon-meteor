@@ -8,7 +8,7 @@ import com.logvex.addon.framework.gui.widgets.containers.WHorizontalList;
 import com.logvex.addon.framework.gui.widgets.containers.WTable;
 import com.logvex.addon.framework.gui.widgets.input.WTextBox;
 import com.logvex.addon.framework.gui.widgets.pressable.WButton;
-import com.logvex.addon.framework.utils.render.color.Color;
+import meteordevelopment.meteorclient.utils.render.color.Color;
 import com.logvex.addon.world.core.LocationCategory;
 import com.logvex.addon.world.core.WorldFormat;
 import com.logvex.addon.world.core.WorldPoint;
@@ -108,7 +108,7 @@ public class LocationDatabaseScreen extends WindowScreen {
     }
 
     private void navigate(WorldPoint point) {
-        var nav = com.logvex.addon.framework.pathing.PathManagers.get();
+        var nav = meteordevelopment.meteorclient.pathing.PathManagers.get();
         if (nav == null || "none".equals(nav.getName())) {
             status = "No navigation backend is installed (Baritone is not present).";
             reload();

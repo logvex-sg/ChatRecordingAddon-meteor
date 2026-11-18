@@ -1,21 +1,22 @@
 package com.logvex.addon.chatlog.modules;
 
+import com.logvex.addon.framework.systems.modules.AddonModule;
 import com.logvex.addon.LogClient;
 import com.logvex.addon.chatlog.core.ChatFilterRule;
 import com.logvex.addon.chatlog.core.ChatFilterRuleSet;
 import com.logvex.addon.chatlog.mc.ChatFilterService;
-import com.logvex.addon.framework.events.world.TickEvent;
+import meteordevelopment.meteorclient.events.world.TickEvent;
 import com.logvex.addon.framework.gui.GuiTheme;
 import com.logvex.addon.framework.gui.widgets.WWidget;
 import com.logvex.addon.framework.gui.widgets.containers.WVerticalList;
 import com.logvex.addon.framework.gui.widgets.pressable.WButton;
-import com.logvex.addon.framework.orbit.EventHandler;
-import com.logvex.addon.framework.settings.BoolSetting;
-import com.logvex.addon.framework.settings.EnumSetting;
-import com.logvex.addon.framework.settings.Setting;
-import com.logvex.addon.framework.settings.SettingGroup;
-import com.logvex.addon.framework.settings.StringListSetting;
-import com.logvex.addon.framework.systems.modules.Module;
+import meteordevelopment.orbit.EventHandler;
+import meteordevelopment.meteorclient.settings.BoolSetting;
+import meteordevelopment.meteorclient.settings.EnumSetting;
+import meteordevelopment.meteorclient.settings.Setting;
+import meteordevelopment.meteorclient.settings.SettingGroup;
+import meteordevelopment.meteorclient.settings.StringListSetting;
+import meteordevelopment.meteorclient.systems.modules.Module;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -28,7 +29,7 @@ import java.util.List;
  * {@link ChatFilterService}, which does the actual suppression in the chat mixin — filtering here
  * rather than merely hiding the message in a HUD is what actually removes it from chat.
  */
-public class ChatFilterModule extends Module {
+public class ChatFilterModule extends AddonModule {
     private final SettingGroup sgRules = settings.getDefaultGroup();
     private final SettingGroup sgDefaults = settings.createGroup("Default Action");
 
@@ -36,7 +37,6 @@ public class ChatFilterModule extends Module {
         .name("rules")
         .description("Filter rules, one per line, applied top to bottom. First match wins.")
         .defaultValue(defaultRules())
-        .wide()
         .build()
     );
 

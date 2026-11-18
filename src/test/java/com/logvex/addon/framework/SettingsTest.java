@@ -1,14 +1,12 @@
 package com.logvex.addon.framework;
 
-import com.logvex.addon.framework.settings.BoolSetting;
-import com.logvex.addon.framework.settings.DoubleSetting;
-import com.logvex.addon.framework.settings.EnumSetting;
-import com.logvex.addon.framework.settings.IntSetting;
-import com.logvex.addon.framework.settings.Setting;
-import com.logvex.addon.framework.settings.SettingGroup;
-import com.logvex.addon.framework.settings.Settings;
-import com.logvex.addon.framework.settings.StringListSetting;
-import com.logvex.addon.framework.utils.misc.Json;
+import com.logvex.addon.framework.utils.settings.SettingBridge;
+import meteordevelopment.meteorclient.settings.BoolSetting;
+import meteordevelopment.meteorclient.settings.IntSetting;
+import meteordevelopment.meteorclient.settings.Setting;
+import meteordevelopment.meteorclient.settings.SettingGroup;
+import meteordevelopment.meteorclient.settings.Settings;
+import meteordevelopment.meteorclient.settings.StringListSetting;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -16,77 +14,35 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** Behaviour the GUI and the config loader both depend on. */
+/**
+ * Behaviour the config loader, the profiles and the GUI all depend on, over Meteor's settings model
+ * and the {@link SettingBridge} the addon layers on top of it.
+ */
 class SettingsTest {
-    private enum Mode { A, B, C }
 
     @Test
-    @DisplayName("an integer setting clamps to its declared range")
-    void intSettingClamps() {
+    @DisplayName("a setting keeps the value it is set to and reports the change")
+    void setAndWasChanged() {
         Setting<Integer> setting = new IntSetting.Builder()
             .name("count").defaultValue(5).min(1).max(10).build();
 
-        setting.set(50);
-        assertEquals(10, setting.get());
-        setting.set(-3);
-        assertEquals(1, setting.get());
+        assertFalse(setting.wasChanged());
         setting.set(7);
         assertEquals(7, setting.get());
+        assertTrue(setting.wasChanged());
+
+        setting.reset();
+        assertEquals(5, setting.get());
+        assertFalse(setting.wasChanged(), "reset must clear the changed flag");
     }
 
     @Test
-    @DisplayName("a double setting accepts a default and clamps")
-    void doubleSettingClamps() {
-        Setting<Double> setting = new DoubleSetting.Builder()
-            .name("scale").defaultValue(1.0).min(0.5).max(3.0).build();
-
-        assertEquals(1.0, setting.get());
-        setting.set(9.0);
-        assertEquals(3.0, setting.get());
-        setting.set(0.0);
-        assertEquals(0.5, setting.get());
-    }
-
-    @Test
-    @DisplayName("a string list setting stores an immutable copy")
-    void stringListCopies() {
-        Setting<List<String>> setting = new StringListSetting.Builder()
-            .name("rules").defaultValue("a", "b").build();
-
-        assertEquals(List.of("a", "b"), setting.get());
-        setting.set(List.of("x"));
-        assertEquals(List.of("x"), setting.get());
-        assertThrowsUnsupported(() -> setting.get().add("y"));
-    }
-
-    private static void assertThrowsUnsupported(Runnable action) {
-        boolean threw = false;
-        try {
-            action.run();
-        } catch (UnsupportedOperationException e) {
-            threw = true;
-        }
-        assertTrue(threw, "expected the list to be immutable");
-    }
-
-    @Test
-    @DisplayName("a hidden setting reports itself invisible so the GUI can skip it")
-    void visibilityIsRespected() {
-        Setting<Boolean> parent = new BoolSetting.Builder().name("on").defaultValue(false).build();
-        Setting<String> child = new com.logvex.addon.framework.settings.StringSetting.Builder()
-            .name("detail").defaultValue("x").visible(parent::get).build();
-
-        assertFalse(child.isVisible());
-        parent.set(true);
-        assertTrue(child.isVisible());
-    }
-
-    @Test
-    @DisplayName("settings keep their declaration order across groups")
-    void groupsPreserveOrder() {
+    @DisplayName("the bridge lists every setting across every group, in order")
+    void bridgeListsEverySetting() {
         Settings settings = new Settings();
         SettingGroup general = settings.getDefaultGroup();
         SettingGroup advanced = settings.createGroup("Advanced");
@@ -95,41 +51,48 @@ class SettingsTest {
         general.add(new BoolSetting.Builder().name("third").build());
 
         assertEquals(List.of("first", "third", "second"),
-            settings.all().stream().map(s -> s.name).toList());
-        assertEquals("second", settings.get("second").name);
-        assertNull(settings.get("missing"));
+            SettingBridge.all(settings).stream().map(s -> s.name).toList());
+        assertEquals(List.of("second"),
+            SettingBridge.settings(advanced).stream().map(s -> s.name).toList());
     }
 
     @Test
-    @DisplayName("a setting round-trips through JSON")
-    void jsonRoundTrip() {
-        IntSetting original = new IntSetting.Builder().name("n").defaultValue(3).min(0).max(9).build();
+    @DisplayName("the bridge finds a setting by name and reports group presence")
+    void bridgeLookup() {
+        Settings settings = new Settings();
+        settings.getDefaultGroup().add(new IntSetting.Builder().name("radius").defaultValue(3).build());
+
+        assertNotNull(SettingBridge.byName(settings, "radius"));
+        assertNull(SettingBridge.byName(settings, "missing"));
+        assertTrue(SettingBridge.hasGroup(settings, "General"));
+        assertFalse(SettingBridge.hasGroup(settings, "No Such Group"));
+    }
+
+    @Test
+    @DisplayName("a value round-trips through the bridge as a bare value")
+    void bridgeRoundTripsBareValue() {
+        Setting<Integer> original = new IntSetting.Builder().name("n").defaultValue(3).min(0).max(9).build();
         original.set(7);
 
-        IntSetting restored = new IntSetting.Builder().name("n").defaultValue(3).min(0).max(9).build();
-        restored.fromJson(original.toJson());
+        // The stored form must be the bare value, not a wrapping compound, so an existing config
+        // written by an earlier build still loads.
+        assertEquals(7, SettingBridge.toJson(original).getAsInt());
+
+        Setting<Integer> restored = new IntSetting.Builder().name("n").defaultValue(3).min(0).max(9).build();
+        SettingBridge.fromJson(restored, SettingBridge.toJson(original));
         assertEquals(7, restored.get());
     }
 
     @Test
-    @DisplayName("an invalid stored value is rejected and the previous value kept")
-    void invalidStoredValueIsIgnored() {
-        IntSetting setting = new IntSetting.Builder().name("n").defaultValue(3).min(0).max(9).build();
-        setting.set(4);
+    @DisplayName("a string list round-trips through the bridge")
+    void bridgeRoundTripsList() {
+        Setting<List<String>> setting = new StringListSetting.Builder()
+            .name("rules").defaultValue("a", "b").build();
+        setting.set(List.of("x", "y"));
 
-        // A string where a number is expected: the parse fails and the old value survives.
-        setting.fromJson(Json.write("not-a-number"));
-        assertEquals(4, setting.get());
-    }
-
-    @Test
-    @DisplayName("enum settings cycle through their constants")
-    void enumCycles() {
-        EnumSetting<Mode> setting = new EnumSetting.Builder<Mode>().name("mode").defaultValue(Mode.A).build();
-        assertEquals(Mode.A, setting.get());
-
-        Mode[] values = setting.get().getDeclaringClass().getEnumConstants();
-        setting.set(values[(setting.get().ordinal() + 1) % values.length]);
-        assertEquals(Mode.B, setting.get());
+        Setting<List<String>> restored = new StringListSetting.Builder()
+            .name("rules").defaultValue("a", "b").build();
+        SettingBridge.fromJson(restored, SettingBridge.toJson(setting));
+        assertEquals(List.of("x", "y"), restored.get());
     }
 }

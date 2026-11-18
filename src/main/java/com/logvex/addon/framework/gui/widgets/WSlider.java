@@ -100,7 +100,7 @@ public class WSlider extends WWidget {
             Render2D.gradientHorizontalRounded(context, x, y, filled, height, radius, left, right);
             if (h > 0.01) {
                 Render2D.glow(context, x, y, filled, height, radius,
-                    Render2D.argb(theme == null ? new com.logvex.addon.framework.utils.render.color.Color(120, 160, 255) : theme.glow,
+                    Render2D.argb(theme == null ? new meteordevelopment.meteorclient.utils.render.color.Color(120, 160, 255) : theme.glow,
                         (int) (80 * h)), 3, 2);
             }
         }

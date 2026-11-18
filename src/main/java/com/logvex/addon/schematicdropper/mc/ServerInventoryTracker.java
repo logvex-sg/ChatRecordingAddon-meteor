@@ -1,7 +1,7 @@
 package com.logvex.addon.schematicdropper.mc;
 
-import com.logvex.addon.framework.events.packets.PacketEvent;
-import com.logvex.addon.framework.orbit.EventHandler;
+import meteordevelopment.meteorclient.events.packets.PacketEvent;
+import meteordevelopment.orbit.EventHandler;
 import net.minecraft.network.packet.s2c.play.InventoryS2CPacket;
 import net.minecraft.network.packet.s2c.play.ScreenHandlerSlotUpdateS2CPacket;
 

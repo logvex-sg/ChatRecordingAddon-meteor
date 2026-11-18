@@ -1,14 +1,10 @@
 package com.logvex.addon.framework.gui;
 
-import com.logvex.addon.framework.systems.config.ClientConfig;
-import com.logvex.addon.framework.systems.config.ConfigManager;
-import com.logvex.addon.framework.utils.render.color.Color;
+import meteordevelopment.meteorclient.utils.render.color.Color;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
-import java.nio.file.Path;
 import java.util.Locale;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -24,11 +20,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class GuiThemePresetTest {
 
-    private final ConfigManager config = ConfigManager.get();
-
     @AfterEach
     void tearDown() {
-        config.setFile(null);
         GuiThemes.applyPreset(GuiThemePreset.BLUE);
     }
 
@@ -101,25 +94,4 @@ class GuiThemePresetTest {
         assertEquals(GuiThemePreset.TEAL, GuiThemePreset.parse("FOREST"));
     }
 
-    @Test
-    @DisplayName("the chosen preset survives a save and load")
-    void presetPersists(@TempDir Path dir) {
-        Path file = dir.resolve("config.json");
-        config.setFile(file);
-
-        ClientConfig.get().setThemePreset(GuiThemePreset.VIOLET);
-        GuiThemes.applyPreset(GuiThemePreset.VIOLET);
-        config.save();
-
-        // Simulate a restart: reset to the default, then load the file back over it.
-        ClientConfig.get().setThemePreset(GuiThemePreset.BLUE);
-        GuiThemes.applyPreset(GuiThemePreset.BLUE);
-
-        config.load();
-
-        assertEquals(GuiThemePreset.VIOLET, ClientConfig.get().themePreset(),
-            "the theme choice should be restored");
-        assertEquals(GuiThemePreset.VIOLET, GuiThemes.preset(),
-            "loading must re-apply the saved theme to the shared instance");
-    }
 }

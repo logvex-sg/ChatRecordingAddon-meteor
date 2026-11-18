@@ -1,11 +1,11 @@
 package com.logvex.addon.automation.modules;
 
 import com.logvex.addon.automation.core.AutoToolController;
-import com.logvex.addon.framework.events.world.TickEvent;
-import com.logvex.addon.framework.orbit.EventHandler;
-import com.logvex.addon.framework.settings.BoolSetting;
-import com.logvex.addon.framework.settings.Setting;
-import com.logvex.addon.framework.settings.SettingGroup;
+import meteordevelopment.meteorclient.events.world.TickEvent;
+import meteordevelopment.orbit.EventHandler;
+import meteordevelopment.meteorclient.settings.BoolSetting;
+import meteordevelopment.meteorclient.settings.Setting;
+import meteordevelopment.meteorclient.settings.SettingGroup;
 import net.minecraft.block.BlockState;
 import net.minecraft.item.ItemStack;
 import net.minecraft.registry.Registries;
@@ -33,7 +33,7 @@ public class AutoToolModule extends AutomationModule {
         .build()
     );
 
-    private final Setting<Integer> minDurability = sgGeneral.add(new com.logvex.addon.framework.settings.IntSetting.Builder()
+    private final Setting<Integer> minDurability = sgGeneral.add(new meteordevelopment.meteorclient.settings.IntSetting.Builder()
         .name("min-durability")
         .description("Never swap to a tool with this much durability or less left.")
         .defaultValue(10)

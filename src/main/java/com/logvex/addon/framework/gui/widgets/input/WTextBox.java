@@ -82,7 +82,7 @@ public class WTextBox extends WWidget {
         Render2D.roundedOutline(context, x, y, width, height, radius, border, focused ? 1.4 : 1);
         if (focused) {
             Render2D.glow(context, x, y, width, height, radius, Render2D.argb(theme == null
-                ? new com.logvex.addon.framework.utils.render.color.Color(120, 160, 255) : theme.glow, 70), 3, 2);
+                ? new meteordevelopment.meteorclient.utils.render.color.Color(120, 160, 255) : theme.glow, 70), 3, 2);
         }
 
         var tr = MinecraftClient.getInstance().textRenderer;
@@ -96,7 +96,7 @@ public class WTextBox extends WWidget {
             if ((AnimationClock.time() % 1.0) < 0.5) {
                 int caretX = (int) x + 5 + tr.getWidth(text.substring(0, Math.min(cursor, text.length())));
                 Render2D.rect(context, caretX, y + 3, 1, height - 6, Render2D.argb(theme == null
-                    ? new com.logvex.addon.framework.utils.render.color.Color(224, 224, 224) : theme.accent));
+                    ? new meteordevelopment.meteorclient.utils.render.color.Color(224, 224, 224) : theme.accent));
             }
         }
     }

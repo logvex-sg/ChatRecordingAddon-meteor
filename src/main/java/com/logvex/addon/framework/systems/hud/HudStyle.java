@@ -1,7 +1,7 @@
 package com.logvex.addon.framework.systems.hud;
 
-import com.logvex.addon.framework.utils.render.color.Color;
-import com.logvex.addon.framework.utils.render.color.SettingColor;
+import meteordevelopment.meteorclient.utils.render.color.Color;
+import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 
 /**
  * The colours a HUD element draws with, after resolving its "use the theme" options.

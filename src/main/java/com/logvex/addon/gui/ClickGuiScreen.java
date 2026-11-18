@@ -21,8 +21,8 @@ import com.logvex.addon.framework.systems.config.ClientConfig;
 import com.logvex.addon.framework.systems.config.ConfigManager;
 import com.logvex.addon.framework.systems.hud.Hud;
 import com.logvex.addon.framework.systems.hud.HudElementInfo;
-import com.logvex.addon.framework.systems.modules.Module;
-import com.logvex.addon.framework.systems.modules.Modules;
+import meteordevelopment.meteorclient.systems.modules.Module;
+import meteordevelopment.meteorclient.systems.modules.Modules;
 import com.logvex.addon.framework.utils.render.Render2D;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
@@ -178,7 +178,7 @@ public class ClickGuiScreen extends WidgetScreen {
     private void renderModules(GuiTheme theme) {
         String needle = query.trim().toLowerCase(Locale.ROOT);
         int shown = 0;
-        for (var category : Modules.get().categories()) {
+        for (var category : Modules.loopCategories()) {
             List<Module> group = Modules.get().getGroup(category).stream()
                 .filter(module -> matches(module, needle)).toList();
             if (group.isEmpty()) continue;
@@ -303,7 +303,7 @@ public class ClickGuiScreen extends WidgetScreen {
         swatchRows.add(theme.label("The colours this preset derives, in order:").color(theme.muted)).expandX();
         WHorizontalList colours = theme.horizontalList();
         String[] captions = {"accent", "second", "glow", "good", "warn", "bad"};
-        com.logvex.addon.framework.utils.render.color.Color[] palette = {
+        meteordevelopment.meteorclient.utils.render.color.Color[] palette = {
             theme.accent, theme.accentSecondary, theme.glow, theme.good, theme.warn, theme.bad};
         for (int i = 0; i < palette.length; i++) {
             colours.add(theme.swatch(palette[i], captions[i])).expandX();
@@ -338,8 +338,8 @@ public class ClickGuiScreen extends WidgetScreen {
         add(theme.horizontalSeparator("Log Client")).expandX();
         WVerticalList about = add(theme.verticalList()).expandX().widget();
         about.add(theme.label(LogClientContext.NAME + "  v" + LogClientContext.VERSION)).expandX();
-        about.add(theme.label("A standalone Fabric client for Minecraft 1.21.1.").color(theme.muted)).expandX();
-        about.add(theme.label("No Meteor Client required.").color(theme.muted)).expandX();
+        about.add(theme.label("A Meteor Client addon for Minecraft 1.21.1.").color(theme.muted)).expandX();
+        about.add(theme.label("Runs on Meteor Client's modules, HUD and commands.").color(theme.muted)).expandX();
 
         add(theme.horizontalSeparator("Registered")).expandX();
         WVerticalList counts = add(theme.verticalList()).expandX().widget();

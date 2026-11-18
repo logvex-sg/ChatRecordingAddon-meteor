@@ -1,5 +1,6 @@
 package com.logvex.addon.chatlog.modules;
 
+import com.logvex.addon.framework.systems.modules.AddonModule;
 import com.logvex.addon.LogClient;
 import com.logvex.addon.chatlog.core.PlayerNote;
 import com.logvex.addon.chatlog.mc.LogService;
@@ -7,12 +8,12 @@ import com.logvex.addon.framework.gui.GuiTheme;
 import com.logvex.addon.framework.gui.widgets.WWidget;
 import com.logvex.addon.framework.gui.widgets.containers.WVerticalList;
 import com.logvex.addon.framework.gui.widgets.pressable.WButton;
-import com.logvex.addon.framework.settings.BoolSetting;
-import com.logvex.addon.framework.settings.IntSetting;
-import com.logvex.addon.framework.settings.Setting;
-import com.logvex.addon.framework.settings.SettingGroup;
-import com.logvex.addon.framework.settings.StringListSetting;
-import com.logvex.addon.framework.systems.modules.Module;
+import meteordevelopment.meteorclient.settings.BoolSetting;
+import meteordevelopment.meteorclient.settings.IntSetting;
+import meteordevelopment.meteorclient.settings.Setting;
+import meteordevelopment.meteorclient.settings.SettingGroup;
+import meteordevelopment.meteorclient.settings.StringListSetting;
+import meteordevelopment.meteorclient.systems.modules.Module;
 
 import java.util.List;
 
@@ -23,7 +24,7 @@ import java.util.List;
  * always explicit user input. The module never infers a note; it only stores and displays what the
  * user typed. Notes persist with the module's settings.
  */
-public class PlayerNotesModule extends Module {
+public class PlayerNotesModule extends AddonModule {
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
     private final SettingGroup sgDisplay = settings.createGroup("Display");
 
@@ -33,7 +34,6 @@ public class PlayerNotesModule extends Module {
         .name("notes")
         .description("Saved notes, managed from the Notes screen. Editing this by hand is not recommended.")
         .defaultValue(List.of())
-        .wide()
         .build()
     );
 

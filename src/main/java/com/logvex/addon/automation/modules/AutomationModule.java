@@ -1,11 +1,12 @@
 package com.logvex.addon.automation.modules;
 
+import com.logvex.addon.framework.systems.modules.AddonModule;
 import com.logvex.addon.LogClient;
 import com.logvex.addon.automation.mc.AutomationSupport;
-import com.logvex.addon.framework.events.game.GameJoinedEvent;
-import com.logvex.addon.framework.events.game.GameLeftEvent;
-import com.logvex.addon.framework.orbit.EventHandler;
-import com.logvex.addon.framework.systems.modules.Module;
+import meteordevelopment.meteorclient.events.game.GameJoinedEvent;
+import meteordevelopment.meteorclient.events.game.GameLeftEvent;
+import meteordevelopment.orbit.EventHandler;
+import meteordevelopment.meteorclient.systems.modules.Module;
 import com.logvex.addon.notify.core.NotificationType;
 import com.logvex.addon.notify.mc.NotificationService;
 
@@ -17,7 +18,7 @@ import com.logvex.addon.notify.mc.NotificationService;
  * notification service rather than printing its own prefix. Putting those here means a module only
  * has to describe what it does.
  */
-public abstract class AutomationModule extends Module {
+public abstract class AutomationModule extends AddonModule {
     private boolean worldLoaded;
 
     protected AutomationModule(String name, String description, String... aliases) {

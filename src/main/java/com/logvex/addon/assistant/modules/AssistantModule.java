@@ -14,22 +14,22 @@ import com.logvex.addon.automation.modules.AutomationModule;
 import com.logvex.addon.chatlog.core.ChatClassifier;
 import com.logvex.addon.chatlog.core.MessageType;
 import com.logvex.addon.common.Messages;
-import com.logvex.addon.framework.events.game.ReceiveMessageEvent;
-import com.logvex.addon.framework.events.world.TickEvent;
+import meteordevelopment.meteorclient.events.game.ReceiveMessageEvent;
+import meteordevelopment.meteorclient.events.world.TickEvent;
 import com.logvex.addon.framework.gui.GuiTheme;
 import com.logvex.addon.framework.gui.widgets.WWidget;
 import com.logvex.addon.framework.gui.widgets.containers.WVerticalList;
 import com.logvex.addon.framework.gui.widgets.pressable.WButton;
-import com.logvex.addon.framework.orbit.EventHandler;
-import com.logvex.addon.framework.settings.BoolSetting;
-import com.logvex.addon.framework.settings.DoubleSetting;
-import com.logvex.addon.framework.settings.EnumSetting;
-import com.logvex.addon.framework.settings.IntSetting;
-import com.logvex.addon.framework.settings.Setting;
-import com.logvex.addon.framework.settings.SettingGroup;
-import com.logvex.addon.framework.settings.StringListSetting;
-import com.logvex.addon.framework.settings.StringSetting;
-import com.logvex.addon.framework.utils.player.ChatUtils;
+import meteordevelopment.orbit.EventHandler;
+import meteordevelopment.meteorclient.settings.BoolSetting;
+import meteordevelopment.meteorclient.settings.DoubleSetting;
+import meteordevelopment.meteorclient.settings.EnumSetting;
+import meteordevelopment.meteorclient.settings.IntSetting;
+import meteordevelopment.meteorclient.settings.Setting;
+import meteordevelopment.meteorclient.settings.SettingGroup;
+import meteordevelopment.meteorclient.settings.StringListSetting;
+import meteordevelopment.meteorclient.settings.StringSetting;
+import meteordevelopment.meteorclient.utils.player.ChatUtils;
 import com.logvex.addon.notify.core.NotificationType;
 import net.minecraft.sound.SoundEvents;
 
@@ -116,7 +116,6 @@ public class AssistantModule extends AutomationModule {
         .name("rules")
         .description("Trigger rules, one per line: pattern;sender=;reply=;mode=;cooldown=;limit=;sound=;remember=;enabled=")
         .defaultValue(TriggerRule.defaults().stream().map(TriggerRule::encode).toList())
-        .wide()
         .onChanged(ignored -> rebuild())
         .build()
     );

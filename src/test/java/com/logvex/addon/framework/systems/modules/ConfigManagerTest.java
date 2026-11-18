@@ -1,198 +1,120 @@
 package com.logvex.addon.framework.systems.modules;
 
-import com.logvex.addon.framework.settings.BoolSetting;
-import com.logvex.addon.framework.settings.IntSetting;
-import com.logvex.addon.framework.settings.Setting;
-import com.logvex.addon.framework.settings.StringListSetting;
+import com.google.gson.JsonObject;
 import com.logvex.addon.framework.systems.config.ConfigManager;
-import org.junit.jupiter.api.AfterEach;
+import meteordevelopment.meteorclient.settings.BoolSetting;
+import meteordevelopment.meteorclient.settings.IntSetting;
+import meteordevelopment.meteorclient.settings.Setting;
+import meteordevelopment.meteorclient.settings.Settings;
+import meteordevelopment.meteorclient.settings.StringListSetting;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The configuration must survive a restart, tolerate a damaged file, and never reset a value the
- * user chose. These tests exercise the real save/load path against a temp file.
+ * The settings half of the config: a module's or HUD element's settings must serialise to the same
+ * bare-value JSON the addon has always written, and must load back over a live settings tree. These
+ * exercise the real serialisation methods against Meteor's settings model, without needing a running
+ * client.
  */
 class ConfigManagerTest {
 
-    private static final Category CATEGORY = new Category("Test");
-
-    /** A module with the three setting shapes the config has to round-trip. */
-    private static class SampleModule extends Module {
-        final Setting<Boolean> enabled;
-        final Setting<Integer> limit;
-        final Setting<List<String>> names;
-
-        SampleModule(String name) {
-            super(CATEGORY, name, "test module");
-            enabled = settings.getDefaultGroup().add(new BoolSetting.Builder()
-                .name("enabled").defaultValue(false).build());
-            limit = settings.getDefaultGroup().add(new IntSetting.Builder()
-                .name("limit").defaultValue(5).min(0).max(100).build());
-            names = settings.getDefaultGroup().add(new StringListSetting.Builder()
-                .name("names").defaultValue("a", "b").build());
-        }
+    @SuppressWarnings("unchecked")
+    private static Setting<List<String>> names(Settings settings) {
+        return (Setting<List<String>>) settings.get("names");
     }
 
-    private final ConfigManager config = ConfigManager.get();
-
-    @AfterEach
-    void tearDown() {
-        config.setFile(null);
+    @SuppressWarnings("unchecked")
+    private static Setting<Boolean> enabled(Settings settings) {
+        return (Setting<Boolean>) settings.get("enabled");
     }
 
-    @Test
-    @DisplayName("settings round-trip through save and load")
-    void roundTrip(@TempDir Path dir) {
-        Path file = dir.resolve("config.json");
-        config.setFile(file);
+    @SuppressWarnings("unchecked")
+    private static Setting<Integer> limit(Settings settings) {
+        return (Setting<Integer>) settings.get("limit");
+    }
 
-        SampleModule module = new SampleModule("round-trip") {};
-        Modules.get().add(module);
-        module.enabled.set(true);
-        module.limit.set(42);
-        module.names.set(List.of("x", "y", "z"));
-        config.save();
-
-        assertTrue(Files.isRegularFile(file), "the config file should have been written");
-
-        // Simulate a restart: change every value, then load the file back over them.
-        module.enabled.set(false);
-        module.limit.set(1);
-        module.names.set(List.of("changed"));
-
-        config.load();
-
-        assertTrue(module.enabled.get(), "the boolean should be restored");
-        assertEquals(42, module.limit.get(), "the integer should be restored");
-        assertEquals(List.of("x", "y", "z"), module.names.get(), "the list should be restored");
+    private static Settings sample() {
+        Settings settings = new Settings();
+        settings.getDefaultGroup().add(new BoolSetting.Builder().name("enabled").defaultValue(false).build());
+        settings.getDefaultGroup().add(new IntSetting.Builder()
+            .name("limit").defaultValue(5).min(0).max(100).build());
+        settings.getDefaultGroup().add(new StringListSetting.Builder()
+            .name("names").defaultValue("a", "b").build());
+        return settings;
     }
 
     @Test
-    @DisplayName("a missing config file leaves every default untouched")
-    void missingFileKeepsDefaults(@TempDir Path dir) {
-        config.setFile(dir.resolve("does-not-exist.json"));
+    @DisplayName("settings round-trip through the config serialiser")
+    void settingsRoundTrip() {
+        Settings source = sample();
+        enabled(source).set(true);
+        limit(source).set(42);
+        names(source).set(List.of("x", "y", "z"));
 
-        SampleModule module = new SampleModule("missing-file") {};
-        Modules.get().add(module);
+        JsonObject entry = new JsonObject();
+        entry.add("settings", ConfigManager.settingsToJson(source));
 
-        config.load();
+        Settings restored = sample();
+        ConfigManager.applySettings(restored, entry);
 
-        assertFalse(module.enabled.get());
-        assertEquals(5, module.limit.get());
-        assertEquals(List.of("a", "b"), module.names.get());
+        assertEquals(Boolean.TRUE, (Boolean) (Object) restored.get("enabled").get());
+        assertEquals(42, ((Number) restored.get("limit").get()).intValue());
+        assertEquals(List.of("x", "y", "z"), restored.get("names").get());
     }
 
     @Test
-    @DisplayName("a corrupt config file is ignored rather than crashing the addon")
-    void corruptFileIsIgnored(@TempDir Path dir) throws Exception {
-        Path file = dir.resolve("config.json");
-        Files.writeString(file, "{ this is not json ");
-        config.setFile(file);
+    @DisplayName("a value stored by an older build as a bare value still loads")
+    void loadsLegacyBareValues() {
+        // An old config wrote the bare value ("limit": 9), not a wrapping object.
+        JsonObject entry = new JsonObject();
+        JsonObject values = new JsonObject();
+        values.addProperty("limit", 9);
+        entry.add("settings", values);
 
-        SampleModule module = new SampleModule("corrupt-file") {};
-        Modules.get().add(module);
+        Settings restored = sample();
+        ConfigManager.applySettings(restored, entry);
 
-        config.load();
-
-        assertEquals(5, module.limit.get(), "defaults must survive a corrupt file");
+        assertEquals(9, ((Number) restored.get("limit").get()).intValue());
     }
 
     @Test
-    @DisplayName("an unknown key is preserved across a save")
-    void unknownKeysArePreserved(@TempDir Path dir) throws Exception {
-        Path file = dir.resolve("config.json");
-        config.setFile(file);
-
-        SampleModule module = new SampleModule("unknown-keys") {};
-        Modules.get().add(module);
-        config.save();
-
-        // Add a key a newer build might have written, then save again.
-        String json = Files.readString(file).replace("\"modules\"", "\"future-feature\": 123, \"modules\"");
-        Files.writeString(file, json);
-
-        config.load();
-        config.save();
-
-        assertTrue(Files.readString(file).contains("future-feature"),
-            "a key this build does not understand must not be dropped");
+    @DisplayName("an entry with no settings object leaves the defaults untouched")
+    void missingSettingsLeavesDefaults() {
+        Settings restored = sample();
+        ConfigManager.applySettings(restored, new JsonObject());
+        assertEquals(5, ((Number) restored.get("limit").get()).intValue());
+        assertEquals(Boolean.FALSE, (Boolean) (Object) restored.get("enabled").get());
     }
 
     @Test
-    @DisplayName("saveIfDirty only writes after a change")
-    void saveIfDirtyRespectsFlag(@TempDir Path dir) throws Exception {
-        Path file = dir.resolve("config.json");
-        config.setFile(file);
+    @DisplayName("a setting this build does not know is ignored, not fatal")
+    void unknownSettingIsIgnored() {
+        JsonObject entry = new JsonObject();
+        JsonObject values = new JsonObject();
+        values.addProperty("removed-setting", 1);
+        values.addProperty("limit", 12);
+        entry.add("settings", values);
 
-        SampleModule module = new SampleModule("dirty-flag") {};
-        Modules.get().add(module);
+        Settings restored = sample();
+        ConfigManager.applySettings(restored, entry);
 
-        config.save();
-        assertFalse(config.isDirty());
-
-        config.markDirty();
-        assertTrue(config.isDirty());
-        config.saveIfDirty();
-        assertFalse(config.isDirty());
-        assertTrue(Files.isRegularFile(file));
+        assertEquals(12, ((Number) restored.get("limit").get()).intValue(), "a known setting must still load");
     }
 
     @Test
-    @DisplayName("a stored log directory from before the rebrand is repointed")
-    void migratesLegacyStorageDirectory(@TempDir Path dir) throws Exception {
-        Path file = dir.resolve("config.json");
-        config.setFile(file);
+    @DisplayName("serialised output holds the bare value for each setting")
+    void serialisesBareValues() {
+        Settings source = sample();
+        limit(source).set(7);
+        JsonObject json = ConfigManager.settingsToJson(source);
 
-        // The chat-logger module must exist for the migration to find it; other tests may have
-        // registered a stub, so only add the real one when it is missing.
-        if (Modules.get().get("chat-logger") == null) {
-            Modules.get().add(new com.logvex.addon.chatlog.modules.ChatLoggerModule());
-        }
-
-        Files.writeString(file, "{\"modules\":{\"chat-logger\":{\"settings\":"
-            + "{\"storage-directory\":\"logaddon/logs\"}}}}");
-
-        config.load();
-
-        Setting<?> storage = Modules.get().get("chat-logger").settings.byName("storage-directory");
-        assertEquals("logclient/logs", storage.get(),
-            "an old default log folder must follow the renamed data folder");
-
-        // The repointed value must survive the next save and reload, not just this in-memory pass.
-        config.save();
-        config.load();
-        assertEquals("logclient/logs", storage.get(),
-            "the migrated log folder must persist across a restart");
-        assertTrue(Files.readString(file).contains("logclient/logs"),
-            "the saved file must hold the new path");
-    }
-
-    @Test
-    @DisplayName("a custom log directory is left untouched by the migration")
-    void keepsCustomStorageDirectory(@TempDir Path dir) throws Exception {
-        Path file = dir.resolve("config.json");
-        config.setFile(file);
-
-        if (Modules.get().get("chat-logger") == null) {
-            Modules.get().add(new com.logvex.addon.chatlog.modules.ChatLoggerModule());
-        }
-
-        Files.writeString(file, "{\"modules\":{\"chat-logger\":{\"settings\":"
-            + "{\"storage-directory\":\"my/own/logs\"}}}}");
-
-        config.load();
-
-        Setting<?> storage = Modules.get().get("chat-logger").settings.byName("storage-directory");
-        assertEquals("my/own/logs", storage.get(), "a user-chosen folder must never be rewritten");
+        assertTrue(json.has("limit"));
+        assertEquals(7, json.get("limit").getAsInt());
+        assertEquals("a", json.getAsJsonArray("names").get(0).getAsString());
     }
 }

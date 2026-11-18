@@ -1,7 +1,8 @@
 package com.logvex.addon.framework;
 
-import com.logvex.addon.framework.orbit.EventBus;
+import meteordevelopment.orbit.IEventBus;
 import com.mojang.logging.LogUtils;
+import meteordevelopment.meteorclient.MeteorClient;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
 import org.slf4j.Logger;
@@ -13,18 +14,26 @@ import java.nio.file.Files;
 /**
  * Shared client access points for the addon.
  *
- * <p>The addon is standalone: it does not require Meteor Client or any other mod. This class is the
- * one place feature code reaches the {@link EventBus}, the game directory and the client instance,
- * so the rest of the codebase never has to know how the client is obtained.
+ * <p>The addon is a Meteor Client addon: it publishes and listens on Meteor's own event bus so a
+ * module can react to the same events as a built-in Meteor module, and Meteor's addon manager loads
+ * it. This class is the one place feature code reaches the event bus, the game directory and the
+ * client instance, so the rest of the codebase never has to know how the client is obtained.
  */
 public final class LogClientContext {
     private static final Logger LOG = LogUtils.getLogger();
     public static final String MOD_ID = "logclient";
     public static final String NAME = "Log Client";
-    public static final String VERSION = "16.0.0";
+    public static final String VERSION = "17.0.0";
 
     /** The addon-wide event bus: modules, HUD and the recorder all publish and listen here. */
-    public static final EventBus EVENT_BUS = new EventBus();
+    /**
+     * The addon-wide event bus.
+     *
+     * <p>This is Meteor's bus, not a private one: subscribing here means the addon receives the same
+     * {@code TickEvent}, {@code ReceiveMessageEvent} and packet events Meteor dispatches, and the
+     * Meteor GUI drives the addon's modules exactly like its own.
+     */
+    public static final IEventBus EVENT_BUS = MeteorClient.EVENT_BUS;
 
     /** The Minecraft instance, for code that would otherwise call the singleton directly. */
     public static final MinecraftClient mc = MinecraftClient.getInstance();

@@ -1,7 +1,7 @@
 package com.logvex.addon.bot.mc;
 
 import com.logvex.addon.bot.core.PlayerPort;
-import com.logvex.addon.framework.utils.player.PlayerUtils;
+import meteordevelopment.meteorclient.utils.player.PlayerUtils;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.world.GameMode;
 

@@ -10,7 +10,7 @@ import com.logvex.addon.framework.gui.GuiThemes;
 import com.logvex.addon.framework.gui.WindowScreen;
 import com.logvex.addon.framework.gui.widgets.containers.WTable;
 import com.logvex.addon.framework.gui.widgets.pressable.WButton;
-import com.logvex.addon.framework.systems.modules.Modules;
+import meteordevelopment.meteorclient.systems.modules.Modules;
 
 import java.util.List;
 
@@ -117,6 +117,6 @@ public class PlayerOverviewScreen extends WindowScreen {
     }
 
     private void info(String message) {
-        com.logvex.addon.framework.utils.player.ChatUtils.info("%s", message);
+        meteordevelopment.meteorclient.utils.player.ChatUtils.info("%s", message);
     }
 }

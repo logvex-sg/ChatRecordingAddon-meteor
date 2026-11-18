@@ -1,5 +1,6 @@
 package com.logvex.addon.schematicdropper;
 
+import com.logvex.addon.framework.systems.modules.AddonModule;
 import com.logvex.addon.LogClient;
 import com.logvex.addon.common.Messages;
 import com.logvex.addon.schematicdropper.core.AcquisitionConfig;
@@ -44,24 +45,24 @@ import com.logvex.addon.schematicdropper.mc.RegistryItemResolver;
 import com.logvex.addon.schematicdropper.mc.SchematicFileImport;
 import com.logvex.addon.schematicdropper.mc.ServerInventoryTracker;
 import com.logvex.addon.framework.LogClientContext;
-import com.logvex.addon.framework.events.game.GameJoinedEvent;
-import com.logvex.addon.framework.events.game.GameLeftEvent;
-import com.logvex.addon.framework.events.world.TickEvent;
+import meteordevelopment.meteorclient.events.game.GameJoinedEvent;
+import meteordevelopment.meteorclient.events.game.GameLeftEvent;
+import meteordevelopment.meteorclient.events.world.TickEvent;
 import com.logvex.addon.framework.gui.GuiTheme;
 import com.logvex.addon.framework.gui.widgets.WWidget;
 import com.logvex.addon.framework.gui.widgets.containers.WHorizontalList;
 import com.logvex.addon.framework.gui.widgets.containers.WVerticalList;
 import com.logvex.addon.framework.gui.widgets.pressable.WButton;
-import com.logvex.addon.framework.settings.BoolSetting;
-import com.logvex.addon.framework.settings.DoubleSetting;
-import com.logvex.addon.framework.settings.EnumSetting;
-import com.logvex.addon.framework.settings.IntSetting;
-import com.logvex.addon.framework.settings.Setting;
-import com.logvex.addon.framework.settings.SettingGroup;
-import com.logvex.addon.framework.settings.StringListSetting;
-import com.logvex.addon.framework.settings.StringSetting;
-import com.logvex.addon.framework.systems.modules.Module;
-import com.logvex.addon.framework.orbit.EventHandler;
+import meteordevelopment.meteorclient.settings.BoolSetting;
+import meteordevelopment.meteorclient.settings.DoubleSetting;
+import meteordevelopment.meteorclient.settings.EnumSetting;
+import meteordevelopment.meteorclient.settings.IntSetting;
+import meteordevelopment.meteorclient.settings.Setting;
+import meteordevelopment.meteorclient.settings.SettingGroup;
+import meteordevelopment.meteorclient.settings.StringListSetting;
+import meteordevelopment.meteorclient.settings.StringSetting;
+import meteordevelopment.meteorclient.systems.modules.Module;
+import meteordevelopment.orbit.EventHandler;
 import net.minecraft.util.Formatting;
 
 import java.io.File;
@@ -76,7 +77,7 @@ import java.util.Locale;
  * settings, event subscription and the run controls exposed to the ClickGUI, the material overview
  * and the HUD.
  */
-public class SchematicDropperModule extends Module {
+public class SchematicDropperModule extends AddonModule {
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
     private final SettingGroup sgMaterials = settings.createGroup("Materials");
     private final SettingGroup sgRotation = settings.createGroup("Rotation");

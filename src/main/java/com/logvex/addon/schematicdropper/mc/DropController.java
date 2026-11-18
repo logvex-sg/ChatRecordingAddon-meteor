@@ -5,7 +5,7 @@ import com.logvex.addon.schematicdropper.core.DropPlan;
 import com.logvex.addon.schematicdropper.core.FailureType;
 import com.logvex.addon.schematicdropper.core.InventoryMode;
 import com.logvex.addon.schematicdropper.core.PendingDrop;
-import com.logvex.addon.framework.utils.player.SlotUtils;
+import meteordevelopment.meteorclient.utils.player.SlotUtils;
 import net.minecraft.client.gui.screen.ingame.InventoryScreen;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;

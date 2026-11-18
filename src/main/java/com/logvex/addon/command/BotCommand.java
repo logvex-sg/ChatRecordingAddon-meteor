@@ -5,7 +5,7 @@ import com.logvex.addon.bot.core.BlockPos3;
 import com.logvex.addon.bot.core.BotMemory;
 import com.logvex.addon.bot.core.BotTask;
 import com.logvex.addon.bot.core.TaskType;
-import com.logvex.addon.framework.commands.Command;
+import meteordevelopment.meteorclient.commands.Command;
 import com.logvex.addon.profiles.BotProfile;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;

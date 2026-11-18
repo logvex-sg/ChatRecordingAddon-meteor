@@ -1,15 +1,16 @@
 package com.logvex.addon.chatlog.modules;
 
+import com.logvex.addon.framework.systems.modules.AddonModule;
 import com.logvex.addon.LogClient;
 import com.logvex.addon.chatlog.core.SessionRecord;
 import com.logvex.addon.framework.gui.GuiTheme;
 import com.logvex.addon.framework.gui.widgets.WWidget;
 import com.logvex.addon.framework.gui.widgets.containers.WVerticalList;
 import com.logvex.addon.framework.gui.widgets.pressable.WButton;
-import com.logvex.addon.framework.settings.IntSetting;
-import com.logvex.addon.framework.settings.Setting;
-import com.logvex.addon.framework.settings.SettingGroup;
-import com.logvex.addon.framework.systems.modules.Module;
+import meteordevelopment.meteorclient.settings.IntSetting;
+import meteordevelopment.meteorclient.settings.Setting;
+import meteordevelopment.meteorclient.settings.SettingGroup;
+import meteordevelopment.meteorclient.systems.modules.Module;
 import com.logvex.addon.chatlog.mc.LogService;
 
 import java.util.List;
@@ -21,7 +22,7 @@ import java.util.List;
  * counts) so past sessions can be browsed without re-reading the log archive. The history is
  * bounded, and the cap is configurable.
  */
-public class SessionHistoryModule extends Module {
+public class SessionHistoryModule extends AddonModule {
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
 
     private final LogService service = LogService.get();

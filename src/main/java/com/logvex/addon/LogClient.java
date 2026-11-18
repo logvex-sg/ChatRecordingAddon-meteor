@@ -13,32 +13,41 @@ import com.mojang.logging.LogUtils;
 import com.logvex.addon.framework.LogClientContext;
 import com.logvex.addon.framework.systems.hud.Hud;
 import com.logvex.addon.framework.systems.hud.HudGroup;
-import com.logvex.addon.framework.systems.modules.Category;
-import com.logvex.addon.framework.systems.modules.Modules;
+import meteordevelopment.meteorclient.addons.GithubRepo;
+import meteordevelopment.meteorclient.addons.MeteorAddon;
+import meteordevelopment.meteorclient.systems.modules.Category;
+import meteordevelopment.meteorclient.systems.modules.Modules;
 import org.slf4j.Logger;
 
 /**
- * Entry point for Log Client.
+ * Entry point for Log Client, a Meteor Client addon.
  *
- * <p>Hosts the chat logging, monitoring, keyword alert, player activity and session statistics
- * modules, plus their HUD elements and the shared dashboard. The {@link ChatRecorder} is subscribed
- * once here so recording is independent of module toggles.
+ * <p>Meteor loads this class through the {@code meteor} entrypoint: it calls
+ * {@link #onRegisterCategories()} before the module list is built, then {@link #onInitialize()} once
+ * Meteor's systems are up. The addon registers its modules into Meteor's own registry, its HUD into
+ * its own HUD manager, and its commands through {@link #registerCommands()} after Meteor's command
+ * dispatcher exists — so every feature is driven from Meteor's GUI, keybinds, config and event bus
+ * exactly like a built-in module.
  *
- * <p>Standalone by design: this class owns its own module registry, event bus, HUD, command tree and
- * configuration. Nothing here depends on another mod being installed.
+ * <p>The recorder and the shared services are subscribed once here, independently of module toggles,
+ * so recording never depends on which module is enabled.
  */
-public class LogClient {
+public class LogClient extends MeteorAddon {
     public static final Logger LOG = LogUtils.getLogger();
     public static final Category CATEGORY = new Category("Log Client");
     public static final HudGroup HUD_GROUP = new HudGroup("Log Client");
 
+    @Override
     public void onInitialize() {
         LOG.info("Initializing Log Client");
 
-        // Subscribe the recorder before any module so no early chat is missed. The chat filter and
-        // the session timeline also subscribe once here: a filter that only worked while a module was
-        // enabled would leak messages on toggle, and the timeline must be complete from the first join.
+        // Subscribe the recorder before any module so no early chat is missed. The chat filter, the
+        // session timeline, player identities and world intelligence also subscribe once here: a
+        // filter that only worked while a module was enabled would leak messages on toggle, and the
+        // timeline must be complete from the first join. AddonEvents draws the HUD and flushes the
+        // config on Meteor's own tick and render events.
         LogClientContext.EVENT_BUS.subscribe(new ChatRecorder());
+        LogClientContext.EVENT_BUS.subscribe(new com.logvex.addon.framework.AddonEvents());
         com.logvex.addon.chatlog.mc.ChatFilterService.get().init(LogClientContext.EVENT_BUS);
         com.logvex.addon.chatlog.mc.SessionTimelineService.get().init(LogClientContext.EVENT_BUS);
         com.logvex.addon.chatlog.mc.PlayerIdentityService.get().init(LogClientContext.EVENT_BUS);
@@ -109,19 +118,6 @@ public class LogClient {
         Hud.get().register(com.logvex.addon.chatlog.hud.ActivityGraphHud.INFO);
         Hud.get().register(com.logvex.addon.chatlog.hud.RecentPlayersHud.INFO);
         Hud.get().register(com.logvex.addon.chatlog.hud.PlayerIdentityHud.INFO);
-    }
-
-    /**
-     * Runs the whole addon bootstrap: modules, HUD elements, the pathing backend and the command
-     * tree. Called once from the client entrypoint.
-     */
-    public static void initialize() {
-        LogClient addon = new LogClient();
-        addon.onInitialize();
-        addon.onRegisterCategories();
-
-        com.logvex.addon.framework.pathing.PathManagers.init();
-        com.logvex.addon.framework.commands.Commands.init();
 
         // Rename the pre-rebrand data folder before anything reads or creates it, so an upgrade keeps
         // the recorded logs, identities, bot memory and config instead of starting empty.
@@ -129,12 +125,37 @@ public class LogClient {
 
         // Restore the saved configuration only after every module and HUD element exists.
         com.logvex.addon.framework.systems.config.ConfigManager.get().load();
+
+        Runtime.getRuntime().addShutdownHook(new Thread(LogClient::shutdown, "log-client-shutdown"));
     }
 
-    /** Releases every module's resources and flushes the configuration. */
+    /**
+     * Registers the addon commands once Meteor's command dispatcher is up.
+     *
+     * <p>Meteor runs {@code onInitialize} before {@code Commands.init()}, so adding a command there
+     * would be wiped when the dispatcher is rebuilt. Declaring {@code Commands} as a dependency
+     * orders this after that init; without it the order is not defined.
+     */
+    @meteordevelopment.meteorclient.utils.PostInit(
+        dependencies = meteordevelopment.meteorclient.commands.Commands.class)
+    public static void registerCommands() {
+        meteordevelopment.meteorclient.commands.Commands.add(new com.logvex.addon.command.LogCommand());
+        meteordevelopment.meteorclient.commands.Commands.add(new com.logvex.addon.command.BotCommand());
+        meteordevelopment.meteorclient.commands.Commands.add(new com.logvex.addon.command.AssistantCommand());
+    }
+
+    @Override
+    public void onRegisterCategories() {
+        Modules.registerCategory(CATEGORY);
+    }
+
+    /** Flushes the addon configuration and releases every service's resources at client shutdown. */
     public static void shutdown() {
-        com.logvex.addon.framework.systems.config.ConfigManager.get().save();
-        Modules.get().disableAll();
+        try {
+            com.logvex.addon.framework.systems.config.ConfigManager.get().save();
+        } catch (RuntimeException e) {
+            LOG.warn("Could not flush the addon config on shutdown", e);
+        }
         com.logvex.addon.chatlog.mc.SessionTimelineService.get().shutdown();
         com.logvex.addon.chatlog.mc.PlayerIdentityService.get().shutdown();
         com.logvex.addon.world.mc.WorldService.get().shutdown();
@@ -143,22 +164,13 @@ public class LogClient {
         com.logvex.addon.update.mc.UpdateService.get().engine().shutdown();
     }
 
-    /** Persists the configuration when it has changed. Called periodically from the tick loop. */
-    public static void tick() {
-        com.logvex.addon.framework.systems.config.ConfigManager.get().saveIfDirty();
-    }
-
-    public void onRegisterCategories() {
-        Modules.get().registerCategory(CATEGORY);
-    }
-
-    /** The addon's package root, exposed for diagnostics and the About screen. */
+    @Override
     public String getPackage() {
         return "com.logvex.addon";
     }
 
-    /** The addon's source repository, exposed for the About screen. */
-    public String getRepo() {
-        return "https://github.com/logvex-sg/ChatRecordingAddon-meteor";
+    @Override
+    public GithubRepo getRepo() {
+        return new GithubRepo("logvex-sg", "ChatRecordingAddon-meteor");
     }
 }

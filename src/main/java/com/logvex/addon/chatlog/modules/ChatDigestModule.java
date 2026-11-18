@@ -1,21 +1,22 @@
 package com.logvex.addon.chatlog.modules;
 
+import com.logvex.addon.framework.systems.modules.AddonModule;
 import com.logvex.addon.LogClient;
 import com.logvex.addon.chatlog.core.ChatDigest;
 import com.logvex.addon.chatlog.core.ChatEntry;
 import com.logvex.addon.chatlog.mc.LogService;
 import com.logvex.addon.common.Messages;
-import com.logvex.addon.framework.events.world.TickEvent;
+import meteordevelopment.meteorclient.events.world.TickEvent;
 import com.logvex.addon.framework.gui.GuiTheme;
 import com.logvex.addon.framework.gui.widgets.WWidget;
 import com.logvex.addon.framework.gui.widgets.containers.WVerticalList;
 import com.logvex.addon.framework.gui.widgets.pressable.WButton;
-import com.logvex.addon.framework.orbit.EventHandler;
-import com.logvex.addon.framework.settings.BoolSetting;
-import com.logvex.addon.framework.settings.IntSetting;
-import com.logvex.addon.framework.settings.Setting;
-import com.logvex.addon.framework.settings.SettingGroup;
-import com.logvex.addon.framework.systems.modules.Module;
+import meteordevelopment.orbit.EventHandler;
+import meteordevelopment.meteorclient.settings.BoolSetting;
+import meteordevelopment.meteorclient.settings.IntSetting;
+import meteordevelopment.meteorclient.settings.Setting;
+import meteordevelopment.meteorclient.settings.SettingGroup;
+import meteordevelopment.meteorclient.systems.modules.Module;
 
 import java.util.List;
 
@@ -26,7 +27,7 @@ import java.util.List;
  * touches the disk from the client thread. It is purely informational: it prints a short summary to
  * chat and, optionally, forwards it through the webhook queue.
  */
-public class ChatDigestModule extends Module {
+public class ChatDigestModule extends AddonModule {
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
 
     private final Setting<Boolean> auto = sgGeneral.add(new BoolSetting.Builder()
@@ -110,7 +111,7 @@ public class ChatDigestModule extends Module {
             info("%s", line);
         }
         if (sendWebhook.get()) {
-            ChatLoggerModule logger = com.logvex.addon.framework.systems.modules.Modules.get()
+            ChatLoggerModule logger = meteordevelopment.meteorclient.systems.modules.Modules.get()
                 .get(ChatLoggerModule.class);
             String url = logger == null ? "" : logger.effectiveUrl();
             String username = logger == null ? "" : logger.effectiveUsername();

@@ -7,7 +7,7 @@ import com.logvex.addon.framework.gui.GuiThemes;
 import com.logvex.addon.framework.gui.WindowScreen;
 import com.logvex.addon.framework.gui.widgets.containers.WTable;
 import com.logvex.addon.framework.gui.widgets.pressable.WButton;
-import com.logvex.addon.framework.utils.player.ChatUtils;
+import meteordevelopment.meteorclient.utils.player.ChatUtils;
 
 import java.util.List;
 
@@ -90,7 +90,7 @@ public class SessionHistoryScreen extends WindowScreen {
 
             WButton view = table.add(theme.button("View Log")).widget();
             view.action = () -> {
-                var logger = com.logvex.addon.framework.systems.modules.Modules.get()
+                var logger = meteordevelopment.meteorclient.systems.modules.Modules.get()
                     .get(com.logvex.addon.chatlog.modules.ChatLoggerModule.class);
                 if (logger != null && logger.storage() != null) {
                     mc.setScreen(new LogViewerScreen(logger.storage(),

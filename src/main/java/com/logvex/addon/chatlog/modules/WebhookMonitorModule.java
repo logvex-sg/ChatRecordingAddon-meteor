@@ -1,20 +1,21 @@
 package com.logvex.addon.chatlog.modules;
 
+import com.logvex.addon.framework.systems.modules.AddonModule;
 import com.logvex.addon.LogClient;
 import com.logvex.addon.chatlog.core.WebhookDeliveryLog;
 import com.logvex.addon.chatlog.core.WebhookQueue;
 import com.logvex.addon.common.Messages;
-import com.logvex.addon.framework.events.world.TickEvent;
+import meteordevelopment.meteorclient.events.world.TickEvent;
 import com.logvex.addon.framework.gui.GuiTheme;
 import com.logvex.addon.framework.gui.widgets.WWidget;
 import com.logvex.addon.framework.gui.widgets.containers.WVerticalList;
 import com.logvex.addon.framework.gui.widgets.pressable.WButton;
-import com.logvex.addon.framework.orbit.EventHandler;
-import com.logvex.addon.framework.settings.BoolSetting;
-import com.logvex.addon.framework.settings.Setting;
-import com.logvex.addon.framework.settings.SettingGroup;
-import com.logvex.addon.framework.systems.modules.Module;
-import com.logvex.addon.framework.systems.modules.Modules;
+import meteordevelopment.orbit.EventHandler;
+import meteordevelopment.meteorclient.settings.BoolSetting;
+import meteordevelopment.meteorclient.settings.Setting;
+import meteordevelopment.meteorclient.settings.SettingGroup;
+import meteordevelopment.meteorclient.systems.modules.Module;
+import meteordevelopment.meteorclient.systems.modules.Modules;
 
 /**
  * Watches the shared webhook queue and reports its health.
@@ -23,7 +24,7 @@ import com.logvex.addon.framework.systems.modules.Modules;
  * bounded delivery history and a chat notice when a delivery fails, so a broken webhook is visible
  * instead of silently dropping alerts. The URL is never stored or displayed — only the host.
  */
-public class WebhookMonitorModule extends Module {
+public class WebhookMonitorModule extends AddonModule {
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
 
     private final Setting<Boolean> notifyOnFailure = sgGeneral.add(new BoolSetting.Builder()
@@ -40,7 +41,7 @@ public class WebhookMonitorModule extends Module {
         .build()
     );
 
-    private final Setting<Integer> historySize = sgGeneral.add(new com.logvex.addon.framework.settings.IntSetting.Builder()
+    private final Setting<Integer> historySize = sgGeneral.add(new meteordevelopment.meteorclient.settings.IntSetting.Builder()
         .name("history-size")
         .description("How many delivery attempts to keep in the history.")
         .defaultValue(100)

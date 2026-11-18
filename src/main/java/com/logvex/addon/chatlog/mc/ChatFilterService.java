@@ -2,9 +2,9 @@ package com.logvex.addon.chatlog.mc;
 
 import com.logvex.addon.chatlog.core.ChatEntry;
 import com.logvex.addon.chatlog.core.ChatFilterRuleSet;
-import com.logvex.addon.framework.events.game.ReceiveMessageEvent;
-import com.logvex.addon.framework.orbit.EventBus;
-import com.logvex.addon.framework.orbit.EventHandler;
+import meteordevelopment.meteorclient.events.game.ReceiveMessageEvent;
+import meteordevelopment.orbit.IEventBus;
+import meteordevelopment.orbit.EventHandler;
 
 /**
  * Applies the chat filter to the live chat stream.
@@ -33,7 +33,7 @@ public final class ChatFilterService {
     }
 
     /** Subscribes to the live chat stream. Called once from the addon bootstrap. */
-    public void init(EventBus bus) {
+    public void init(IEventBus bus) {
         if (bus != null) bus.subscribe(this);
     }
 

@@ -1,8 +1,8 @@
 package com.logvex.addon.automation.mc;
 
 import com.logvex.addon.automation.core.CreativePort;
-import com.logvex.addon.framework.events.packets.PacketEvent;
-import com.logvex.addon.framework.orbit.EventHandler;
+import meteordevelopment.meteorclient.events.packets.PacketEvent;
+import meteordevelopment.orbit.EventHandler;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.network.packet.s2c.play.InventoryS2CPacket;

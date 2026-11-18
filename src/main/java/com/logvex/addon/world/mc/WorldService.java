@@ -1,11 +1,11 @@
 package com.logvex.addon.world.mc;
 
 import com.logvex.addon.framework.LogClientContext;
-import com.logvex.addon.framework.events.game.GameJoinedEvent;
-import com.logvex.addon.framework.events.game.GameLeftEvent;
-import com.logvex.addon.framework.orbit.EventBus;
-import com.logvex.addon.framework.orbit.EventHandler;
-import com.logvex.addon.framework.utils.world.BlockIterator;
+import meteordevelopment.meteorclient.events.game.GameJoinedEvent;
+import meteordevelopment.meteorclient.events.game.GameLeftEvent;
+import meteordevelopment.orbit.IEventBus;
+import meteordevelopment.orbit.EventHandler;
+import meteordevelopment.meteorclient.utils.world.BlockIterator;
 import com.logvex.addon.world.core.LocationCategory;
 import com.logvex.addon.world.core.WorldIntelligence;
 import com.logvex.addon.world.core.WorldPoint;
@@ -56,7 +56,7 @@ public final class WorldService {
         return intelligence;
     }
 
-    public void init(EventBus bus) {
+    public void init(IEventBus bus) {
         if (bus != null) bus.subscribe(this);
         loadAsync(null);
     }

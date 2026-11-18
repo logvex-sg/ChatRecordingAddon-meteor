@@ -1,5 +1,6 @@
 package com.logvex.addon.chatlog.modules;
 
+import com.logvex.addon.framework.systems.modules.AddonModule;
 import com.logvex.addon.LogClient;
 import com.logvex.addon.chatlog.core.ChatDigest;
 import com.logvex.addon.chatlog.core.EmbedAccent;
@@ -9,21 +10,21 @@ import com.logvex.addon.chatlog.gui.EmbedPreviewScreen;
 import com.logvex.addon.chatlog.mc.LogService;
 import com.logvex.addon.chatlog.mc.PlayerIdentityService;
 import com.logvex.addon.common.Messages;
-import com.logvex.addon.framework.events.world.TickEvent;
+import meteordevelopment.meteorclient.events.world.TickEvent;
 import com.logvex.addon.framework.gui.GuiTheme;
 import com.logvex.addon.framework.gui.widgets.WWidget;
 import com.logvex.addon.framework.gui.widgets.containers.WHorizontalList;
 import com.logvex.addon.framework.gui.widgets.containers.WVerticalList;
 import com.logvex.addon.framework.gui.widgets.pressable.WButton;
-import com.logvex.addon.framework.orbit.EventHandler;
-import com.logvex.addon.framework.settings.BoolSetting;
-import com.logvex.addon.framework.settings.EnumSetting;
-import com.logvex.addon.framework.settings.IntSetting;
-import com.logvex.addon.framework.settings.Setting;
-import com.logvex.addon.framework.settings.SettingGroup;
-import com.logvex.addon.framework.settings.StringSetting;
-import com.logvex.addon.framework.systems.modules.Module;
-import com.logvex.addon.framework.systems.modules.Modules;
+import meteordevelopment.orbit.EventHandler;
+import meteordevelopment.meteorclient.settings.BoolSetting;
+import meteordevelopment.meteorclient.settings.EnumSetting;
+import meteordevelopment.meteorclient.settings.IntSetting;
+import meteordevelopment.meteorclient.settings.Setting;
+import meteordevelopment.meteorclient.settings.SettingGroup;
+import meteordevelopment.meteorclient.settings.StringSetting;
+import meteordevelopment.meteorclient.systems.modules.Module;
+import meteordevelopment.meteorclient.systems.modules.Modules;
 import com.logvex.addon.notify.core.NotificationPriority;
 import com.logvex.addon.notify.core.NotificationType;
 import com.logvex.addon.notify.mc.NotificationService;
@@ -40,7 +41,7 @@ import com.logvex.addon.notify.mc.NotificationService;
  * <p>The relay can also raise cards for events that previously only appeared in chat: a finished
  * recording session, an observed rename, and a watchlist join or leave. Each is opt-in.
  */
-public class WebhookRelayModule extends Module {
+public class WebhookRelayModule extends AddonModule {
     private final SettingGroup sgTarget = settings.getDefaultGroup();
     private final SettingGroup sgAppearance = settings.createGroup("Appearance");
     private final SettingGroup sgEvents = settings.createGroup("Events");

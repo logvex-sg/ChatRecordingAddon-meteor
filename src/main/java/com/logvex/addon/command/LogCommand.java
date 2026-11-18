@@ -14,9 +14,9 @@ import com.logvex.addon.schematicdropper.SchematicDropperModule;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
-import com.logvex.addon.framework.commands.Command;
-import com.logvex.addon.framework.systems.modules.Module;
-import com.logvex.addon.framework.systems.modules.Modules;
+import meteordevelopment.meteorclient.commands.Command;
+import meteordevelopment.meteorclient.systems.modules.Module;
+import meteordevelopment.meteorclient.systems.modules.Modules;
 import net.minecraft.command.CommandSource;
 
 import java.util.List;
@@ -1314,7 +1314,7 @@ public class LogCommand extends Command {
         var module = updateModule();
         if (module != null) {
             @SuppressWarnings("unchecked")
-            var channelSetting = (com.logvex.addon.framework.settings.Setting<com.logvex.addon.update.core.UpdateChannel>)
+            var channelSetting = (meteordevelopment.meteorclient.settings.Setting<com.logvex.addon.update.core.UpdateChannel>)
                 module.settings.get("channel");
             channelSetting.set(channel);
         }
@@ -1441,7 +1441,7 @@ public class LogCommand extends Command {
             return;
         }
         @SuppressWarnings("unchecked")
-        var typed = (com.logvex.addon.framework.settings.Setting<String>) setting;
+        var typed = (meteordevelopment.meteorclient.settings.Setting<String>) setting;
         typed.set(url == null ? "" : url.trim());
         if (url == null || url.isBlank()) info("Webhook URL cleared.");
         else info("Webhook URL set (%s).", com.logvex.addon.chatlog.core.WebhookDeliveryLog.hostOf(url));
@@ -1485,7 +1485,7 @@ public class LogCommand extends Command {
             }
         }
         @SuppressWarnings("unchecked")
-        var typed = (com.logvex.addon.framework.settings.Setting<com.logvex.addon.chatlog.core.EmbedAccent>) setting;
+        var typed = (meteordevelopment.meteorclient.settings.Setting<com.logvex.addon.chatlog.core.EmbedAccent>) setting;
         typed.set(accent);
         info("Embed accent set to %s.", accent.id());
     }

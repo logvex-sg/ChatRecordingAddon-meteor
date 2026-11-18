@@ -1,5 +1,6 @@
 package com.logvex.addon.chatlog.modules;
 
+import com.logvex.addon.framework.systems.modules.AddonModule;
 import com.logvex.addon.LogClient;
 import com.logvex.addon.chatlog.core.PlayerActivity;
 import com.logvex.addon.chatlog.mc.LogService;
@@ -7,13 +8,13 @@ import com.logvex.addon.framework.gui.GuiTheme;
 import com.logvex.addon.framework.gui.widgets.WWidget;
 import com.logvex.addon.framework.gui.widgets.containers.WVerticalList;
 import com.logvex.addon.framework.gui.widgets.pressable.WButton;
-import com.logvex.addon.framework.settings.BoolSetting;
-import com.logvex.addon.framework.settings.IntSetting;
-import com.logvex.addon.framework.settings.Setting;
-import com.logvex.addon.framework.settings.SettingGroup;
-import com.logvex.addon.framework.settings.StringListSetting;
-import com.logvex.addon.framework.systems.modules.Module;
-import com.logvex.addon.framework.systems.modules.Modules;
+import meteordevelopment.meteorclient.settings.BoolSetting;
+import meteordevelopment.meteorclient.settings.IntSetting;
+import meteordevelopment.meteorclient.settings.Setting;
+import meteordevelopment.meteorclient.settings.SettingGroup;
+import meteordevelopment.meteorclient.settings.StringListSetting;
+import meteordevelopment.meteorclient.systems.modules.Module;
+import meteordevelopment.meteorclient.systems.modules.Modules;
 
 import java.util.List;
 
@@ -21,7 +22,7 @@ import java.util.List;
  * Per-player activity overview: joins, leaves, deaths and message counts, rebuilt from the stored
  * logs on demand. Only events a client can observe are counted.
  */
-public class PlayerActivityModule extends Module {
+public class PlayerActivityModule extends AddonModule {
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
 
     private final Setting<Boolean> rebuildOnActivate = sgGeneral.add(new BoolSetting.Builder()

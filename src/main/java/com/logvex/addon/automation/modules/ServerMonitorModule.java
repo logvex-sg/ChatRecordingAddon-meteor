@@ -4,14 +4,14 @@ import com.logvex.addon.automation.core.ServerMonitorController;
 import com.logvex.addon.automation.core.SessionTracker;
 import com.logvex.addon.automation.mc.AutomationSupport;
 import com.logvex.addon.common.Messages;
-import com.logvex.addon.framework.events.game.GameJoinedEvent;
-import com.logvex.addon.framework.events.game.GameLeftEvent;
-import com.logvex.addon.framework.events.world.TickEvent;
-import com.logvex.addon.framework.orbit.EventHandler;
-import com.logvex.addon.framework.settings.BoolSetting;
-import com.logvex.addon.framework.settings.IntSetting;
-import com.logvex.addon.framework.settings.Setting;
-import com.logvex.addon.framework.settings.SettingGroup;
+import meteordevelopment.meteorclient.events.game.GameJoinedEvent;
+import meteordevelopment.meteorclient.events.game.GameLeftEvent;
+import meteordevelopment.meteorclient.events.world.TickEvent;
+import meteordevelopment.orbit.EventHandler;
+import meteordevelopment.meteorclient.settings.BoolSetting;
+import meteordevelopment.meteorclient.settings.IntSetting;
+import meteordevelopment.meteorclient.settings.Setting;
+import meteordevelopment.meteorclient.settings.SettingGroup;
 
 /**
  * Reports a short server status on a timer and keeps a session tally.

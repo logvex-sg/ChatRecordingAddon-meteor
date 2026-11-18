@@ -1,6 +1,6 @@
 package com.logvex.addon.framework.gui;
 
-import com.logvex.addon.framework.utils.render.color.Color;
+import meteordevelopment.meteorclient.utils.render.color.Color;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

@@ -2,8 +2,9 @@ package com.logvex.addon.profiles;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonPrimitive;
-import com.logvex.addon.framework.settings.Setting;
-import com.logvex.addon.framework.settings.Settings;
+import com.logvex.addon.framework.utils.settings.SettingBridge;
+import meteordevelopment.meteorclient.settings.Setting;
+import meteordevelopment.meteorclient.settings.Settings;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -116,8 +117,8 @@ public final class ProfileManager {
         if (existing != null && existing.builtin()) return null; // never overwrite a builtin
 
         BotProfile profile = new BotProfile(trimmed);
-        for (Setting<?> setting : settings.all()) {
-            if (setting.wasChanged()) profile.put(setting.name, setting.toJson());
+        for (Setting<?> setting : SettingBridge.all(settings)) {
+            if (setting.wasChanged()) profile.put(setting.name, SettingBridge.toJson(setting));
         }
         profiles.put(ProfileStore.key(trimmed), profile);
         return profile;
@@ -141,7 +142,7 @@ public final class ProfileManager {
 
         if (profile.builtin() && DEFAULT_NAME.equalsIgnoreCase(profile.name()) && profile.size() == 0) {
             int changed = 0;
-            for (Setting<?> setting : settings.all()) {
+            for (Setting<?> setting : SettingBridge.all(settings)) {
                 if (setting.wasChanged()) {
                     setting.reset();
                     changed++;
@@ -151,12 +152,12 @@ public final class ProfileManager {
         }
 
         int changed = 0;
-        for (Setting<?> setting : settings.all()) {
+        for (Setting<?> setting : SettingBridge.all(settings)) {
             JsonElement value = profile.get(setting.name);
             if (value == null) continue;
-            Object before = setting.toJson();
-            setting.fromJson(value);
-            if (!setting.toJson().equals(before)) changed++;
+            Object before = SettingBridge.toJson(setting);
+            SettingBridge.fromJson(setting, value);
+            if (!SettingBridge.toJson(setting).equals(before)) changed++;
         }
         return changed;
     }

@@ -2,15 +2,15 @@ package com.logvex.addon.assistant.hud;
 
 import com.logvex.addon.LogClient;
 import com.logvex.addon.assistant.modules.AssistantModule;
-import com.logvex.addon.framework.settings.BoolSetting;
-import com.logvex.addon.framework.settings.Setting;
-import com.logvex.addon.framework.settings.SettingGroup;
+import meteordevelopment.meteorclient.settings.BoolSetting;
+import meteordevelopment.meteorclient.settings.Setting;
+import meteordevelopment.meteorclient.settings.SettingGroup;
 import com.logvex.addon.framework.systems.hud.HudElement;
 import com.logvex.addon.framework.systems.hud.HudElementInfo;
 import com.logvex.addon.framework.systems.hud.HudPanel;
 import com.logvex.addon.framework.systems.hud.HudRenderer;
 import com.logvex.addon.framework.systems.hud.HudStyle;
-import com.logvex.addon.framework.systems.modules.Modules;
+import meteordevelopment.meteorclient.systems.modules.Modules;
 
 import java.util.ArrayList;
 import java.util.List;

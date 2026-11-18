@@ -1,8 +1,10 @@
 package com.logvex.addon.profiles;
 
-import com.logvex.addon.framework.settings.IntSetting;
-import com.logvex.addon.framework.settings.Setting;
-import com.logvex.addon.framework.settings.Settings;
+import com.google.gson.JsonPrimitive;
+import com.logvex.addon.framework.utils.settings.SettingBridge;
+import meteordevelopment.meteorclient.settings.IntSetting;
+import meteordevelopment.meteorclient.settings.Setting;
+import meteordevelopment.meteorclient.settings.Settings;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -32,11 +34,11 @@ class ProfileManagerTest {
     }
 
     private static int intValue(Settings settings, String name) {
-        return settings.get(name).toJson().getAsInt();
+        return SettingBridge.toJson(settings.get(name)).getAsInt();
     }
 
     private static void setInt(Settings settings, String name, int value) {
-        settings.get(name).fromJson(value);
+        SettingBridge.fromJson(settings.get(name), new JsonPrimitive(value));
     }
 
     @Test

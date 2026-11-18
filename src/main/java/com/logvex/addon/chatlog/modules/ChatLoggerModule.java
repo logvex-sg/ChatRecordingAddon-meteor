@@ -1,5 +1,6 @@
 package com.logvex.addon.chatlog.modules;
 
+import com.logvex.addon.framework.systems.modules.AddonModule;
 import com.logvex.addon.LogClient;
 import com.logvex.addon.chatlog.core.LogExporter;
 import com.logvex.addon.chatlog.core.LogQuery;
@@ -14,13 +15,13 @@ import com.logvex.addon.framework.gui.widgets.WWidget;
 import com.logvex.addon.framework.gui.widgets.containers.WHorizontalList;
 import com.logvex.addon.framework.gui.widgets.containers.WVerticalList;
 import com.logvex.addon.framework.gui.widgets.pressable.WButton;
-import com.logvex.addon.framework.settings.BoolSetting;
-import com.logvex.addon.framework.settings.EnumSetting;
-import com.logvex.addon.framework.settings.IntSetting;
-import com.logvex.addon.framework.settings.Setting;
-import com.logvex.addon.framework.settings.SettingGroup;
-import com.logvex.addon.framework.settings.StringSetting;
-import com.logvex.addon.framework.systems.modules.Module;
+import meteordevelopment.meteorclient.settings.BoolSetting;
+import meteordevelopment.meteorclient.settings.EnumSetting;
+import meteordevelopment.meteorclient.settings.IntSetting;
+import meteordevelopment.meteorclient.settings.Setting;
+import meteordevelopment.meteorclient.settings.SettingGroup;
+import meteordevelopment.meteorclient.settings.StringSetting;
+import meteordevelopment.meteorclient.systems.modules.Module;
 import net.minecraft.util.Formatting;
 
 import java.nio.file.Path;
@@ -37,7 +38,7 @@ import java.util.Set;
  * <p>This module owns the recording configuration and the storage lifecycle. Every other chat-log
  * module reads the shared {@link LogService} runtime it publishes.
  */
-public class ChatLoggerModule extends Module {
+public class ChatLoggerModule extends AddonModule {
     private static final DateTimeFormatter STAMP = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")
         .withZone(ZoneId.systemDefault());
 
@@ -277,8 +278,8 @@ public class ChatLoggerModule extends Module {
 
     private final LogService.LiveListener reportListener = reportBuffer::add;
 
-    @com.logvex.addon.framework.orbit.EventHandler
-    private void onTick(com.logvex.addon.framework.events.world.TickEvent.Post event) {
+    @meteordevelopment.orbit.EventHandler
+    private void onTick(meteordevelopment.meteorclient.events.world.TickEvent.Post event) {
         if (!autoReports.get() || reportInFlight) return;
         long interval = reportIntervalMinutes.get() * 60_000L;
         if (System.currentTimeMillis() - lastReportAt >= interval) sendReport(false);

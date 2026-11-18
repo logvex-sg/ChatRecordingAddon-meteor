@@ -5,7 +5,7 @@ import com.logvex.addon.framework.gui.GuiThemes;
 import com.logvex.addon.framework.gui.WindowScreen;
 import com.logvex.addon.framework.gui.widgets.containers.WTable;
 import com.logvex.addon.framework.gui.widgets.pressable.WButton;
-import com.logvex.addon.framework.utils.render.color.Color;
+import meteordevelopment.meteorclient.utils.render.color.Color;
 
 import java.io.File;
 import java.util.ArrayList;

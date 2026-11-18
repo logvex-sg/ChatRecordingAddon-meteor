@@ -12,7 +12,7 @@ import com.logvex.addon.framework.gui.widgets.containers.WHorizontalList;
 import com.logvex.addon.framework.gui.widgets.containers.WTable;
 import com.logvex.addon.framework.gui.widgets.input.WTextBox;
 import com.logvex.addon.framework.gui.widgets.pressable.WButton;
-import com.logvex.addon.framework.utils.render.color.Color;
+import meteordevelopment.meteorclient.utils.render.color.Color;
 
 import java.util.List;
 import java.util.Locale;

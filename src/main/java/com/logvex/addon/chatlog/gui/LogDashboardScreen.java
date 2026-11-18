@@ -22,7 +22,7 @@ import com.logvex.addon.framework.gui.widgets.containers.WTable;
 import com.logvex.addon.framework.gui.widgets.containers.WVerticalList;
 import com.logvex.addon.framework.gui.widgets.pressable.WButton;
 import com.logvex.addon.framework.gui.widgets.input.WTextBox;
-import com.logvex.addon.framework.systems.modules.Modules;
+import meteordevelopment.meteorclient.systems.modules.Modules;
 
 import java.util.EnumSet;
 import java.util.List;
@@ -448,7 +448,7 @@ public class LogDashboardScreen extends WindowScreen {
 
     // ------------------------------------------------------------------ helpers
 
-    private static com.logvex.addon.framework.utils.render.color.Color typeColor(ChatEntry entry) {
+    private static meteordevelopment.meteorclient.utils.render.color.Color typeColor(ChatEntry entry) {
         return switch (entry.type()) {
             case PUBLIC_CHAT, PLAYER_MESSAGE -> GuiKit.ACCENT;
             case JOIN -> GuiKit.GOOD;

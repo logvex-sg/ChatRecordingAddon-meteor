@@ -1,15 +1,16 @@
 package com.logvex.addon.framework.systems.hud;
 
-import com.logvex.addon.framework.settings.BoolSetting;
-import com.logvex.addon.framework.settings.ColorSetting;
-import com.logvex.addon.framework.settings.DoubleSetting;
-import com.logvex.addon.framework.settings.EnumSetting;
-import com.logvex.addon.framework.settings.IntSetting;
-import com.logvex.addon.framework.settings.Setting;
-import com.logvex.addon.framework.settings.SettingGroup;
-import com.logvex.addon.framework.settings.Settings;
+import meteordevelopment.meteorclient.settings.BoolSetting;
+import meteordevelopment.meteorclient.settings.ColorSetting;
+import meteordevelopment.meteorclient.settings.DoubleSetting;
+import meteordevelopment.meteorclient.settings.EnumSetting;
+import meteordevelopment.meteorclient.settings.IntSetting;
+import com.logvex.addon.framework.utils.settings.SettingBridge;
+import meteordevelopment.meteorclient.settings.Setting;
+import meteordevelopment.meteorclient.settings.SettingGroup;
+import meteordevelopment.meteorclient.settings.Settings;
 import com.logvex.addon.framework.systems.hud.layout.HudAnchor;
-import com.logvex.addon.framework.utils.render.color.SettingColor;
+import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 
 /**
  * The settings every HUD element shares, built once so all elements look and behave the same.
@@ -100,18 +101,18 @@ public final class HudSettings {
 
     /** Adds the shared Appearance and Position groups to {@code settings} and returns them. */
     public static Shared install(Settings settings) {
-        SettingGroup style = settings.hasGroup("Appearance")
+        SettingGroup style = SettingBridge.hasGroup(settings, "Appearance")
             ? find(settings, "Appearance")
             : settings.createGroup("Appearance");
-        SettingGroup position = settings.hasGroup("Position")
+        SettingGroup position = SettingBridge.hasGroup(settings, "Position")
             ? find(settings, "Position")
             : settings.createGroup("Position");
         return new Shared(style, position);
     }
 
     private static SettingGroup find(Settings settings, String name) {
-        for (SettingGroup group : settings.groups()) {
-            if (group.name().equals(name)) return group;
+        for (SettingGroup group : settings) {
+            if (group.name.equals(name)) return group;
         }
         return settings.createGroup(name);
     }

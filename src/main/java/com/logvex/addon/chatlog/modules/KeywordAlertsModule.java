@@ -1,21 +1,22 @@
 package com.logvex.addon.chatlog.modules;
 
+import com.logvex.addon.framework.systems.modules.AddonModule;
 import com.logvex.addon.LogClient;
 import com.logvex.addon.chatlog.core.ChatEntry;
 import com.logvex.addon.chatlog.core.KeywordMatcher;
 import com.logvex.addon.chatlog.core.KeywordRule;
 import com.logvex.addon.chatlog.mc.LogService;
-import com.logvex.addon.framework.events.world.TickEvent;
+import meteordevelopment.meteorclient.events.world.TickEvent;
 import com.logvex.addon.framework.gui.GuiTheme;
 import com.logvex.addon.framework.gui.widgets.WWidget;
 import com.logvex.addon.framework.gui.widgets.containers.WVerticalList;
 import com.logvex.addon.framework.gui.widgets.pressable.WButton;
-import com.logvex.addon.framework.settings.BoolSetting;
-import com.logvex.addon.framework.settings.Setting;
-import com.logvex.addon.framework.settings.SettingGroup;
-import com.logvex.addon.framework.settings.StringListSetting;
-import com.logvex.addon.framework.systems.modules.Module;
-import com.logvex.addon.framework.orbit.EventHandler;
+import meteordevelopment.meteorclient.settings.BoolSetting;
+import meteordevelopment.meteorclient.settings.Setting;
+import meteordevelopment.meteorclient.settings.SettingGroup;
+import meteordevelopment.meteorclient.settings.StringListSetting;
+import meteordevelopment.meteorclient.systems.modules.Module;
+import meteordevelopment.orbit.EventHandler;
 import net.minecraft.sound.SoundEvents;
 
 import java.util.ArrayList;
@@ -28,7 +29,7 @@ import java.util.List;
  * raise a webhook notification, or both. Alerts are always surfaced in the live feed; the optional
  * channels are opt-in per rule.
  */
-public class KeywordAlertsModule extends Module {
+public class KeywordAlertsModule extends AddonModule {
     private final SettingGroup sgRules = settings.getDefaultGroup();
     private final SettingGroup sgWebhook = settings.createGroup("Webhook");
 
@@ -46,7 +47,7 @@ public class KeywordAlertsModule extends Module {
         .build()
     );
 
-    private final Setting<String> webhookUrl = sgWebhook.add(new com.logvex.addon.framework.settings.StringSetting.Builder()
+    private final Setting<String> webhookUrl = sgWebhook.add(new meteordevelopment.meteorclient.settings.StringSetting.Builder()
         .name("webhook-url")
         .description("Discord webhook URL used by rules that enable webhook notifications. Kept out of saved data.")
         .defaultValue("")
@@ -54,7 +55,7 @@ public class KeywordAlertsModule extends Module {
         .build()
     );
 
-    private final Setting<String> webhookUsername = sgWebhook.add(new com.logvex.addon.framework.settings.StringSetting.Builder()
+    private final Setting<String> webhookUsername = sgWebhook.add(new meteordevelopment.meteorclient.settings.StringSetting.Builder()
         .name("webhook-username")
         .description("Display name used for webhook alerts.")
         .defaultValue("Log Client")
@@ -68,7 +69,7 @@ public class KeywordAlertsModule extends Module {
         .build()
     );
 
-    private final Setting<Integer> summaryMinutes = sgWebhook.add(new com.logvex.addon.framework.settings.IntSetting.Builder()
+    private final Setting<Integer> summaryMinutes = sgWebhook.add(new meteordevelopment.meteorclient.settings.IntSetting.Builder()
         .name("summary-interval-minutes")
         .description("Minutes between periodic summaries.")
         .defaultValue(15)
@@ -174,7 +175,7 @@ public class KeywordAlertsModule extends Module {
         return webhookUsername.get();
     }
 
-    public void testWebhook(com.logvex.addon.framework.systems.modules.Module feedbackModule) {
+    public void testWebhook(meteordevelopment.meteorclient.systems.modules.Module feedbackModule) {
         service.testWebhook(targetUrl(), targetUsername(), (success, message) -> {
             if (feedbackModule != null) {
                 if (success) feedbackModule.info("Webhook test succeeded.");
@@ -197,7 +198,7 @@ public class KeywordAlertsModule extends Module {
         WVerticalList list = theme.verticalList();
         WButton manage = list.add(theme.button("Manage Keyword Rules")).expandX().widget();
         manage.action = () -> {
-            ChatLoggerModule logger = com.logvex.addon.framework.systems.modules.Modules.get()
+            ChatLoggerModule logger = meteordevelopment.meteorclient.systems.modules.Modules.get()
                 .get(ChatLoggerModule.class);
             if (logger != null) mc.setScreen(new com.logvex.addon.chatlog.gui.LogDashboardScreen(logger, 3));
         };

@@ -1,12 +1,12 @@
 package com.logvex.addon.automation.modules;
 
 import com.logvex.addon.automation.core.AutoReplenishController;
-import com.logvex.addon.framework.events.world.TickEvent;
-import com.logvex.addon.framework.orbit.EventHandler;
-import com.logvex.addon.framework.settings.BoolSetting;
-import com.logvex.addon.framework.settings.Setting;
-import com.logvex.addon.framework.settings.SettingGroup;
-import com.logvex.addon.framework.settings.StringListSetting;
+import meteordevelopment.meteorclient.events.world.TickEvent;
+import meteordevelopment.orbit.EventHandler;
+import meteordevelopment.meteorclient.settings.BoolSetting;
+import meteordevelopment.meteorclient.settings.Setting;
+import meteordevelopment.meteorclient.settings.SettingGroup;
+import meteordevelopment.meteorclient.settings.StringListSetting;
 import net.minecraft.item.ItemStack;
 import net.minecraft.registry.Registries;
 

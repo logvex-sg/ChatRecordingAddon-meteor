@@ -1,5 +1,6 @@
 package com.logvex.addon.notify;
 
+import com.logvex.addon.framework.systems.modules.AddonModule;
 import com.logvex.addon.LogClient;
 import com.logvex.addon.notify.core.Notification;
 import com.logvex.addon.notify.core.NotificationCenter;
@@ -12,12 +13,12 @@ import com.logvex.addon.framework.gui.GuiTheme;
 import com.logvex.addon.framework.gui.widgets.WWidget;
 import com.logvex.addon.framework.gui.widgets.containers.WVerticalList;
 import com.logvex.addon.framework.gui.widgets.pressable.WButton;
-import com.logvex.addon.framework.settings.BoolSetting;
-import com.logvex.addon.framework.settings.DoubleSetting;
-import com.logvex.addon.framework.settings.EnumSetting;
-import com.logvex.addon.framework.settings.Setting;
-import com.logvex.addon.framework.settings.SettingGroup;
-import com.logvex.addon.framework.systems.modules.Module;
+import meteordevelopment.meteorclient.settings.BoolSetting;
+import meteordevelopment.meteorclient.settings.DoubleSetting;
+import meteordevelopment.meteorclient.settings.EnumSetting;
+import meteordevelopment.meteorclient.settings.Setting;
+import meteordevelopment.meteorclient.settings.SettingGroup;
+import meteordevelopment.meteorclient.systems.modules.Module;
 import net.minecraft.sound.SoundEvents;
 
 import java.util.EnumMap;
@@ -31,7 +32,7 @@ import java.util.Map;
  * module is the single place that controls chat and sound output, and turning it off never loses
  * history.
  */
-public class NotificationModule extends Module {
+public class NotificationModule extends AddonModule {
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
     private final SettingGroup sgOutput = settings.createGroup("Output");
     private final SettingGroup sgTypes = settings.createGroup("Types");

@@ -2,7 +2,7 @@ package com.logvex.addon.framework.systems.hud;
 
 import com.logvex.addon.framework.gui.GuiTheme;
 import com.logvex.addon.framework.gui.GuiThemes;
-import com.logvex.addon.framework.utils.render.color.Color;
+import meteordevelopment.meteorclient.utils.render.color.Color;
 
 /**
  * The HUD's slice of the active GUI theme.

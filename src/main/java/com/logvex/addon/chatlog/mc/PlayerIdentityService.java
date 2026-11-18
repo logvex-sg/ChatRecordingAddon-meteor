@@ -2,9 +2,9 @@ package com.logvex.addon.chatlog.mc;
 
 import com.logvex.addon.chatlog.core.PlayerIdentityStore;
 import com.logvex.addon.chatlog.core.PlayerIdentityTracker;
-import com.logvex.addon.framework.events.packets.PacketEvent;
-import com.logvex.addon.framework.orbit.EventBus;
-import com.logvex.addon.framework.orbit.EventHandler;
+import meteordevelopment.meteorclient.events.packets.PacketEvent;
+import meteordevelopment.orbit.IEventBus;
+import meteordevelopment.orbit.EventHandler;
 import net.minecraft.network.packet.s2c.play.PlayerListS2CPacket;
 
 /**
@@ -42,7 +42,7 @@ public final class PlayerIdentityService {
     private PlayerIdentityService() {
     }
 
-    public void init(EventBus bus) {
+    public void init(IEventBus bus) {
         if (bus != null) bus.subscribe(this);
         loadAsync(null);
     }

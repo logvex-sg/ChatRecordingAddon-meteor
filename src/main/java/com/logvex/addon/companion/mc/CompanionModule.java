@@ -1,5 +1,6 @@
 package com.logvex.addon.companion.mc;
 
+import com.logvex.addon.framework.systems.modules.AddonModule;
 import com.logvex.addon.LogClient;
 import com.logvex.addon.bot.BotModule;
 import com.logvex.addon.bot.core.BotState;
@@ -11,20 +12,20 @@ import com.logvex.addon.companion.core.CompanionEventBus;
 import com.logvex.addon.companion.core.CompanionJson;
 import com.logvex.addon.companion.core.CompanionServer;
 import com.logvex.addon.companion.gui.CompanionScreen;
-import com.logvex.addon.framework.events.game.GameJoinedEvent;
-import com.logvex.addon.framework.events.game.GameLeftEvent;
+import meteordevelopment.meteorclient.events.game.GameJoinedEvent;
+import meteordevelopment.meteorclient.events.game.GameLeftEvent;
 import com.logvex.addon.framework.gui.GuiTheme;
 import com.logvex.addon.framework.gui.widgets.WWidget;
 import com.logvex.addon.framework.gui.widgets.containers.WVerticalList;
 import com.logvex.addon.framework.gui.widgets.pressable.WButton;
-import com.logvex.addon.framework.orbit.EventHandler;
-import com.logvex.addon.framework.settings.BoolSetting;
-import com.logvex.addon.framework.settings.IntSetting;
-import com.logvex.addon.framework.settings.Setting;
-import com.logvex.addon.framework.settings.SettingGroup;
-import com.logvex.addon.framework.settings.StringSetting;
-import com.logvex.addon.framework.systems.modules.Module;
-import com.logvex.addon.framework.systems.modules.Modules;
+import meteordevelopment.orbit.EventHandler;
+import meteordevelopment.meteorclient.settings.BoolSetting;
+import meteordevelopment.meteorclient.settings.IntSetting;
+import meteordevelopment.meteorclient.settings.Setting;
+import meteordevelopment.meteorclient.settings.SettingGroup;
+import meteordevelopment.meteorclient.settings.StringSetting;
+import meteordevelopment.meteorclient.systems.modules.Module;
+import meteordevelopment.meteorclient.systems.modules.Modules;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.util.Formatting;
 
@@ -47,7 +48,7 @@ import java.util.UUID;
  * <p>This is the one place that owns the server lifecycle, so enabling and disabling the module
  * reliably opens and closes the port, and no thread or socket outlives the module.
  */
-public class CompanionModule extends Module {
+public class CompanionModule extends AddonModule {
     private final SettingGroup sgServer = settings.getDefaultGroup();
     private final SettingGroup sgAccess = settings.createGroup("Access");
     private final SettingGroup sgEvents = settings.createGroup("Live updates");

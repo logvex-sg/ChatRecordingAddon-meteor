@@ -1,6 +1,6 @@
 package com.logvex.addon.framework.utils.render;
 
-import com.logvex.addon.framework.utils.render.color.Color;
+import meteordevelopment.meteorclient.utils.render.color.Color;
 import net.minecraft.client.gui.DrawContext;
 
 /**

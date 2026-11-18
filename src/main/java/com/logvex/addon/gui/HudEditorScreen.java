@@ -17,7 +17,7 @@ import com.logvex.addon.framework.systems.hud.layout.HudAnchor;
 import com.logvex.addon.framework.systems.hud.layout.HudLayout;
 import com.logvex.addon.framework.systems.hud.layout.HudRect;
 import com.logvex.addon.framework.utils.render.Render2D;
-import com.logvex.addon.framework.utils.render.color.Color;
+import meteordevelopment.meteorclient.utils.render.color.Color;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;

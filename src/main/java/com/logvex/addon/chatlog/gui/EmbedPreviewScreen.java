@@ -13,7 +13,7 @@ import com.logvex.addon.framework.gui.WindowScreen;
 import com.logvex.addon.framework.gui.widgets.containers.WHorizontalList;
 import com.logvex.addon.framework.gui.widgets.containers.WVerticalList;
 import com.logvex.addon.framework.gui.widgets.pressable.WButton;
-import com.logvex.addon.framework.utils.render.color.Color;
+import meteordevelopment.meteorclient.utils.render.color.Color;
 
 import java.util.List;
 import java.util.Map;
@@ -90,7 +90,7 @@ public class EmbedPreviewScreen extends WindowScreen {
         copy.action = () -> {
             String json = payloadJson();
             mc.keyboard.setClipboard(json);
-            com.logvex.addon.framework.utils.player.ChatUtils.info(
+            meteordevelopment.meteorclient.utils.player.ChatUtils.info(
                 "Copied the %s payload to the clipboard.", card.label);
         };
         WButton send = actions.add(theme.button("Send Test Embed")).expandX().widget();

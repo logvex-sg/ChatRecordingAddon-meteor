@@ -3,7 +3,7 @@
   "id": "logclient",
   "version": "${version}",
   "name": "Log Client",
-  "description": "Log Client: an independent Fabric client for Minecraft 1.21.1. It records and searches chat, tracks player activity and session statistics, raises keyword alerts, forwards reports to a webhook, drops schematic materials, runs an autonomous task bot, checks GitHub Releases for updates and serves a local web console on 127.0.0.1:6767. Baritone drives navigation, mining and building when it is installed.",
+  "description": "Log Client: a chat logging, monitoring and notification addon for Meteor Client. Records chat to compressed searchable logs, tracks player activity and session statistics, raises keyword alerts and mention alerts, and forwards reports to a Discord webhook as rich embeds. Also ships Schematic Dropper, an autonomous task bot, a local AI chat assistant, world intelligence, a companion web console and an update checker.",
   "authors": [
     "logvex"
   ],
@@ -15,17 +15,23 @@
   "license": "MIT",
   "environment": "client",
   "entrypoints": {
-    "client": [
-      "com.logvex.addon.LogClientMod"
+    "meteor": [
+      "com.logvex.addon.LogClient"
     ]
   },
-  "mixins": [
-    "logclient.mixins.json"
-  ],
+  "custom": {
+    "meteor-client:color": "120,200,255",
+    "modmenu": {
+      "parent": {
+        "id": "meteor-client"
+      }
+    }
+  },
   "depends": {
     "java": ">=${jdk_version}",
     "minecraft": "${minecraft_version}",
-    "fabricloader": ">=${loader_version}"
+    "fabricloader": ">=${loader_version}",
+    "meteor-client": "*"
   },
   "recommends": {
     "baritone": "*"

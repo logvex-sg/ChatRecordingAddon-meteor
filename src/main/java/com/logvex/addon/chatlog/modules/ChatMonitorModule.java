@@ -1,21 +1,22 @@
 package com.logvex.addon.chatlog.modules;
 
+import com.logvex.addon.framework.systems.modules.AddonModule;
 import com.logvex.addon.LogClient;
 import com.logvex.addon.chatlog.core.ChatEntry;
 import com.logvex.addon.chatlog.core.MessageType;
 import com.logvex.addon.chatlog.mc.LogService;
-import com.logvex.addon.framework.events.world.TickEvent;
+import meteordevelopment.meteorclient.events.world.TickEvent;
 import com.logvex.addon.framework.gui.GuiTheme;
 import com.logvex.addon.framework.gui.widgets.WWidget;
 import com.logvex.addon.framework.gui.widgets.containers.WVerticalList;
 import com.logvex.addon.framework.gui.widgets.pressable.WButton;
-import com.logvex.addon.framework.settings.BoolSetting;
-import com.logvex.addon.framework.settings.IntSetting;
-import com.logvex.addon.framework.settings.Setting;
-import com.logvex.addon.framework.settings.SettingGroup;
-import com.logvex.addon.framework.settings.StringListSetting;
-import com.logvex.addon.framework.systems.modules.Module;
-import com.logvex.addon.framework.orbit.EventHandler;
+import meteordevelopment.meteorclient.settings.BoolSetting;
+import meteordevelopment.meteorclient.settings.IntSetting;
+import meteordevelopment.meteorclient.settings.Setting;
+import meteordevelopment.meteorclient.settings.SettingGroup;
+import meteordevelopment.meteorclient.settings.StringListSetting;
+import meteordevelopment.meteorclient.systems.modules.Module;
+import meteordevelopment.orbit.EventHandler;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -29,7 +30,7 @@ import java.util.Set;
  * <p>The module itself is a settings holder and a small filter engine. The {@link com.logvex.addon.chatlog.hud.ChatLogHud}
  * and the dashboard render the feed using {@link #visibleFeed(int)}.
  */
-public class ChatMonitorModule extends Module {
+public class ChatMonitorModule extends AddonModule {
     private final SettingGroup sgDisplay = settings.getDefaultGroup();
     private final SettingGroup sgHighlight = settings.createGroup("Highlight");
     private final SettingGroup sgFilters = settings.createGroup("Filters");
@@ -190,7 +191,7 @@ public class ChatMonitorModule extends Module {
         WVerticalList list = theme.verticalList();
         WButton open = list.add(theme.button("Open Live Logs")).expandX().widget();
         open.action = () -> {
-            ChatLoggerModule logger = com.logvex.addon.framework.systems.modules.Modules.get()
+            ChatLoggerModule logger = meteordevelopment.meteorclient.systems.modules.Modules.get()
                 .get(ChatLoggerModule.class);
             if (logger != null) mc.setScreen(new com.logvex.addon.chatlog.gui.LogDashboardScreen(logger, 1));
         };

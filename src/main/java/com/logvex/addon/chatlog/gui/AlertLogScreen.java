@@ -7,7 +7,7 @@ import com.logvex.addon.framework.gui.GuiThemes;
 import com.logvex.addon.framework.gui.WindowScreen;
 import com.logvex.addon.framework.gui.widgets.containers.WTable;
 import com.logvex.addon.framework.gui.widgets.pressable.WButton;
-import com.logvex.addon.framework.utils.render.color.Color;
+import meteordevelopment.meteorclient.utils.render.color.Color;
 
 import java.util.List;
 
@@ -93,7 +93,7 @@ public class AlertLogScreen extends WindowScreen {
     }
 
     private void info(String message) {
-        com.logvex.addon.framework.utils.player.ChatUtils.info("%s", message);
+        meteordevelopment.meteorclient.utils.player.ChatUtils.info("%s", message);
     }
 
     @Override

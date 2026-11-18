@@ -2,10 +2,10 @@ package com.logvex.addon.chatlog.mc;
 
 import com.logvex.addon.chatlog.core.ChatEntry;
 import com.logvex.addon.chatlog.core.SessionTimeline;
-import com.logvex.addon.framework.events.game.GameJoinedEvent;
-import com.logvex.addon.framework.events.game.GameLeftEvent;
-import com.logvex.addon.framework.orbit.EventBus;
-import com.logvex.addon.framework.orbit.EventHandler;
+import meteordevelopment.meteorclient.events.game.GameJoinedEvent;
+import meteordevelopment.meteorclient.events.game.GameLeftEvent;
+import meteordevelopment.orbit.IEventBus;
+import meteordevelopment.orbit.EventHandler;
 
 /**
  * Records session milestones into the shared {@link SessionTimeline}.
@@ -29,7 +29,7 @@ public final class SessionTimelineService {
     private SessionTimelineService() {
     }
 
-    public void init(EventBus bus) {
+    public void init(IEventBus bus) {
         if (bus != null) bus.subscribe(this);
     }
 

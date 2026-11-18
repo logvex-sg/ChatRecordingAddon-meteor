@@ -146,7 +146,7 @@ public class AcquisitionScreen extends WindowScreen {
         };
     }
 
-    private com.logvex.addon.framework.utils.render.color.Color statusColor(CreativeController.Item item) {
+    private meteordevelopment.meteorclient.utils.render.color.Color statusColor(CreativeController.Item item) {
         return switch (item.status()) {
             case DONE -> theme.good;
             case FAILED -> theme.bad;

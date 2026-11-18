@@ -1,13 +1,14 @@
 package com.logvex.addon.update.mc;
 
-import com.logvex.addon.framework.events.game.GameJoinedEvent;
-import com.logvex.addon.framework.orbit.EventHandler;
-import com.logvex.addon.framework.settings.BoolSetting;
-import com.logvex.addon.framework.settings.EnumSetting;
-import com.logvex.addon.framework.settings.IntSetting;
-import com.logvex.addon.framework.settings.Setting;
-import com.logvex.addon.framework.settings.SettingGroup;
-import com.logvex.addon.framework.systems.modules.Module;
+import com.logvex.addon.framework.systems.modules.AddonModule;
+import meteordevelopment.meteorclient.events.game.GameJoinedEvent;
+import meteordevelopment.orbit.EventHandler;
+import meteordevelopment.meteorclient.settings.BoolSetting;
+import meteordevelopment.meteorclient.settings.EnumSetting;
+import meteordevelopment.meteorclient.settings.IntSetting;
+import meteordevelopment.meteorclient.settings.Setting;
+import meteordevelopment.meteorclient.settings.SettingGroup;
+import meteordevelopment.meteorclient.systems.modules.Module;
 import com.logvex.addon.update.core.UpdateChannel;
 import com.logvex.addon.update.core.UpdateSnapshot;
 import com.logvex.addon.update.core.UpdateState;
@@ -20,7 +21,7 @@ import com.logvex.addon.update.gui.UpdateScreen;
  * blocked. The module never installs anything: a verified jar is written to
  * {@code <gamedir>/logclient/updates} and the user is told where it is.
  */
-public class UpdateModule extends Module {
+public class UpdateModule extends AddonModule {
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
 
     private final Setting<UpdateChannel> channel = sgGeneral.add(new EnumSetting.Builder<UpdateChannel>()
@@ -108,7 +109,7 @@ public class UpdateModule extends Module {
     }
 
     @EventHandler
-    private void onTick(com.logvex.addon.framework.events.world.TickEvent.Post event) {
+    private void onTick(meteordevelopment.meteorclient.events.world.TickEvent.Post event) {
         int interval = intervalMinutes.get();
         if (interval <= 0) return;
         long now = System.currentTimeMillis();

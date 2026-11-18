@@ -3,7 +3,7 @@ package com.logvex.addon.schematicdropper.mc;
 import com.logvex.addon.schematicdropper.core.Rotation;
 import com.logvex.addon.schematicdropper.core.RotationMath;
 import com.logvex.addon.schematicdropper.core.RotationPort;
-import com.logvex.addon.framework.utils.player.Rotations;
+import meteordevelopment.meteorclient.utils.player.Rotations;
 
 /**
  * Rotation adapter built on the addon's {@link Rotations} helper.

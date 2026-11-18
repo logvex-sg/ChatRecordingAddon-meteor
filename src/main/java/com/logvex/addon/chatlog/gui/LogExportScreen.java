@@ -186,7 +186,7 @@ public class LogExportScreen extends WindowScreen {
     }
 
     private void info(String message) {
-        com.logvex.addon.framework.utils.player.ChatUtils.info("%s", message);
+        meteordevelopment.meteorclient.utils.player.ChatUtils.info("%s", message);
     }
 
     @Override

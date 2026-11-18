@@ -112,7 +112,7 @@ public class LogViewerScreen extends WindowScreen {
         }
     }
 
-    private static com.logvex.addon.framework.utils.render.color.Color typeColor(ChatEntry entry) {
+    private static meteordevelopment.meteorclient.utils.render.color.Color typeColor(ChatEntry entry) {
         return switch (entry.type()) {
             case PUBLIC_CHAT, PLAYER_MESSAGE -> GuiKit.ACCENT;
             case JOIN -> GuiKit.GOOD;

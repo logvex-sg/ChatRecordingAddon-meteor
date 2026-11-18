@@ -1,5 +1,6 @@
 package com.logvex.addon.chatlog.modules;
 
+import com.logvex.addon.framework.systems.modules.AddonModule;
 import com.logvex.addon.LogClient;
 import com.logvex.addon.chatlog.core.PlayerIdentity;
 import com.logvex.addon.chatlog.core.PlayerIdentityTracker;
@@ -9,11 +10,11 @@ import com.logvex.addon.framework.gui.GuiTheme;
 import com.logvex.addon.framework.gui.widgets.WWidget;
 import com.logvex.addon.framework.gui.widgets.containers.WVerticalList;
 import com.logvex.addon.framework.gui.widgets.pressable.WButton;
-import com.logvex.addon.framework.settings.BoolSetting;
-import com.logvex.addon.framework.settings.Setting;
-import com.logvex.addon.framework.settings.SettingGroup;
-import com.logvex.addon.framework.settings.StringListSetting;
-import com.logvex.addon.framework.systems.modules.Module;
+import meteordevelopment.meteorclient.settings.BoolSetting;
+import meteordevelopment.meteorclient.settings.Setting;
+import meteordevelopment.meteorclient.settings.SettingGroup;
+import meteordevelopment.meteorclient.settings.StringListSetting;
+import meteordevelopment.meteorclient.systems.modules.Module;
 import com.logvex.addon.notify.core.NotificationPriority;
 import com.logvex.addon.notify.core.NotificationType;
 import com.logvex.addon.notify.mc.NotificationService;
@@ -27,7 +28,7 @@ import java.util.List;
  * under a different name. This module surfaces exactly that and nothing more. Names come from the
  * server player list, so a player who never appears there is never claimed.
  */
-public class PlayerIdentityModule extends Module {
+public class PlayerIdentityModule extends AddonModule {
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
     private final SettingGroup sgNotify = settings.createGroup("Notifications");
 

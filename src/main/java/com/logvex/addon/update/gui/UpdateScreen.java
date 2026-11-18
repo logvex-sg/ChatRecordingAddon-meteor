@@ -6,7 +6,7 @@ import com.logvex.addon.framework.gui.WindowScreen;
 import com.logvex.addon.framework.gui.widgets.containers.WTable;
 import com.logvex.addon.framework.gui.widgets.containers.WVerticalList;
 import com.logvex.addon.framework.gui.widgets.pressable.WButton;
-import com.logvex.addon.framework.utils.render.color.Color;
+import meteordevelopment.meteorclient.utils.render.color.Color;
 import com.logvex.addon.update.core.UpdateChannel;
 import com.logvex.addon.update.core.UpdateSnapshot;
 import com.logvex.addon.update.core.UpdateState;

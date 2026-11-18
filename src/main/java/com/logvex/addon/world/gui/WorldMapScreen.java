@@ -5,7 +5,7 @@ import com.logvex.addon.framework.gui.GuiThemes;
 import com.logvex.addon.framework.gui.WidgetScreen;
 import com.logvex.addon.framework.gui.widgets.containers.WHorizontalList;
 import com.logvex.addon.framework.gui.widgets.pressable.WButton;
-import com.logvex.addon.framework.utils.render.color.Color;
+import meteordevelopment.meteorclient.utils.render.color.Color;
 import com.logvex.addon.world.core.LocationCategory;
 import com.logvex.addon.world.core.WorldPoint;
 import com.logvex.addon.world.mc.WorldService;

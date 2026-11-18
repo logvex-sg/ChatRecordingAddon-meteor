@@ -8,8 +8,9 @@ import com.logvex.addon.framework.gui.widgets.input.WTextBox;
 import com.logvex.addon.framework.gui.widgets.containers.WHorizontalList;
 import com.logvex.addon.framework.gui.widgets.pressable.WButton;
 import com.logvex.addon.framework.gui.widgets.pressable.WToggle;
-import com.logvex.addon.framework.settings.Setting;
-import com.logvex.addon.framework.settings.SettingGroup;
+import meteordevelopment.meteorclient.settings.Setting;
+import meteordevelopment.meteorclient.settings.SettingGroup;
+import com.logvex.addon.framework.utils.settings.SettingBridge;
 import com.logvex.addon.framework.systems.config.ConfigManager;
 import com.logvex.addon.framework.systems.hud.Hud;
 import com.logvex.addon.framework.systems.hud.HudElement;
@@ -79,13 +80,13 @@ public class HudElementSettingsScreen extends WidgetScreen {
 
         String needle = query.trim().toLowerCase(Locale.ROOT);
         boolean any = false;
-        for (SettingGroup group : element.settings.groups()) {
-            List<Setting<?>> matching = group.settings().stream()
+        for (SettingGroup group : element.settings) {
+            List<Setting<?>> matching = SettingBridge.settings(group).stream()
                 .filter(setting -> matches(setting, needle))
                 .toList();
             if (matching.isEmpty()) continue;
             any = true;
-            add(theme.horizontalSeparator(group.name())).expandX();
+            add(theme.horizontalSeparator(group.name)).expandX();
             for (WWidget row : SettingsWidgets.rows(theme, matching)) {
                 add(row).expandX();
             }

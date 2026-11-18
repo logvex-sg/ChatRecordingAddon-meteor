@@ -1,11 +1,11 @@
 # Log Client
 
-A standalone Fabric addon for Minecraft 1.21.1.
+A Meteor Client addon for Minecraft 1.21.1.
 
-It runs on Fabric Loader alone: the event bus, HUD system, module registry, GUI kit, command
-dispatcher and mixins all live inside the addon (`com.logvex.addon.framework`), so **Meteor Client
-is not required**. Baritone is used for navigation only when it happens to be installed, and is
-detected at runtime rather than compiled against.
+It runs as an addon on Meteor Client: the addon registers its modules, HUD and commands through
+Meteor's own registries and event bus, so its features appear in Meteor's GUI and keybind system
+alongside the built-in ones. Baritone is used for navigation only when it happens to be installed,
+and is detected at runtime rather than compiled against.
 
 **Chat toolkit** — `chat-logger` (records chat to compressed, searchable logs),
 `chat-monitor` (live feed with filters and highlighting), `keyword-alerts` (keyword alerts with
@@ -42,7 +42,7 @@ server-sent events, the bot controls, the task queue, the module switches, chat 
 statistics and storage usage. It is off by default, binds to loopback, and needs an access token.
 See [Companion (web app)](#companion-web-app).
 
-**GUI** — Right Shift (or `.log gui`) opens the addon window: a Meteor-style interface with a
+**GUI** — `.log gui` opens the addon window: a Meteor-style interface with a
 navigation rail on the left (Modules, HUD, Theme, About) and a card list on the right. Every module
 and HUD element has an on/off switch and a Settings page, the list is searchable, and an enabled
 entry is marked with an accent bar. Rounded panels, eased hover and toggle animations and a soft
@@ -60,8 +60,8 @@ statistics, notifications, the automation task queue, waypoints and schematic co
 ./gradlew clean test build
 ```
 
-The jar is written to `build/libs/log-client-16.0.0.jar`. Drop it into `.minecraft/mods`. No other
-mod is required; Baritone is optional and only affects bot navigation.
+The jar is written to `build/libs/log-client-17.0.0.jar`. Drop it into `.minecraft/mods` alongside
+Meteor Client. Baritone is optional and only affects bot navigation.
 
 ### Java 21 is required for the Gradle daemon
 

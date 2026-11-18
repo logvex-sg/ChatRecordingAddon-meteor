@@ -6,12 +6,13 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.logvex.addon.LogClient;
 import com.logvex.addon.framework.LogClientContext;
-import com.logvex.addon.framework.settings.Setting;
+import com.logvex.addon.framework.utils.settings.SettingBridge;
+import meteordevelopment.meteorclient.settings.Setting;
 import com.logvex.addon.framework.systems.hud.Hud;
 import com.logvex.addon.framework.systems.hud.HudElement;
 import com.logvex.addon.framework.systems.hud.HudElementInfo;
-import com.logvex.addon.framework.systems.modules.Module;
-import com.logvex.addon.framework.systems.modules.Modules;
+import meteordevelopment.meteorclient.systems.modules.Module;
+import meteordevelopment.meteorclient.systems.modules.Modules;
 
 import java.io.IOException;
 import java.io.Reader;
@@ -133,12 +134,12 @@ public final class ConfigManager {
     private void migrateStoredPaths() {
         Module logger = Modules.get().get("chat-logger");
         if (logger == null) return;
-        Setting<?> storage = logger.settings.byName("storage-directory");
+        Setting<?> storage = SettingBridge.byName(logger.settings, "storage-directory");
         if (storage == null) return;
         try {
             Object value = storage.get();
             if (value instanceof String path && path.startsWith("logaddon")) {
-                storage.fromJson(path.replaceFirst("^logaddon", "logclient"));
+                SettingBridge.fromJson(storage, new com.google.gson.JsonPrimitive(path.replaceFirst("^logaddon", "logclient")));
             }
         } catch (RuntimeException e) {
             LogClient.LOG.warn("Could not migrate the stored log directory", e);
@@ -184,11 +185,12 @@ public final class ConfigManager {
         return root;
     }
 
-    private JsonObject settingsToJson(com.logvex.addon.framework.settings.Settings settings) {
+    /** Serialises one module's or HUD element's settings into a JSON object keyed by setting name. */
+    public static JsonObject settingsToJson(meteordevelopment.meteorclient.settings.Settings settings) {
         JsonObject out = new JsonObject();
-        for (Setting<?> setting : settings.all()) {
+        for (Setting<?> setting : SettingBridge.all(settings)) {
             try {
-                out.add(setting.name, setting.toJson());
+                out.add(setting.name, SettingBridge.toJson(setting));
             } catch (RuntimeException e) {
                 LogClient.LOG.warn("Could not serialise setting {}", setting.name, e);
             }
@@ -266,13 +268,13 @@ public final class ConfigManager {
         com.logvex.addon.framework.gui.GuiThemes.applyPreset(ClientConfig.get().themePreset());
     }
 
-    private void applySettings(com.logvex.addon.framework.settings.Settings settings, JsonObject entry) {
+    public static void applySettings(meteordevelopment.meteorclient.settings.Settings settings, JsonObject entry) {
         if (!entry.has("settings") || !entry.get("settings").isJsonObject()) return;
         JsonObject values = entry.getAsJsonObject("settings");
-        for (Setting<?> setting : settings.all()) {
+        for (Setting<?> setting : SettingBridge.all(settings)) {
             if (!values.has(setting.name)) continue;
             try {
-                setting.fromJson(values.get(setting.name));
+                SettingBridge.fromJson(setting, values.get(setting.name));
             } catch (RuntimeException e) {
                 LogClient.LOG.warn("Ignoring invalid value for setting {}", setting.name, e);
             }

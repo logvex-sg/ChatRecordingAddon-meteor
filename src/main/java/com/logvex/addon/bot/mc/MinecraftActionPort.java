@@ -2,9 +2,9 @@ package com.logvex.addon.bot.mc;
 
 import com.logvex.addon.bot.core.ActionPorts;
 import com.logvex.addon.bot.core.BlockPos3;
-import com.logvex.addon.framework.utils.player.FindItemResult;
-import com.logvex.addon.framework.utils.player.InvUtils;
-import com.logvex.addon.framework.utils.world.BlockUtils;
+import meteordevelopment.meteorclient.utils.player.FindItemResult;
+import meteordevelopment.meteorclient.utils.player.InvUtils;
+import meteordevelopment.meteorclient.utils.world.BlockUtils;
 import net.minecraft.block.BlockState;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;

@@ -1,19 +1,20 @@
 package com.logvex.addon.world.modules;
 
+import com.logvex.addon.framework.systems.modules.AddonModule;
 import com.logvex.addon.LogClient;
-import com.logvex.addon.framework.events.world.TickEvent;
+import meteordevelopment.meteorclient.events.world.TickEvent;
 import com.logvex.addon.framework.gui.GuiTheme;
 import com.logvex.addon.framework.gui.widgets.WWidget;
 import com.logvex.addon.framework.gui.widgets.containers.WVerticalList;
 import com.logvex.addon.framework.gui.widgets.pressable.WButton;
-import com.logvex.addon.framework.orbit.EventHandler;
-import com.logvex.addon.framework.settings.BoolSetting;
-import com.logvex.addon.framework.settings.IntSetting;
-import com.logvex.addon.framework.settings.Setting;
-import com.logvex.addon.framework.settings.SettingGroup;
-import com.logvex.addon.framework.settings.StringListSetting;
-import com.logvex.addon.framework.settings.StringSetting;
-import com.logvex.addon.framework.systems.modules.Module;
+import meteordevelopment.orbit.EventHandler;
+import meteordevelopment.meteorclient.settings.BoolSetting;
+import meteordevelopment.meteorclient.settings.IntSetting;
+import meteordevelopment.meteorclient.settings.Setting;
+import meteordevelopment.meteorclient.settings.SettingGroup;
+import meteordevelopment.meteorclient.settings.StringListSetting;
+import meteordevelopment.meteorclient.settings.StringSetting;
+import meteordevelopment.meteorclient.systems.modules.Module;
 import com.logvex.addon.world.core.LocationCategory;
 import com.logvex.addon.world.gui.LocationDatabaseScreen;
 import com.logvex.addon.world.gui.WorldMapScreen;
@@ -33,7 +34,7 @@ import java.util.Map;
  * service is subscribed once at bootstrap, so switching worlds and persistence work even while this
  * module is off; the module only controls the active scanning.
  */
-public class WorldIntelligenceModule extends Module {
+public class WorldIntelligenceModule extends AddonModule {
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
     private final SettingGroup sgScan = settings.createGroup("Scanning");
     private final SettingGroup sgWatch = settings.createGroup("Watch List");

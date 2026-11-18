@@ -10,10 +10,12 @@ import com.logvex.addon.framework.gui.widgets.containers.WVerticalList;
 import com.logvex.addon.framework.gui.widgets.input.WTextBox;
 import com.logvex.addon.framework.gui.widgets.pressable.WButton;
 import com.logvex.addon.framework.gui.widgets.pressable.WToggle;
-import com.logvex.addon.framework.settings.Setting;
-import com.logvex.addon.framework.settings.SettingGroup;
+import meteordevelopment.meteorclient.settings.Setting;
+import meteordevelopment.meteorclient.settings.SettingGroup;
+import com.logvex.addon.framework.utils.settings.SettingBridge;
 import com.logvex.addon.framework.systems.config.ConfigManager;
-import com.logvex.addon.framework.systems.modules.Module;
+import meteordevelopment.meteorclient.systems.modules.Module;
+import com.logvex.addon.framework.systems.modules.AddonModule;
 import com.logvex.addon.framework.utils.render.Render2D;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
@@ -71,7 +73,7 @@ public class ModuleSettingsScreen extends WidgetScreen {
             reload();
         };
 
-        WWidget custom = module.getWidget(theme);
+        WWidget custom = module instanceof AddonModule addon ? addon.getWidget(theme) : null;
         if (custom != null) {
             custom.theme = theme;
             add(custom).expandX();
@@ -79,13 +81,13 @@ public class ModuleSettingsScreen extends WidgetScreen {
 
         String needle = query.trim().toLowerCase(Locale.ROOT);
         boolean any = false;
-        for (SettingGroup group : module.settings.groups()) {
-            List<Setting<?>> matching = group.settings().stream()
+        for (SettingGroup group : module.settings) {
+            List<Setting<?>> matching = SettingBridge.settings(group).stream()
                 .filter(setting -> matches(setting, needle))
                 .toList();
             if (matching.isEmpty()) continue;
             any = true;
-            add(theme.horizontalSeparator(group.name())).expandX();
+            add(theme.horizontalSeparator(group.name)).expandX();
             for (WWidget row : SettingsWidgets.rows(theme, matching)) {
                 add(row).expandX();
             }

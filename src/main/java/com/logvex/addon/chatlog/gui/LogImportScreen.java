@@ -182,7 +182,7 @@ public class LogImportScreen extends WindowScreen {
     }
 
     private void info(String message) {
-        com.logvex.addon.framework.utils.player.ChatUtils.info("%s", message);
+        meteordevelopment.meteorclient.utils.player.ChatUtils.info("%s", message);
     }
 
     private static String firstLine(ChatEntry entry) {

@@ -4,17 +4,17 @@ import com.logvex.addon.automation.core.CreativeController;
 import com.logvex.addon.automation.mc.AutomationSupport;
 import com.logvex.addon.automation.mc.MinecraftCreativeEnv;
 import com.logvex.addon.automation.mc.MinecraftCreativePort;
-import com.logvex.addon.framework.events.world.TickEvent;
+import meteordevelopment.meteorclient.events.world.TickEvent;
 import com.logvex.addon.framework.gui.GuiTheme;
 import com.logvex.addon.framework.gui.widgets.WWidget;
 import com.logvex.addon.framework.gui.widgets.containers.WVerticalList;
 import com.logvex.addon.framework.gui.widgets.pressable.WButton;
-import com.logvex.addon.framework.orbit.EventHandler;
-import com.logvex.addon.framework.settings.BoolSetting;
-import com.logvex.addon.framework.settings.IntSetting;
-import com.logvex.addon.framework.settings.Setting;
-import com.logvex.addon.framework.settings.SettingGroup;
-import com.logvex.addon.framework.settings.StringListSetting;
+import meteordevelopment.orbit.EventHandler;
+import meteordevelopment.meteorclient.settings.BoolSetting;
+import meteordevelopment.meteorclient.settings.IntSetting;
+import meteordevelopment.meteorclient.settings.Setting;
+import meteordevelopment.meteorclient.settings.SettingGroup;
+import meteordevelopment.meteorclient.settings.StringListSetting;
 import com.logvex.addon.notify.core.NotificationType;
 
 import java.util.ArrayList;
@@ -43,7 +43,7 @@ public class AutoCreativeModule extends AutomationModule {
         .build()
     );
 
-    private final Setting<String> materialFile = sgGeneral.add(new com.logvex.addon.framework.settings.StringSetting.Builder()
+    private final Setting<String> materialFile = sgGeneral.add(new meteordevelopment.meteorclient.settings.StringSetting.Builder()
         .name("material-file")
         .description("Full path to a material list to import, used by \"Import Path\".")
         .defaultValue("")
@@ -285,7 +285,7 @@ public class AutoCreativeModule extends AutomationModule {
     }
 
     private void queueToDropper() {
-        var modules = com.logvex.addon.framework.systems.modules.Modules.get();
+        var modules = meteordevelopment.meteorclient.systems.modules.Modules.get();
         var dropper = modules.get(com.logvex.addon.schematicdropper.SchematicDropperModule.class);
         if (dropper == null) {
             warning("Schematic Dropper is not available.");

@@ -1,6 +1,6 @@
 package com.logvex.addon.framework.systems.hud;
 
-import com.logvex.addon.framework.settings.Settings;
+import meteordevelopment.meteorclient.settings.Settings;
 import com.logvex.addon.framework.systems.hud.layout.HudAnchor;
 import com.logvex.addon.framework.systems.hud.layout.HudLayout;
 import com.logvex.addon.framework.systems.hud.layout.HudRect;

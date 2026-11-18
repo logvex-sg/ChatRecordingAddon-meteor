@@ -1,20 +1,21 @@
 package com.logvex.addon.chatlog.modules;
 
+import com.logvex.addon.framework.systems.modules.AddonModule;
 import com.logvex.addon.LogClient;
 import com.logvex.addon.chatlog.core.ChatEntry;
 import com.logvex.addon.chatlog.core.MentionScanner;
 import com.logvex.addon.chatlog.mc.LogService;
-import com.logvex.addon.framework.events.world.TickEvent;
+import meteordevelopment.meteorclient.events.world.TickEvent;
 import com.logvex.addon.framework.gui.GuiTheme;
 import com.logvex.addon.framework.gui.widgets.WWidget;
 import com.logvex.addon.framework.gui.widgets.containers.WVerticalList;
 import com.logvex.addon.framework.gui.widgets.pressable.WButton;
-import com.logvex.addon.framework.orbit.EventHandler;
-import com.logvex.addon.framework.settings.BoolSetting;
-import com.logvex.addon.framework.settings.Setting;
-import com.logvex.addon.framework.settings.SettingGroup;
-import com.logvex.addon.framework.settings.StringListSetting;
-import com.logvex.addon.framework.systems.modules.Module;
+import meteordevelopment.orbit.EventHandler;
+import meteordevelopment.meteorclient.settings.BoolSetting;
+import meteordevelopment.meteorclient.settings.Setting;
+import meteordevelopment.meteorclient.settings.SettingGroup;
+import meteordevelopment.meteorclient.settings.StringListSetting;
+import meteordevelopment.meteorclient.systems.modules.Module;
 import com.logvex.addon.notify.core.NotificationPriority;
 import com.logvex.addon.notify.core.NotificationType;
 import com.logvex.addon.notify.mc.NotificationService;
@@ -31,7 +32,7 @@ import java.util.List;
  * server makes "did anyone mention me?" hard to answer by eye, so this raises a notification, an
  * optional sound, and an optional mention embed, and records the hit in the alert log.
  */
-public class MentionAlertsModule extends Module {
+public class MentionAlertsModule extends AddonModule {
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
     private final SettingGroup sgOutput = settings.createGroup("Output");
 
@@ -179,7 +180,7 @@ public class MentionAlertsModule extends Module {
             ? "no names yet" : String.join(", ", watchedNames())))).expandX().widget();
         WButton open = list.add(theme.button("Open Notifications")).expandX().widget();
         open.action = () -> {
-            var notifyModule = com.logvex.addon.framework.systems.modules.Modules.get()
+            var notifyModule = meteordevelopment.meteorclient.systems.modules.Modules.get()
                 .get(com.logvex.addon.notify.NotificationModule.class);
             if (notifyModule != null) {
                 mc.setScreen(new com.logvex.addon.notify.gui.NotificationCenterScreen(notifyModule));

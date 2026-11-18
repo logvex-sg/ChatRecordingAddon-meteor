@@ -1,7 +1,7 @@
 package com.logvex.addon.automation.mc;
 
 import com.logvex.addon.automation.core.ArmorGuardController;
-import com.logvex.addon.framework.utils.player.PlayerUtils;
+import meteordevelopment.meteorclient.utils.player.PlayerUtils;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.component.DataComponentTypes;
 import net.minecraft.component.type.FoodComponent;

@@ -1,19 +1,20 @@
 package com.logvex.addon.chatlog.modules;
 
+import com.logvex.addon.framework.systems.modules.AddonModule;
 import com.logvex.addon.LogClient;
 import com.logvex.addon.chatlog.core.SessionSummary;
 import com.logvex.addon.chatlog.core.StatsSnapshot;
 import com.logvex.addon.chatlog.mc.LogService;
-import com.logvex.addon.framework.events.game.GameLeftEvent;
+import meteordevelopment.meteorclient.events.game.GameLeftEvent;
 import com.logvex.addon.framework.gui.GuiTheme;
 import com.logvex.addon.framework.gui.widgets.WWidget;
 import com.logvex.addon.framework.gui.widgets.containers.WVerticalList;
 import com.logvex.addon.framework.gui.widgets.pressable.WButton;
-import com.logvex.addon.framework.orbit.EventHandler;
-import com.logvex.addon.framework.settings.BoolSetting;
-import com.logvex.addon.framework.settings.Setting;
-import com.logvex.addon.framework.settings.SettingGroup;
-import com.logvex.addon.framework.systems.modules.Module;
+import meteordevelopment.orbit.EventHandler;
+import meteordevelopment.meteorclient.settings.BoolSetting;
+import meteordevelopment.meteorclient.settings.Setting;
+import meteordevelopment.meteorclient.settings.SettingGroup;
+import meteordevelopment.meteorclient.systems.modules.Module;
 
 /**
  * Session statistics: message counts by type, unique players, join/leave/death totals and keyword
@@ -23,7 +24,7 @@ import com.logvex.addon.framework.systems.modules.Module;
  * <p>It also prints a short session summary when the client leaves a world, so the session's shape
  * is visible without opening a screen.
  */
-public class SessionStatsModule extends Module {
+public class SessionStatsModule extends AddonModule {
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
 
     private final Setting<Boolean> summaryOnLeave = sgGeneral.add(new BoolSetting.Builder()
@@ -56,7 +57,7 @@ public class SessionStatsModule extends Module {
         WVerticalList list = theme.verticalList();
         WButton open = list.add(theme.button("Open Statistics")).expandX().widget();
         open.action = () -> {
-            ChatLoggerModule logger = com.logvex.addon.framework.systems.modules.Modules.get()
+            ChatLoggerModule logger = meteordevelopment.meteorclient.systems.modules.Modules.get()
                 .get(ChatLoggerModule.class);
             if (logger != null) mc.setScreen(new com.logvex.addon.chatlog.gui.LogDashboardScreen(logger, 4));
         };

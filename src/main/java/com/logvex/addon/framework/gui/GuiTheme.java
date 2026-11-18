@@ -11,7 +11,7 @@ import com.logvex.addon.framework.gui.widgets.containers.WWindow;
 import com.logvex.addon.framework.gui.widgets.input.WTextBox;
 import com.logvex.addon.framework.gui.widgets.pressable.WButton;
 import com.logvex.addon.framework.gui.widgets.pressable.WToggle;
-import com.logvex.addon.framework.utils.render.color.Color;
+import meteordevelopment.meteorclient.utils.render.color.Color;
 
 /**
  * Creates widgets and holds the palette they draw with.

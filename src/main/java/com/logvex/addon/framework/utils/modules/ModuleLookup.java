@@ -1,14 +1,17 @@
-package com.logvex.addon.framework.systems.modules;
+package com.logvex.addon.framework.utils.modules;
+
+import meteordevelopment.meteorclient.systems.modules.Module;
+import meteordevelopment.meteorclient.systems.modules.Modules;
 
 import java.util.Locale;
 
 /**
- * Finds a module by its canonical name, its title, or a {@code kebab-case} spelling of either.
+ * Finds a Meteor module by its canonical name, its title, or a {@code kebab-case} spelling of either.
  *
- * <p>The registry matches a name exactly, which is right for the GUI but too strict for the companion
- * app: a web client naturally sends {@code chat-logger} for the module named {@code chat-logger}, but
- * a user typing into a URL or a script may write {@code ChatLogger} or {@code Chat Logger}. This
- * helper accepts all three without loosening the registry's own matching.
+ * <p>Meteor's registry matches a name exactly, which is right for the GUI but too strict for the
+ * companion app: a web client naturally sends {@code chat-logger} for the module named
+ * {@code chat-logger}, but a user typing into a URL or a script may write {@code ChatLogger} or
+ * {@code Chat Logger}. This helper accepts all three without loosening the registry's own matching.
  */
 public final class ModuleLookup {
     private ModuleLookup() {
