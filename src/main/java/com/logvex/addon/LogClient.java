@@ -111,6 +111,9 @@ public class LogClient extends MeteorAddon {
         // network work runs on a daemon worker, and the module never installs anything itself.
         Modules.get().add(new com.logvex.addon.update.mc.UpdateModule());
 
+        // A one-shot module that opens the addon's own window; bind it to a key in Meteor's GUI.
+        Modules.get().add(new com.logvex.addon.gui.LogClientMenuModule());
+
         Hud.get().register(ChatLogHud.INFO);
         Hud.get().register(ActivityHud.INFO);
         Hud.get().register(StatsHud.INFO);
