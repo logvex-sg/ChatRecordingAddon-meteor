@@ -119,7 +119,7 @@ public class WebhookMonitorModule extends Module {
 
     private void record(WebhookQueue current, boolean success, int count, String message) {
         ChatLoggerModule logger = Modules.get().get(ChatLoggerModule.class);
-        String host = logger == null ? "" : WebhookDeliveryLog.hostOf(logger.webhookUrl());
+        String host = logger == null ? "" : WebhookDeliveryLog.hostOf(logger.effectiveUrl());
         int attempt = Math.max(1, count);
         for (int i = 0; i < Math.max(1, Math.abs(count)); i++) {
             history.add(System.currentTimeMillis(), host, success, attempt, message);

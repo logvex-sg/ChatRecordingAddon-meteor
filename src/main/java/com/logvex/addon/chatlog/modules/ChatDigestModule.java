@@ -112,8 +112,10 @@ public class ChatDigestModule extends Module {
         if (sendWebhook.get()) {
             ChatLoggerModule logger = com.logvex.addon.framework.systems.modules.Modules.get()
                 .get(ChatLoggerModule.class);
-            if (logger != null) {
-                service.notifySummary(logger.webhookUrl(), logger.webhookUsername(), service.recent(windowSize.get()));
+            String url = logger == null ? "" : logger.effectiveUrl();
+            String username = logger == null ? "" : logger.effectiveUsername();
+            if (url != null && !url.isBlank()) {
+                service.notifyDigest(url, username, summary, null);
             }
         }
     }

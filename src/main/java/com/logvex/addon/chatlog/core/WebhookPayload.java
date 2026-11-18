@@ -1,15 +1,19 @@
 package com.logvex.addon.chatlog.core;
 
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
  * Builds webhook request bodies.
  *
- * <p>Two kinds of notification are supported: a keyword alert (one matching line) and a periodic
- * summary (a batch of recorded lines). Both strictly disable mentions so captured chat can never
- * ping a role or {@code @everyone}, and neither ever embeds the webhook URL or any account data.
+ * <p>Delivery now uses Discord <b>rich embeds</b> instead of a flat {@code content} string: a
+ * keyword alert, a chat summary, a digest, a finished session and a rename each render as a coloured
+ * card with a title and named fields. Embeds read far better than a paste and, unlike content, are
+ * not collapsed behind a "show more" link. This class is the thin compatibility seam over
+ * {@link WebhookEmbeds} so existing callers keep working.
+ *
+ * <p>Every payload strictly disables mentions, so captured chat can never ping a role or
+ * {@code @everyone}, and no payload ever embeds the webhook URL or any account data.
  */
 public final class WebhookPayload {
     /** Discord rejects content longer than 2000 characters. */
@@ -18,48 +22,62 @@ public final class WebhookPayload {
     private WebhookPayload() {
     }
 
+    /** A keyword alert card. */
     public static String alert(String username, KeywordRule rule, ChatEntry entry) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("**Keyword alert** `").append(rule.pattern()).append("`\n");
-        sb.append("Server: `").append(entry.server().isBlank() ? "unknown" : entry.server()).append("`\n");
-        sb.append("Type: ").append(entry.type()).append('\n');
-        sb.append('\n').append(ReportFormatting.format(entry));
-        return envelope(username, clamp(sb.toString()));
+        return alert(username, rule, entry, WebhookEmbeds.Style.defaults());
     }
 
+    /** A keyword alert card with appearance options. */
+    public static String alert(String username, KeywordRule rule, ChatEntry entry, WebhookEmbeds.Style style) {
+        return WebhookEmbeds.payload(username, WebhookEmbeds.alert(style, rule, entry));
+    }
+
+    /** A chat summary card. */
     public static String summary(String username, String server, List<ChatEntry> entries) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("**Chat summary**\n");
-        sb.append("Server: `").append(server == null || server.isBlank() ? "unknown" : server).append("`\n");
-        sb.append("Messages: ").append(entries.size()).append("\n\n");
-
-        for (ChatEntry entry : entries) {
-            String line = ReportFormatting.format(entry);
-            if (sb.length() + line.length() + 1 > CONTENT_LIMIT) {
-                sb.append("\n... (truncated)");
-                break;
-            }
-            sb.append(line).append('\n');
-        }
-        return envelope(username, clamp(sb.toString()));
+        return summary(username, server, entries, WebhookEmbeds.Style.defaults());
     }
 
+    /** A chat summary card with appearance options. */
+    public static String summary(String username, String server, List<ChatEntry> entries, WebhookEmbeds.Style style) {
+        return WebhookEmbeds.payload(username, WebhookEmbeds.summary(style, server, entries));
+    }
+
+    /** A digest card. */
+    public static String digest(String username, ChatDigest.Summary summary, String server, WebhookEmbeds.Style style) {
+        return WebhookEmbeds.payload(username, WebhookEmbeds.digest(style, summary, server));
+    }
+
+    /** A finished-session card. */
+    public static String session(String username, SessionRecord record, long now, WebhookEmbeds.Style style) {
+        return WebhookEmbeds.payload(username, WebhookEmbeds.session(style, record, now));
+    }
+
+    /** A rename card. */
+    public static String rename(String username, String from, String to, long at, WebhookEmbeds.Style style) {
+        return WebhookEmbeds.payload(username, WebhookEmbeds.rename(style, from, to, at));
+    }
+
+    /** A watchlist presence card. */
+    public static String presence(String username, boolean joined, String player, String server, WebhookEmbeds.Style style) {
+        return WebhookEmbeds.payload(username, WebhookEmbeds.presence(style, joined, player, server));
+    }
+
+    /** A test card. */
     public static String test(String username) {
-        return envelope(username, "**Log Client** webhook test succeeded.");
+        return test(username, "", WebhookEmbeds.Style.defaults());
     }
 
-    private static String envelope(String username, String content) {
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("username", username == null || username.isBlank() ? "Log Client" : username);
-        payload.put("content", content);
-        Map<String, Object> mentions = new LinkedHashMap<>();
-        mentions.put("parse", List.of());
-        payload.put("allowed_mentions", mentions);
-        return Json.toJson(payload);
+    /** A test card with a version and appearance options. */
+    public static String test(String username, String version, WebhookEmbeds.Style style) {
+        return WebhookEmbeds.payload(username, WebhookEmbeds.test(style, version));
     }
 
-    private static String clamp(String content) {
-        if (content.length() <= CONTENT_LIMIT) return content;
-        return content.substring(0, CONTENT_LIMIT);
+    /** The username field alone, for callers that build the payload elsewhere. */
+    public static Map<String, Object> envelope(String username, List<Map<String, Object>> embeds) {
+        Map<String, Object> root = new java.util.LinkedHashMap<>();
+        root.put("username", username == null || username.isBlank() ? "Log Client" : username);
+        root.put("embeds", embeds);
+        root.put("allowed_mentions", Map.of("parse", List.of()));
+        return root;
     }
 }

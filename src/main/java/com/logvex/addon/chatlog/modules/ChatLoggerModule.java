@@ -300,14 +300,14 @@ public class ChatLoggerModule extends Module {
             lastReportAt = System.currentTimeMillis();
             return;
         }
-        if (webhookUrl.get() == null || webhookUrl.get().isBlank()) {
-            if (manual) feedback(false, "No webhook URL configured.");
+        if (effectiveUrl().isBlank()) {
+            if (manual) feedback(false, "No webhook URL configured. Set one on the webhook-relay module.");
             return;
         }
 
         reportInFlight = true;
         lastReportAt = System.currentTimeMillis();
-        boolean queued = service.notifySummary(webhookUrl.get(), webhookUsername.get(), batch, (success, message) ->
+        boolean queued = service.notifySummary(effectiveUrl(), effectiveUsername(), batch, (success, message) ->
             // The delivery callback runs on the webhook worker; hop back to the client thread.
             onClient(() -> {
                 reportInFlight = false;
@@ -351,6 +351,19 @@ public class ChatLoggerModule extends Module {
     /** The configured webhook display name. */
     public String webhookUsername() {
         return webhookUsername.get() == null ? "" : webhookUsername.get();
+    }
+
+    /**
+     * The webhook this module should send to: the shared relay target when one is published, else its
+     * own URL. This lets the relay own a single webhook for the whole addon while a user who set a
+     * per-module URL before the relay existed keeps working.
+     */
+    public String effectiveUrl() {
+        return service.hasRelay() ? service.relayUrl() : webhookUrl();
+    }
+
+    public String effectiveUsername() {
+        return service.hasRelay() ? service.relayUsername() : webhookUsername();
     }
 
     /** The webhook delivery queue shared by every reporting module. */

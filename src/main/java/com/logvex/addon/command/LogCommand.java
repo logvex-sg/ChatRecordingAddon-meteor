@@ -405,6 +405,37 @@ public class LogCommand extends Command {
             }))
         );
 
+        builder.then(literal("webhook")
+            .executes(context -> {
+                webhookStatus();
+                return SINGLE_SUCCESS;
+            })
+            .then(literal("status").executes(context -> {
+                webhookStatus();
+                return SINGLE_SUCCESS;
+            }))
+            .then(literal("test").executes(context -> {
+                webhookTest();
+                return SINGLE_SUCCESS;
+            }))
+            .then(literal("preview").executes(context -> {
+                webhookPreview();
+                return SINGLE_SUCCESS;
+            }))
+            .then(literal("digest").executes(context -> {
+                webhookDigest();
+                return SINGLE_SUCCESS;
+            }))
+            .then(literal("set").then(argument("url", StringArgumentType.greedyString()).executes(context -> {
+                webhookSet(StringArgumentType.getString(context, "url"));
+                return SINGLE_SUCCESS;
+            })))
+            .then(literal("accent").then(argument("name", StringArgumentType.word()).executes(context -> {
+                webhookAccent(StringArgumentType.getString(context, "name"));
+                return SINGLE_SUCCESS;
+            })))
+        );
+
         builder.then(literal("update")
             .executes(context -> {
                 update();
@@ -494,6 +525,7 @@ public class LogCommand extends Command {
         info("  (highlight).log notes [list|add <player> <text>|remove <player>|search <filter>](default).");
         info("  (highlight).log identities [renamed|watch|unwatch|watchlist|clear|<filter>](default) - observed name changes.");
         info("  (highlight).log sessions [list|clear](default) - past recording sessions.");
+        info("  (highlight).log webhook [status|test|preview|digest|set <url>|accent <name>](default) - webhook embeds.");
         info("  (highlight).log companion [status|start|stop|token|regenerate|gui](default) - the companion web app.");
         info("  (highlight).log update [status|check|download|channel <stable|beta>|gui](default) - GitHub release updates.");
         info("  (highlight).log world [status|map|places [query]|nearest [category]|mark <name>|export](default) - world intelligence.");
@@ -1316,6 +1348,120 @@ public class LogCommand extends Command {
         } catch (RuntimeException e) {
             info("Open %s manually in a browser.", url);
         }
+    }
+
+    // ------------------------------------------------------------------ webhook
+
+    private com.logvex.addon.chatlog.modules.WebhookRelayModule relayModule() {
+        return Modules.get().get(com.logvex.addon.chatlog.modules.WebhookRelayModule.class);
+    }
+
+    private void webhookStatus() {
+        var relay = relayModule();
+        if (relay == null) {
+            warning("The webhook-relay module is not available.");
+            return;
+        }
+        if (!relay.configured()) {
+            info("No webhook configured. Use (highlight).log webhook set <url>(default).");
+            return;
+        }
+        info("Webhook relay: %s, accent %s, %s",
+            relay.isActive() ? "on" : "off",
+            com.logvex.addon.chatlog.core.EmbedAccent.AUTO.id().equals(relay.style().accent())
+                ? "auto" : relay.style().accent(),
+            com.logvex.addon.chatlog.core.WebhookDeliveryLog.hostOf(relay.url()));
+        var monitor = Modules.get().get(com.logvex.addon.chatlog.modules.WebhookMonitorModule.class);
+        if (monitor != null) info("Delivery: %s", monitor.statusLine());
+    }
+
+    private void webhookTest() {
+        var relay = relayModule();
+        if (relay == null) {
+            warning("The webhook-relay module is not available.");
+            return;
+        }
+        relay.test();
+    }
+
+    private void webhookPreview() {
+        var relay = relayModule();
+        if (relay == null) {
+            warning("The webhook-relay module is not available.");
+            return;
+        }
+        var mc = net.minecraft.client.MinecraftClient.getInstance();
+        if (mc != null) {
+            mc.setScreen(new com.logvex.addon.chatlog.gui.EmbedPreviewScreen(relay));
+        }
+    }
+
+    private void webhookDigest() {
+        var relay = relayModule();
+        if (relay == null) {
+            warning("The webhook-relay module is not available.");
+            return;
+        }
+        if (!relay.configured()) {
+            warning("Set a webhook URL first.");
+            return;
+        }
+        var digest = LogCommands.modules().get(com.logvex.addon.chatlog.modules.ChatDigestModule.class);
+        var summary = digest != null ? digest.summary()
+            : com.logvex.addon.chatlog.core.ChatDigest.summarise(
+                com.logvex.addon.chatlog.mc.LogService.get().recent(200), 5);
+        if (summary.isEmpty()) {
+            warning("No messages to summarise.");
+            return;
+        }
+        com.logvex.addon.chatlog.mc.LogService.get().notifyDigest(relay.url(), relay.username(), summary,
+            (success, message) -> {
+                if (success) info("Digest embed sent.");
+                else warning("Digest send failed: %s", message);
+            });
+    }
+
+    private void webhookSet(String url) {
+        var relay = relayModule();
+        if (relay == null) {
+            warning("The webhook-relay module is not available.");
+            return;
+        }
+        var setting = relay.settings.get("webhook-url");
+        if (setting == null) {
+            warning("The webhook URL setting is missing.");
+            return;
+        }
+        @SuppressWarnings("unchecked")
+        var typed = (com.logvex.addon.framework.settings.Setting<String>) setting;
+        typed.set(url == null ? "" : url.trim());
+        if (url == null || url.isBlank()) info("Webhook URL cleared.");
+        else info("Webhook URL set (%s).", com.logvex.addon.chatlog.core.WebhookDeliveryLog.hostOf(url));
+    }
+
+    private void webhookAccent(String name) {
+        var relay = relayModule();
+        if (relay == null) {
+            warning("The webhook-relay module is not available.");
+            return;
+        }
+        var setting = relay.settings.get("accent");
+        if (setting == null) {
+            warning("The accent setting is missing.");
+            return;
+        }
+        com.logvex.addon.chatlog.core.EmbedAccent accent =
+            com.logvex.addon.chatlog.core.EmbedAccent.AUTO;
+        for (var value : com.logvex.addon.chatlog.core.EmbedAccent.values()) {
+            if (value.name().equalsIgnoreCase(name)) {
+                accent = value;
+                break;
+            }
+        }
+        @SuppressWarnings("unchecked")
+        var typed = (com.logvex.addon.framework.settings.Setting<com.logvex.addon.chatlog.core.EmbedAccent>) setting;
+        typed.set(accent);
+        info("Embed accent set to %s.", accent.id());
     }
 
     private void recording(boolean on) {

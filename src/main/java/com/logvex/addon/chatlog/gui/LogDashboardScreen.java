@@ -14,6 +14,8 @@ import com.logvex.addon.chatlog.modules.ChatMonitorModule;
 import com.logvex.addon.chatlog.modules.KeywordAlertsModule;
 import com.logvex.addon.chatlog.modules.PlayerActivityModule;
 import com.logvex.addon.chatlog.modules.SessionStatsModule;
+import com.logvex.addon.chatlog.modules.WebhookMonitorModule;
+import com.logvex.addon.chatlog.modules.WebhookRelayModule;
 import com.logvex.addon.framework.gui.GuiThemes;
 import com.logvex.addon.framework.gui.WindowScreen;
 import com.logvex.addon.framework.gui.widgets.containers.WTable;
@@ -71,6 +73,7 @@ public class LogDashboardScreen extends WindowScreen {
         tabButton(tabs, "Keywords", 3);
         tabButton(tabs, "Stats", 4);
         tabButton(tabs, "Alerts", 5);
+        tabButton(tabs, "Webhook", 6);
 
         add(theme.horizontalSeparator()).expandX();
 
@@ -81,7 +84,44 @@ public class LogDashboardScreen extends WindowScreen {
             case 3 -> renderKeywords();
             case 4 -> renderStats();
             case 5 -> renderAlerts();
+            case 6 -> renderWebhook();
             default -> renderLive();
+        }
+    }
+
+    private void renderWebhook() {
+        WebhookRelayModule relay = Modules.get().get(WebhookRelayModule.class);
+        WebhookMonitorModule monitor = Modules.get().get(WebhookMonitorModule.class);
+
+        add(theme.horizontalSeparator("Webhook embeds")).expandX();
+
+        if (relay == null) {
+            add(theme.label("The webhook-relay module is not registered.")).expandX().widget().color(GuiKit.BAD);
+            return;
+        }
+
+        WVerticalList overview = add(theme.verticalList()).expandX().widget();
+        GuiKit.keyValue(overview, theme, "Status:",
+            relay.isActive() ? (relay.configured() ? "on" : "no URL") : "module off");
+        GuiKit.keyValue(overview, theme, "Target:",
+            relay.configured()
+                ? com.logvex.addon.chatlog.core.WebhookDeliveryLog.hostOf(relay.url())
+                : "not configured");
+        GuiKit.keyValue(overview, theme, "Accent:", relay.style().accent());
+
+        if (monitor != null) {
+            GuiKit.keyValue(overview, theme, "Delivery:", monitor.statusLine());
+        }
+
+        WTable actions = add(theme.table()).expandX().widget();
+        WButton preview = actions.add(theme.button("Preview Embeds...")).expandX().widget();
+        preview.action = () -> mc.setScreen(new EmbedPreviewScreen(relay));
+        WButton test = actions.add(theme.button("Send Test Embed")).expandX().widget();
+        test.action = relay::test;
+
+        if (!relay.configured()) {
+            add(theme.label("Set a webhook URL on the webhook-relay module to start sending."))
+                .expandX().widget().color(GuiKit.MUTED);
         }
     }
 

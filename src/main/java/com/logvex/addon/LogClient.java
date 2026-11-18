@@ -56,6 +56,7 @@ public class LogClient {
         Modules.get().add(new com.logvex.addon.chatlog.modules.PlayerNotesModule());
         Modules.get().add(new com.logvex.addon.chatlog.modules.PlayerIdentityModule());
         Modules.get().add(new com.logvex.addon.chatlog.modules.SessionHistoryModule());
+        Modules.get().add(new com.logvex.addon.chatlog.modules.WebhookRelayModule());
 
         // Automation: Minecraft-facing shells over the Minecraft-free controllers in
         // com.logvex.addon.automation.core. Each is independent and cleans up on deactivate.

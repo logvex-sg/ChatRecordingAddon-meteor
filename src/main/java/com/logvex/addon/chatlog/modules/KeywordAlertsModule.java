@@ -116,9 +116,18 @@ public class KeywordAlertsModule extends Module {
             if (System.currentTimeMillis() - lastSummaryAt >= interval) {
                 lastSummaryAt = System.currentTimeMillis();
                 List<ChatEntry> recent = service.recent(200);
-                if (!recent.isEmpty()) service.notifySummary(webhookUrl.get(), webhookUsername.get(), recent);
+                if (!recent.isEmpty()) service.notifySummary(targetUrl(), targetUsername(), recent);
             }
         }
+    }
+
+    /** The shared relay target when one is published, else this module's own URL. */
+    private String targetUrl() {
+        return service.hasRelay() ? service.relayUrl() : webhookUrl.get();
+    }
+
+    private String targetUsername() {
+        return service.hasRelay() ? service.relayUsername() : webhookUsername.get();
     }
 
     private void evaluateRecent() {
@@ -138,7 +147,7 @@ public class KeywordAlertsModule extends Module {
                     "keyword-alerts", rule.pattern(),
                     entry.sender().isBlank() ? entry.content() : entry.sender() + ": " + entry.content());
                 if (rule.sound()) playAlert();
-                if (rule.webhook()) service.notifyKeyword(webhookUrl.get(), webhookUsername.get(), rule, entry);
+                if (rule.webhook()) service.notifyKeyword(targetUrl(), targetUsername(), rule, entry);
                 if (chatFeedback.get()) {
                     warning("Keyword '%s' matched in %s", rule.pattern(), entry.sender().isBlank() ? "chat" : entry.sender());
                 }
@@ -166,7 +175,7 @@ public class KeywordAlertsModule extends Module {
     }
 
     public void testWebhook(com.logvex.addon.framework.systems.modules.Module feedbackModule) {
-        service.testWebhook(webhookUrl.get(), webhookUsername.get(), (success, message) -> {
+        service.testWebhook(targetUrl(), targetUsername(), (success, message) -> {
             if (feedbackModule != null) {
                 if (success) feedbackModule.info("Webhook test succeeded.");
                 else feedbackModule.warning("Webhook test failed: %s", message);

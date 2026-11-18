@@ -1,6 +1,7 @@
 package com.logvex.addon.chatlog.mc;
 
 import com.logvex.addon.chatlog.core.ChatEntry;
+import com.logvex.addon.chatlog.core.ChatDigest;
 import com.logvex.addon.chatlog.core.DuplicateDetector;
 import com.logvex.addon.chatlog.core.KeywordMatcher;
 import com.logvex.addon.chatlog.core.KeywordRule;
@@ -18,6 +19,7 @@ import com.logvex.addon.chatlog.core.StatsSnapshot;
 import com.logvex.addon.chatlog.core.Watchlist;
 import com.logvex.addon.chatlog.core.WebhookPayload;
 import com.logvex.addon.chatlog.core.WebhookQueue;
+import com.logvex.addon.chatlog.core.WebhookEmbeds;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -51,6 +53,13 @@ public final class LogService {
         void onEntry(ChatEntry entry);
     }
 
+    /** A listener notified when a recording session ends, with its final summary. */
+    public interface SessionListener {
+        void onSessionEnded(SessionRecord record);
+    }
+
+    private final List<SessionListener> sessionListeners = new CopyOnWriteArrayList<>();
+
     private final Deque<ChatEntry> live = new ArrayDeque<>();
     private final List<LiveListener> listeners = new CopyOnWriteArrayList<>();
     private final AtomicLong sequence = new AtomicLong();
@@ -83,6 +92,13 @@ public final class LogService {
     private volatile List<KeywordRule> keywordRules = List.of();
     private volatile String serverName = "unknown";
     private volatile String lastError = "";
+
+    /** Shared webhook appearance, owned by the relay module; every embed sender reads this. */
+    private volatile com.logvex.addon.chatlog.core.WebhookEmbeds.Style embedStyle =
+        com.logvex.addon.chatlog.core.WebhookEmbeds.Style.defaults();
+    /** Shared webhook target published by the relay module, or empty when the relay is off. */
+    private volatile String relayUrl = "";
+    private volatile String relayUsername = "";
 
     private LogService() {
     }
@@ -184,6 +200,38 @@ public final class LogService {
         return serverName;
     }
 
+    /** The shared webhook appearance used by every embed this service sends. */
+    public com.logvex.addon.chatlog.core.WebhookEmbeds.Style embedStyle() {
+        return embedStyle;
+    }
+
+    public void setEmbedStyle(com.logvex.addon.chatlog.core.WebhookEmbeds.Style style) {
+        if (style != null) this.embedStyle = style;
+    }
+
+    /** The webhook target published by the relay module, or empty when none is configured. */
+    public String relayUrl() {
+        return relayUrl;
+    }
+
+    public String relayUsername() {
+        return relayUsername == null || relayUsername.isBlank() ? "Log Client" : relayUsername;
+    }
+
+    /**
+     * Publishes (or clears) the shared webhook target. Called by the relay module on activate and
+     * deactivate so other modules can send through one URL without duplicating the setting.
+     */
+    public void setRelayTarget(String url, String username) {
+        this.relayUrl = url == null ? "" : url;
+        this.relayUsername = username == null ? "" : username;
+    }
+
+    /** True when a shared webhook target is configured. */
+    public boolean hasRelay() {
+        return relayUrl != null && !relayUrl.isBlank();
+    }
+
     public String lastError() {
         return lastError;
     }
@@ -214,6 +262,24 @@ public final class LogService {
         LogStorageService current = storage;
         if (current != null) current.saveSessionHistoryAsync(sessionHistory);
         flush(null);
+        if (record != null) {
+            for (SessionListener listener : sessionListeners) {
+                try {
+                    listener.onSessionEnded(record);
+                } catch (RuntimeException e) {
+                    lastError = "Session listener failed: " + e.getMessage();
+                }
+            }
+        }
+    }
+
+    /** Registers a listener notified when a session ends. */
+    public void addSessionListener(SessionListener listener) {
+        if (listener != null) sessionListeners.add(listener);
+    }
+
+    public void removeSessionListener(SessionListener listener) {
+        sessionListeners.remove(listener);
     }
 
     public void flush(Runnable onDone) {
@@ -301,7 +367,7 @@ public final class LogService {
     /** Sends a keyword alert to the webhook when the rule asks for it. */
     public boolean notifyKeyword(String url, String username, KeywordRule rule, ChatEntry entry) {
         if (url == null || url.isBlank()) return false;
-        String payload = WebhookPayload.alert(username, rule, entry);
+        String payload = WebhookPayload.alert(username, rule, entry, embedStyle);
         return webhook.enqueue(url, payload, null);
     }
 
@@ -313,13 +379,55 @@ public final class LogService {
     /** Sends a summary and reports the delivery result back to {@code listener}. */
     public boolean notifySummary(String url, String username, List<ChatEntry> entries, WebhookQueue.Listener listener) {
         if (url == null || url.isBlank() || entries == null || entries.isEmpty()) return false;
-        String payload = WebhookPayload.summary(username, serverName, entries);
+        String payload = WebhookPayload.summary(username, serverName, entries, embedStyle);
         return webhook.enqueue(url, payload, listener);
+    }
+
+    /** Sends a chat digest card. */
+    public boolean notifyDigest(String url, String username, ChatDigest.Summary summary, WebhookQueue.Listener listener) {
+        if (url == null || url.isBlank() || summary == null || summary.isEmpty()) return false;
+        String payload = WebhookPayload.digest(username, summary, serverName, embedStyle);
+        return webhook.enqueue(url, payload, listener);
+    }
+
+    /** Sends a finished-session card. */
+    public boolean notifySession(String url, String username, SessionRecord record, WebhookQueue.Listener listener) {
+        if (url == null || url.isBlank() || record == null) return false;
+        String payload = WebhookPayload.session(username, record, System.currentTimeMillis(), embedStyle);
+        return webhook.enqueue(url, payload, listener);
+    }
+
+    /** Sends a rename card. */
+    public boolean notifyRename(String url, String username, String from, String to, long at) {
+        if (url == null || url.isBlank()) return false;
+        String payload = WebhookPayload.rename(username, from, to, at, embedStyle);
+        return webhook.enqueue(url, payload, null);
+    }
+
+    /** Sends a watchlist presence card. */
+    public boolean notifyPresence(String url, String username, boolean joined, String player) {
+        if (url == null || url.isBlank()) return false;
+        String payload = WebhookPayload.presence(username, joined, player, serverName, embedStyle);
+        return webhook.enqueue(url, payload, null);
+    }
+
+    /** Sends a death notice card. */
+    public boolean notifyDeath(String url, String username, ChatEntry entry) {
+        if (url == null || url.isBlank() || entry == null) return false;
+        String payload = WebhookEmbeds.payload(username, WebhookEmbeds.death(embedStyle, entry));
+        return webhook.enqueue(url, payload, null);
+    }
+
+    /** Sends a server-announcement card. */
+    public boolean notifyAnnouncement(String url, String username, ChatEntry entry) {
+        if (url == null || url.isBlank() || entry == null) return false;
+        String payload = WebhookEmbeds.payload(username, WebhookEmbeds.announcement(embedStyle, entry));
+        return webhook.enqueue(url, payload, null);
     }
 
     /** Fires a one-off test delivery. */
     public void testWebhook(String url, String username, WebhookQueue.Listener listener) {
-        webhook.enqueue(url, WebhookPayload.test(username), listener);
+        webhook.enqueue(url, WebhookPayload.test(username, "", embedStyle), listener);
     }
 
     /** True when any enabled rule requests a webhook notification for this entry. */

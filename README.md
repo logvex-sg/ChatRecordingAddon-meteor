@@ -16,6 +16,8 @@ sound and optional webhook), `player-activity` (per-player activity tracking) an
 filtered message never reaches chat, the recorder or the log), `chat-digest` (on-demand and timed
 summaries of chat activity), `session-timeline` (a bounded timeline of joins, leaves, deaths and
 keyword hits), `webhook-monitor` (delivery health, queue depth and a bounded delivery history),
+`webhook-relay` (one shared webhook and a consistent Discord **embed** look, with cards for keyword
+hits, reports, digests, session ends, renames, deaths and announcements),
 `player-notes` (your own notes about players, shown next to their observed activity),
 `player-identity` (observed account name changes and a watchlist) and `session-history` (a
 browsable history of past recording sessions).
@@ -56,7 +58,7 @@ statistics, notifications, the automation task queue, waypoints and schematic co
 ./gradlew clean test build
 ```
 
-The jar is written to `build/libs/log-client-14.0.0.jar`. Drop it into `.minecraft/mods`. No other
+The jar is written to `build/libs/log-client-15.0.0.jar`. Drop it into `.minecraft/mods`. No other
 mod is required; Baritone is optional and only affects bot navigation.
 
 ### Java 21 is required for the Gradle daemon
@@ -518,6 +520,7 @@ pluralisation.
 | `session-timeline` | A bounded timeline of milestones the client can actually observe: session start/end, joins, leaves, deaths and keyword hits. Browsable in a GUI (`.log timeline`). |
 | `session-stats` | Live session counters, and a short **session summary printed when you leave a world** (messages, unique players, duration, rate, joins/leaves, deaths, keyword alerts and the most active players). |
 | `webhook-monitor` | Watches the shared webhook queue and reports its health. Keeps a bounded delivery history, warns in chat when a delivery fails and can note a recovery. The URL is never stored or shown — only the host. |
+| `webhook-relay` | Owns the single webhook target and the embed appearance every other feature sends through, and raises its own cards for session end, renames, watchlist presence, deaths and announcements. See **Webhook relay and embeds**. |
 | `player-notes` | Your own notes about players, with the observed activity shown beside each note. A note is always explicit user input; the addon never infers one. |
 | `player-activity` | Per-player joins, leaves, deaths and message counts, rebuilt from the archive on demand. Supports an **exclude list** so bots or your own alts are never tracked, and shows observed online time per player. |
 | `player-identity` | Tracks the names each **account** (by UUID) is seen using, and reports a rename only when the same UUID is later announced under a different name. Includes a per-account **watchlist**; watched renames are highlighted. Never merges two accounts that share a name. |
@@ -601,10 +604,65 @@ be omitted: an empty pattern matches any text, an empty sender any player and a 
 message type. `whole` matches whole words only. The settings page for `chat-filter` documents the
 format, and the default rule list hides `wts`/`wtb` while always allowing server announcements.
 
+## Webhook relay and embeds
+
+`webhook-relay` is the single place the addon's Discord output is configured, and the single place
+its look is defined. Every other feature (keyword alerts, periodic chat reports, digests) reads the
+shared target it publishes, so there is **one webhook to set** instead of one per module.
+
+All output is sent as **rich embeds**, not a flat `content` string: each card has a coloured accent
+bar, a title and named fields, so a keyword hit or a session summary reads as a purpose-built message
+instead of a paste. Embeds are also not collapsed behind a "show more" link the way long content is.
+
+| Card | Raised when |
+| --- | --- |
+| Keyword alert | A keyword rule with `webhook=true` matches a line. |
+| Chat summary | The chat-logger sends a buffered report (timer or **Send Now**). |
+| Chat digest | The digest module forwards a digest, the relay's own timer fires, or `.log webhook digest`. |
+| Session summary | A recording session ends (leaving a world). |
+| Player rename | The same UUID is announced under a new name. |
+| Watchlist join/leave | A watched player joins or leaves (opt-in). |
+| Death | A death message is observed (opt-in). |
+| Announcement | A server announcement is observed (opt-in). |
+| Test | The **Test Embed** button or `.log webhook test`. |
+
+### Settings
+
+- **webhook-url** — the target. Treated as a secret: never written to logs, payloads or error
+  messages, and the Discord payload explicitly disables mentions so captured chat cannot ping a role.
+- **webhook-username** — the display name used for every message.
+- **relay-enabled** — a master switch; off keeps the URL but transmits nothing.
+- **accent** — `auto` colours each card by its type (joins green, deaths red); any other value forces
+  one colour across every card. The palette is `blurple, slate, green, yellow, red, pink, teal,
+  purple, orange`.
+- **footer**, **author**, **timestamp**, **inline-fields**, **show-server** — the shared appearance.
+- **session-end**, **player-rename**, **watchlist-presence**, **deaths**, **announcements** — which
+  event cards to send.
+- **digest**, **digest-interval-minutes** — a timer for digest embeds.
+
+### Embed preview
+
+**Preview Embeds...** (the relay's widget, the dashboard **Webhook** tab, or `.log webhook preview`)
+renders every card type exactly as Discord would — accent stripe, title and fields — so the
+appearance can be checked without a webhook. **Copy JSON** puts the exact payload on the clipboard
+for a webhook tester.
+
+### `.log webhook`
+
+| Command | Effect |
+| --- | --- |
+| `.log webhook [status]` | Target host, accent and delivery health. |
+| `.log webhook test` | Sends a test embed. |
+| `.log webhook preview` | Opens the embed preview. |
+| `.log webhook digest` | Sends a digest embed now. |
+| `.log webhook set <url>` | Sets the webhook URL. |
+| `.log webhook accent <name>` | Sets the accent (or `auto`). |
+
 ## Live Chat Relay
 
 - Buffers chat (player chat and, optionally, game messages).
-- Sends a report every *N* minutes (default 5) and on demand through **Send Now**.
+- Sends a report every *N* minutes (default 5) and on demand through **Send Now**, as a **chat
+  summary embed**.
 - Messages leave the buffer **only after** a webhook request succeeds, so a failed delivery never
   loses chat.
 - Every report is optionally archived as gzip-compressed JSONL, one file per report, with an

@@ -1,6 +1,7 @@
 package com.logvex.addon.chatlog;
 
 import com.logvex.addon.chatlog.core.ChatEntry;
+import com.logvex.addon.chatlog.core.DiscordEmbed;
 import com.logvex.addon.chatlog.core.Json;
 import com.logvex.addon.chatlog.core.KeywordRule;
 import com.logvex.addon.chatlog.core.LogExporter;
@@ -81,7 +82,7 @@ class ExportAndPayloadTest {
     }
 
     @Test
-    void alertPayloadIsValidJsonAndCarriesNoUrl() {
+    void alertPayloadIsAnEmbedAndCarriesNoUrl() {
         KeywordRule rule = KeywordRule.of("wts");
         ChatEntry entry = entry(1000, MessageType.PUBLIC_CHAT, "Notch", "WTS diamonds");
 
@@ -90,7 +91,13 @@ class ExportAndPayloadTest {
 
         assertNotNull(map);
         assertEquals("Log LogClientContext", map.get("username"));
-        assertTrue(String.valueOf(map.get("content")).contains("wts"));
+        assertTrue(map.containsKey("embeds"), "the payload should carry embeds, not flat content");
+        List<?> embeds = (List<?>) map.get("embeds");
+        assertEquals(1, embeds.size());
+        Map<?, ?> embed = (Map<?, ?>) embeds.get(0);
+        assertTrue(String.valueOf(embed.get("title")).contains("Keyword"));
+        assertTrue(String.valueOf(embed.get("description")).contains("WTS diamonds"));
+        assertNotNull(embed.get("color"));
         assertFalse(payload.contains("http"), "the payload must never contain a webhook URL");
     }
 
@@ -107,7 +114,7 @@ class ExportAndPayloadTest {
     }
 
     @Test
-    void summaryPayloadTruncatesToDiscordLimit() {
+    void summaryPayloadIsABoundedEmbed() {
         List<ChatEntry> entries = new java.util.ArrayList<>();
         for (int i = 0; i < 400; i++) {
             entries.add(entry(1000 + i, MessageType.PUBLIC_CHAT, "Notch", "a reasonably long chat message body " + i));
@@ -115,14 +122,21 @@ class ExportAndPayloadTest {
 
         Map<?, ?> map = Json.toMap(WebhookPayload.summary("Log LogClientContext", "mc.example.com", entries));
         assertNotNull(map);
-        assertTrue(String.valueOf(map.get("content")).length() <= WebhookPayload.CONTENT_LIMIT);
+        List<?> embeds = (List<?>) map.get("embeds");
+        assertEquals(1, embeds.size());
+        Map<?, ?> embed = (Map<?, ?>) embeds.get(0);
+        String description = String.valueOf(embed.get("description"));
+        assertTrue(description.length() <= DiscordEmbed.DESCRIPTION_LIMIT,
+            "the description must respect the Discord embed limit");
+        assertFalse(description.contains("http"));
     }
 
     @Test
-    void testPayloadIsValidJson() {
+    void testPayloadIsAnEmbed() {
         Map<?, ?> map = Json.toMap(WebhookPayload.test("Log LogClientContext"));
         assertNotNull(map);
         assertEquals("Log LogClientContext", map.get("username"));
+        assertEquals(1, ((List<?>) map.get("embeds")).size());
     }
 
     @Test
