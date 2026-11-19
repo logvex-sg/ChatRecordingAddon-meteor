@@ -22,7 +22,7 @@ import java.util.Map;
 public final class IntentModel {
     /** Confidence below which the assistant admits it does not understand. */
     public static final double DEFAULT_THRESHOLD = 0.45;
-    private static final int MAX_INTENTS = 24;
+    private static final int MAX_INTENTS = 32;
     private static final int MAX_EXAMPLES_PER_INTENT = 40;
 
     /**
@@ -44,7 +44,11 @@ public final class IntentModel {
     private double threshold = DEFAULT_THRESHOLD;
 
     public IntentModel() {
-        this.classifier = new NaiveBayesClassifier(512, MAX_INTENTS);
+        // 2048 buckets, not 512: at 512 a common word such as "where" collides with a feature of an
+        // unrelated intent and the line is classified as that intent with high confidence. Verified
+        // against "where am i", which read as a greeting at 512 and reads correctly at 2048. The
+        // cost is 32 x 2048 doubles, about 0.5 MB, which is constant and paid once.
+        this.classifier = new NaiveBayesClassifier(2048, MAX_INTENTS);
         trainBuiltins();
     }
 
@@ -227,6 +231,27 @@ public final class IntentModel {
             List.of("what time is it", "the time", "current time", "time now",
                 "what is the time", "tell me the time"),
             List.of("It is {time}.", "The clock says {time}.")));
+        train(new Intent("serverinfo",
+            List.of("what server is this", "which server", "server name", "what is the server",
+                "what world is this", "which dimension", "what dimension is this"),
+            List.of("This is {server}, on {dimension}.", "{server} \u2014 {dimension}.",
+                "You are on {server} in {world}.")));
+        train(new Intent("latency",
+            List.of("what is my ping", "how is my ping", "my latency", "how laggy",
+                "is it lagging", "how is the connection", "connection quality"),
+            List.of("Your ping is {ping} ms \u2014 {verdict}.", "{ping} ms, {verdict}.",
+                "Latency {ping} ms ({verdict}).")));
+        train(new Intent("tickrate",
+            List.of("tps", "tickrate", "tick rate", "server tps", "whats the tps",
+                "how many tps", "is the server lagging", "how fast is the server",
+                "how many ticks per second", "server lag"),
+            List.of("TPS is {tps}/20 at {mspt} ms per tick.", "{tps}/20, {mspt} ms per tick.",
+                "The server is running at {tps}/20.")));
+        train(new Intent("position",
+            List.of("where am i", "what are my coordinates", "my coords", "what is my position",
+                "which biome is this", "what biome"),
+            List.of("You are at {coords} in {biome}.", "{coords}, {biome}, facing {facing}.",
+                "Coordinates {coords}.")));
         train(new Intent("memory",
             List.of("what do you remember", "what do you know", "your memory",
                 "list facts", "what facts", "remember anything", "tell me what you know"),
@@ -256,7 +281,8 @@ public final class IntentModel {
         train(new Intent("weather",
             List.of("weather", "is it raining", "what is the weather", "is it sunny",
                 "is it night", "raining outside"),
-            List.of("Look outside, {player} \u2014 I only see chat.", "I cannot see the sky from here.")));
+            List.of("It is {weather} here, {player}.", "The sky says {weather}.",
+                "Weather: {weather}.")));
         train(new Intent("identity",
             List.of("who are you", "what are you", "your name", "what is your name",
                 "are you a bot", "are you human", "who is this"),

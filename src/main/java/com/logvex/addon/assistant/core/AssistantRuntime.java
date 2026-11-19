@@ -115,6 +115,11 @@ public final class AssistantRuntime {
         return helpEnabled;
     }
 
+    /** Forwards the per-command table to the brain; null restores the shipped defaults. */
+    public void setCommandDefaults(java.util.Map<String, CommandDefaults.Entry> entries) {
+        brain.setCommandDefaults(entries);
+    }
+
     /** Forwards the greeting pools to the brain, so the hello command uses the user's wording. */
     public void setGreetingPools(java.util.Map<String, String> pools) {
         brain.setGreetingPools(pools);

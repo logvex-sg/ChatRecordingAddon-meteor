@@ -2,6 +2,7 @@ package com.logvex.addon.assistant.mc;
 
 import com.logvex.addon.assistant.core.AssistantMemory;
 import com.logvex.addon.assistant.core.AssistantMemoryStore;
+import com.logvex.addon.assistant.core.StarterKnowledge;
 import com.logvex.addon.framework.LogClientContext;
 
 import java.nio.file.Path;
@@ -68,8 +69,11 @@ public final class AssistantService {
             Optional<AssistantMemory> stored = store.load();
             if (stored.isPresent()) {
                 replaceWith(stored.get());
-            } else if (store instanceof FileAssistantStore file) {
-                lastError = file.lastError();
+            } else {
+                if (store instanceof FileAssistantStore file) lastError = file.lastError();
+                // Only on a genuinely empty store. Re-seeding a store that exists but was emptied
+                // would resurrect facts the user deliberately deleted.
+                seedStarterFacts();
             }
             loaded = true;
             if (onLoaded == null) return;
@@ -98,6 +102,19 @@ public final class AssistantService {
             io.execute(() -> store.save(snapshot));
         }
         io.shutdown();
+    }
+
+    /**
+     * Fills a first-run store with the shipped facts.
+     *
+     * <p>Runs before {@code loaded} is set, so nothing observes a half-filled memory, and the caller's
+     * load callback then sees the seed as ordinary content it can list and delete.
+     */
+    private void seedStarterFacts() {
+        long now = System.currentTimeMillis();
+        for (StarterKnowledge.Entry entry : StarterKnowledge.entries()) {
+            memory.rememberFact(entry.key(), entry.value(), now);
+        }
     }
 
     /** Clears the persisted and in-memory memory. */

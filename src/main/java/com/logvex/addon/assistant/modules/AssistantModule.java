@@ -4,6 +4,7 @@ import com.logvex.addon.ai.core.AiEngine;
 import com.logvex.addon.ai.mc.AiService;
 import com.logvex.addon.assistant.core.AssistantBrain;
 import com.logvex.addon.assistant.core.AssistantConfig;
+import com.logvex.addon.assistant.core.CommandDefaults;
 import com.logvex.addon.assistant.core.AssistantMemory;
 import com.logvex.addon.assistant.core.AssistantRuntime;
 import com.logvex.addon.assistant.core.ChatActivity;
@@ -141,6 +142,16 @@ public class AssistantModule extends AutomationModule {
         .onChanged(ignored -> rebuild())
         .build()
     );
+
+    private final Setting<List<String>> commandLines = sgGeneral.add(new StringListSetting.Builder()
+            .name("command-table")
+            .description("One prefix command per line: name = on/off | local/chat/silent | template. "
+                + "Blank template keeps the built-in wording. Reset to defaults to restore the "
+                + "shipped table.")
+            .defaultValue(CommandDefaults.encoded())
+            .onChanged(ignored -> rebuild())
+            .build()
+        );
 
     private final Setting<List<String>> statusLines = sgStatus.add(new StringListSetting.Builder()
             .name("status-table")
@@ -484,6 +495,10 @@ public class AssistantModule extends AutomationModule {
     private AssistantConfig config = AssistantConfig.DEFAULTS;
     private String ownName = "";
 
+    /** How often each guarded chat step has failed, so the log is not flooded by one fault. */
+    private final java.util.Map<String, Integer> failureCounts =
+        new java.util.concurrent.ConcurrentHashMap<>();
+
     /** The assistant's own recent replies, so it never answers itself. */
     /** Recognises echoes of the assistant's own replies; the single self-reply guard. */
     private final SelfReplyGuard selfReplies = new SelfReplyGuard();
@@ -580,6 +595,13 @@ public class AssistantModule extends AutomationModule {
 
     @EventHandler
     private void onReceiveMessage(ReceiveMessageEvent event) {
+        // Guarded because this runs inside Meteor's event dispatch: an exception here would leave
+        // the chat pipeline rather than being reported, and one malformed line would take the whole
+        // assistant down until the game restarted.
+        guard("receive", () -> receiveStep(event));
+    }
+
+    private void receiveStep(ReceiveMessageEvent event) {
         if (!ready() || event.getMessage() == null) return;
 
         boolean fromPlayer = event.getIndicator() != null;
@@ -746,6 +768,31 @@ public class AssistantModule extends AutomationModule {
 
     // ------------------------------------------------------------------ helpers
 
+    /**
+     * Runs one chat-path step so a failure is reported instead of thrown.
+     *
+     * <p>The assistant is a listener on two of the game's busiest events. Anything thrown from a
+     * listener is not contained by the caller, so a single unexpected value — an odd item stack, a
+     * server that sends a strange player list, a hand-edited setting — would surface as a crash on
+     * the next chat line. Catching here keeps that failure to one dropped reply, and the log names
+     * the step so the cause is findable.
+     *
+     * <p>Repeats are counted rather than logged: a fault that fires on every message would otherwise
+     * fill the log and cost more than it reports.
+     */
+    private void guard(String where, Runnable step) {
+        try {
+            step.run();
+        } catch (Throwable failure) {
+            int seen = failureCounts.merge(where, 1, Integer::sum);
+            if (seen <= 3) {
+                info("Assistant %s step failed (%s). This is a bug; chat keeps working.", where,
+                    failure);
+                if (seen == 3) info("Further %s failures will be counted silently.", where);
+            }
+        }
+    }
+
     private boolean watched(MessageType type) {
         return switch (type) {
             case PUBLIC_CHAT -> watchPublicChat.get();
@@ -882,6 +929,7 @@ public class AssistantModule extends AutomationModule {
         runtime.setPermissions(buildPermissions());
         runtime.setDuplicateFilter(duplicateFilter.get());
         runtime.setHelpEnabled(helpCommand.get());
+        runtime.setCommandDefaults(CommandDefaults.parseAll(commandLines.get()));
         runtime.setGreetingPools(greetingPools());
         runtime.setGoodGameReply(goodGameReply.get());
         macros = macrosEnabled.get()
@@ -977,6 +1025,12 @@ public class AssistantModule extends AutomationModule {
      */
     @EventHandler
     private void onSendMessage(SendMessageEvent event) {
+        // Same reason as the receive path, and it matters more here: this runs on every message the
+        // player sends, so an unguarded throw would break ordinary chatting, not just the assistant.
+        guard("send", () -> sendStep(event));
+    }
+
+    private void sendStep(SendMessageEvent event) {
         if (!isActive() || event == null) return;
         if (!ready() || sendingMacro) return;
 
@@ -1343,11 +1397,11 @@ public class AssistantModule extends AutomationModule {
     public AssistantBrain.Decision simulate(String sender, String content) {
         long now = System.currentTimeMillis();
         SenderIdentity identity = identify(sender);
-        AssistantBrain.Decision decision = runtime.handle(identity, content, now,
+        // Deliberately does not deliver: this is the settings screen's preview, and a preview that
+        // spoke in chat would send a real message every time a user pressed the button.
+        return runtime.handle(identity, content, now,
             McServerStats.snapshot(mc, now, sessionStart, speed.blocksPerSecond()),
             statusSettings(), requesterPing(identity, sender));
-        if (decision.acts()) deliver(decision, sender);
-        return decision;
     }
 
     /** Persists memory immediately (GUI and command use this). */

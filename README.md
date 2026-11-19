@@ -446,6 +446,35 @@ so the three can never disagree.
 How the assistant answers these is controlled by `memory-reply-mode` (`chat`, `notify` or
 `silent`). The default, `notify`, keeps answers out of public chat.
 
+### Configuring every prefix command
+
+Status commands have their own table. Every *other* prefix command — `!hello`, `!gg`, `!who`,
+`!facts`, the memory commands — is configured in the **command-table** setting, one line per
+command, in the same shape:
+
+```
+name = on|off | local|chat|silent | optional template
+```
+
+- `on`/`off` switches the command off entirely.
+- `local` shows the answer in your own chat box, `chat` sends it to the server, `silent` answers
+  nothing visible.
+- The template is optional. Leave it blank and the command keeps its built-in wording; write one
+  and it replaces that wording, expanded with the same placeholders the rest of the assistant uses
+  (`{player}`, `{server}`, `{ping}`, `{tps}`, and so on).
+
+```
+hello = on | chat | o/
+gg = on | chat | gf
+who = on | local | {playercount} online right now
+facts = off | local
+```
+
+Read-only commands default to `local`, because most people asking their own client a question do
+not mean to broadcast it. `!hello` and `!gg` default to `chat`, since their whole purpose is to be
+seen. A command you never mention stays at its shipped default, so a saved table from an older
+version keeps working when new commands are added.
+
 ### Live status commands
 
 The same prefix answers live questions about the server and about you, so `!tps` in chat gets an
@@ -1550,3 +1579,25 @@ archive with in-memory doubles (no Minecraft runtime required):
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+### Starter knowledge
+
+A fresh install is not empty. The assistant ships with a short set of facts — what it is, what the
+prefix is, how memory works, how macros work, and that player-specific answers stay local — so the
+first question you ask gets a real answer instead of "I do not understand".
+
+These are ordinary facts: `!facts` lists them, `!forget` removes them, and `!remember` overwrites
+them. The seed is only written when the store has never held anything, so a fact you delete stays
+deleted rather than reappearing at the next launch.
+
+The assistant also answers from what it has stored. Ask a question naming a fact and it replies
+with that fact rather than guessing from its fixed corpus:
+
+```
+you: what is the prefix?
+bot: prefix: ! by default. Type !help for the command list.
+```
+
+Matching is on whole words, so `fact` does not match `factory`. If a question names two unrelated
+facts the assistant stays quiet rather than picking one, because a wrong answer it cannot flag is
+worse than no answer.

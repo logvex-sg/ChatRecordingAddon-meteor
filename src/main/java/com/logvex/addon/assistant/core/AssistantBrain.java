@@ -2,6 +2,7 @@ package com.logvex.addon.assistant.core;
 
 import com.logvex.addon.ai.core.AiEngine;
 import com.logvex.addon.stats.ServerStats;
+import com.logvex.addon.stats.StatusCommand;
 import com.logvex.addon.stats.StatusCommands;
 import com.logvex.addon.stats.StatusTemplate;
 
@@ -148,6 +149,13 @@ public final class AssistantBrain {
     /** The macro table, so {@code !macros} and {@code !macrohelp} can describe it. */
     private MacroSet macros = MacroSet.EMPTY;
 
+    /**
+     * Per-command configuration for the non-status prefix commands.
+     *
+     * <p>Null means "use the shipped defaults", which is what a caller that has no settings passes.
+     */
+    private java.util.Map<String, CommandDefaults.Entry> commandDefaults;
+
     public AssistantBrain(AssistantMemory memory) {
         this.memory = memory == null ? new AssistantMemory() : memory;
     }
@@ -155,6 +163,21 @@ public final class AssistantBrain {
     /** Replaces the macro table the help commands read. */
     public void setMacros(MacroSet macros) {
         this.macros = macros == null ? MacroSet.EMPTY : macros;
+    }
+
+    /** Replaces the per-command table; null restores the shipped defaults. */
+    public void setCommandDefaults(java.util.Map<String, CommandDefaults.Entry> entries) {
+        this.commandDefaults = entries;
+    }
+
+    /** The configured entry for {@code command}, or the shipped one, never null. */
+    private CommandDefaults.Entry commandEntry(String command) {
+        if (commandDefaults != null) {
+            CommandDefaults.Entry configured = commandDefaults.get(command);
+            if (configured != null) return configured;
+        }
+        return CommandDefaults.defaults().getOrDefault(command,
+            new CommandDefaults.Entry(command, true, CommandDefaults.defaultOutput(command), ""));
     }
 
     public MacroSet macros() {
@@ -327,7 +350,11 @@ public final class AssistantBrain {
         context.put("time", java.time.LocalTime.now()
             .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")));
 
-        String text = engine.respond(content, sender, context, now);
+        // Memory is consulted before the classifier. A stored fact is exact, user-authored and
+        // specific to this install, so it beats a guessed intent: if the user taught the assistant
+        // what "prefix" means, answering from the corpus instead would ignore their own data.
+        String text = recallReply(sender, content);
+        if (text == null) text = engine.respond(content, sender, context, now);
         if (text == null || text.isBlank()) return null;
         text = ResponseTemplate.expand(text, new ResponseTemplate.Context(
             sender, content, stats.server(), memory, now, stats));
@@ -345,6 +372,51 @@ public final class AssistantBrain {
         }
         return new Decision(delivery, text, null, false, remember, false);
     }
+
+    /**
+     * Answers from a stored fact when the line names one, or null to let the classifier decide.
+     *
+     * <p>Only a question-shaped line is answered this way. A bare mention is not a request: "the
+     * server lagged" must not make the assistant recite the server fact, so the line has to read as
+     * a question before memory is used. That keeps recall from turning every keyword in normal chat
+     * into an unsolicited lecture.
+     *
+     * <p>The reply names the fact it used, because an answer the user cannot trace back to their own
+     * stored text is one they cannot correct.
+     */
+    private String recallReply(String sender, String content) {
+        if (!looksLikeQuestion(content)) return null;
+        java.util.Optional<AssistantMemory.Fact> found = memory.recall(content);
+        if (found.isEmpty()) return null;
+        AssistantMemory.Fact fact = found.get();
+        if (fact.value() == null || fact.value().isBlank()) return null;
+        memory.incrementCounter("recalls", 1);
+        return fact.key() + ": " + fact.value();
+    }
+
+    /**
+     * True when {@code content} is phrased as a question.
+     *
+     * <p>A question mark or an interrogative opener is enough. This is deliberately shallow: it is a
+     * gate on using memory, not an attempt to parse English, and a false positive costs only a
+     * slightly eager answer while a false negative costs a missed one.
+     */
+    private static boolean looksLikeQuestion(String content) {
+        if (content == null) return false;
+        String text = content.strip().toLowerCase(java.util.Locale.ROOT);
+        if (text.isEmpty()) return false;
+        if (text.indexOf('?') >= 0) return true;
+        for (String opener : QUESTION_OPENERS) {
+            if (text.startsWith(opener + " ")) return true;
+        }
+        return false;
+    }
+
+    /** Openers that make a line a question even without a question mark. */
+    private static final String[] QUESTION_OPENERS = {
+        "what", "whats", "where", "when", "who", "why", "how", "which", "is", "are", "can",
+        "could", "do", "does", "did", "tell me", "explain", "any idea"
+    };
 
     // ------------------------------------------------------------------ triggers
 
@@ -439,11 +511,45 @@ public final class AssistantBrain {
         ChatActivity observed = activity == null ? new ChatActivity() : activity;
         Decision decision = dispatch(identity, canonical, word, rest, config, now, stats,
             statusSettings, observed, perms, requesterPing);
+        decision = applyCommandDefaults(canonical, identity, rest, decision, now, stats);
         if (decision == null) return null;
         // Only a command that actually ran is counted; a refusal is recorded separately so
         // `!activity` cannot report a command as used when the gate turned it away.
         if (decision.acts() && !decision.denied()) observed.recordCommand(canonical);
         return decision;
+    }
+
+    /**
+     * Applies the per-command table to an answer that has already been produced.
+     *
+     * <p>Applied after dispatch so the table can govern every command without each one having to
+     * consult it: the command still decides <em>what</em> it would say, and this decides whether it
+     * may say it and where it goes. A custom template replaces the wording entirely.
+     *
+     * <p>Status commands are left alone. They already have a table of their own that models output
+     * and wording together, and running a second table over them would give one command two
+     * competing configurations with no rule for which wins.
+     */
+    private Decision applyCommandDefaults(String canonical, SenderIdentity identity, String rest,
+                                          Decision decision, long now, ServerStats stats) {
+        if (StatusCommand.find(canonical).isPresent()) return decision;
+        CommandDefaults.Entry entry = commandEntry(canonical);
+        if (!entry.enabled()) return Decision.NONE;
+        if (decision == null || decision.denied() || decision.hasReport()) return decision;
+
+        String text = entry.customised()
+            ? ResponseTemplate.expand(entry.template(), new ResponseTemplate.Context(
+                identity.name(), rest, stats.server(), memory, now, stats))
+            : decision.text();
+        Delivery delivery = switch (entry.output()) {
+            case CHAT -> Delivery.CHAT;
+            case LOCAL -> Delivery.NOTIFY;
+            case SILENT -> Delivery.SILENT;
+        };
+        if (delivery == decision.delivery() && !entry.customised()) return decision;
+        return new Decision(delivery, text, decision.rule(), decision.sound(), decision.remember(),
+            decision.command(), decision.denied(), decision.embed(), decision.report(),
+            decision.statusCard());
     }
 
     /** The canonical command a configured stats verb refers to, or null. */
