@@ -7,8 +7,10 @@ import com.logvex.addon.assistant.core.AssistantConfig;
 import com.logvex.addon.assistant.core.AssistantMemory;
 import com.logvex.addon.assistant.core.AssistantRuntime;
 import com.logvex.addon.assistant.core.ChatActivity;
+import com.logvex.addon.assistant.core.ChatMacro;
 import com.logvex.addon.assistant.core.CommandPermission;
 import com.logvex.addon.assistant.core.GreetingPools;
+import com.logvex.addon.assistant.core.MacroSet;
 import com.logvex.addon.assistant.core.PermissionLevel;
 import com.logvex.addon.assistant.core.PermissionSet;
 import com.logvex.addon.assistant.core.ReplyFormat;
@@ -21,12 +23,15 @@ import com.logvex.addon.assistant.mc.AssistantService;
 import com.logvex.addon.automation.modules.AutomationModule;
 import com.logvex.addon.chatlog.core.ChatClassifier;
 import com.logvex.addon.chatlog.core.MessageType;
+import com.logvex.addon.chatlog.modules.WebhookRelayModule;
 import com.logvex.addon.common.Messages;
 import com.logvex.addon.stats.McServerStats;
 import com.logvex.addon.stats.SpeedTracker;
 import com.logvex.addon.stats.ServerStats;
-import com.logvex.addon.stats.StatsCommands;
+import com.logvex.addon.stats.StatusCommands;
+import com.logvex.addon.stats.StatusOutput;
 import meteordevelopment.meteorclient.events.game.ReceiveMessageEvent;
+import meteordevelopment.meteorclient.events.game.SendMessageEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import com.logvex.addon.framework.gui.GuiTheme;
 import com.logvex.addon.framework.gui.widgets.WWidget;
@@ -41,6 +46,7 @@ import meteordevelopment.meteorclient.settings.Setting;
 import meteordevelopment.meteorclient.settings.SettingGroup;
 import meteordevelopment.meteorclient.settings.StringListSetting;
 import meteordevelopment.meteorclient.settings.StringSetting;
+import meteordevelopment.meteorclient.systems.modules.Modules;
 import meteordevelopment.meteorclient.utils.player.ChatUtils;
 import com.logvex.addon.notify.core.NotificationType;
 import net.minecraft.sound.SoundEvents;
@@ -88,7 +94,8 @@ public class AssistantModule extends AutomationModule {
     private final SettingGroup sgMemory = settings.createGroup("Memory");
     private final SettingGroup sgAi = settings.createGroup("Local AI");
     private final SettingGroup sgLimits = settings.createGroup("Limits");
-    private final SettingGroup sgStats = settings.createGroup("Stats Commands");
+    private final SettingGroup sgStatus = settings.createGroup("Live Status");
+    private final SettingGroup sgMacros = settings.createGroup("Chat Command Macros");
     private final SettingGroup sgGreetings = settings.createGroup("Greetings");
     private final SettingGroup sgPermissions = settings.createGroup("Permissions");
 
@@ -125,92 +132,86 @@ public class AssistantModule extends AutomationModule {
         .build()
     );
 
-    // ------------------------------------------------------------------ stats commands
+    // ------------------------------------------------------------------ live status
 
-    private final Setting<Boolean> statsCommands = sgStats.add(new BoolSetting.Builder()
-        .name("stats-commands")
-        .description("Answer !ping, !tps, !stats and the other live server figures in chat.")
+    private final Setting<Boolean> statusEnabled = sgStatus.add(new BoolSetting.Builder()
+        .name("status-commands")
+        .description("Answer the live status commands: !status, !tps, !ping, !coords and the rest.")
         .defaultValue(true)
+        .onChanged(ignored -> rebuild())
         .build()
     );
 
-    private final Setting<String> pingCommand = sgStats.add(new StringSetting.Builder()
-        .name("ping-command")
-        .description("The word that reports latency.")
-        .defaultValue("ping")
-        .visible(statsCommands::get)
+    private final Setting<List<String>> statusLines = sgStatus.add(new StringListSetting.Builder()
+            .name("status-table")
+            .description("One command per line: name = on/off | local/chat | template. "
+                + "Reset to defaults to restore the shipped table.")
+            .defaultValue(defaultStatusLines())
+            .visible(statusEnabled::get)
+            .onChanged(ignored -> rebuild())
+            .build()
+        );
+
+    private final Setting<Boolean> statusChatConfirmation = sgStatus.add(new BoolSetting.Builder()
+        .name("chat-confirmation")
+        .description("Say a status answer in chat only after you confirm it, so a misconfigured "
+            + "command cannot flood the server.")
+        .defaultValue(false)
+        .visible(statusEnabled::get)
         .build()
     );
 
-    private final Setting<String> tpsCommand = sgStats.add(new StringSetting.Builder()
-        .name("tps-command")
-        .description("The word that reports the server's tick rate.")
-        .defaultValue("tps")
-        .visible(statsCommands::get)
+    private final Setting<Boolean> statusWebhook = sgStatus.add(new BoolSetting.Builder()
+        .name("status-webhook")
+        .description("Post a status card to the webhook when you run !status locally. "
+            + "Player-identifying figures are always left out of the card.")
+        .defaultValue(false)
+        .visible(statusEnabled::get)
         .build()
     );
 
-    private final Setting<String> statsCommand = sgStats.add(new StringSetting.Builder()
-        .name("stats-command")
-        .description("The word that reports every figure at once.")
-        .defaultValue("stats")
-        .visible(statsCommands::get)
+    private final Setting<Integer> statusRefreshSeconds = sgStatus.add(new IntSetting.Builder()
+        .name("refresh-seconds")
+        .description("How often the status preview refreshes, in seconds.")
+        .defaultValue(5)
+        .range(1, 60)
+        .sliderRange(1, 30)
+        .visible(statusEnabled::get)
         .build()
     );
 
-    private final Setting<String> coordsCommand = sgStats.add(new StringSetting.Builder()
-        .name("coords-command")
-        .description("The word that reports your position.")
-        .defaultValue("coords")
-        .visible(statsCommands::get)
+    // ------------------------------------------------------------------ chat command macros
+
+    private final Setting<Boolean> macrosEnabled = sgMacros.add(new BoolSetting.Builder()
+        .name("macros-enabled")
+        .description("Turn shortcuts you type into server commands. Nothing is sent until you type one.")
+        .defaultValue(true)
+        .onChanged(ignored -> rebuild())
         .build()
     );
 
-    private final Setting<String> healthCommand = sgStats.add(new StringSetting.Builder()
-        .name("health-command")
-        .description("The word that reports health and hunger.")
-        .defaultValue("health")
-        .visible(statsCommands::get)
+    private final Setting<List<String>> macroLines = sgMacros.add(new StringListSetting.Builder()
+            .name("macros")
+            .description("One macro per line: shortcut => command. Example: !spawn => /spawn")
+            .defaultValue(defaultMacroLines())
+            .visible(macrosEnabled::get)
+            .onChanged(ignored -> rebuild())
+            .build()
+        );
+
+    private final Setting<Boolean> macroFeedback = sgMacros.add(new BoolSetting.Builder()
+        .name("macro-feedback")
+        .description("Show a local note when a macro runs or is used wrongly.")
+        .defaultValue(true)
+        .visible(macrosEnabled::get)
         .build()
     );
 
-    private final Setting<String> fpsCommand = sgStats.add(new StringSetting.Builder()
-        .name("fps-command")
-        .description("The word that reports the frame rate.")
-        .defaultValue("fps")
-        .visible(statsCommands::get)
-        .build()
-    );
-
-    private final Setting<String> serverCommand = sgStats.add(new StringSetting.Builder()
-        .name("server-command")
-        .description("The word that reports the server name and session length.")
-        .defaultValue("server")
-        .visible(statsCommands::get)
-        .build()
-    );
-
-    private final Setting<String> timeCommand = sgStats.add(new StringSetting.Builder()
-        .name("time-command")
-        .description("The word that reports the in-game clock.")
-        .defaultValue("time")
-        .visible(statsCommands::get)
-        .build()
-    );
-
-    private final Setting<ServerStats.Detail> statsDetail = sgStats.add(new EnumSetting.Builder<ServerStats.Detail>()
-        .name("stats-detail")
-        .description("How much !stats reports: the short form or every figure.")
-        .defaultValue(ServerStats.Detail.BRIEF)
-        .visible(statsCommands::get)
-        .build()
-    );
-
-    private final Setting<String> statsSeparator = sgStats.add(new StringSetting.Builder()
-        .name("stats-separator")
-        .description("What to put between the figures in !stats.")
-        .defaultValue(" | ")
-        .visible(statsCommands::get)
+    private final Setting<Boolean> macroEchoCommand = sgMacros.add(new BoolSetting.Builder()
+        .name("echo-command")
+        .description("Show the expanded command in chat as if you typed it.")
+        .defaultValue(true)
+        .visible(macrosEnabled::get)
         .build()
     );
 
@@ -494,6 +495,23 @@ public class AssistantModule extends AutomationModule {
     private long sessionStart = System.currentTimeMillis();
     private final SpeedTracker speed = new SpeedTracker();
 
+    /**
+     * The macro table, rebuilt from the settings.
+     *
+     * <p>Separate from {@link #parsed} on purpose: a macro is a shortcut the local player types, and a
+     * trigger is a pattern matched against incoming chat. Sharing one table is how a macro would end up
+     * being answered as if a player had said it, so they are never mixed.
+     */
+    private MacroSet macros = MacroSet.EMPTY;
+    /**
+     * Set while this module is itself sending a line.
+     *
+     * <p>Every send this module makes goes through the same network handler the interception listens
+     * on, so without a guard a reply that happened to start with the prefix would be read back as a
+     * fresh command. The flag makes the re-entry impossible rather than merely unlikely.
+     */
+    private boolean sendingMacro;
+
     public AssistantModule() {
         super("assistant", "A configurable chat assistant with keyword triggers, persistent memory and a small local AI.");
         runtime = new AssistantRuntime(service.memory());
@@ -578,7 +596,7 @@ public class AssistantModule extends AutomationModule {
         SenderIdentity identity = identify(sender);
         AssistantBrain.Decision decision = runtime.handle(identity, content, now,
             McServerStats.snapshot(mc, now, sessionStart, speed.blocksPerSecond()),
-            statsOptions(), requesterPing(identity, sender));
+            statusSettings(), requesterPing(identity, sender));
         if (!decision.acts()) return;
         deliver(decision, sender);
         // Learning is deliberately conservative: the AI only absorbs a line it already understood, so
@@ -590,9 +608,62 @@ public class AssistantModule extends AutomationModule {
         }
     }
 
+    // ------------------------------------------------------------------ reports
+
+    /**
+     * Posts a report to the webhook, pinging the moderator role.
+     *
+     * <p>The decision carries {@code kind|reporter|reason}; splitting it here keeps the brain free of
+     * the webhook settings while still letting the permission gate run before anything is sent.
+     */
+    private boolean sendReport(String encoded, String fallbackSender) {
+        String[] parts = encoded.split("\\|", 3);
+        if (parts.length < 3) return false;
+        String kind = parts[0];
+        String reporter = parts[1].isBlank() ? fallbackSender : parts[1];
+        String reason = parts[2];
+
+        WebhookRelayModule relay = Modules.get().get(WebhookRelayModule.class);
+        if (relay == null || !relay.reportsAllowed()) return false;
+
+        return relay.sendReport(reporter, reason, kind, (success, message) -> {
+            if (!success) {
+                notifyUser(NotificationType.IMPORTANT_CHAT, config.name(),
+                    "Report could not be delivered: " + message);
+            }
+        });
+    }
+
+    /**
+     * Mirrors a local {@code !status} readout to the admin webhook, when one is configured.
+     *
+     * <p>Only the overview is pushed, and only when it was answered locally: a command already sent
+     * to public chat has been seen by everyone there, so posting it again adds nothing. The card goes
+     * to the admin webhook specifically because it carries the player's own figures.
+     */
+    private void pushStatusCard(AssistantBrain.Decision decision) {
+        WebhookRelayModule relay = Modules.get().get(WebhookRelayModule.class);
+        if (relay == null || !relay.adminStatusAllowed()) return;
+        relay.sendAdminStatus(McServerStats.snapshot(mc, System.currentTimeMillis(),
+            com.logvex.addon.LogClient.sessionStartMs()), null);
+    }
+
     // ------------------------------------------------------------------ delivery
 
     private void deliver(AssistantBrain.Decision decision, String sender) {
+        // A report replaces the brain's optimistic confirmation with what actually happened: the
+        // brain cannot know whether a webhook is configured, and "Report sent" when nothing was
+        // queued would be a lie the reporter cannot check.
+        boolean reported = !decision.hasReport() || sendReport(decision.report(), sender);
+        if (decision.hasReport() && !reported) {
+            notifyUser(NotificationType.IMPORTANT_CHAT, config.name(),
+                "Report not sent: the webhook is not configured. Tell a moderator another way.");
+            if (decision.sound()) playAlert();
+            return;
+        }
+        if (statusWebhook.get() && decision.hasStatusCard()) {
+            pushStatusCard(decision);
+        }
         switch (decision.delivery()) {
             case CHAT -> speakAll(decision);
             case NOTIFY -> {
@@ -647,7 +718,13 @@ public class AssistantModule extends AutomationModule {
         // Recorded before sending: the echo of this line must be recognised as ours when it
         // arrives, whatever its delivery mode.
         rememberOwnReply(trimmed);
-        ChatUtils.sendPlayerMsg(trimmed);
+        // Held across the send so the module never reads its own line back as a typed command.
+        sendingMacro = true;
+        try {
+            ChatUtils.sendPlayerMsg(trimmed);
+        } finally {
+            sendingMacro = false;
+        }
     }
 
     /**
@@ -772,21 +849,15 @@ public class AssistantModule extends AutomationModule {
         return profile == null || profile.getName() == null ? "" : profile.getName();
     }
 
-    /** The stats command settings as the core reads them. */
-    private StatsCommands.Options statsOptions() {
-        return new StatsCommands.Options(
-            statsCommands.get(),
-            pingCommand.get(),
-            tpsCommand.get(),
-            statsCommand.get(),
-            coordsCommand.get(),
-            healthCommand.get(),
-            fpsCommand.get(),
-            serverCommand.get(),
-            timeCommand.get(),
-            statsDetail.get(),
-            statsSeparator.get()
-        );
+    /** The live status settings as the core reads them. */
+    private StatusCommands.Settings statusSettings() {
+        if (!statusEnabled.get()) return new StatusCommands.Settings(false, null);
+        return new StatusCommands.Settings(true, StatusOutput.decodeAll(statusLines.get()));
+    }
+
+    /** The shipped status table, as configuration lines. */
+    private static List<String> defaultStatusLines() {
+        return StatusOutput.encodeAll(StatusOutput.defaultsAll());
     }
 
     /** Rebuilds the runtime's rules, config and permissions from the current settings. */
@@ -813,6 +884,178 @@ public class AssistantModule extends AutomationModule {
         runtime.setHelpEnabled(helpCommand.get());
         runtime.setGreetingPools(greetingPools());
         runtime.setGoodGameReply(goodGameReply.get());
+        macros = macrosEnabled.get()
+            ? MacroSet.decode(macroLines.get(), commandPrefix.get())
+            : MacroSet.EMPTY;
+        runtime.brain().setMacros(macros);
+    }
+
+    /** The default macro table, as configuration lines. */
+    private static List<String> defaultMacroLines() {
+        return ChatMacro.defaults().stream().map(ChatMacro::encode).toList();
+    }
+
+    /** The macro table as it stands, for the GUI and for a test. */
+    public MacroSet macroSet() {
+        return macros;
+    }
+
+    /** The raw macro configuration lines, as the setting holds them. */
+    public Setting<List<String>> macroLinesSetting() {
+        return macroLines;
+    }
+
+    /** The live status table, as the setting holds it. */
+    public Setting<List<String>> statusLinesSetting() {
+        return statusLines;
+    }
+
+    /** True when the status commands may answer at all. */
+    public boolean statusEnabled() {
+        return statusEnabled.get();
+    }
+
+    /** Adds a macro from one configuration line. Returns false when the line is not a macro. */
+    public boolean addMacro(String line) {
+        ChatMacro macro = ChatMacro.decode(line);
+        if (macro == null) return false;
+        List<String> updated = new ArrayList<>(macroLines.get());
+        updated.add(macro.encode());
+        macroLines.set(updated);
+        rebuild();
+        return true;
+    }
+
+    /**
+     * Replaces one line, leaving the rest in place.
+     *
+     * @return false when the line is not a macro or the index is out of range, so the caller can say
+     *         so rather than silently dropping the edit
+     */
+    public boolean replaceMacro(int index, String line) {
+        List<String> updated = new ArrayList<>(macroLines.get());
+        if (index < 0 || index >= updated.size()) return false;
+        ChatMacro macro = ChatMacro.decode(line);
+        if (macro == null) return false;
+        updated.set(index, macro.encode());
+        macroLines.set(updated);
+        rebuild();
+        return true;
+    }
+
+    public void removeMacro(int index) {
+        List<String> updated = new ArrayList<>(macroLines.get());
+        if (index < 0 || index >= updated.size()) return;
+        updated.remove(index);
+        macroLines.set(updated);
+        rebuild();
+    }
+
+    /** Restores the shipped macro table, discarding whatever the user had. */
+    public void restoreDefaultMacros() {
+        macroLines.set(defaultMacroLines());
+        rebuild();
+    }
+
+    /** Every spelling claimed by more than one macro, so the GUI can flag an ambiguous table. */
+    public List<String> macroDuplicates() {
+        return macros.duplicates();
+    }
+
+    // ------------------------------------------------------------------ chat command macros
+
+    /**
+     * Turns a shortcut the local player typed into the command it stands for.
+     *
+     * <p>This listens for the local player's own outgoing message and cancels it, then sends the
+     * expanded command instead. Cancelling is what keeps the shortcut out of chat: without it the
+     * literal {@code !spawn} would be posted and the server would see it as ordinary chat.
+     *
+     * <p>The handler is deliberately separate from {@link #onReceiveMessage}: that one reacts to other
+     * players, this one rewrites what the local player is about to say. Nothing here can match an
+     * incoming message, so a macro can never behave like an automatic response.
+     */
+    @EventHandler
+    private void onSendMessage(SendMessageEvent event) {
+        if (!isActive() || event == null) return;
+        if (!ready() || sendingMacro) return;
+
+        String message = event.message;
+        if (message == null) return;
+
+        // An assistant command typed by the local player has to be handled here: the receive path
+        // ignores the player's own messages, so `!mod`, `!macros` and the rest would otherwise never
+        // be answered. Commands win over macros, so a macro can never shadow `!mod`.
+        if (handleLocalCommand(event, message)) return;
+
+        if (!macrosEnabled.get()) return;
+        java.util.Optional<MacroSet.Call> found = macros.resolve(message);
+        if (found.isEmpty()) return;
+
+        // The shortcut must never reach the server, whether or not the command turns out to be
+        // sendable. Cancelling first means a failure cannot leak the raw text into chat.
+        event.cancel();
+
+        MacroSet.Call call = found.get();
+        ChatMacro macro = call.macro();
+        ChatMacro.Outcome outcome = macro.run(call.input());
+        if (!outcome.ok()) {
+            if (macroFeedback.get()) info("%s", outcome.problem());
+            return;
+        }
+        if (macros.wouldRecurse(macro, outcome.command())) {
+            if (macroFeedback.get()) {
+                info("Macro %s would send itself, so nothing was sent.", macro.shortcut());
+            }
+            return;
+        }
+        sendMacroCommand(outcome.command(), macro);
+    }
+
+    /**
+     * Runs an assistant command the local player typed, and cancels it so the shortcut is not sent.
+     *
+     * <p>Only a line the assistant actually answers is cancelled: an ordinary message, or a server
+     * command such as {@code /spawn}, passes straight through untouched.
+     *
+     * @return true when the message was an assistant command and has been consumed
+     */
+    private boolean handleLocalCommand(SendMessageEvent event, String message) {
+        if (!config.memoryCommands() || !message.startsWith(config.commandPrefix())) return false;
+        if (message.strip().equals(config.commandPrefix())) return false;
+
+        long now = System.currentTimeMillis();
+        SenderIdentity identity = mc.player == null
+            ? SenderIdentity.unverified(ownName)
+            : SenderIdentity.local(mc.player.getGameProfile().getName(), mc.player.getUuid());
+        AssistantBrain.Decision decision = runtime.handle(identity, message, now,
+            McServerStats.snapshot(mc, now, sessionStart, speed.blocksPerSecond()), statusSettings(), -1);
+        if (decision == null || !decision.acts()) return false;
+
+        event.cancel();
+        deliver(decision, identity.name());
+        return true;
+    }
+
+    /** Sends an expanded command, with the guard set so it cannot be read as another macro. */
+    private void sendMacroCommand(String command, ChatMacro macro) {
+        sendingMacro = true;
+        try {
+            if (macroEchoCommand.get()) {
+                ChatUtils.sendPlayerMsg(command);
+            } else {
+                // Sent without being echoed, so the command does not appear in local chat.
+                if (mc.getNetworkHandler() != null) {
+                    String bare = command.startsWith("/") ? command.substring(1) : command;
+                    mc.getNetworkHandler().sendChatCommand(bare);
+                }
+            }
+            if (macroFeedback.get()) info("%s -> %s", macro.shortcut(), command);
+        } catch (RuntimeException failure) {
+            if (macroFeedback.get()) info("Could not send %s.", macro.shortcut());
+        } finally {
+            sendingMacro = false;
+        }
     }
 
     /** The permission model as the current settings describe it. */
@@ -1102,7 +1345,7 @@ public class AssistantModule extends AutomationModule {
         SenderIdentity identity = identify(sender);
         AssistantBrain.Decision decision = runtime.handle(identity, content, now,
             McServerStats.snapshot(mc, now, sessionStart, speed.blocksPerSecond()),
-            statsOptions(), requesterPing(identity, sender));
+            statusSettings(), requesterPing(identity, sender));
         if (decision.acts()) deliver(decision, sender);
         return decision;
     }

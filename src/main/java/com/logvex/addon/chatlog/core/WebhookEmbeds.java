@@ -253,18 +253,15 @@ public final class WebhookEmbeds {
             return decorate(embed, style, MessageType.SYSTEM);
         }
 
-        embed.field("Server", server(s.server()), true);
-        embed.field("TPS", ServerStats.formatTps(s.tps()) + " / " + ServerStats.formatTps(ServerStats.TARGET_TPS), true);
-        embed.field("Ping", s.latency() < 0 ? "n/a" : s.latency() + " ms", true);
-        embed.field("Players", s.maxPlayers() > 0 ? s.players() + "/" + s.maxPlayers() : String.valueOf(s.players()), true);
-        embed.field("Uptime", ServerStats.formatUptime(s.uptimeMs()), true);
-        embed.field("FPS", String.valueOf(s.fps()), true);
-        embed.field("Dimension", s.dimension().isBlank() ? "?" : s.dimension(), true);
-        embed.field("Biome", s.biome().isBlank() ? "?" : s.biome(), true);
-        embed.field("World time", ServerStats.formatWorldTime(s.worldTime()), true);
-        embed.field("Health", String.format(java.util.Locale.ROOT, "%.1f/%.0f", s.health(), s.maxHealth()), true);
-        embed.field("Food", String.valueOf(s.food()), true);
-        embed.field("Position", String.format(java.util.Locale.ROOT, "%.0f, %.0f, %.0f", s.x(), s.y(), s.z()), true);
+        // Built from the same list the chat readout uses, so the card and the command can never
+        // disagree about a figure. The tick rate is the one field the card spells out against the
+        // target, because on a card there is room to show the ceiling it is measured against.
+        for (ServerStats.Line line : s.lines(ServerStats.Detail.FULL)) {
+            String value = "TPS".equals(line.label())
+                ? line.value() + " / " + ServerStats.formatTps(ServerStats.TARGET_TPS)
+                : line.value();
+            embed.field(line.label(), value, true);
+        }
         return decorate(embed, style, MessageType.SYSTEM);
     }
 

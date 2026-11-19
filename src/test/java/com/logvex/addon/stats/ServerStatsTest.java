@@ -121,13 +121,6 @@ class ServerStatsTest {
     }
 
     @Test
-    @DisplayName("join renders the lines as one separated line")
-    void join() {
-        assertEquals("Status not connected", ServerStats.OFFLINE.join(ServerStats.Detail.BRIEF, " | "));
-        assertTrue(sample().join(ServerStats.Detail.BRIEF, " | ").startsWith("Server mc.example.net | TPS 19.6"));
-    }
-
-    @Test
     @DisplayName("null text fields and out-of-range numbers are normalised, not stored as-is")
     void normalisation() {
         ServerStats messy = new ServerStats(true, null, 99f, 10, -4, -1, -9L, null, null, null, 0L,

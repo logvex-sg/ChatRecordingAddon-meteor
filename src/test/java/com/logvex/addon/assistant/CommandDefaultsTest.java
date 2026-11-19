@@ -103,4 +103,56 @@ class CommandDefaultsTest {
                 "!" + name + " should be available without a permission entry");
         }
     }
+
+    // ------------------------------------------------------------------ macro and report commands
+
+    @Test
+    @DisplayName("the macro and report commands are in the catalogue")
+    void macroAndReportCommandsExist() {
+        for (String name : List.of("macros", "macrohelp", "mod", "report", "who")) {
+            assertTrue(CommandCatalog.find(name).isPresent(), "missing command: !" + name);
+            assertEquals(name, CommandCatalog.canonical(name).orElseThrow());
+        }
+    }
+
+    @Test
+    @DisplayName("the documented macro and report aliases resolve to their commands")
+    void macroAndReportAliases() {
+        assertEquals("macros", CommandCatalog.canonical("shortcuts").orElseThrow());
+        assertEquals("macrohelp", CommandCatalog.canonical("macro").orElseThrow());
+        assertEquals("mod", CommandCatalog.canonical("mods").orElseThrow());
+        assertEquals("report", CommandCatalog.canonical("alert").orElseThrow());
+        assertEquals("who", CommandCatalog.canonical("onlineplayers").orElseThrow());
+        assertEquals("who", CommandCatalog.canonical("list").orElseThrow());
+    }
+
+    @Test
+    @DisplayName("reading the macro list does not need a permission entry")
+    void macroListIsPublic() {
+        assertEquals(com.logvex.addon.assistant.core.PermissionLevel.EVERYONE,
+            CommandCatalog.find("macros").orElseThrow().defaultLevel());
+        assertEquals(com.logvex.addon.assistant.core.PermissionLevel.EVERYONE,
+            CommandCatalog.find("macrohelp").orElseThrow().defaultLevel());
+    }
+
+    @Test
+    @DisplayName("a report is marked as writing, so it can be rate limited like other state changes")
+    void reportWrites() {
+        // Reporting posts to an external service; it is not a read-only figure like !ping.
+        assertTrue(CommandCatalog.find("report").orElseThrow().writes());
+        assertTrue(CommandCatalog.find("mod").orElseThrow().writes());
+        assertFalse(CommandCatalog.find("macros").orElseThrow().writes());
+    }
+
+    @Test
+    @DisplayName("no default trigger shadows the new commands")
+    void defaultsDoNotShadowNewCommands() {
+        for (TriggerRule rule : TriggerRule.defaults()) {
+            String pattern = rule.pattern().toLowerCase(Locale.ROOT).strip();
+            assertFalse(CommandCatalog.canonical(pattern)
+                    .filter(name -> List.of("macros", "macrohelp", "mod", "report", "who").contains(name))
+                    .isPresent(),
+                "default trigger '" + pattern + "' would shadow a command");
+        }
+    }
 }

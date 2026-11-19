@@ -446,32 +446,145 @@ so the three can never disagree.
 How the assistant answers these is controlled by `memory-reply-mode` (`chat`, `notify` or
 `silent`). The default, `notify`, keeps answers out of public chat.
 
-### Server stats commands
+### Live status commands
 
-The same prefix answers live server questions, so `!tps` in chat gets an answer without opening a
-menu. These run before the local AI, so a stats question never costs a model call. Every verb can be
-renamed or switched off in the **Stats** settings group, and the whole set has one on/off switch.
+The same prefix answers live questions about the server and about you, so `!tps` in chat gets an
+answer without opening a menu. These run before the local AI, so a status question never costs a
+model call.
+
+Each command is one entry in a table you can edit: its own on/off switch, its own output mode and
+its own template. Nothing is hardcoded, so a command can be reworded, renamed or switched off
+without touching the code. The whole set has one master switch in the **Live Status** settings
+group, and the **Status** tab previews every command as it would answer right now.
 
 | Command | Answer |
 | --- | --- |
-| `!ping` | **Your own** latency and a verdict, e.g. `Your ping is 42 ms (good).` |
-| `!tps` | The tick rate out of 20, with a `lagging` note when it is behind. |
-| `!stats` | Every figure the client can see, joined on one line. |
-| `!coords` | Position and dimension. |
-| `!health` | Health and food. |
-| `!fps` | The client's frame rate. |
-| `!server` | The server name and session length. |
-| `!players` | How many players the tab list shows. |
+| `!status` | The overview: server, tick rate, latency, player count and session length. |
+| `!ping` | **The requester's own** latency and a verdict, e.g. `Ping: 42ms (good)`. |
+| `!tps` | The tick rate out of 20 and the milliseconds per tick. |
+| `!mspt` | Only the milliseconds per tick. |
+| `!online` | Players on the server, with the maximum when the server sends one. |
+| `!who` | The players the tab list shows, as a wrapped list. |
 | `!uptime` | How long this session has been running. |
+| `!server` | The server name, address and whether it is single-player. |
+| `!coords` | Your position, rounded to whole blocks. |
+| `!location` | Dimension, biome and the direction you face. |
+| `!health` | Health, absorption and hunger. |
+| `!armor` | Your armour pieces and their remaining durability. |
+| `!held` | What is in each hand. |
+| `!effects` | Active potion effects, with their remaining time. |
+| `!target` | What you are looking at, or `nothing`. |
+| `!gamemode` | The game mode the server set for you. |
+| `!weather` | The weather the server reported. |
+| `!day` | The world's day number and the in-game clock. |
 | `!world` | The dimension and its name. |
+| `!fps` | The client's frame rate. |
+| `!memory` | The JVM's heap use. |
 | `!speed` | How fast you are moving, in blocks per second. |
-| `!time` | The in-game clock. |
+| `!about` | What the assistant itself is doing this session. |
 
-The `stats-detail` setting chooses between `brief` (connection figures only) and `full` (adds
-dimension, biome, health, position and memory), and `stats-separator` sets the text between the
-fields of `!stats`.
+#### Output modes
 
-`!stats` and the `server-stats` HUD read the same snapshot, so the two never disagree.
+Every command ships **local**, which means the answer appears as a notification and is never sent
+to the server. Set a command to `chat` to have it spoken once in public chat instead. The trade-off
+is the one you would expect: chat answers are visible to everyone on the server, so a local answer
+is the safe default.
+
+Some commands describe **you** — your position, gear, effects, target and connection. Those are
+always local, even if chat is selected, and they are refused for anyone but you. A stranger cannot
+ask this client where you are standing.
+
+#### Templates
+
+Each command has a template, and you can rewrite it. A placeholder in braces is replaced with the
+live value:
+
+```
+ping = on | local | Ping: {ping}ms ({verdict})
+coords = on | local | I am at {x}, {y}, {z} in the {dimension}
+```
+
+A figure the client cannot read becomes `n/a` rather than a plausible-looking zero, so a number on
+screen is always a measurement. An unknown placeholder is left as written, so a typo is visible
+instead of silently vanishing. The **Status** tab lists every placeholder with an example value.
+
+The per-command table also carries a rename: the fourth field changes the word the command answers
+to, so `ping = on | local | Ping: {ping}ms | latency` makes `!latency` work and `!ping` stop. A
+rename that would collide with another command's name is ignored rather than allowed to hijack it.
+
+#### The webhook card
+
+`!status` can also post a card to the **admin webhook** in the Webhook Relay module. This is a
+separate URL from the public webhook on purpose: a status card carries your own figures, and the
+public webhook may be readable by a whole Discord server. Leave the admin URL blank and nothing
+leaves the client.
+
+`!status` and the `server-stats` HUD read the same snapshot, so the two never disagree. The card is
+built from the same list as the chat readout for the same reason.
+
+`!who` reads names from the tab list, so a player who has never spoken is still listed. When a
+server reports a player count but hides the names, `!who` says so instead of claiming nobody is
+online.
+
+### Chat command macros
+
+A macro is a shortcut **you** type that becomes a server command. It is a different thing from a
+trigger: a trigger answers incoming chat, a macro rewrites your own outgoing message. They are
+separate types on purpose, so a macro can never be reached by another player's message and a
+trigger can never send a command.
+
+Macros are configured in the **Chat Command Macros** settings group or on the assistant screen's
+**Macros** tab. One line each:
+
+```text
+!tpa <player> => /tpa {player}
+!spawn => /spawn
+!msg <player> <message> => /msg {player} {message}
+```
+
+The part before `=>` is the usage: the shortcut, then its arguments. The part after is the command
+with placeholders in braces.
+
+| Form | Meaning |
+| --- | --- |
+| `<name>` | A required argument. |
+| `[name]` | An optional argument; a missing one is simply omitted. |
+| `{name}` | The value of that argument. |
+| `{message}` | Every remaining word, joined by single spaces. Must be last. |
+
+A trailing `;` section carries extras: `; what it does`, `; off` to disable it, and
+`; aliases=!hub,!l` to give it more spellings.
+
+When you type a shortcut the line is **cancelled** and the expanded command is sent instead, so the
+shortcut never reaches the server as chat. A macro that is misconfigured — no leading `/`, an
+unknown placeholder, a missing required argument, or too many arguments — refuses to send and
+explains itself instead. A macro whose command would be its own shortcut is blocked, so it cannot
+loop.
+
+| Command | Effect |
+| --- | --- |
+| `!macros` | List the enabled macros as a block, one row each. |
+| `!macrohelp <name>` | One macro's syntax, the command it sends and its aliases. |
+
+`macro-feedback` shows a local note when a macro runs or is refused. `echo-command` shows the
+expanded command in chat as if you had typed it; turn it off to send it silently.
+
+### Reports and moderator pings
+
+`!report` and `!mod` post a card to the Discord webhook configured in the **Webhook Relay** module
+and ping a role. This is the one place the addon pings anyone: captured chat never mentions a soul.
+
+| Command | Effect |
+| --- | --- |
+| `!report <what happened>` | Post a report card and ping the moderator role. |
+| `!mod <what you need>` | The same, titled as a moderator request. |
+
+Set `moderator-role-id` to a Discord role id (bare digits or the full `<@&…>` form). Only roles are
+allowed to parse, never `@everyone`, so a misconfigured report cannot mention the whole server.
+With no role set the card is posted without a mention — deliberately, rather than sending an
+`@here` that would render as dead text and look like a failed ping.
+
+`allow-reports` switches the feature off entirely; nothing is posted and nothing is queued.
 
 ### Chat features and command whitelist
 
