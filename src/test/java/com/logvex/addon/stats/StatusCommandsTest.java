@@ -390,4 +390,20 @@ class StatusCommandsTest {
     void whoOffline() {
         assertEquals("Not connected.", StatusCommands.who(ServerStats.OFFLINE));
     }
+
+    @Test
+    @DisplayName("a unit glued to a missing figure does not read as one, e.g. n/ams")
+    void missingFigureKeepsItsUnitApart() {
+        String text = StatusTemplate.expand("Ping {ping}ms", ServerStats.OFFLINE,
+            StatusTemplate.Context.EMPTY);
+        assertEquals("Ping n/a ms", text, "a glued unit must not turn the sentinel into n/ams");
+    }
+
+    @Test
+    @DisplayName("a missing server is n/a, not a bare question mark")
+    void missingServerIsNamed() {
+        assertEquals("n/a", ServerStats.OFFLINE.serverLabel());
+        assertEquals("single-player", new ServerStats(true, "", "", true, 20f, 0, 1, 1, 0L,
+            "", "", "", 0L, 0L, "", 0, 0L, 0L, List.of(), PlayerView.EMPTY).serverLabel());
+    }
 }

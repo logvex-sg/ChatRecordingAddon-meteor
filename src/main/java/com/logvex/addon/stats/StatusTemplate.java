@@ -167,6 +167,11 @@ public final class StatusTemplate {
                 out.append(template, i, close + 1);
             } else {
                 out.append(value);
+                // `{ping}ms` must not become `n/ams`, which reads as a unit of measurement.
+                if (UNAVAILABLE.equals(value) && close + 1 < template.length()
+                        && Character.isLetterOrDigit(template.charAt(close + 1))) {
+                    out.append(' ');
+                }
             }
             i = close + 1;
         }

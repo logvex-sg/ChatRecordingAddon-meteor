@@ -158,7 +158,7 @@ public record ServerStats(
     public String serverLabel() {
         if (!server.isBlank()) return server;
         if (!serverAddress.isBlank()) return serverAddress;
-        return singleplayer ? "single-player" : "?";
+        return singleplayer ? "single-player" : "n/a";
     }
 
     /** The weather word, or {@code n/a} when the client has not been told. */
