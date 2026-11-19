@@ -167,19 +167,30 @@ public class LogClient extends MeteorAddon {
         Modules.registerCategory(CATEGORY);
     }
 
-    /** Flushes the addon configuration and releases every service's resources at client shutdown. */
+    /**
+     * Flushes the addon configuration and releases every service's resources at client shutdown.
+     *
+     * <p>Each step is isolated. This runs from a JVM shutdown hook, where a thrown exception aborts
+     * the remainder of the hook: without the guards, one failing service would stop every later
+     * service from writing its data, and the loss would be silent.
+     */
     public static void shutdown() {
+        flush("config", () -> com.logvex.addon.framework.systems.config.ConfigManager.get().save());
+        flush("session-timeline", () -> com.logvex.addon.chatlog.mc.SessionTimelineService.get().shutdown());
+        flush("player-identity", () -> com.logvex.addon.chatlog.mc.PlayerIdentityService.get().shutdown());
+        flush("world", () -> com.logvex.addon.world.mc.WorldService.get().shutdown());
+        flush("assistant", () -> com.logvex.addon.assistant.mc.AssistantService.get().shutdown());
+        flush("ai", () -> com.logvex.addon.ai.mc.AiService.get().shutdown());
+        flush("update", () -> com.logvex.addon.update.mc.UpdateService.get().engine().shutdown());
+    }
+
+    /** Runs one shutdown step, logging rather than propagating a failure. */
+    private static void flush(String what, Runnable step) {
         try {
-            com.logvex.addon.framework.systems.config.ConfigManager.get().save();
-        } catch (RuntimeException e) {
-            LOG.warn("Could not flush the addon config on shutdown", e);
+            step.run();
+        } catch (RuntimeException | LinkageError e) {
+            LOG.warn("Could not flush '{}' on shutdown; continuing with the rest", what, e);
         }
-        com.logvex.addon.chatlog.mc.SessionTimelineService.get().shutdown();
-        com.logvex.addon.chatlog.mc.PlayerIdentityService.get().shutdown();
-        com.logvex.addon.world.mc.WorldService.get().shutdown();
-        com.logvex.addon.assistant.mc.AssistantService.get().shutdown();
-        com.logvex.addon.ai.mc.AiService.get().shutdown();
-        com.logvex.addon.update.mc.UpdateService.get().engine().shutdown();
     }
 
     @Override

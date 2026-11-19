@@ -211,6 +211,7 @@ public final class WorldService {
     /** Flushes the database and stops the writer. Called once at shutdown. */
     public void shutdown() {
         if (loaded) io.execute(() -> WorldStore.save(dataDir(), intelligence));
-        io.shutdown();
+        // The writer is a daemon thread: without waiting, the JVM exits and the save above is lost.
+        com.logvex.addon.common.ShutdownFlush.await(io);
     }
 }

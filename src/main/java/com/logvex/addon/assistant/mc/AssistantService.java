@@ -101,7 +101,8 @@ public final class AssistantService {
             AssistantMemory snapshot = memory.copy();
             io.execute(() -> store.save(snapshot));
         }
-        io.shutdown();
+        // The writer is a daemon thread: without waiting, the JVM exits and the save above is lost.
+        com.logvex.addon.common.ShutdownFlush.await(io);
     }
 
     /**
