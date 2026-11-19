@@ -60,8 +60,12 @@ statistics, notifications, the automation task queue, waypoints and schematic co
 ./gradlew clean test build
 ```
 
-The jar is written to `build/libs/log-client-17.2.0.jar`. Drop it into `.minecraft/mods` alongside
-Meteor Client. Baritone is optional and only affects bot navigation.
+The jar is written to `build/libs/log-client-<version>.jar`, where the version comes from
+`mod_version` in `gradle.properties`. Drop it into `.minecraft/mods` alongside Meteor Client.
+Baritone is optional and only affects bot navigation.
+
+The version is read at runtime from the jar's own `fabric.mod.json`, so there is nothing else to
+update when bumping `mod_version` — the GUI rail, the updater and the companion API all follow it.
 
 ### Java 21 is required for the Gradle daemon
 
