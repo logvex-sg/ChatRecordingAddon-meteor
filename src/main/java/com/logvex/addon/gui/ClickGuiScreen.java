@@ -325,10 +325,14 @@ public class ClickGuiScreen extends WidgetScreen {
         }
 
         add(theme.horizontalSeparator("Command prefix")).expandX();
-        WTextBox prefix = add(theme.textBox(ClientConfig.get().prefix(), "e.g. .")).expandX().widget();
+        add(theme.label("Log Client commands only, e.g. " + ClientConfig.get().prefix()
+            + "log gui. Meteor's own commands use Meteor's prefix.")
+            .color(theme.muted)).expandX();
+        WTextBox prefix = add(theme.textBox(ClientConfig.get().prefix(), "e.g. !")).expandX().widget();
         prefix.action = () -> {
             ClientConfig.get().setPrefix(prefix.get());
             ConfigManager.get().markDirty();
+            reload();
         };
     }
 

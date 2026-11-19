@@ -55,6 +55,9 @@ public class LogClient extends MeteorAddon {
         // config on Meteor's own tick and render events.
         LogClientContext.EVENT_BUS.subscribe(new ChatRecorder());
         LogClientContext.EVENT_BUS.subscribe(new com.logvex.addon.framework.AddonEvents());
+        // Subscribed before any command can be typed so `!log ...` is intercepted from the first
+        // message, not only after some other event happens to build the router.
+        LogClientContext.EVENT_BUS.subscribe(new com.logvex.addon.framework.AddonCommandRouter());
         com.logvex.addon.chatlog.mc.ChatFilterService.get().init(LogClientContext.EVENT_BUS);
         com.logvex.addon.chatlog.mc.SessionTimelineService.get().init(LogClientContext.EVENT_BUS);
         com.logvex.addon.chatlog.mc.PlayerIdentityService.get().init(LogClientContext.EVENT_BUS);

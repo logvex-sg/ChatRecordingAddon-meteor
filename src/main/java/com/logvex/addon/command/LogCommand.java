@@ -183,7 +183,7 @@ public class LogCommand extends Command {
 
         builder.then(literal("import")
             .executes(context -> {
-                info("Usage: (highlight).log import <file>(default).");
+                info("Usage: (highlight)" + pfx() + "log import <file>(default).");
                 return SINGLE_SUCCESS;
             })
             .then(argument("path", StringArgumentType.greedyString()).executes(context -> {
@@ -193,7 +193,7 @@ public class LogCommand extends Command {
 
         builder.then(literal("importlog")
             .executes(context -> {
-                info("Usage: (highlight).log importlog <file>(default).");
+                info("Usage: (highlight)" + pfx() + "log importlog <file>(default).");
                 return SINGLE_SUCCESS;
             })
             .then(argument("path", StringArgumentType.greedyString()).executes(context -> {
@@ -514,35 +514,40 @@ public class LogCommand extends Command {
 
     // ------------------------------------------------------------------ sections
 
+    /** The addon's configured command prefix, so this list matches what the user actually types. */
+    private static String pfx() {
+        return com.logvex.addon.framework.systems.config.ClientConfig.get().prefix();
+    }
+
     private void help() {
         info("Log Client commands:");
-        info("  (highlight).log gui(default) - open the addon window.");
-        info("  (highlight).log status(default) - overall status.");
-        info("  (highlight).log modules(default) - list Log Client modules.");
-        info("  (highlight).log stats(default) - session statistics.");
-        info("  (highlight).log record <on|off>(default) - toggle chat recording.");
-        info("  (highlight).log notifications [count|clear](default) - recent notifications.");
-        info("  (highlight).log tasks [list|start|pause|resume|stop|clear](default) - the bot queue.");
-        info("  (highlight).log tasks add <type> <item> [amount](default) - queue a task.");
-        info("  (highlight).log waypoints [list|add <name>](default) - bot waypoints.");
-        info("  (highlight).log import <file>(default) - import a material list.");
-        info("  (highlight).log importlog <file>(default) - import a chat log into the archive.");
-        info("  (highlight).log alerts [count|clear](default) - recent keyword/webhook/error alerts.");
-        info("  (highlight).log playtime [player](default) - observed player session durations.");
-        info("  (highlight).log schematic [status|load <path>|start|pause|resume|stop](default).");
-        info("  (highlight).log acquire [start|pause|resume|stop|status|retry|import <path>](default) - Creative material acquisition.");
-        info("  (highlight).log digest(default) - summarise recent chat activity.");
-        info("  (highlight).log timeline [filter](default) - recent session milestones.");
-        info("  (highlight).log filter [stats|reset](default) - chat filter status.");
-        info("  (highlight).log notes [list|add <player> <text>|remove <player>|search <filter>](default).");
-        info("  (highlight).log identities [renamed|watch|unwatch|watchlist|clear|<filter>](default) - observed name changes.");
-        info("  (highlight).log sessions [list|clear](default) - past recording sessions.");
-        info("  (highlight).log webhook [status|test|preview|digest|leaderboard|profile <player>|set <url>|accent <name>](default) - webhook embeds.");
-        info("  (highlight).log companion [status|start|stop|token|regenerate|gui](default) - the companion web app.");
-        info("  (highlight).log update [status|check|download|channel <stable|beta>|gui](default) - GitHub release updates.");
-        info("  (highlight).log world [status|map|places [query]|nearest [category]|mark <name>|export](default) - world intelligence.");
-        info("  (highlight).log web(default) - open the local web console in your browser.");
-        info("  (highlight).ai [status|triggers|facts|remember|forget|test|gui](default) - the chat assistant.");
+        info("  (highlight)" + pfx() + "log gui(default) - open the addon window.");
+        info("  (highlight)" + pfx() + "log status(default) - overall status.");
+        info("  (highlight)" + pfx() + "log modules(default) - list Log Client modules.");
+        info("  (highlight)" + pfx() + "log stats(default) - session statistics.");
+        info("  (highlight)" + pfx() + "log record <on|off>(default) - toggle chat recording.");
+        info("  (highlight)" + pfx() + "log notifications [count|clear](default) - recent notifications.");
+        info("  (highlight)" + pfx() + "log tasks [list|start|pause|resume|stop|clear](default) - the bot queue.");
+        info("  (highlight)" + pfx() + "log tasks add <type> <item> [amount](default) - queue a task.");
+        info("  (highlight)" + pfx() + "log waypoints [list|add <name>](default) - bot waypoints.");
+        info("  (highlight)" + pfx() + "log import <file>(default) - import a material list.");
+        info("  (highlight)" + pfx() + "log importlog <file>(default) - import a chat log into the archive.");
+        info("  (highlight)" + pfx() + "log alerts [count|clear](default) - recent keyword/webhook/error alerts.");
+        info("  (highlight)" + pfx() + "log playtime [player](default) - observed player session durations.");
+        info("  (highlight)" + pfx() + "log schematic [status|load <path>|start|pause|resume|stop](default).");
+        info("  (highlight)" + pfx() + "log acquire [start|pause|resume|stop|status|retry|import <path>](default) - Creative material acquisition.");
+        info("  (highlight)" + pfx() + "log digest(default) - summarise recent chat activity.");
+        info("  (highlight)" + pfx() + "log timeline [filter](default) - recent session milestones.");
+        info("  (highlight)" + pfx() + "log filter [stats|reset](default) - chat filter status.");
+        info("  (highlight)" + pfx() + "log notes [list|add <player> <text>|remove <player>|search <filter>](default).");
+        info("  (highlight)" + pfx() + "log identities [renamed|watch|unwatch|watchlist|clear|<filter>](default) - observed name changes.");
+        info("  (highlight)" + pfx() + "log sessions [list|clear](default) - past recording sessions.");
+        info("  (highlight)" + pfx() + "log webhook [status|test|preview|digest|leaderboard|profile <player>|set <url>|accent <name>](default) - webhook embeds.");
+        info("  (highlight)" + pfx() + "log companion [status|start|stop|token|regenerate|gui](default) - the companion web app.");
+        info("  (highlight)" + pfx() + "log update [status|check|download|channel <stable|beta>|gui](default) - GitHub release updates.");
+        info("  (highlight)" + pfx() + "log world [status|map|places [query]|nearest [category]|mark <name>|export](default) - world intelligence.");
+        info("  (highlight)" + pfx() + "log web(default) - open the local web console in your browser.");
+        info("  (highlight)" + pfx() + "ai [status|triggers|facts|remember|forget|test|gui](default) - the chat assistant.");
     }
 
     private void status() {
@@ -738,7 +743,7 @@ public class LogCommand extends Command {
         }
         List<BotMemory.Waypoint> waypoints = bot.memory().waypoints();
         if (waypoints.isEmpty()) {
-            info("No waypoints recorded. Stand somewhere and use (highlight).log waypoints add <name>(default).");
+            info("No waypoints recorded. Stand somewhere and use (highlight)" + pfx() + "log waypoints add <name>(default).");
             return;
         }
         info("%d waypoint%s:", waypoints.size(), waypoints.size() == 1 ? "" : "s");
@@ -779,7 +784,7 @@ public class LogCommand extends Command {
             return;
         }
         if (!module.buildController().hasSchematic()) {
-            info("No schematic loaded. Use (highlight).log schematic load <path>(default).");
+            info("No schematic loaded. Use (highlight)" + pfx() + "log schematic load <path>(default).");
             return;
         }
         com.logvex.addon.schematicdropper.core.ProgressSnapshot snapshot = module.snapshot();
@@ -1161,7 +1166,7 @@ public class LogCommand extends Command {
     private void watchlist() {
         var watchlist = com.logvex.addon.chatlog.mc.LogService.get().watchlist();
         if (watchlist.isEmpty()) {
-            info("The watchlist is empty. Use (highlight).log identities watch <player>(default).");
+            info("The watchlist is empty. Use (highlight)" + pfx() + "log identities watch <player>(default).");
             return;
         }
         info("Watching %d player%s: %s", watchlist.size(), watchlist.size() == 1 ? "" : "s",
@@ -1202,11 +1207,11 @@ public class LogCommand extends Command {
             return;
         }
         if (!module.isActive()) {
-            info("The companion is off. Use .log companion start to turn it on.");
+            info("The companion is off. Use " + pfx() + "log companion start to turn it on.");
             return;
         }
         if (!module.isRunning()) {
-            warning("The companion is on but not listening. Use .log companion start to retry.");
+            warning("The companion is on but not listening. Use " + pfx() + "log companion start to retry.");
             return;
         }
         info("Companion listening on port %d with %s connected.",
@@ -1284,7 +1289,7 @@ public class LogCommand extends Command {
         info("%s", snapshot.statusLine());
         info("Last checked: %s.", snapshot.lastCheckedText());
         if (snapshot.hasUpdate()) {
-            info("Use (highlight).log update download(default) to fetch %s.", snapshot.latestVersion());
+            info("Use (highlight)" + pfx() + "log update download(default) to fetch %s.", snapshot.latestVersion());
         }
     }
 
@@ -1302,7 +1307,7 @@ public class LogCommand extends Command {
     private void updateDownload() {
         var snapshot = com.logvex.addon.update.mc.UpdateService.get().snapshot();
         if (!snapshot.hasUpdate()) {
-            warning("No update is available to download. Run (highlight).log update check(default) first.");
+            warning("No update is available to download. Run (highlight)" + pfx() + "log update check(default) first.");
             return;
         }
         com.logvex.addon.update.mc.UpdateService.get().download();
@@ -1354,7 +1359,7 @@ public class LogCommand extends Command {
         }
         String url = module.url();
         info("Web console listening on port %d.", module.boundPort());
-        info("Open %s in a browser. The access token is under (highlight).log companion token(default).", url);
+        info("Open %s in a browser. The access token is under (highlight)" + pfx() + "log companion token(default).", url);
         try {
             net.minecraft.util.Util.getOperatingSystem().open(java.net.URI.create(url));
         } catch (RuntimeException e) {
@@ -1375,7 +1380,7 @@ public class LogCommand extends Command {
             return;
         }
         if (!relay.configured()) {
-            info("No webhook configured. Use (highlight).log webhook set <url>(default).");
+            info("No webhook configured. Use (highlight)" + pfx() + "log webhook set <url>(default).");
             return;
         }
         info("Webhook relay: %s, accent %s, %s",

@@ -227,20 +227,25 @@ public class AssistantCommand extends Command {
             })));
     }
 
+    /** The addon's configured command prefix, so this list matches what the user actually types. */
+    private static String pfx() {
+        return com.logvex.addon.framework.systems.config.ClientConfig.get().prefix();
+    }
+
     private void help() {
         info("Assistant commands:");
-        info("  (highlight).ai status(default) - assistant state and memory summary.");
-        info("  (highlight).ai gui(default) - open the assistant manager.");
-        info("  (highlight).ai triggers [list|add <pattern> <reply>|remove <n>|restore](default).");
-        info("  (highlight).ai facts(default) - list remembered facts.");
-        info("  (highlight).ai remember <key> <value>(default) - store a fact.");
-        info("  (highlight).ai forget <key>(default) - remove a fact.");
-        info("  (highlight).ai test <message>(default) - see what the assistant would do.");
-        info("  (highlight).ai history(default) - recent remembered exchanges.");
-        info("  (highlight).ai model [status|ask <text>|teach <intent> <example>|save](default).");
-        info("  (highlight).ai placeholders(default) - every placeholder a reply can use.");
-        info("  (highlight).ai perms [list|gui|set|allow|deny|admin|reset](default) - who may run each command.");
-        info("  (highlight).ai clear(default) - clear all memory.");
+        info("  (highlight)" + pfx() + "ai status(default) - assistant state and memory summary.");
+        info("  (highlight)" + pfx() + "ai gui(default) - open the assistant manager.");
+        info("  (highlight)" + pfx() + "ai triggers [list|add <pattern> <reply>|remove <n>|restore](default).");
+        info("  (highlight)" + pfx() + "ai facts(default) - list remembered facts.");
+        info("  (highlight)" + pfx() + "ai remember <key> <value>(default) - store a fact.");
+        info("  (highlight)" + pfx() + "ai forget <key>(default) - remove a fact.");
+        info("  (highlight)" + pfx() + "ai test <message>(default) - see what the assistant would do.");
+        info("  (highlight)" + pfx() + "ai history(default) - recent remembered exchanges.");
+        info("  (highlight)" + pfx() + "ai model [status|ask <text>|teach <intent> <example>|save](default).");
+        info("  (highlight)" + pfx() + "ai placeholders(default) - every placeholder a reply can use.");
+        info("  (highlight)" + pfx() + "ai perms [list|gui|set|allow|deny|admin|reset](default) - who may run each command.");
+        info("  (highlight)" + pfx() + "ai clear(default) - clear all memory.");
     }
 
     private void placeholders() {
