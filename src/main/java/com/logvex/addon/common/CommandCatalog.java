@@ -131,6 +131,10 @@ public final class CommandCatalog {
             "Bot waypoints."),
         new Entry(Group.AUTOMATION, "log import <file>",
             "Import a material list."),
+        new Entry(Group.AUTOMATION, "autologin [status|on|off|test|servers]",
+            "Auto Login: answers a server's /login prompt with the stored password."),
+        new Entry(Group.AUTOMATION, "autologin [gui|clear|clearall]",
+            "Where the password goes: set it in a masked field, or clear stored ones."),
 
         // Schematics & building ---------------------------------------------------------------
         new Entry(Group.BUILD, "log schematic [status|load|start|pause|resume|stop]",

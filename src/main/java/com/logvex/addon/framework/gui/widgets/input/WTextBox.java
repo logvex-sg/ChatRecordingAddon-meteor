@@ -25,10 +25,27 @@ public class WTextBox extends WWidget {
     private boolean focused;
     private int cursor;
     private final Animator fillAnim = Animator.of(0);
+    private boolean masked;
 
     public WTextBox(String text, String placeholder) {
         setText(text);
         this.placeholder = placeholder == null ? "" : placeholder;
+    }
+
+    /**
+     * Masks the field, drawing bullets instead of the text.
+     *
+     * <p>For a password: the screen, a screenshot or a stream must not show it. The value is still
+     * readable through {@link #get()}, so only the rendering changes.
+     */
+    public WTextBox masked() {
+        this.masked = true;
+        return this;
+    }
+
+    /** A field showing {@code length} bullets, for a caret position without exposing the text. */
+    private String displayText() {
+        return masked ? "\u2022".repeat(text.length()) : text;
     }
 
     public String get() {
@@ -86,7 +103,8 @@ public class WTextBox extends WWidget {
         }
 
         var tr = MinecraftClient.getInstance().textRenderer;
-        String shown = text.isEmpty() && !focused ? placeholder : text;
+        String display = displayText();
+        String shown = text.isEmpty() && !focused ? placeholder : display;
         int color = theme == null ? 0xFFE0E0E0 : Render2D.argb(theme.text);
         if (text.isEmpty() && !focused) color = theme == null ? 0xFF808080 : Render2D.argb(theme.muted, 200);
         context.drawTextWithShadow(tr, shown, (int) x + 5, (int) y + 4, color);
@@ -94,7 +112,8 @@ public class WTextBox extends WWidget {
         if (focused) {
             // A caret that blinks on a one-second cycle so it reads as a live cursor.
             if ((AnimationClock.time() % 1.0) < 0.5) {
-                int caretX = (int) x + 5 + tr.getWidth(text.substring(0, Math.min(cursor, text.length())));
+                int caretX = (int) x + 5
+                    + tr.getWidth(display.substring(0, Math.min(cursor, display.length())));
                 Render2D.rect(context, caretX, y + 3, 1, height - 6, Render2D.argb(theme == null
                     ? new meteordevelopment.meteorclient.utils.render.color.Color(224, 224, 224) : theme.accent));
             }

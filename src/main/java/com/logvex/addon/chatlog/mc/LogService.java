@@ -303,6 +303,14 @@ public final class LogService {
     public boolean record(ChatEntry entry) {
         if (entry == null || !shouldRecord(entry.type())) return false;
 
+        // A password the client sent, or one a server echoed back, must never reach the archive,
+        // the export or a webhook. Redaction happens before anything stores the entry.
+        String content = com.logvex.addon.common.SecretRedactor.redact(entry.content());
+        if (!content.equals(entry.content())) {
+            entry = new ChatEntry(entry.timestamp(), entry.type(), entry.sender(), content,
+                entry.server(), entry.sessionId());
+        }
+
         ChatEntry stamped = entry;
         if (entry.sessionId().isBlank() && session != null) {
             stamped = new ChatEntry(entry.timestamp(), entry.type(), entry.sender(), entry.content(),
