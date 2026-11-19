@@ -91,6 +91,8 @@ public class LogClient extends MeteorAddon {
         Modules.get().add(new com.logvex.addon.automation.modules.AutoLogModule());
         Modules.get().add(new com.logvex.addon.automation.modules.AutoReconnectModule());
         Modules.get().add(new com.logvex.addon.automation.modules.AutoLoginModule());
+        Modules.get().add(new com.logvex.addon.automation.modules.WatchlistAlertsModule());
+        Modules.get().add(new com.logvex.addon.automation.modules.DeathTrackerModule());
         Modules.get().add(new com.logvex.addon.automation.modules.ServerMonitorModule());
 
         // Keep the existing Schematic Dropper module and its HUD.
@@ -160,6 +162,7 @@ public class LogClient extends MeteorAddon {
         meteordevelopment.meteorclient.commands.Commands.add(new com.logvex.addon.command.PrefixCommand());
         meteordevelopment.meteorclient.commands.Commands.add(new com.logvex.addon.command.ChatQueryCommand());
         meteordevelopment.meteorclient.commands.Commands.add(new com.logvex.addon.command.AutoLoginCommand());
+        meteordevelopment.meteorclient.commands.Commands.add(new com.logvex.addon.command.DeathsCommand());
     }
 
     @Override

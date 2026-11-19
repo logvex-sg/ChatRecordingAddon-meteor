@@ -1,5 +1,6 @@
 package com.logvex.addon.command;
 
+import com.logvex.addon.assistant.core.ReplyFormat;
 import com.logvex.addon.bot.BotModule;
 import com.logvex.addon.bot.core.BlockPos3;
 import com.logvex.addon.bot.core.BotMemory;
@@ -11,6 +12,7 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import net.minecraft.command.CommandSource;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -207,12 +209,17 @@ public class BotCommand extends Command {
             error("The bot module is not available.");
             return;
         }
-        info("Automation: %s", bot.statusLine());
-        info("Queue: %d, navigation: %s.", bot.controller().queue().size(), bot.navigationBackend());
+        List<ReplyFormat.Field> fields = new ArrayList<>();
+        fields.add(new ReplyFormat.Field("Automation", bot.statusLine()));
+        fields.add(new ReplyFormat.Field("Queue",
+            bot.controller().queue().size() + " task" + (bot.controller().queue().size() == 1 ? "" : "s")));
+        fields.add(new ReplyFormat.Field("Navigation", bot.navigationBackend()));
         BlockPos3 target = bot.navTarget();
         if (target != null) {
-            info("Destination: %s (%.1f blocks away).", target, bot.navDistance());
+            fields.add(new ReplyFormat.Field("Destination",
+                target + "  " + String.format(java.util.Locale.ROOT, "%.1f blocks away", bot.navDistance())));
         }
+        CommandOutput.send(this, "Bot", fields);
     }
 
     private void action(String action) {
@@ -252,17 +259,17 @@ public class BotCommand extends Command {
         if (queue.isEmpty()) {
             info("The task queue is empty.");
         } else {
-            info("%d queued task%s:", queue.size(), queue.size() == 1 ? "" : "s");
+            List<ReplyFormat.Field> fields = new ArrayList<>();
             int shown = 0;
             for (BotTask task : queue.tasks()) {
-                if (shown++ >= 20) {
-                    info("  ... and %d more.", queue.size() - 20);
-                    break;
-                }
-                info("  #%d %s %s (%d/%d) %s", task.id(), task.type(),
-                    task.label().isBlank() ? task.itemId() : task.label(),
-                    task.progress(), task.required(), task.state());
+                if (shown++ >= 20) break;
+                fields.add(new ReplyFormat.Field("#" + task.id(),
+                    task.type() + " " + (task.label().isBlank() ? task.itemId() : task.label())
+                        + " (" + task.progress() + "/" + task.required() + ") " + task.state()));
             }
+            int hidden = queue.size() - fields.size();
+            CommandOutput.sendList(this, "Queued tasks (" + queue.size() + ")", fields,
+                hidden > 0 ? "and " + hidden + " more" : "");
         }
     }
 
@@ -310,10 +317,11 @@ public class BotCommand extends Command {
             info("No waypoints saved.");
             return;
         }
-        info("%d waypoint%s:", waypoints.size(), waypoints.size() == 1 ? "" : "s");
+        List<ReplyFormat.Field> fields = new ArrayList<>();
         for (BotMemory.Waypoint waypoint : waypoints) {
-            info("  %s %s", waypoint.name(), waypoint.describe());
+            fields.add(new ReplyFormat.Field(waypoint.name(), waypoint.describe()));
         }
+        CommandOutput.sendList(this, "Waypoints (" + waypoints.size() + ")", fields, "");
     }
 
     private void listProfiles() {
@@ -327,10 +335,11 @@ public class BotCommand extends Command {
             info("No profiles available.");
             return;
         }
-        info("%d profile%s:", profiles.size(), profiles.size() == 1 ? "" : "s");
+        List<ReplyFormat.Field> fields = new ArrayList<>();
         for (BotProfile profile : profiles) {
-            info("  %s%s (%d settings)", profile.name(), profile.builtin() ? " [built-in]" : "",
-                profile.size());
+            fields.add(new ReplyFormat.Field(profile.name(),
+                (profile.builtin() ? "built-in, " : "") + profile.size() + " settings"));
         }
+        CommandOutput.sendList(this, "Profiles (" + profiles.size() + ")", fields, "");
     }
 }

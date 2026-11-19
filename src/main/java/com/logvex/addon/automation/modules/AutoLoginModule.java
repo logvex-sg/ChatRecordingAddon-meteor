@@ -225,21 +225,34 @@ public class AutoLoginModule extends AutomationModule {
     }
 
     /**
-     * The module's own controls: a masked password field and the buttons that manage it.
+     * The module's own controls: a password field for the current server and a list of every server
+     * that already has one.
      *
-     * <p>The field is masked because this is the one place a user types the password, and the
-     * settings screen is exactly what ends up in a screenshot or a stream. The password is written
-     * to {@link #store()} on save, never into a setting.
+     * <p>The field is deliberately plain — the password is visible while you type it, so you can
+     * check what you entered and fix a typo instead of guessing at bullets. That is a real trade-off:
+     * the settings screen can end up in a screenshot or a stream. The field clears itself on save,
+     * so the value is only on screen while you are editing it.
+     *
+     * <p>What is not traded away: the password is written to {@link #store()}, never into a Meteor
+     * setting, and no command prints it.
      */
     @Override
     public com.logvex.addon.framework.gui.widgets.WWidget getWidget(
         com.logvex.addon.framework.gui.GuiTheme theme) {
         var list = theme.verticalList();
-        var current = list.add(theme.label("Password for " + serverKey())).expandX().widget();
-        var field = list.add(theme.textBox("", "password").masked()).expandX().widget();
 
-        var save = list.add(theme.button("Save password")).expandX().widget();
-        save.action = () -> {
+        list.add(theme.horizontalSeparator("This server"));
+        var field = list.add(theme.textBox("", "type the password, then press Enter or Save"))
+            .expandX().widget();
+        var status = list.add(theme.label(statusText())).expandX().widget();
+
+        var save = list.add(theme.button("Save password for " + serverKey())).expandX().widget();
+        save.primary();
+
+        // Declared here because both the save handler and the Forget buttons rebuild the list.
+        Runnable[] refresh = new Runnable[1];
+
+        Runnable doSave = () -> {
             String value = field.get();
             if (value == null || value.isEmpty()) {
                 warning("Type a password first.");
@@ -247,28 +260,66 @@ public class AutoLoginModule extends AutomationModule {
             }
             store().put(serverKey(), value);
             store().save();
-            // Clear the field so the value does not sit on screen after saving.
             field.set("");
             policy.reset();
-            current.set("Password for " + serverKey() + ": " + LoginCredentialStore.masked(value));
+            status.set(statusText());
+            refresh[0].run();
             info("Saved a password for %s.", serverKey());
         };
+        save.action = doSave;
+        // Enter commits. This must not be wired to `action`, which fires on every keystroke and
+        // would save the password one character at a time.
+        field.submit = doSave;
 
-        var clear = list.add(theme.button("Clear password for this server")).expandX().widget();
+        var clear = list.add(theme.button("Clear password for " + serverKey())).expandX().widget();
         clear.action = () -> {
             if (store().remove(serverKey())) {
                 store().save();
-                current.set("Password for " + serverKey() + ": not set");
+                status.set(statusText());
+                refresh[0].run();
                 info("Cleared the password for %s.", serverKey());
             } else {
                 warning("No password stored for %s.", serverKey());
             }
         };
 
-        current.set("Password for " + serverKey() + ": "
-            + LoginCredentialStore.masked(store().get(serverKey())));
+        list.add(theme.horizontalSeparator("All servers"));
+        var servers = list.add(theme.verticalList()).expandX().widget();
+        // Filled once and rebuilt on a change, so a Forget button takes its own row away instead
+        // of leaving a stale entry until the panel is reopened.
+        refresh[0] = () -> {
+            servers.clear();
+            if (store().size() == 0) {
+                servers.add(theme.label("Nothing stored yet."));
+                return;
+            }
+            servers.add(theme.label(store().size() + " server"
+                + (store().size() == 1 ? "" : "s") + " with a password:"));
+            for (String server : store().servers()) {
+                var row = servers.add(theme.horizontalList()).expandX().widget();
+                String name = server.equals(serverKey()) ? server + "  (here)" : server;
+                row.add(theme.label(name)).expandX();
+                var forget = row.add(theme.button("Forget")).widget();
+                forget.action = () -> {
+                    store().remove(server);
+                    store().save();
+                    status.set(statusText());
+                    refresh[0].run();
+                    info("Forgot the password for %s.", server);
+                };
+            }
+        };
+        refresh[0].run();
+
         list.add(theme.label("Stored in logclient/" + store().file().getFileName()
             + ", outside the Meteor config."));
         return list;
+    }
+
+    /** One line describing whether this server has a password, without revealing it. */
+    private String statusText() {
+        String password = store().get(serverKey());
+        if (password == null || password.isEmpty()) return "No password saved for this server.";
+        return "Saved (" + password.length() + " characters).";
     }
 }

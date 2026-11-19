@@ -338,7 +338,8 @@ public class WebhookRelayModule extends AddonModule {
             && service.watchlist().contains(entry.sender())) {
             service.notifyPresence(url(), username(),
                 entry.type() == com.logvex.addon.chatlog.core.MessageType.JOIN, entry.sender());
-            return;
+            // No early return: a watched player's death or announcement still deserves its own
+            // card, and returning here silently dropped both.
         }
 
         if (onDeaths.get() && entry.type() == com.logvex.addon.chatlog.core.MessageType.DEATH) {

@@ -18,14 +18,14 @@ import java.util.List;
  * <p>There is deliberately no {@code !autologin set <password>} form. Anything typed into the
  * command line is written to chat history, which Minecraft keeps on disk and restores into the
  * input box, so a password passed as an argument would be both persisted and displayed. Setting a
- * password goes through the masked field on the module's own settings page instead; this command
- * opens that page and reports state.
+ * password goes through the field on the module's own settings page instead; this command opens
+ * that page and reports state.
  *
  * <p>No output here ever prints the password, not even a prefix of it.
  */
 public class AutoLoginCommand extends Command {
     public AutoLoginCommand() {
-        super("autologin", "Manage the per-server login password. Opens a masked field; never prints it.",
+        super("autologin", "Manage the per-server login password. Set it in the module's GUI.",
             "login-auto");
     }
 
@@ -162,7 +162,7 @@ public class AutoLoginCommand extends Command {
             fields.add(new ReplyFormat.Field("Servers stored", String.valueOf(module.store().size())));
         }
         CommandOutput.send(this, "Auto Login", fields,
-            prefix() + "autologin gui to set a password in a masked field");
+            prefix() + "autologin gui to open the password field");
     }
 
     private String sessionLine(LoginAttemptPolicy policy) {

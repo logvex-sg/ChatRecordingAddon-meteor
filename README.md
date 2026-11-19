@@ -837,6 +837,9 @@ and releases any input it pressed when it is disabled.
 | `auto-log` | Disconnects when health, food, inventory space, a hostile mob or another player crosses a rule you enabled. Off by default; every rule is opt-in, and there is a grace period after joining. |
 | `auto-reconnect` | Reconnects to the last **multiplayer** server after a disconnect, using vanilla's own connection screen, with a bounded backoff and a retry cap. |
 | `server-monitor` | Prints a periodic status line (duration, game mode, latency, free slots) and a session summary on leave, using only what the client can observe. |
+| `auto-login` | Answers a server's `/login` prompt with the password stored for that server. Only sends in reply to a recognised prompt, never on join, so a password cannot be sent as public chat on a server without an auth plugin. Passwords live in a separate owner-only file, never in the Meteor config. |
+| `watchlist-alerts` | Raises a notification when a player on the chat log's watchlist joins or leaves. Only real transitions alert, so a server that announces a join twice does not produce two notices. |
+| `death-tracker` | Remembers where you died. `!deaths` lists them newest first, `!back` shows the most recent in your current dimension. Coordinates from another dimension are reported, never offered as a return target. |
 | `auto-creative` | Imports a material list (or takes typed entries), acquires the items in Creative mode and can hand the ordered list to the Schematic Dropper queue. See below. |
 
 ### Automatic Creative acquisition
@@ -1342,6 +1345,8 @@ The addon registers a `!log` command (alias `!la`). Run `!log help` for the list
 | `!log gui` | Opens the addon window (same as Right Shift). |
 | `!log status` | Chat logging state, automation state and notification counters, in a titled block. |
 | `!log modules` | Every Log Client module with its on/off state and description. |
+| `!autologin [status\|gui\|on\|off\|servers\|clear\|clearall\|test]` | Manages the per-server login password. The password is set in the module's GUI; no command ever prints it. |
+| `!deaths [back\|clear]` | Lists remembered deaths newest first, shows the most recent one in your dimension, or clears the history. |
 | `!log stats` | Session statistics in a titled block: messages, rate, players, joins/leaves, deaths and keyword alerts, with the most active players in the footer. |
 | `!log record <on\|off>` | Starts or stops chat recording (enabling the module if needed). |
 | `!log notifications [count]` | The most recent notifications. |
