@@ -1337,9 +1337,9 @@ The addon registers a `!log` command (alias `!la`). Run `!log help` for the list
 | Command | Effect |
 | --- | --- |
 | `!log gui` | Opens the addon window (same as Right Shift). |
-| `!log status` | Chat logging state, automation state and notification counters. |
+| `!log status` | Chat logging state, automation state and notification counters, in a titled block. |
 | `!log modules` | Every Log Client module with its on/off state and description. |
-| `!log stats` | Session statistics: messages, players, joins/leaves, deaths, keyword alerts. |
+| `!log stats` | Session statistics in a titled block: messages, rate, players, joins/leaves, deaths and keyword alerts, with the most active players in the footer. |
 | `!log record <on\|off>` | Starts or stops chat recording (enabling the module if needed). |
 | `!log notifications [count]` | The most recent notifications. |
 | `!log notifications clear` | Empties the notification history. |
@@ -1361,6 +1361,7 @@ The addon registers a `!log` command (alias `!la`). Run `!log help` for the list
 | `!log schematic acquire` | Starts acquisition from the current schematic/material list. |
 | `!log schematic import <path>` | Imports a material list into the Schematic Dropper queue. |
 | `!log digest` | Prints a summary of recent chat activity. |
+| `!log search [terms]` | Searches the recorded archive and prints the newest matches as an aligned block. Plain words search the message text; `player:<name>` filters the sender, `type:<chat,system,join,leave,death>` filters the message kind, and `limit:<n>` (max 50) sets how many are shown. Quote a phrase to keep it together. An unknown `key:value` is searched for literally, so a colon in chat never blocks a search. With no terms it lists the newest messages. |
 | `!log timeline [filter]` | Recent session milestones, optionally filtered. |
 | `!log filter [stats]` | Chat filter rule count, default action and how many messages were hidden. |
 | `!log filter reset` | Resets the filter counters. |

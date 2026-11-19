@@ -299,6 +299,17 @@ public class LogCommand extends Command {
             return SINGLE_SUCCESS;
         }));
 
+        builder.then(literal("search")
+            .executes(context -> {
+                search("");
+                return SINGLE_SUCCESS;
+            })
+            .then(argument("terms", StringArgumentType.greedyString()).executes(context -> {
+                search(StringArgumentType.getString(context, "terms"));
+                return SINGLE_SUCCESS;
+            }))
+        );
+
         builder.then(literal("timeline")
             .executes(context -> {
                 timeline("");
@@ -514,9 +525,43 @@ public class LogCommand extends Command {
 
     // ------------------------------------------------------------------ sections
 
+    /** How many block lines one command answer may occupy before the rest is summarised. */
+    private static final int MAX_EMBED_LINES = 12;
+
     /** The addon's configured command prefix, so this list matches what the user actually types. */
     private static String pfx() {
         return com.logvex.addon.framework.systems.config.ClientConfig.get().prefix();
+    }
+
+    /**
+     * Prints a summary block in the same embed layout the assistant uses.
+     *
+     * <p>A status answer is a handful of labelled figures, and loose lines make the reader hunt for
+     * the one they want. The block lines up the values instead, so the eye can run down one column.
+     * The user's own reply style and width are honoured, so {@code !log status} looks like every
+     * other answer they get; when the assistant module is absent the defaults are used.
+     */
+    private void embed(String title, java.util.List<com.logvex.addon.assistant.core.ReplyFormat.Field> fields) {
+        embed(title, fields, "");
+    }
+
+    private void embed(String title, java.util.List<com.logvex.addon.assistant.core.ReplyFormat.Field> fields,
+                       String footer) {
+        if (fields == null || fields.isEmpty()) return;
+        var module = LogCommands.modules().get(com.logvex.addon.assistant.modules.AssistantModule.class);
+        int width = module == null ? com.logvex.addon.assistant.core.ReplyFormat.DEFAULT_WIDTH
+            : module.replyWidth();
+        com.logvex.addon.assistant.core.ReplyFormat.Style style = module == null
+            ? com.logvex.addon.assistant.core.ReplyFormat.Style.BOX
+            : module.replyStyle();
+        if (style == null) style = com.logvex.addon.assistant.core.ReplyFormat.Style.BOX;
+
+        var block = new com.logvex.addon.assistant.core.ReplyFormat.Embed(title, fields, footer, style);
+        java.util.List<String> lines = com.logvex.addon.assistant.core.ReplyFormat.render(block, width);
+        for (int i = 0; i < lines.size() && i < MAX_EMBED_LINES; i++) info("%s", lines.get(i));
+        if (lines.size() > MAX_EMBED_LINES) {
+            info("(%d more lines)", lines.size() - MAX_EMBED_LINES);
+        }
     }
 
     private void help() {
@@ -537,6 +582,8 @@ public class LogCommand extends Command {
         info("  (highlight)" + pfx() + "log schematic [status|load <path>|start|pause|resume|stop](default).");
         info("  (highlight)" + pfx() + "log acquire [start|pause|resume|stop|status|retry|import <path>](default) - Creative material acquisition.");
         info("  (highlight)" + pfx() + "log digest(default) - summarise recent chat activity.");
+        info("  (highlight)" + pfx() + "log search [terms](default) - search the archive; "
+            + SearchArgs.usage() + ".");
         info("  (highlight)" + pfx() + "log timeline [filter](default) - recent session milestones.");
         info("  (highlight)" + pfx() + "log filter [stats|reset](default) - chat filter status.");
         info("  (highlight)" + pfx() + "log notes [list|add <player> <text>|remove <player>|search <filter>](default).");
@@ -551,27 +598,36 @@ public class LogCommand extends Command {
     }
 
     private void status() {
+        java.util.List<com.logvex.addon.assistant.core.ReplyFormat.Field> fields = new java.util.ArrayList<>();
+
         ChatLoggerModule logger = LogCommands.logger();
         if (logger != null) {
-            info("Chat logging: %s, %s, %s",
-                logger.isRecording() ? "recording" : "stopped",
-                logger.storageSummary(),
-                logger.isActive() ? "module on" : "module off");
+            fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Recording",
+                logger.isRecording() ? "on" : "off"));
+            fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Storage",
+                logger.storageSummary()));
+            fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Logger module",
+                logger.isActive() ? "on" : "off"));
         } else {
             warning("Chat logger module not found.");
         }
 
         BotModule bot = LogCommands.bot();
         if (bot != null) {
-            info("Automation: %s", bot.statusLine());
+            fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Automation",
+                bot.statusLine()));
         }
 
         NotificationModule notifications = LogCommands.notifications();
         if (notifications != null) {
-            info("Notifications: %d stored, %d accepted, %d suppressed",
-                notifications.center().size(), notifications.center().accepted(),
-                notifications.center().suppressed());
+            fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Notifications",
+                Messages.number(notifications.center().size()) + " stored, "
+                    + Messages.number(notifications.center().accepted()) + " accepted, "
+                    + Messages.number(notifications.center().suppressed()) + " suppressed"));
         }
+
+        embed("Log Client status", fields,
+            "Log Client " + com.logvex.addon.framework.LogClientContext.VERSION);
     }
 
     private void modules() {
@@ -598,14 +654,22 @@ public class LogCommand extends Command {
             info("No session statistics yet.");
             return;
         }
-        info("Messages: %d over %s (%.1f/min)", snapshot.totalMessages(),
-            ReportFormatting.duration(snapshot.durationMs()), snapshot.messagesPerMinute());
-        info("Players seen: %d, joins/leaves: %d/%d, deaths: %d", snapshot.uniquePlayers(),
-            snapshot.joinEvents(), snapshot.leaveEvents(), snapshot.deathEvents());
-        info("Keyword alerts: %d", snapshot.keywordAlerts());
-        if (!snapshot.topPlayers().isEmpty()) {
-            info("Most active: %s", String.join(", ", snapshot.topPlayers()));
-        }
+        java.util.List<com.logvex.addon.assistant.core.ReplyFormat.Field> fields = new java.util.ArrayList<>();
+        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Messages",
+            Messages.number(snapshot.totalMessages()) + " in "
+                + ReportFormatting.duration(snapshot.durationMs())));
+        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Rate",
+            Messages.decimal(snapshot.messagesPerMinute(), 1) + " / min"));
+        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Players",
+            Messages.number(snapshot.uniquePlayers()) + " seen"));
+        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Joins / leaves",
+            Messages.number(snapshot.joinEvents()) + " / " + Messages.number(snapshot.leaveEvents())));
+        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Deaths",
+            Messages.number(snapshot.deathEvents())));
+        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Keyword alerts",
+            Messages.number(snapshot.keywordAlerts())));
+        embed("Session statistics", fields,
+            snapshot.topPlayers().isEmpty() ? "" : "Most active: " + String.join(", ", snapshot.topPlayers()));
     }
 
     private void notifications(int count) {
@@ -1035,6 +1099,48 @@ public class LogCommand extends Command {
             return;
         }
         module.digest(true);
+    }
+
+    /**
+     * Searches the recorded archive and prints the newest matches.
+     *
+     * <p>The store already knows how to query; what was missing was any way to reach it from chat,
+     * which left a user staring at an archive they could only open in a text editor. Matches are
+     * printed oldest-last so the most recent hit is nearest the input box.
+     */
+    private void search(String terms) {
+        ChatLoggerModule logger = LogCommands.logger();
+        if (logger == null || logger.storage() == null) {
+            error("Storage is unavailable. Enable the Chat Logger module first.");
+            return;
+        }
+        SearchArgs.Parsed parsed = SearchArgs.parse(terms);
+        java.util.List<com.logvex.addon.chatlog.core.ChatEntry> matches;
+        try {
+            matches = logger.storage().store().query(parsed.query(), parsed.limit());
+        } catch (java.io.IOException e) {
+            error("Could not read the archive: %s", e.getMessage() == null ? "unknown error" : e.getMessage());
+            return;
+        }
+        if (matches.isEmpty()) {
+            info(terms.isBlank() ? "The archive is empty." : "No messages match that search.");
+            return;
+        }
+
+        // The store hands back newest first; chat grows upward, so printing in that order would put
+        // the newest match furthest from the input box. Reverse so the latest hit lands last.
+        java.util.List<com.logvex.addon.assistant.core.ReplyFormat.Field> fields = new java.util.ArrayList<>();
+        for (int i = matches.size() - 1; i >= 0; i--) {
+            var entry = matches.get(i);
+            fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field(
+                com.logvex.addon.common.Messages.clock(entry.timestamp()),
+                com.logvex.addon.common.Messages.player(entry.sender()) + ": "
+                    + com.logvex.addon.common.Messages.truncate(entry.content(), 60)));
+        }
+        String footer = matches.size() >= parsed.limit()
+            ? "Showing the newest " + parsed.limit() + " - raise it with limit:<n>"
+            : com.logvex.addon.common.Messages.plural(matches.size(), "match", "matches");
+        embed(terms.isBlank() ? "Recent messages" : "Search: " + terms, fields, footer);
     }
 
     private void timeline(String filter) {

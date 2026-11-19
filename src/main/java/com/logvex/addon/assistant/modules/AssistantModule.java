@@ -944,6 +944,22 @@ public class AssistantModule extends AutomationModule {
     }
 
     /** The macro table as it stands, for the GUI and for a test. */
+    /** The widest line a formatted reply may use, so other commands can match the assistant. */
+    public int replyWidth() {
+        return replyWidth.get();
+    }
+
+    /**
+     * The layout the user chose for multi-field replies, resolved to a concrete style.
+     *
+     * <p>{@code AUTO} keeps whatever each reply was written for, so it resolves to the box here:
+     * that is what a caller building its own block wants when it has no layout of its own.
+     */
+    public com.logvex.addon.assistant.core.ReplyFormat.Style replyStyle() {
+        com.logvex.addon.assistant.core.ReplyFormat.Style style = replyFormat.get().style();
+        return style == null ? com.logvex.addon.assistant.core.ReplyFormat.Style.BOX : style;
+    }
+
     public MacroSet macroSet() {
         return macros;
     }
