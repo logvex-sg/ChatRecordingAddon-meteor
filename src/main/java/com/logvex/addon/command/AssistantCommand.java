@@ -47,6 +47,61 @@ public class AssistantCommand extends Command {
             return SINGLE_SUCCESS;
         }));
 
+        builder.then(literal("perms").executes(context -> {
+            permissions();
+            return SINGLE_SUCCESS;
+        })
+            .then(literal("list").executes(context -> {
+                permissions();
+                return SINGLE_SUCCESS;
+            }))
+            .then(literal("gui").executes(context -> {
+                AssistantModule module = assistant();
+                if (module == null) {
+                    error("The assistant module is not available.");
+                    return SINGLE_SUCCESS;
+                }
+                mc.setScreen(new com.logvex.addon.assistant.gui.PermissionsScreen(module));
+                return SINGLE_SUCCESS;
+            }))
+            .then(literal("set")
+                .then(argument("command", StringArgumentType.word())
+                    .then(argument("level", StringArgumentType.word()).executes(context -> {
+                        setPermission(StringArgumentType.getString(context, "command"),
+                            StringArgumentType.getString(context, "level"));
+                        return SINGLE_SUCCESS;
+                    }))))
+            .then(literal("allow")
+                .then(argument("command", StringArgumentType.word())
+                    .then(argument("user", StringArgumentType.word()).executes(context -> {
+                        allowUser(StringArgumentType.getString(context, "command"),
+                            StringArgumentType.getString(context, "user"));
+                        return SINGLE_SUCCESS;
+                    }))))
+            .then(literal("deny")
+                .then(argument("command", StringArgumentType.word())
+                    .then(argument("user", StringArgumentType.word()).executes(context -> {
+                        denyUser(StringArgumentType.getString(context, "command"),
+                            StringArgumentType.getString(context, "user"));
+                        return SINGLE_SUCCESS;
+                    }))))
+            .then(literal("admin")
+                .then(literal("add")
+                    .then(argument("user", StringArgumentType.word()).executes(context -> {
+                        addAdmin(StringArgumentType.getString(context, "user"));
+                        return SINGLE_SUCCESS;
+                    })))
+                .then(literal("remove")
+                    .then(argument("user", StringArgumentType.word()).executes(context -> {
+                        removeAdmin(StringArgumentType.getString(context, "user"));
+                        return SINGLE_SUCCESS;
+                    }))))
+            .then(literal("reset")
+                .then(argument("command", StringArgumentType.word()).executes(context -> {
+                    resetPermission(StringArgumentType.getString(context, "command"));
+                    return SINGLE_SUCCESS;
+                }))));
+
         builder.then(literal("gui").executes(context -> {
             AssistantModule module = assistant();
             if (module == null) {
@@ -184,6 +239,7 @@ public class AssistantCommand extends Command {
         info("  (highlight).ai history(default) - recent remembered exchanges.");
         info("  (highlight).ai model [status|ask <text>|teach <intent> <example>|save](default).");
         info("  (highlight).ai placeholders(default) - every placeholder a reply can use.");
+        info("  (highlight).ai perms [list|gui|set|allow|deny|admin|reset](default) - who may run each command.");
         info("  (highlight).ai clear(default) - clear all memory.");
     }
 
@@ -210,6 +266,139 @@ public class AssistantCommand extends Command {
             info("  (highlight){%s<name>}(default) - stored memory lookup.", family.substring(0, family.length() - 1));
         }
         info("Unknown placeholders are left as written, so a typo is visible in the reply.");
+        info("Reply templates may hold alternatives separated by |, e.g. \"Hi {player}|Hello {player}\".");
+    }
+
+    // ------------------------------------------------------------------ permissions
+
+    private void permissions() {
+        AssistantModule module = assistant();
+        if (module == null) {
+            error("The assistant module is not available.");
+            return;
+        }
+        com.logvex.addon.assistant.core.PermissionSet set = module.permissions();
+        info("Permissions: %s", set.enabled() ? "on" : "off (every command open)");
+        if (!set.enabled()) {
+            info("  Turn them on in the module settings, or with .ai perms gui.");
+        }
+        info("  Unlisted commands: %s",
+            set.defaultPolicy() == com.logvex.addon.assistant.core.PermissionSet.DefaultPolicy.CLOSED
+                ? "local-only" : "open");
+        info("  Administrators: %s", set.administrators().isEmpty()
+            ? "none" : String.join(", ", set.administrators()));
+        info("Commands:");
+
+        for (com.logvex.addon.assistant.core.CommandCatalog.Command command
+            : com.logvex.addon.assistant.core.CommandCatalog.all()) {
+            var level = set.effectiveLevel(command.name());
+            var rule = set.rule(command.name()).orElse(null);
+            String users = rule == null || rule.users().isEmpty()
+                ? "" : " [" + String.join(", ", rule.users()) + "]";
+            info("  (highlight)%s(default) - %s%s", command.name(), level.id(), users);
+        }
+    }
+
+    private void setPermission(String command, String level) {
+        AssistantModule module = assistant();
+        if (module == null) {
+            error("The assistant module is not available.");
+            return;
+        }
+        var canonical = com.logvex.addon.assistant.core.CommandCatalog.canonical(command);
+        if (canonical.isEmpty()) {
+            warning("'%s' is not an assistant command.", command);
+            return;
+        }
+        var parsed = com.logvex.addon.assistant.core.PermissionLevel.parse(level, null);
+        if (parsed == null) {
+            warning("Unknown level '%s'. Use everyone, whitelist, administrators or local-only.", level);
+            return;
+        }
+        var existing = module.permissionFor(canonical.get())
+            .orElse(com.logvex.addon.assistant.core.CommandPermission.open(canonical.get()));
+        module.setPermission(existing.withLevel(parsed));
+        info("%s is now %s.", canonical.get(), parsed.id());
+    }
+
+    private void allowUser(String command, String user) {
+        AssistantModule module = assistant();
+        if (module == null) {
+            error("The assistant module is not available.");
+            return;
+        }
+        var canonical = com.logvex.addon.assistant.core.CommandCatalog.canonical(command);
+        if (canonical.isEmpty()) {
+            warning("'%s' is not an assistant command.", command);
+            return;
+        }
+        if (module.addWhitelisted(canonical.get(), user)) {
+            info("Whitelisted %s for %s.", user, canonical.get());
+        } else {
+            warning("'%s' is not a valid player name or name=uuid entry, or is already listed.", user);
+        }
+    }
+
+    private void denyUser(String command, String user) {
+        AssistantModule module = assistant();
+        if (module == null) {
+            error("The assistant module is not available.");
+            return;
+        }
+        var canonical = com.logvex.addon.assistant.core.CommandCatalog.canonical(command);
+        if (canonical.isEmpty()) {
+            warning("'%s' is not an assistant command.", command);
+            return;
+        }
+        if (module.removeWhitelisted(canonical.get(), user)) {
+            info("Removed %s from the whitelist for %s.", user, canonical.get());
+        } else {
+            warning("'%s' was not whitelisted for %s.", user, canonical.get());
+        }
+    }
+
+    private void addAdmin(String user) {
+        AssistantModule module = assistant();
+        if (module == null) {
+            error("The assistant module is not available.");
+            return;
+        }
+        if (module.addAdministrator(user)) {
+            info("Added %s as an administrator.", user);
+        } else {
+            warning("'%s' is not a valid player name or name=uuid entry, or is already listed.", user);
+        }
+    }
+
+    private void removeAdmin(String user) {
+        AssistantModule module = assistant();
+        if (module == null) {
+            error("The assistant module is not available.");
+            return;
+        }
+        if (module.removeAdministrator(user)) {
+            info("Removed %s from the administrators.", user);
+        } else {
+            warning("'%s' was not an administrator.", user);
+        }
+    }
+
+    private void resetPermission(String command) {
+        AssistantModule module = assistant();
+        if (module == null) {
+            error("The assistant module is not available.");
+            return;
+        }
+        var canonical = com.logvex.addon.assistant.core.CommandCatalog.canonical(command);
+        if (canonical.isEmpty()) {
+            warning("'%s' is not an assistant command.", command);
+            return;
+        }
+        if (module.clearPermission(canonical.get())) {
+            info("Cleared the rule for %s; it now uses the default level.", canonical.get());
+        } else {
+            warning("%s had no rule to clear.", canonical.get());
+        }
     }
 
     private void modelStatus() {
@@ -268,10 +457,15 @@ public class AssistantCommand extends Command {
         info("%s: %s", module.config().name(), module.isActive() ? "on" : "off");
         info("  Triggers: %d, facts: %d, players known: %d",
             module.triggers().rules().size(), memory.facts().size(), memory.knownPlayers().size());
-        info("  Handled %s, ignored %s, rate limited %s",
+        info("  Handled %s, ignored %s, rate limited %s, refused %s",
             Messages.number(module.runtime().handled()),
             Messages.number(module.runtime().ignored()),
-            Messages.number(module.runtime().rateLimited()));
+            Messages.number(module.runtime().rateLimited()),
+            Messages.number(module.runtime().denied()));
+        info("  Chat: %s lines from %s players this session",
+            Messages.number(module.activity().seen()),
+            Messages.number(module.activity().activePlayers()));
+        info("  Permissions: %s", module.permissionsEnabled() ? "on" : "off");
     }
 
     private void triggers() {

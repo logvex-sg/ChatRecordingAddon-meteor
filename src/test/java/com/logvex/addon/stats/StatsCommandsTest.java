@@ -25,13 +25,85 @@ class StatsCommandsTest {
         ServerStats s = sample();
         StatsCommands.Options opts = StatsCommands.Options.DEFAULTS;
 
-        assertEquals("Ping 42 ms (good).", StatsCommands.answer("ping", s, opts).orElseThrow());
+        // With no requester named, the caller is the local client, so the wording is second person.
+        assertEquals("Your ping is 42 ms (good).",
+            StatsCommands.answer("ping", s, opts).orElseThrow());
         assertEquals("TPS 19.6 / 20.", StatsCommands.answer("tps", s, opts).orElseThrow());
         assertEquals("144 FPS.", StatsCommands.answer("fps", s, opts).orElseThrow());
         assertTrue(StatsCommands.answer("coords", s, opts).orElseThrow().startsWith("XYZ 120 64 -36"));
         assertEquals("Health 17.5/20, food 15.", StatsCommands.answer("health", s, opts).orElseThrow());
         assertEquals("mc.example.net, up 2h 5m.", StatsCommands.answer("server", s, opts).orElseThrow());
         assertEquals("World time 12:00 day.", StatsCommands.answer("time", s, opts).orElseThrow());
+        assertEquals("12 players visible.",
+            StatsCommands.answer("players", s, opts).orElseThrow());
+        assertEquals("Session up 2h 5m.", StatsCommands.answer("uptime", s, opts).orElseThrow());
+        assertEquals("World overworld (minecraft:overworld).",
+            StatsCommands.answer("world", s, opts).orElseThrow());
+        assertEquals("Speed 5.43 blocks/s.", StatsCommands.answer("speed", s, opts).orElseThrow());
+    }
+
+    @Test
+    @DisplayName("the player count is described as visible, not as the server total")
+    void playersIsHonestAboutItsSource() {
+        // The client only knows the tab list, so the wording must not imply a server-wide figure.
+        String answer = StatsCommands.answer("players", sample(),
+            StatsCommands.Options.DEFAULTS).orElseThrow();
+
+        assertTrue(answer.contains("visible"), answer);
+        assertFalse(answer.contains("of 60"), "the tab list cannot know the cap: " + answer);
+    }
+
+    @Test
+    @DisplayName("a figure the client cannot measure is declined, never invented")
+    void unavailableFiguresAreNotInvented() {
+        StatsCommands.Options opts = StatsCommands.Options.DEFAULTS;
+        ServerStats notMoving = new ServerStats(
+            true, "mc.example.net", 20f, 42, 0, 0, 0L,
+            "", "", "", 0L, 20f, 20f, 20, 0, 64, 0, "", 0.0, 144, 0L, 0L);
+
+        // No world name and no dimension: the command says it does not know.
+        assertEquals("World ? (?).", StatsCommands.answer("world", notMoving, opts).orElseThrow());
+        // No session clock yet.
+        assertTrue(StatsCommands.answer("uptime", notMoving, opts).orElseThrow()
+            .contains("not available"));
+        // No players visible.
+        assertTrue(StatsCommands.answer("players", notMoving, opts).orElseThrow()
+            .contains("No players visible"));
+        // Standing still.
+        assertEquals("Not moving.", StatsCommands.answer("speed", notMoving, opts).orElseThrow());
+    }
+
+    @Test
+    @DisplayName("ping reports the requester's latency, not this client's")
+    void pingAnswersForTheRequester() {
+        ServerStats s = sample();
+
+        // The tab list says Steve is on 250 ms; this client's own figure is 42.
+        assertEquals("Steve's ping is 250 ms (fair).", StatsCommands.answer("ping", s,
+            StatsCommands.Options.DEFAULTS, 250, "Steve").orElseThrow());
+
+        // A local player's own reply stays second person.
+        assertEquals("Your ping is 42 ms (good).", StatsCommands.answer("ping", s,
+            StatsCommands.Options.DEFAULTS, 42, "").orElseThrow());
+    }
+
+    @Test
+    @DisplayName("an unknown requester ping is reported as unknown, never borrowed from this client")
+    void unknownRequesterPingIsNotFabricated() {
+        ServerStats s = sample();
+
+        String answer = StatsCommands.answer("ping", s, StatsCommands.Options.DEFAULTS, -1,
+            "Steve").orElseThrow();
+
+        assertTrue(answer.contains("not available"), answer);
+        assertFalse(answer.contains("42"), "this client's latency must not be attributed: " + answer);
+    }
+
+    @Test
+    @DisplayName("ping declines when there is no world to measure against")
+    void pingNeedsAWorld() {
+        assertEquals("Not connected.", StatsCommands.answer("ping", ServerStats.OFFLINE,
+            StatsCommands.Options.DEFAULTS, 30, "Steve").orElseThrow());
     }
 
     @Test

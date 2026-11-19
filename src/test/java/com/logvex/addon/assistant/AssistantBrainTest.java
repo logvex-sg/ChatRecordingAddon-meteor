@@ -23,6 +23,9 @@ class AssistantBrainTest {
         AssistantRuntime runtime = new AssistantRuntime(new AssistantMemory());
         runtime.setTriggers(TriggerSet.of(List.of(rules)));
         runtime.setConfig(AssistantConfig.DEFAULTS);
+        // These tests drive the same message repeatedly to exercise cooldowns and limits, so the
+        // duplicate filter is switched off here; it has its own tests.
+        runtime.setDuplicateFilter(false);
         return runtime;
     }
 

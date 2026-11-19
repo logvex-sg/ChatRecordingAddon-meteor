@@ -11,27 +11,53 @@ import java.util.Deque;
  * dependency.
  *
  * <p>The module owns one of these and drives it from the event bus. Keeping the state here rather
- * than in the module means the whole decision path — including the global rate limit and the
- * per-rule cooldown — can be exercised in a unit test with no game running.
+ * than in the module means the whole decision path — the duplicate filter, the per-rule cooldown,
+ * the permission gate and the global rate limit — can be exercised in a unit test with no game
+ * running.
+ *
+ * <p>Order of checks for one incoming line, and every one of them is a refusal rather than a repair:
+ * <ol>
+ *   <li>a blank line is ignored;</li>
+ *   <li>a duplicate of a line already answered inside the window is dropped;</li>
+ *   <li>a configured trigger is tried, under its own cooldown;</li>
+ *   <li>a command is parsed and authorised by {@link PermissionSet} <em>before</em> it runs;</li>
+ *   <li>the local AI is asked, if it is enabled;</li>
+ *   <li>the global per-minute budget gates whichever of the above produced a reply.</li>
+ * </ol>
  */
 public final class AssistantRuntime {
     /** How many replies the global rate limiter looks at. */
     private static final int RATE_WINDOW = 60_000;
 
+    /** How long a repeated message is treated as a duplicate. */
+    public static final long DUPLICATE_WINDOW_MS = 4_000L;
+
+    /** How many refusals a minute the assistant will say out loud. */
+    private static final int DENIALS_PER_MINUTE = 6;
+
     private final AssistantMemory memory;
     private final AssistantBrain brain;
     private final TriggerCooldownTracker cooldowns = new TriggerCooldownTracker();
+    private final DuplicateSuppressor duplicates = new DuplicateSuppressor(DUPLICATE_WINDOW_MS);
+    private final ChatActivity activity = new ChatActivity();
 
     private TriggerSet triggers = TriggerSet.empty();
     private AssistantConfig config = AssistantConfig.DEFAULTS;
+    private PermissionSet permissions = PermissionSet.permissive();
+    private boolean duplicateFilterEnabled = true;
+    private boolean helpEnabled = true;
 
     /** Timestamps of recent replies, used for the global per-minute rate limit. */
     private final Deque<Long> recentReplies = new ArrayDeque<>();
+
+    /** Timestamps of recent refusals, which are capped separately from real replies. */
+    private final Deque<Long> recentDenials = new ArrayDeque<>();
 
     private long handled;
     private long ignored;
     private long rateLimited;
     private long aiReplies;
+    private long denied;
 
     public AssistantRuntime(AssistantMemory memory) {
         this.memory = memory == null ? new AssistantMemory() : memory;
@@ -44,6 +70,10 @@ public final class AssistantRuntime {
 
     public AssistantBrain brain() {
         return brain;
+    }
+
+    public ChatActivity activity() {
+        return activity;
     }
 
     /** Replaces the rules and drops any cooldown state for patterns that no longer exist. */
@@ -64,13 +94,46 @@ public final class AssistantRuntime {
         return config;
     }
 
+    /** Turns the duplicate filter on or off; off means every repeated line is answered again. */
+    public void setDuplicateFilter(boolean enabled) {
+        this.duplicateFilterEnabled = enabled;
+        if (!enabled) duplicates.reset();
+    }
+
+    /** Turns the help command on or off. Off makes it answer nothing at all. */
+    public void setHelpEnabled(boolean enabled) {
+        this.helpEnabled = enabled;
+    }
+
+    public boolean helpEnabled() {
+        return helpEnabled;
+    }
+
+    /** Forwards the greeting pools to the brain, so the hello command uses the user's wording. */
+    public void setGreetingPools(java.util.Map<String, String> pools) {
+        brain.setGreetingPools(pools);
+    }
+
+    /** Forwards the configured good-game reply to the brain. */
+    public void setGoodGameReply(String reply) {
+        brain.setGoodGameReply(reply);
+    }
+
+    public void setPermissions(PermissionSet permissions) {
+        this.permissions = permissions == null ? PermissionSet.permissive() : permissions;
+    }
+
+    public PermissionSet permissions() {
+        return permissions;
+    }
+
     /**
      * Evaluates one message, applying the per-rule cooldown and the global reply rate limit.
      *
      * @return the decision, or {@link AssistantBrain.Decision#NONE} when nothing should happen
      */
     public AssistantBrain.Decision handle(String sender, String content, long now) {
-        return handle(sender, content, now, ServerStats.OFFLINE, null);
+        return handle(SenderIdentity.unverified(sender), content, now, ServerStats.OFFLINE, null);
     }
 
     /**
@@ -81,13 +144,49 @@ public final class AssistantRuntime {
      */
     public AssistantBrain.Decision handle(String sender, String content, long now,
                                           ServerStats stats, StatsCommands.Options statsOptions) {
+        return handle(SenderIdentity.unverified(sender), content, now, stats, statsOptions);
+    }
+
+    /**
+     * Evaluates one message from a known sender.
+     *
+     * <p>The identity is what the client could verify, not what the message claimed. Permission
+     * decisions use it, so this is the overload the module calls.
+     */
+    public AssistantBrain.Decision handle(SenderIdentity identity, String content, long now,
+                                          ServerStats stats, StatsCommands.Options statsOptions) {
+        return handle(identity, content, now, stats, statsOptions, -1);
+    }
+
+    /**
+     * Evaluates one message, with the speaker's own latency.
+     *
+     * <p>Only the module can read a player's latency from the tab list, so it is passed in rather
+     * than looked up here; the runtime stays free of Minecraft types.
+     *
+     * @param requesterPing the speaker's latency in milliseconds, or a negative value when unknown
+     */
+    public AssistantBrain.Decision handle(SenderIdentity identity, String content, long now,
+                                          ServerStats stats, StatsCommands.Options statsOptions,
+                                          int requesterPing) {
         if (content == null || content.isBlank()) {
+            ignored++;
+            return AssistantBrain.Decision.NONE;
+        }
+        SenderIdentity sender = identity == null ? SenderIdentity.unverified("") : identity;
+        // Callers without a world pass null; every figure then reports as absent rather than
+        // throwing, so a trigger can still be evaluated off-line (and in a test).
+        ServerStats liveStats = stats == null ? ServerStats.OFFLINE : stats;
+        activity.observe(sender.name(), now);
+
+        if (duplicateFilterEnabled && !duplicates.accept(sender.name(), content, now)) {
+            activity.recordSuppressed();
             ignored++;
             return AssistantBrain.Decision.NONE;
         }
 
         AssistantConfig cfg = config;
-        TriggerRule rule = cfg.respondToTriggers() ? triggers.firstMatch(sender, content) : null;
+        TriggerRule rule = cfg.respondToTriggers() ? triggers.firstMatch(sender.name(), content) : null;
 
         if (rule != null) {
             if (!cooldowns.tryFire(rule, now)) {
@@ -99,25 +198,38 @@ public final class AssistantRuntime {
                 return AssistantBrain.Decision.NONE;
             }
             handled++;
-            return brain.trigger(rule, sender, content, cfg, now, stats);
+            AssistantBrain.Decision decision =
+                brain.trigger(rule, sender.name(), content, cfg, now, liveStats);
+            if (decision.acts()) activity.recordReply();
+            return decision;
         }
 
         if (cfg.memoryCommands()) {
             // Only the command parser runs here: the trigger path already declined, and the AI must
             // not be reached from this branch or its reply would be counted as a command.
             AssistantBrain.Decision command =
-                brain.command(sender, content, cfg, now, stats, statsOptions);
+                brain.command(sender, content, cfg, now, liveStats, statsOptions, permissions,
+                    activity, helpEnabled, requesterPing);
             if (command != null && command.acts()) {
-                if (!allowGlobalReply(cfg, now)) {
+                if (command.denied()) {
+                    // A refusal gets its own budget. Charging it to the shared budget would let any
+                    // player silence the assistant by repeatedly using a command they may not use.
+                    if (!allowDenialReply(now)) {
+                        rateLimited++;
+                        return AssistantBrain.Decision.NONE;
+                    }
+                    denied++;
+                } else if (!allowGlobalReply(cfg, now)) {
                     rateLimited++;
                     return AssistantBrain.Decision.NONE;
                 }
                 handled++;
+                activity.recordReply();
                 return command;
             }
         }
         if (cfg.localAi()) {
-            AssistantBrain.Decision ai = brain.ai(sender, content, cfg, now, stats);
+            AssistantBrain.Decision ai = brain.ai(sender.name(), content, cfg, now, liveStats);
             if (ai != null && ai.acts()) {
                 if (!allowGlobalReply(cfg, now)) {
                     rateLimited++;
@@ -125,6 +237,7 @@ public final class AssistantRuntime {
                 }
                 handled++;
                 aiReplies++;
+                activity.recordReply();
                 return ai;
             }
         }
@@ -144,6 +257,23 @@ public final class AssistantRuntime {
         return true;
     }
 
+    /**
+     * The budget for refusals, kept separate from {@link #allowGlobalReply}.
+     *
+     * <p>A refusal is still a reply, so it needs a cap — otherwise a stranger could make the
+     * assistant answer every line. But it must not share the budget with real answers: if it did,
+     * anyone could exhaust the minute by repeating a command they are not allowed to use and
+     * silence the assistant for the people who are allowed to use it.
+     */
+    private boolean allowDenialReply(long now) {
+        while (!recentDenials.isEmpty() && now - recentDenials.peekFirst() > RATE_WINDOW) {
+            recentDenials.pollFirst();
+        }
+        if (recentDenials.size() >= DENIALS_PER_MINUTE) return false;
+        recentDenials.addLast(now);
+        return true;
+    }
+
     public long handled() {
         return handled;
     }
@@ -156,19 +286,28 @@ public final class AssistantRuntime {
         return rateLimited;
     }
 
+    /** How many commands the permission gate refused. */
+    public long denied() {
+        return denied;
+    }
+
     /** How many of the handled messages were answered by the local AI. */
     public long aiReplies() {
         return aiReplies;
     }
 
-    /** Clears session state (cooldowns, rate window) but keeps the persistent memory. */
+    /** Clears session state (cooldowns, rate window, activity) but keeps the persistent memory. */
     public void resetSession() {
         cooldowns.reset();
+        duplicates.reset();
         recentReplies.clear();
+        recentDenials.clear();
+        activity.reset();
         handled = 0;
         ignored = 0;
         rateLimited = 0;
         aiReplies = 0;
+        denied = 0;
     }
 
     /** A one-line summary for the HUD. */

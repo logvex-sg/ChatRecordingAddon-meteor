@@ -1,6 +1,7 @@
 package com.logvex.addon.assistant.gui;
 
 import com.logvex.addon.assistant.core.AssistantMemory;
+import com.logvex.addon.assistant.core.ChatActivity;
 import com.logvex.addon.assistant.core.TriggerRule;
 import com.logvex.addon.assistant.modules.AssistantModule;
 import com.logvex.addon.common.Messages;
@@ -80,7 +81,9 @@ public class AssistantScreen extends WindowScreen {
     // ------------------------------------------------------------------ triggers
 
     private void renderTriggers() {
-        add(theme.label("Format: pattern;sender=;reply=;mode=chat|notify|silent;cooldown=3000;limit=0;sound=false;remember=false;enabled=true"))
+        add(theme.label("Format: pattern;sender=;reply=;mode=chat|notify|silent;cooldown="
+            + com.logvex.addon.assistant.core.TriggerRule.DEFAULT_COOLDOWN_MS
+            + ";limit=0;sound=false;remember=false;enabled=true"))
             .expandX().widget().color(MUTED);
 
         WTable addRow = add(theme.table()).expandX().widget();
@@ -315,8 +318,22 @@ public class AssistantScreen extends WindowScreen {
         keyValue(info, "Remembered lines:", String.valueOf(memory.historySize()));
         keyValue(info, "Handled:", String.valueOf(module.runtime().handled()));
         keyValue(info, "Rate limited:", String.valueOf(module.runtime().rateLimited()));
+        keyValue(info, "Refused:", String.valueOf(module.runtime().denied()));
         keyValue(info, "AI replies:", String.valueOf(module.runtime().aiReplies()));
+        keyValue(info, "Permissions:", module.permissionsEnabled()
+            ? "on (" + module.permissions().rules().size() + " rules)" : "off");
         keyValue(info, "Memory file:", com.logvex.addon.assistant.mc.FileAssistantStore.defaultPath().toString());
+
+        add(theme.horizontalSeparator("This session")).expandX();
+        WVerticalList activity = add(theme.verticalList()).expandX().widget();
+        ChatActivity seen = module.activity();
+        keyValue(activity, "Lines seen:", String.valueOf(seen.seen()));
+        keyValue(activity, "Players talking:", String.valueOf(seen.activePlayers()));
+        keyValue(activity, "Answered:", String.valueOf(seen.answered()));
+        keyValue(activity, "Duplicates dropped:", String.valueOf(seen.suppressed()));
+        ChatActivity.PlayerCount busiest = seen.mostActive();
+        keyValue(activity, "Busiest:", busiest == null ? "-"
+            : busiest.name() + " (" + busiest.messages() + ")");
 
         add(theme.horizontalSeparator("Test a message")).expandX();
         WTextBox test = add(theme.textBox("", "Type a message to test the triggers")).expandX().widget();
@@ -324,11 +341,19 @@ public class AssistantScreen extends WindowScreen {
         run.action = () -> {
             String text = test.get();
             if (text == null || text.isBlank()) return;
-            var decision = module.runtime().brain().evaluate("Tester", text, module.triggers(),
-                module.config(), System.currentTimeMillis());
-            add(theme.label(decision.acts()
-                ? "Would " + decision.delivery().name().toLowerCase(java.util.Locale.ROOT) + ": " + decision.text()
-                : "No trigger matches that message.")).expandX().widget().color(MUTED);
+            // Goes through the live runtime, so the result includes the permission decision a real
+            // chat line would get rather than only the trigger match.
+            var decision = module.simulate(module.selfName(), text);
+            String message;
+            if (decision.denied()) {
+                message = "Refused: " + decision.text();
+            } else if (decision.acts()) {
+                message = "Would " + decision.delivery().name().toLowerCase(java.util.Locale.ROOT)
+                    + ": " + decision.text();
+            } else {
+                message = "No trigger or command matches that message.";
+            }
+            add(theme.label(message)).expandX().widget().color(MUTED);
         };
     }
 

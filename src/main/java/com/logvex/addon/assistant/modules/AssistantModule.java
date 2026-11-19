@@ -6,6 +6,14 @@ import com.logvex.addon.assistant.core.AssistantBrain;
 import com.logvex.addon.assistant.core.AssistantConfig;
 import com.logvex.addon.assistant.core.AssistantMemory;
 import com.logvex.addon.assistant.core.AssistantRuntime;
+import com.logvex.addon.assistant.core.ChatActivity;
+import com.logvex.addon.assistant.core.CommandPermission;
+import com.logvex.addon.assistant.core.GreetingPools;
+import com.logvex.addon.assistant.core.PermissionLevel;
+import com.logvex.addon.assistant.core.PermissionSet;
+import com.logvex.addon.assistant.core.ReplyFormat;
+import com.logvex.addon.assistant.core.SelfReplyGuard;
+import com.logvex.addon.assistant.core.SenderIdentity;
 import com.logvex.addon.assistant.core.TriggerRule;
 import com.logvex.addon.assistant.core.TriggerSet;
 import com.logvex.addon.assistant.gui.AssistantScreen;
@@ -56,12 +64,33 @@ import java.util.List;
  * the assistant cannot answer itself.
  */
 public class AssistantModule extends AutomationModule {
+    /** How many block lines one reply may occupy before the rest is summarised. */
+    private static final int MAX_EMBED_LINES = 12;
+
+    /** How the user wants blocks laid out; {@link #AUTO} keeps whatever the reply was written for. */
+    public enum ReplyLayout {
+        AUTO, BOX, COMPACT, PLAIN, LIST;
+
+        /** The style to render with, or null to keep the block's own. */
+        public ReplyFormat.Style style() {
+            return switch (this) {
+                case AUTO -> null;
+                case BOX -> ReplyFormat.Style.BOX;
+                case COMPACT -> ReplyFormat.Style.COMPACT;
+                case PLAIN -> ReplyFormat.Style.PLAIN;
+                case LIST -> ReplyFormat.Style.LIST;
+            };
+        }
+    }
+
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
     private final SettingGroup sgTriggers = settings.createGroup("Triggers");
     private final SettingGroup sgMemory = settings.createGroup("Memory");
     private final SettingGroup sgAi = settings.createGroup("Local AI");
     private final SettingGroup sgLimits = settings.createGroup("Limits");
     private final SettingGroup sgStats = settings.createGroup("Stats Commands");
+    private final SettingGroup sgGreetings = settings.createGroup("Greetings");
+    private final SettingGroup sgPermissions = settings.createGroup("Permissions");
 
     private final Setting<String> assistantName = sgGeneral.add(new StringSetting.Builder()
         .name("name")
@@ -258,6 +287,22 @@ public class AssistantModule extends AutomationModule {
         .build()
     );
 
+    private final Setting<ReplyLayout> replyFormat = sgLimits.add(new EnumSetting.Builder<ReplyLayout>()
+        .name("reply-format")
+        .description("How multi-field replies are laid out. Auto keeps the layout each reply was written for.")
+        .defaultValue(ReplyLayout.AUTO)
+        .build()
+    );
+
+    private final Setting<Integer> replyWidth = sgLimits.add(new IntSetting.Builder()
+        .name("reply-width")
+        .description("Widest line a formatted reply may use, in characters.")
+        .defaultValue(ReplyFormat.DEFAULT_WIDTH)
+        .min(20)
+        .sliderRange(20, 100)
+        .build()
+    );
+
     private final Setting<Boolean> matchFeedback = sgLimits.add(new BoolSetting.Builder()
         .name("match-feedback")
         .description("Print a short note when a trigger matches or the assistant starts.")
@@ -320,16 +365,127 @@ public class AssistantModule extends AutomationModule {
         .build()
     );
 
+    // Greetings. Off by default so an existing user's chat is unchanged until they ask for it.
+
+    private final Setting<Boolean> greetingsEnabled = sgGreetings.add(new BoolSetting.Builder()
+        .name("greetings")
+        .description("Greet the local player when you join a world, using a greeting that suits the time of day.")
+        .defaultValue(false)
+        .build()
+    );
+
+    private final Setting<String> morningGreetings = sgGreetings.add(new StringSetting.Builder()
+        .name("morning")
+        .description("Greeting variants for 05:00-11:59, separated by |.")
+        .defaultValue(GreetingPools.poolFor(null, "morning"))
+        .visible(greetingsEnabled::get)
+        .build()
+    );
+
+    private final Setting<String> afternoonGreetings = sgGreetings.add(new StringSetting.Builder()
+        .name("afternoon")
+        .description("Greeting variants for 12:00-16:59, separated by |.")
+        .defaultValue(GreetingPools.poolFor(null, "afternoon"))
+        .visible(greetingsEnabled::get)
+        .build()
+    );
+
+    private final Setting<String> eveningGreetings = sgGreetings.add(new StringSetting.Builder()
+        .name("evening")
+        .description("Greeting variants for 17:00-21:59, separated by |.")
+        .defaultValue(GreetingPools.poolFor(null, "evening"))
+        .visible(greetingsEnabled::get)
+        .build()
+    );
+
+    private final Setting<String> nightGreetings = sgGreetings.add(new StringSetting.Builder()
+        .name("night")
+        .description("Greeting variants for 22:00-04:59, separated by |.")
+        .defaultValue(GreetingPools.poolFor(null, "night"))
+        .visible(greetingsEnabled::get)
+        .build()
+    );
+
+    private final Setting<String> goodGameReply = sgGreetings.add(new StringSetting.Builder()
+        .name("good-game-reply")
+        .description("What the good-game command says. {player} expands to the speaker.")
+        .defaultValue(AssistantBrain.DEFAULT_GOOD_GAME_REPLY)
+        .build()
+    );
+
+    // Permissions. Off by default: enabling it changes who can talk to the assistant, so it must be
+    // a deliberate choice. With it off every command behaves exactly as it did before.
+
+    private final Setting<Boolean> permissionsEnabled = sgPermissions.add(new BoolSetting.Builder()
+        .name("permissions")
+        .description("Restrict who may run each assistant command. Off leaves every command open.")
+        .defaultValue(false)
+        .onChanged(ignored -> rebuild())
+        .build()
+    );
+
+    private final Setting<PermissionSet.DefaultPolicy> defaultPolicy =
+        sgPermissions.add(new EnumSetting.Builder<PermissionSet.DefaultPolicy>()
+            .name("unlisted-commands")
+            .description("How to treat a command with no rule: open to everyone, or local-only.")
+            .defaultValue(PermissionSet.DefaultPolicy.OPEN)
+            .visible(permissionsEnabled::get)
+            .onChanged(ignored -> rebuild())
+            .build()
+        );
+
+    private final Setting<List<String>> commandPermissions =
+        sgPermissions.add(new StringListSetting.Builder()
+            .name("command-permissions")
+            .description("One per line: command;level=everyone|whitelist|administrators|local-only;users=Name,Name=uuid")
+            .defaultValue(List.of())
+            .visible(permissionsEnabled::get)
+            .onChanged(ignored -> rebuild())
+            .build()
+        );
+
+    private final Setting<List<String>> administrators = sgPermissions.add(new StringListSetting.Builder()
+        .name("administrators")
+        .description("Players treated as administrators: a name, or name=uuid to pin the account.")
+        .defaultValue(List.of())
+        .visible(permissionsEnabled::get)
+        .onChanged(ignored -> rebuild())
+        .build()
+    );
+
+    private final Setting<Boolean> requireVerifiedNames = sgPermissions.add(new BoolSetting.Builder()
+        .name("require-verified-names")
+        .description("A name-only entry must match a sender the client could pin to an account. Stricter, but refuses offline-mode players.")
+        .defaultValue(false)
+        .visible(permissionsEnabled::get)
+        .onChanged(ignored -> rebuild())
+        .build()
+    );
+
+    private final Setting<Boolean> duplicateFilter = sgLimits.add(new BoolSetting.Builder()
+        .name("duplicate-filter")
+        .description("Ignore a message the assistant already answered in the last few seconds.")
+        .defaultValue(true)
+        .build()
+    );
+
+    private final Setting<Boolean> helpCommand = sgLimits.add(new BoolSetting.Builder()
+        .name("help-command")
+        .description("Answer the help command. On by default; off makes the assistant silent about itself.")
+        .defaultValue(true)
+        .build()
+    );
+
     private final AssistantService service = AssistantService.get();
     private final AiService aiService = AiService.get();
     private final AssistantRuntime runtime;
-
     private TriggerSet parsed = TriggerSet.empty();
     private AssistantConfig config = AssistantConfig.DEFAULTS;
     private String ownName = "";
 
     /** The assistant's own recent replies, so it never answers itself. */
-    private final Deque<String> ownReplies = new ArrayDeque<>();
+    /** Recognises echoes of the assistant's own replies; the single self-reply guard. */
+    private final SelfReplyGuard selfReplies = new SelfReplyGuard();
 
     private long lastSaveAt;
     private boolean memoryDirty;
@@ -367,12 +523,27 @@ public class AssistantModule extends AutomationModule {
         ownName = localPlayerName();
         sessionStart = System.currentTimeMillis();
         runtime.resetSession();
+        if (greetingsEnabled.get()) greet();
+    }
+
+    /**
+     * Greets the local player with a greeting that suits the time of day.
+     *
+     * <p>Delivered through the normal decision path so the greeting obeys the same reply mode, the
+     * same length clamp and the same self-reply guard as everything else.
+     */
+    public void greet() {
+        long now = System.currentTimeMillis();
+        AssistantBrain.Decision decision = runtime.brain().greeting(
+            identify(ownName), greetingPools(), config,
+            java.time.LocalTime.now(), now);
+        if (decision.acts()) deliver(decision, ownName);
     }
 
     @Override
     protected void onWorldLeave() {
         runtime.resetSession();
-        ownReplies.clear();
+        selfReplies.reset();
         flushMemory();
         flushAi();
     }
@@ -404,9 +575,10 @@ public class AssistantModule extends AutomationModule {
         if (isOwnMessage(sender, content)) return;
 
         long now = System.currentTimeMillis();
-        AssistantBrain.Decision decision = runtime.handle(sender, content, now,
+        SenderIdentity identity = identify(sender);
+        AssistantBrain.Decision decision = runtime.handle(identity, content, now,
             McServerStats.snapshot(mc, now, sessionStart, speed.blocksPerSecond()),
-            statsOptions());
+            statsOptions(), requesterPing(identity, sender));
         if (!decision.acts()) return;
         deliver(decision, sender);
         // Learning is deliberately conservative: the AI only absorbs a line it already understood, so
@@ -422,10 +594,22 @@ public class AssistantModule extends AutomationModule {
 
     private void deliver(AssistantBrain.Decision decision, String sender) {
         switch (decision.delivery()) {
-            case CHAT -> speak(decision.text());
-            case NOTIFY -> notifyUser(NotificationType.IMPORTANT_CHAT, config.name(), decision.text());
+            case CHAT -> speakAll(decision);
+            case NOTIFY -> {
+                // A notification body can hold newlines, so a block keeps its shape here too.
+                String body = decision.hasEmbed()
+                    ? String.join("\n", decision.lines(replyWidth.get(), replyFormat.get().style()))
+                    : decision.text();
+                // A notification is rendered into the same chat box as an incoming line, so it is
+                // recorded as ours too; otherwise a notification that quotes a trigger would be
+                // read back as chat and answered.
+                rememberOwnReply(decision.text());
+                notifyUser(NotificationType.IMPORTANT_CHAT, config.name(), body);
+            }
             case SILENT -> {
-                // Nothing visible; memory bookkeeping already happened in the brain.
+                // Nothing visible; memory bookkeeping already happened in the brain. Recorded
+                // anyway so the guard covers every mode rather than only the speaking one.
+                rememberOwnReply(decision.text());
             }
             case NONE -> {
                 return;
@@ -438,14 +622,44 @@ public class AssistantModule extends AutomationModule {
         }
     }
 
+    /**
+     * Sends a decision as one or more lines.
+     *
+     * <p>A block (such as {@code !help}) is rendered to several lines and each is sent in turn, so
+     * the values line up instead of being crammed into one wrapping sentence. The cap is deliberate:
+     * a long list must not turn into a wall of chat.
+     */
+    private void speakAll(AssistantBrain.Decision decision) {
+        java.util.List<String> lines = decision.lines(replyWidth.get(), replyFormat.get().style());
+        if (lines.isEmpty()) return;
+        int limit = Math.min(lines.size(), MAX_EMBED_LINES);
+        for (int i = 0; i < limit; i++) speak(lines.get(i));
+        if (lines.size() > limit) {
+            speak("(" + (lines.size() - limit) + " more lines; narrow the list with a command.)");
+        }
+    }
+
     /** Sends {@code text} as a real chat message, guarding against self-reply loops. */
     private void speak(String text) {
         if (text == null || text.isBlank()) return;
         if (mc.player == null || mc.player.networkHandler == null) return;
         String trimmed = text.strip();
-        ownReplies.addLast(trimmed.toLowerCase(java.util.Locale.ROOT));
-        while (ownReplies.size() > 16) ownReplies.removeFirst();
+        // Recorded before sending: the echo of this line must be recognised as ours when it
+        // arrives, whatever its delivery mode.
+        rememberOwnReply(trimmed);
         ChatUtils.sendPlayerMsg(trimmed);
+    }
+
+    /**
+     * Marks {@code text} as a line the assistant produced.
+     *
+     * <p>Every reply goes through here, in every mode, so the guard covers public chat, a local
+     * notification rendered into the chat box, and a silent reply that is only logged. The set is
+     * bounded and short-lived in effect: it holds the most recent replies, which is all that is
+     * needed to catch an echo.
+     */
+    private void rememberOwnReply(String text) {
+        selfReplies.record(text);
     }
 
     private void playAlert() {
@@ -464,9 +678,92 @@ public class AssistantModule extends AutomationModule {
         };
     }
 
+    /**
+     * True when this line must not be answered.
+     *
+     * <p>Central on purpose: the check runs once, before trigger matching, before the command
+     * parser and before the AI, so no individual path can forget it. That is what makes recursion
+     * impossible — an assistant reply is recorded here, so its echo is refused at the top of the
+     * pipeline and can never reach a trigger that would answer it again.
+     */
     private boolean isOwnMessage(String sender, String content) {
-        if (!ownName.isBlank() && sender != null && sender.equalsIgnoreCase(ownName)) return true;
-        return ownReplies.contains(content.strip().toLowerCase(java.util.Locale.ROOT));
+        return selfReplies.shouldIgnore(sender, ownName, content);
+    }
+
+    /**
+     * The sender as the client can verify them.
+     *
+     * <p>The name comes from the message, because that is all a chat line carries. The UUID comes
+     * from the client's player list, which the server populated, so it is the one part of the
+     * identity that cannot be typed into chat. When the name is not in the player list the identity
+     * stays unverified, and a UUID-pinned whitelist entry will refuse it — which is the correct
+     * outcome, because in that case the client genuinely cannot prove who spoke.
+     */
+    public SenderIdentity identify(String sender) {
+        if (sender == null || sender.isBlank()) return SenderIdentity.unverified("");
+        String name = sender.trim();
+
+        if (!ownName.isBlank() && name.equalsIgnoreCase(ownName)) {
+            return SenderIdentity.local(name, ownUuid());
+        }
+        java.util.UUID uuid = lookupUuid(name);
+        return uuid == null ? SenderIdentity.unverified(name) : new SenderIdentity(name, uuid, false);
+    }
+
+    /** The local player's own account UUID, or null when there is no player yet. */
+    private java.util.UUID ownUuid() {
+        if (mc.player == null) return null;
+        var profile = mc.player.getGameProfile();
+        return profile == null ? null : profile.getId();
+    }
+
+    /** Resolves {@code name} through the client's player list, or null when it is not there. */
+    private java.util.UUID lookupUuid(String name) {
+        if (mc.getNetworkHandler() == null) return null;
+        var entry = mc.getNetworkHandler().getPlayerListEntry(name);
+        if (entry == null) {
+            // The list is keyed by UUID, so a case-insensitive fallback keeps "notch" working for
+            // "Notch" without ever inventing an account.
+            for (var candidate : mc.getNetworkHandler().getPlayerList()) {
+                var profile = candidate.getProfile();
+                if (profile != null && name.equalsIgnoreCase(profile.getName())) {
+                    entry = candidate;
+                    break;
+                }
+            }
+        }
+        if (entry == null) return null;
+        var profile = entry.getProfile();
+        return profile == null ? null : profile.getId();
+    }
+
+    /**
+     * The speaker's latency, as the tab list reports it.
+     *
+     * <p>Every visible player's latency is in the tab list, so this answers for whoever asked. The
+     * local player is read directly, because their own entry is the one the client always has.
+     * Returns a negative value when the figure is not available, which the command reports as such
+     * rather than substituting someone else's number.
+     */
+    private int requesterPing(SenderIdentity identity, String sender) {
+        if (identity != null && identity.local()) {
+            if (mc.player == null) return -1;
+            var own = mc.getNetworkHandler() == null ? null
+                : mc.getNetworkHandler().getPlayerListEntry(mc.player.getUuid());
+            return own == null ? -1 : own.getLatency();
+        }
+        if (sender == null || sender.isBlank() || mc.getNetworkHandler() == null) return -1;
+        var entry = mc.getNetworkHandler().getPlayerListEntry(sender);
+        if (entry == null) {
+            for (var candidate : mc.getNetworkHandler().getPlayerList()) {
+                var profile = candidate.getProfile();
+                if (profile != null && sender.equalsIgnoreCase(profile.getName())) {
+                    entry = candidate;
+                    break;
+                }
+            }
+        }
+        return entry == null ? -1 : entry.getLatency();
     }
 
     private String localPlayerName() {
@@ -492,7 +789,7 @@ public class AssistantModule extends AutomationModule {
         );
     }
 
-    /** Rebuilds the runtime's rules and config from the current settings. */
+    /** Rebuilds the runtime's rules, config and permissions from the current settings. */
     public void rebuild() {
         parsed = TriggerSet.of(parseRules());
         config = new AssistantConfig(
@@ -511,6 +808,32 @@ public class AssistantModule extends AutomationModule {
         );
         runtime.setTriggers(parsed);
         runtime.setConfig(config);
+        runtime.setPermissions(buildPermissions());
+        runtime.setDuplicateFilter(duplicateFilter.get());
+        runtime.setHelpEnabled(helpCommand.get());
+        runtime.setGreetingPools(greetingPools());
+        runtime.setGoodGameReply(goodGameReply.get());
+    }
+
+    /** The permission model as the current settings describe it. */
+    public PermissionSet buildPermissions() {
+        return PermissionSet.of(
+            permissionsEnabled.get(),
+            administrators.get(),
+            commandPermissions.get(),
+            defaultPolicy.get(),
+            !requireVerifiedNames.get()
+        );
+    }
+
+    /** The four greeting pools, keyed by bucket id. */
+    public java.util.Map<String, String> greetingPools() {
+        java.util.Map<String, String> pools = new java.util.LinkedHashMap<>();
+        pools.put("morning", morningGreetings.get());
+        pools.put("afternoon", afternoonGreetings.get());
+        pools.put("evening", eveningGreetings.get());
+        pools.put("night", nightGreetings.get());
+        return java.util.Map.copyOf(pools);
     }
 
     /** Pushes the AI tunables into the engine. Cheap; safe to call from a settings listener. */
@@ -574,6 +897,146 @@ public class AssistantModule extends AutomationModule {
         return config;
     }
 
+    /** The permission model currently in force. */
+    public PermissionSet permissions() {
+        return runtime.permissions();
+    }
+
+    /** This session's chat activity, for {@code !activity} and the status tab. */
+    public ChatActivity activity() {
+        return runtime.activity();
+    }
+
+    public boolean permissionsEnabled() {
+        return permissionsEnabled.get();
+    }
+
+    /** The local player's name, or an empty string when there is no player yet. */
+    public String selfName() {
+        return ownName;
+    }
+
+    /** The encoded permission rules, for the permissions screen to edit in place. */
+    @SuppressWarnings("unchecked")
+    public Setting<List<String>> permissionsSetting() {
+        return (Setting<List<String>>) settings.get("command-permissions");
+    }
+
+    @SuppressWarnings("unchecked")
+    public Setting<List<String>> administratorsSetting() {
+        return (Setting<List<String>>) settings.get("administrators");
+    }
+
+    /**
+     * Replaces the rule for {@code command}, or adds one when it has none.
+     *
+     * <p>Every edit goes through here so a command can never end up with two rules: the older one
+     * is removed first, which keeps the "last one wins" read order in {@link PermissionSet#of}
+     * irrelevant for anything written by the GUI.
+     */
+    public boolean setPermission(CommandPermission rule) {
+        if (rule == null || rule.command().isBlank()) return false;
+        List<String> updated = new ArrayList<>();
+        for (String encoded : permissionsSetting().get()) {
+            CommandPermission existing = CommandPermission.decode(encoded);
+            if (existing != null && existing.covers(rule.command())) continue;
+            updated.add(encoded);
+        }
+        updated.add(rule.encode());
+        permissionsSetting().set(updated);
+        rebuild();
+        return true;
+    }
+
+    /** Removes the rule for {@code command}, returning it to the configured default. */
+    public boolean clearPermission(String command) {
+        if (command == null) return false;
+        List<String> updated = new ArrayList<>();
+        boolean removed = false;
+        for (String encoded : permissionsSetting().get()) {
+            CommandPermission existing = CommandPermission.decode(encoded);
+            if (existing != null && existing.covers(command)) {
+                removed = true;
+                continue;
+            }
+            updated.add(encoded);
+        }
+        if (!removed) return false;
+        permissionsSetting().set(updated);
+        rebuild();
+        return true;
+    }
+
+    /** The rule configured for {@code command}, or empty when it has none. */
+    public java.util.Optional<CommandPermission> permissionFor(String command) {
+        return permissions().rule(command);
+    }
+
+    /** Adds {@code entry} to the whitelist of {@code command}, creating the rule if needed. */
+    public boolean addWhitelisted(String command, String entry) {
+        String cleaned = CommandPermission.cleanEntry(entry);
+        if (cleaned == null) return false;
+        CommandPermission rule = permissionFor(command)
+            .orElse(CommandPermission.open(command));
+        List<String> users = new ArrayList<>(rule.users());
+        for (String existing : users) {
+            if (existing.equalsIgnoreCase(cleaned)) return false;
+        }
+        users.add(cleaned);
+        return setPermission(rule.withLevel(PermissionLevel.WHITELIST).withUsers(users));
+    }
+
+    /** Removes {@code entry} from the whitelist of {@code command}. */
+    public boolean removeWhitelisted(String command, String entry) {
+        CommandPermission rule = permissionFor(command).orElse(null);
+        if (rule == null || entry == null) return false;
+        List<String> users = new ArrayList<>();
+        boolean removed = false;
+        for (String existing : rule.users()) {
+            if (CommandPermission.entryMatchesName(existing, entry)
+                || existing.equalsIgnoreCase(entry.trim())) {
+                removed = true;
+                continue;
+            }
+            users.add(existing);
+        }
+        if (!removed) return false;
+        return setPermission(rule.withUsers(users));
+    }
+
+    /** Adds {@code entry} to the administrator list. */
+    public boolean addAdministrator(String entry) {
+        String cleaned = CommandPermission.cleanEntry(entry);
+        if (cleaned == null) return false;
+        List<String> updated = new ArrayList<>(administratorsSetting().get());
+        for (String existing : updated) {
+            if (existing.equalsIgnoreCase(cleaned)) return false;
+        }
+        updated.add(cleaned);
+        administratorsSetting().set(updated);
+        rebuild();
+        return true;
+    }
+
+    /** Removes {@code entry} from the administrator list. */
+    public boolean removeAdministrator(String entry) {
+        if (entry == null) return false;
+        List<String> updated = new ArrayList<>();
+        boolean removed = false;
+        for (String existing : administratorsSetting().get()) {
+            if (CommandPermission.entryMatchesName(existing, entry)
+                || existing.equalsIgnoreCase(entry.trim())) {
+                removed = true;
+                continue;
+            }
+            updated.add(existing);
+        }
+        if (!removed) return false;
+        administratorsSetting().set(updated);
+        rebuild();
+        return true;
+    }
+
     /** The local AI engine, for the GUI and the {@code .ai} command. */
     public AiEngine aiEngine() {
         return aiService.engine();
@@ -628,12 +1091,18 @@ public class AssistantModule extends AutomationModule {
         rebuild();
     }
 
-    /** Runs {@code text} as if it arrived from {@code sender}; used by the test command. */
+    /**
+     * Runs {@code text} as if it arrived from {@code sender}; used by the test command.
+     *
+     * <p>The sender is identified through the player list like a real message, so a test exercises
+     * the same permission decisions a live line would.
+     */
     public AssistantBrain.Decision simulate(String sender, String content) {
         long now = System.currentTimeMillis();
-        AssistantBrain.Decision decision = runtime.handle(sender, content, now,
+        SenderIdentity identity = identify(sender);
+        AssistantBrain.Decision decision = runtime.handle(identity, content, now,
             McServerStats.snapshot(mc, now, sessionStart, speed.blocksPerSecond()),
-            statsOptions());
+            statsOptions(), requesterPing(identity, sender));
         if (decision.acts()) deliver(decision, sender);
         return decision;
     }
@@ -663,6 +1132,10 @@ public class AssistantModule extends AutomationModule {
 
         WButton save = list.add(theme.button("Save Memory")).expandX().widget();
         save.action = this::saveMemory;
+
+        WButton permissions = list.add(theme.button("Assistant Permissions...")).expandX().widget();
+        permissions.action = () -> mc.setScreen(
+            new com.logvex.addon.assistant.gui.PermissionsScreen(this));
 
         WButton defaults = list.add(theme.button("Restore Default Triggers")).expandX().widget();
         defaults.action = () -> {

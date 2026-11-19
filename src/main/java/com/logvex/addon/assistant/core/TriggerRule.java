@@ -1,6 +1,7 @@
 package com.logvex.addon.assistant.core;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
@@ -27,7 +28,9 @@ public record TriggerRule(
     int sessionLimit,
     boolean sound,
     boolean remember,
-    boolean enabled
+    boolean enabled,
+    String aliases,
+    String pool
 ) {
     /** How a matching rule delivers its reply. */
     public enum ReplyMode {
@@ -49,7 +52,14 @@ public record TriggerRule(
         }
     }
 
-    public static final long DEFAULT_COOLDOWN_MS = 3_000L;
+    /**
+     * The cooldown a new rule gets, in milliseconds.
+     *
+     * <p>One second, not five: a chat assistant that ignores a repeated question for five seconds
+     * feels broken, and the global per-minute budget already caps the total. It is only a default —
+     * an existing rule keeps whatever cooldown it was saved with.
+     */
+    public static final long DEFAULT_COOLDOWN_MS = 1_000L;
 
     public TriggerRule {
         if (pattern == null) pattern = "";
@@ -58,6 +68,21 @@ public record TriggerRule(
         if (mode == null) mode = ReplyMode.CHAT;
         if (cooldownMs < 0) cooldownMs = 0;
         if (sessionLimit < 0) sessionLimit = 0;
+        if (aliases == null) aliases = "";
+        if (pool == null) pool = "";
+    }
+
+    /**
+     * The original eleven-field form, kept so existing call sites and stored rules keep working.
+     *
+     * <p>Aliases and the reply pool default to empty, which is exactly the behaviour of a rule
+     * written before those features existed.
+     */
+    public TriggerRule(String pattern, boolean caseSensitive, boolean wholeWord, String sender,
+                       String reply, ReplyMode mode, long cooldownMs, int sessionLimit,
+                       boolean sound, boolean remember, boolean enabled) {
+        this(pattern, caseSensitive, wholeWord, sender, reply, mode, cooldownMs, sessionLimit,
+            sound, remember, enabled, "", "");
     }
 
     /** A rule that answers {@code pattern} with {@code reply} in chat. */
@@ -71,6 +96,36 @@ public record TriggerRule(
         if (sender.isBlank()) return true;
         if (from == null) return false;
         return sender.equalsIgnoreCase(from.trim());
+    }
+
+    /** The aliases as a clean list, lower-cased, without blanks or the pattern itself. */
+    public List<String> aliasList() {
+        if (aliases == null || aliases.isBlank()) return List.of();
+        List<String> out = new java.util.ArrayList<>(4);
+        for (String alias : aliases.split(",")) {
+            String trimmed = alias.trim();
+            if (trimmed.isEmpty() || trimmed.equalsIgnoreCase(pattern)) continue;
+            out.add(trimmed);
+        }
+        return List.copyOf(out);
+    }
+
+    /** Every phrase this rule answers to: the pattern first, then its aliases. */
+    public List<String> phrases() {
+        List<String> out = new java.util.ArrayList<>(1 + aliasList().size());
+        out.add(pattern);
+        out.addAll(aliasList());
+        return List.copyOf(out);
+    }
+
+    /**
+     * The reply to send, with one variant chosen and the pool appended.
+     *
+     * @param random the randomness source, or null for the shared one
+     */
+    public String chosenReply(java.util.Random random) {
+        return ResponseVariants.withPool(
+            ResponseVariants.pick(reply, random), pool, random);
     }
 
     /** The effective cooldown: never negative. */
@@ -96,6 +151,8 @@ public record TriggerRule(
         map.put("sound", sound);
         map.put("remember", remember);
         map.put("enabled", enabled);
+        map.put("aliases", aliases);
+        map.put("pool", pool);
         return map;
     }
 
@@ -114,7 +171,9 @@ public record TriggerRule(
             (int) num(map.get("limit"), 0),
             bool(map.get("sound"), false),
             bool(map.get("remember"), false),
-            bool(map.get("enabled"), true)
+            bool(map.get("enabled"), true),
+            str(map.get("aliases")),
+            str(map.get("pool"))
         );
     }
 
@@ -122,7 +181,8 @@ public record TriggerRule(
         return pattern + ";case=" + caseSensitive + ";whole=" + wholeWord
             + ";sender=" + sender + ";reply=" + reply + ";mode=" + mode.name().toLowerCase(Locale.ROOT)
             + ";cooldown=" + cooldownMs + ";limit=" + sessionLimit + ";sound=" + sound
-            + ";remember=" + remember + ";enabled=" + enabled;
+            + ";remember=" + remember + ";enabled=" + enabled
+            + ";aliases=" + aliases + ";pool=" + pool;
     }
 
     public static TriggerRule decode(String encoded) {
@@ -141,6 +201,8 @@ public record TriggerRule(
         boolean sound = false;
         boolean remember = false;
         boolean enabled = true;
+        String aliases = "";
+        String pool = "";
 
         for (int i = 1; i < parts.length; i++) {
             int eq = parts[i].indexOf('=');
@@ -158,6 +220,8 @@ public record TriggerRule(
                 case "sound" -> sound = Boolean.parseBoolean(value);
                 case "remember" -> remember = Boolean.parseBoolean(value);
                 case "enabled" -> enabled = Boolean.parseBoolean(value);
+                case "aliases", "alias" -> aliases = value;
+                case "pool", "signoff" -> pool = value;
                 default -> {
                     // Unknown key from a newer build: ignore it.
                 }
@@ -165,16 +229,14 @@ public record TriggerRule(
         }
 
         return new TriggerRule(pattern, caseSensitive, wholeWord, sender, reply, mode,
-            cooldown, limit, sound, remember, enabled);
+            cooldown, limit, sound, remember, enabled, aliases, pool);
     }
 
     /** A small set of ready-to-use rules offered on first run. */
     public static java.util.List<TriggerRule> defaults() {
         return java.util.List.of(
             new TriggerRule("hello bot", false, false, "", "Hello {player}!", ReplyMode.CHAT,
-                DEFAULT_COOLDOWN_MS, 0, false, false, true),
-            new TriggerRule("!ping", false, false, "", "pong", ReplyMode.CHAT,
-                1_000L, 0, false, false, true)
+                DEFAULT_COOLDOWN_MS, 0, false, false, true)
         );
     }
 

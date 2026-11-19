@@ -347,7 +347,7 @@ single line each, so the whole feature set is editable from the settings list, t
 `.ai triggers` command or the Assistant Manager GUI:
 
 ```
-pattern;sender=;reply=;mode=chat|notify|silent;cooldown=3000;limit=0;sound=false;remember=false;enabled=true
+pattern;sender=;reply=;mode=chat|notify|silent;cooldown=1000;limit=0;sound=false;remember=false;enabled=true;aliases=;pool=
 ```
 
 | Field | Meaning |
@@ -363,6 +363,9 @@ pattern;sender=;reply=;mode=chat|notify|silent;cooldown=3000;limit=0;sound=false
 | `sound` | Play a chime when the rule fires. |
 | `remember` | Write the exchange to memory. |
 | `enabled` | Turn the rule off without deleting it. |
+| `aliases` | Extra phrases that fire the same rule, comma separated, e.g. `latency,ms`. |
+| `pool` | A closing phrase chosen at random and appended, e.g. `Have fun!\|Good luck!`. |
+| `reply` variants | `reply` may hold alternatives separated by `\|`; one is chosen at random. |
 
 The first rule that matches wins, so a specific rule can be placed above a broad one. A global
 rate limit (default 20 replies per minute) caps how often the assistant can answer in total, and a
@@ -420,6 +423,11 @@ understood:
 
 | Command | Effect |
 | --- | --- |
+| `!help [page]` | List every command you may use, one page at a time. |
+| `!hello` | A greeting that suits the time of day. |
+| `!gg` | The configured good-game line. |
+| `!status` | Assistant state and memory size. |
+| `!activity` | How busy chat has been this session. |
 | `!remember key = value` | Store a fact. |
 | `!fact key` | Read a fact back. |
 | `!forget key` | Remove a fact. |
@@ -428,6 +436,12 @@ understood:
 | `!whoami` | What the assistant knows about you. |
 | `!forgetme` | Erase everything stored about you. |
 | `!history` | Recent remembered exchanges. |
+
+Each command has one or more aliases, so `!latency`, `!ms` and `!ping` are the same command, and
+`!pos`, `!position` and `!coords` are the same command. An alias is not a second command: it resolves
+to the canonical name before any permission check, so a rule on `!remember` also covers `!learn`.
+The full table lives in `CommandCatalog`, which is also what `!help` and the permissions screen read,
+so the three can never disagree.
 
 How the assistant answers these is controlled by `memory-reply-mode` (`chat`, `notify` or
 `silent`). The default, `notify`, keeps answers out of public chat.
@@ -440,13 +454,17 @@ renamed or switched off in the **Stats** settings group, and the whole set has o
 
 | Command | Answer |
 | --- | --- |
-| `!ping` | Latency and a verdict, e.g. `Ping 42 ms (good).` |
+| `!ping` | **Your own** latency and a verdict, e.g. `Your ping is 42 ms (good).` |
 | `!tps` | The tick rate out of 20, with a `lagging` note when it is behind. |
 | `!stats` | Every figure the client can see, joined on one line. |
 | `!coords` | Position and dimension. |
 | `!health` | Health and food. |
 | `!fps` | The client's frame rate. |
 | `!server` | The server name and session length. |
+| `!players` | How many players the tab list shows. |
+| `!uptime` | How long this session has been running. |
+| `!world` | The dimension and its name. |
+| `!speed` | How fast you are moving, in blocks per second. |
 | `!time` | The in-game clock. |
 
 The `stats-detail` setting chooses between `brief` (connection figures only) and `full` (adds
@@ -454,6 +472,69 @@ dimension, biome, health, position and memory), and `stats-separator` sets the t
 fields of `!stats`.
 
 `!stats` and the `server-stats` HUD read the same snapshot, so the two never disagree.
+
+### Chat features and command whitelist
+
+Every command has a permission level. The level is checked **before** the command runs, so a refused
+`!remember` stores nothing, a refused `!forget` deletes nothing, and a refused command never reaches
+the local AI. Refusals are counted separately in `.ai status` so a user can see them.
+
+Permissions are **off** by default, which leaves every command exactly as it was before this feature
+existed. Turning them on is a deliberate choice, because it changes who can talk to the assistant.
+
+| Level | Who may use the command |
+| --- | --- |
+| `everyone` | Anyone in chat. |
+| `whitelist` | The players listed on that command's own whitelist. |
+| `administrators` | The players in the shared administrator list. |
+| `local-only` | Only the local player. Nothing arriving from chat can use it. |
+
+The default level for each command is set in `CommandCatalog`. Anything that changes state
+(`remember`, `forget`, `forgetme`) defaults to `local-only`; read-only figures such as `ping` and
+`tps` default to `everyone`; `history` defaults to `whitelist`.
+
+Two policies cover commands with no rule at all:
+
+- `unlisted-commands = open` (default) — a command with no rule is open to everyone.
+- `unlisted-commands = local-only` — a command with no rule is closed to chat. Choose this if you
+  would rather a new command be silent than accidentally public.
+
+#### How a sender is identified
+
+A chat line carries a name and nothing else, and a name in chat is just text — anyone can type
+another player's name. So the identity used for permission checks has two parts:
+
+1. the **name** from the message, and
+2. the **UUID** from the client's own player list, which the server populated.
+
+The UUID is the part that cannot be forged in chat. A whitelist entry may be written as a bare name
+(`Alice`) or pinned to an account (`Alice=069a79f4-44e9-4726-a5be-fca90e38aaf5`). A pinned entry
+matches on the UUID, so it survives a rename, and a player who types someone else's name does not
+match it. When the client cannot resolve a name to an account, the identity stays unverified, and a
+pinned entry refuses it — which is the honest answer, because in that case the client genuinely
+cannot prove who spoke.
+
+`require-verified-names` makes bare-name entries refuse unverified senders too. That is stricter and
+is the right choice on a server where you trust the player list but not the chat text; it will
+refuse players on an offline-mode server, who have no real account UUID.
+
+The local player is always identified as themselves and always passes `local-only`.
+
+#### Editing the whitelist
+
+- `.ai perms` lists every command with its level and whitelist.
+- `.ai perms gui` opens the permissions screen: one row per command, a button that cycles the level,
+  and a per-command whitelist editor.
+- `.ai perms set <command> <level>` sets one level.
+- `.ai perms allow <command> <user>` / `.ai perms deny <command> <user>` edit one whitelist.
+- `.ai perms admin add <user>` / `.ai perms admin remove <user>` edit the administrator list.
+- `.ai perms reset <command>` returns a command to its default level.
+
+Rules are stored in the `command-permissions` setting as
+`command;level=<level>;whitelist=<bool>;users=<entries>;enabled=<bool>`, so they survive a restart
+and can be edited by hand. A rule written by an older build, which carried only `whitelist=true`, is
+migrated to the matching level. A rule whose level cannot be read resolves to `local-only` rather
+than to the open default, so a typo in the configuration closes a command instead of opening it.
 
 ### Settings
 
@@ -470,6 +551,14 @@ fields of `!stats`.
 | `rate-limit-per-minute` | Global reply cap; `0` disables it. |
 | `max-reply-length` | Longest reply, in characters. |
 | `match-feedback` | A short local note when a trigger matches. |
+| `permissions` | Master switch for the permission model; off by default. |
+| `unlisted-commands` | `open` or `local-only` for commands with no rule. |
+| `command-permissions` | The per-command rules, one encoded rule per line. |
+| `administrators` | Players treated as administrators, `Name` or `Name=uuid`. |
+| `require-verified-names` | Refuse bare-name entries for senders the client cannot pin. |
+| `duplicate-filter` | Drop a message the assistant already answered in the last few seconds. |
+| `greetings` | Greet the local player on joining a world. |
+| `morning` / `afternoon` / `evening` / `night` | Greeting variants per period, separated by `\|`. |
 
 ### Assistant Manager
 
@@ -477,8 +566,19 @@ fields of `!stats`.
 
 - **Triggers** — add, edit, enable/disable and remove rules; restore the defaults.
 - **Memory** — add, filter and forget facts, see recent exchanges, clear history or all memory.
-- **Status** — counts, the memory file path and a "test a message" box that shows what the
-  assistant would do with a line of text without sending anything.
+- **Status** — counts, the memory file path, this session's chat activity, and a "test a message"
+  box that runs a line through the live runtime, so it shows the same permission decision a real
+  chat line would get.
+
+The widget also has an "Assistant Permissions..." button, which opens the permissions screen
+described above.
+
+### Greetings
+
+With `greetings` on, the assistant greets the local player when they join a world, choosing a
+greeting that suits the time of day. Each period has its own pool of variants, and one is picked at
+random, so the greeting does not repeat word for word. A blank pool falls back to a neutral
+greeting rather than sending nothing.
 
 ### HUD
 
@@ -500,6 +600,13 @@ It shows a single "Disabled" line when the module is off, so it never displays s
 | `.ai forget <key>` | Removes a fact. |
 | `.ai test <message>` | Shows what the assistant would do with a message. |
 | `.ai history` | Recent remembered exchanges. |
+| `.ai placeholders` | Every placeholder, with its current value. |
+| `.ai perms` | Lists every command with its permission level and whitelist. |
+| `.ai perms gui` | Opens the permissions screen. |
+| `.ai perms set <command> <level>` | Sets one command's level. |
+| `.ai perms allow\|deny <command> <user>` | Edits one command's whitelist. |
+| `.ai perms admin add\|remove <user>` | Edits the administrator list. |
+| `.ai perms reset <command>` | Returns a command to its default level. |
 | `.ai save` / `.ai clear` | Save memory now / clear all memory. |
 
 ### Storage

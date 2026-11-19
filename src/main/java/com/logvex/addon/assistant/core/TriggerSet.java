@@ -63,8 +63,28 @@ public final class TriggerSet {
     /** True when {@code rule}'s pattern is present in {@code text} under its matching options. */
     public static boolean matches(TriggerRule rule, String text) {
         if (rule == null || text == null) return false;
-        String pattern = rule.pattern();
-        if (pattern.isBlank()) return false;
+        for (String phrase : rule.phrases()) {
+            if (matchesPhrase(rule, phrase, text)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * The phrase of {@code rule} that matched {@code text}, or null.
+     *
+     * <p>Useful for feedback and for the GUI: it tells a user that an alias fired rather than the
+     * pattern they wrote.
+     */
+    public static String matchingPhrase(TriggerRule rule, String text) {
+        if (rule == null || text == null) return null;
+        for (String phrase : rule.phrases()) {
+            if (matchesPhrase(rule, phrase, text)) return phrase;
+        }
+        return null;
+    }
+
+    private static boolean matchesPhrase(TriggerRule rule, String pattern, String text) {
+        if (pattern == null || pattern.isBlank()) return false;
 
         String haystack = rule.caseSensitive() ? text : text.toLowerCase(Locale.ROOT);
         String needle = rule.caseSensitive() ? pattern : pattern.toLowerCase(Locale.ROOT);

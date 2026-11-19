@@ -41,18 +41,73 @@ public final class AssistantBrain {
      * @param sound      whether the rule asked for a sound
      * @param remember   whether the exchange should be written to memory
      * @param command    true when the decision came from a memory command rather than a trigger
+     * @param denied     true when the permission gate refused the command; nothing was executed
+     * @param embed      a structured block to deliver instead of {@code text}, or null
      */
     public record Decision(Delivery delivery, String text, TriggerRule rule,
-                           boolean sound, boolean remember, boolean command) {
-        public static final Decision NONE = new Decision(Delivery.NONE, "", null, false, false, false);
+                           boolean sound, boolean remember, boolean command, boolean denied,
+                           ReplyFormat.Embed embed) {
+        public static final Decision NONE =
+            new Decision(Delivery.NONE, "", null, false, false, false, false, null);
+
+        public Decision(Delivery delivery, String text, TriggerRule rule,
+                        boolean sound, boolean remember, boolean command, boolean denied) {
+            this(delivery, text, rule, sound, remember, command, denied, null);
+        }
+
+        /** The original six-field form, for every decision that was not a refusal. */
+        public Decision(Delivery delivery, String text, TriggerRule rule,
+                        boolean sound, boolean remember, boolean command) {
+            this(delivery, text, rule, sound, remember, command, false, null);
+        }
 
         public boolean acts() {
             return delivery != Delivery.NONE;
+        }
+
+        /** True when this decision carries a block rather than a single line. */
+        public boolean hasEmbed() {
+            return embed != null;
+        }
+
+        /** The lines to deliver at {@code width}, keeping each block's own layout. */
+        public java.util.List<String> lines(int width) {
+            return lines(width, null);
+        }
+
+        /**
+         * The lines to deliver, in order: the rendered block when there is one, otherwise the single
+         * text line.
+         *
+         * @param style the layout to force, or null to keep the one the block was written for
+         */
+        public java.util.List<String> lines(int width, ReplyFormat.Style style) {
+            if (embed == null) return text == null || text.isBlank() ? java.util.List.of()
+                : java.util.List.of(text);
+            return ReplyFormat.render(style == null ? embed : withStyle(embed, style), width);
+        }
+
+        private static ReplyFormat.Embed withStyle(ReplyFormat.Embed embed, ReplyFormat.Style style) {
+            return new ReplyFormat.Embed(embed.title(), embed.fields(), embed.footer(), style);
+        }
+
+        /** A refusal: delivered to the speaker, but nothing was executed. */
+        public static Decision refusal(TriggerRule.ReplyMode mode, String reason) {
+            Delivery delivery = switch (mode) {
+                case CHAT -> Delivery.CHAT;
+                case NOTIFY -> Delivery.NOTIFY;
+                case SILENT -> Delivery.SILENT;
+            };
+            return new Decision(delivery, reason, null, false, false, true, true);
         }
     }
 
     private final AssistantMemory memory;
     private AiEngine engine;
+
+    /** The configured greeting pools, keyed by bucket id; null means the built-in defaults. */
+    private java.util.Map<String, String> greetingPools;
+    private String goodGameReply = DEFAULT_GOOD_GAME_REPLY;
 
     public AssistantBrain(AssistantMemory memory) {
         this.memory = memory == null ? new AssistantMemory() : memory;
@@ -60,6 +115,20 @@ public final class AssistantBrain {
 
     public AssistantMemory memory() {
         return memory;
+    }
+
+    /** The default answer to the good-game command. */
+    public static final String DEFAULT_GOOD_GAME_REPLY = "Good game, {player}!";
+
+    /** Replaces the greeting pools the hello command draws from. */
+    public void setGreetingPools(java.util.Map<String, String> pools) {
+        this.greetingPools = pools;
+    }
+
+    /** Replaces the good-game reply. A blank value restores the default. */
+    public void setGoodGameReply(String reply) {
+        this.goodGameReply = reply == null || reply.isBlank()
+            ? DEFAULT_GOOD_GAME_REPLY : reply;
     }
 
     /** Attaches the local AI. Without one the brain only answers triggers and memory commands. */
@@ -124,6 +193,63 @@ public final class AssistantBrain {
         return fromCommand(sender, content, config, now, stats, statsOptions);
     }
 
+    /**
+     * The permission-checked form the live runtime uses.
+     *
+     * @param identity    the sender as the client verified them
+     * @param permissions the current rules; a null set means permissions are off
+     * @param activity    where to record the command, or null for a throwaway
+     */
+    public Decision command(SenderIdentity identity, String content, AssistantConfig config,
+                            long now, ServerStats stats, StatsCommands.Options statsOptions,
+                            PermissionSet permissions, ChatActivity activity) {
+        return command(identity, content, config, now, stats, statsOptions, permissions, activity,
+            true);
+    }
+
+    /**
+     * As above, with the help switch.
+     *
+     * @param helpEnabled false makes the help command answer nothing, so a user can hide the
+     *                    command list without restricting it for everyone else
+     */
+    public Decision command(SenderIdentity identity, String content, AssistantConfig config,
+                            long now, ServerStats stats, StatsCommands.Options statsOptions,
+                            PermissionSet permissions, ChatActivity activity, boolean helpEnabled) {
+        return command(identity, content, config, now, stats, statsOptions, permissions, activity,
+            helpEnabled, -1);
+    }
+
+    /**
+     * The full form, with the requester's own latency.
+     *
+     * <p>The ping figure belongs to the person who asked, and only the caller can read it from the
+     * tab list. Passing it here keeps the brain free of Minecraft types while still letting
+     * {@code !ping} answer about the speaker rather than about this client.
+     *
+     * @param requesterPing the speaker's latency in milliseconds, or a negative value when unknown
+     */
+    public Decision command(SenderIdentity identity, String content, AssistantConfig config,
+                            long now, ServerStats stats, StatsCommands.Options statsOptions,
+                            PermissionSet permissions, ChatActivity activity, boolean helpEnabled,
+                            int requesterPing) {
+        if (!helpEnabled && isHelpRequest(content, config)) return Decision.NONE;
+        return fromCommand(identity, content, config, now, stats, statsOptions, permissions,
+            activity, requesterPing);
+    }
+
+    /** True when {@code content} is the help command or one of its aliases. */
+    private static boolean isHelpRequest(String content, AssistantConfig config) {
+        if (content == null || config == null) return false;
+        String trimmed = content.strip();
+        String prefix = config.commandPrefix();
+        if (!trimmed.startsWith(prefix)) return false;
+        String body = trimmed.substring(prefix.length()).strip();
+        if (body.isEmpty()) return false;
+        String word = body.split("\\s+", 2)[0].toLowerCase(java.util.Locale.ROOT);
+        return CommandCatalog.canonical(word).filter("help"::equals).isPresent();
+    }
+
     /** Asks the local AI for a reply, or null when it declines. See {@link #fromAi}. */
     public Decision ai(String sender, String content, AssistantConfig config, long now) {
         return fromAi(sender, content, config, now, ServerStats.OFFLINE);
@@ -178,7 +304,7 @@ public final class AssistantBrain {
                                  AssistantConfig config, long now, ServerStats stats) {
         ResponseTemplate.Context context = new ResponseTemplate.Context(
             sender, content, stats.server(), memory, now, stats);
-        String text = ResponseTemplate.expand(rule.reply(), context);
+        String text = ResponseTemplate.expand(rule.chosenReply(null), context);
         text = clamp(text, config.maxReplyLength());
 
         Delivery delivery = switch (rule.mode()) {
@@ -203,11 +329,42 @@ public final class AssistantBrain {
      * understands, so the caller can fall through to no-op.
      */
     private Decision fromCommand(String sender, String content, AssistantConfig config, long now) {
-        return fromCommand(sender, content, config, now, ServerStats.OFFLINE, null);
+        return fromCommand(SenderIdentity.unverified(sender), content, config, now,
+            ServerStats.OFFLINE, null, null, null);
     }
 
     private Decision fromCommand(String sender, String content, AssistantConfig config, long now,
                                  ServerStats stats, StatsCommands.Options statsOptions) {
+        return fromCommand(SenderIdentity.unverified(sender), content, config, now, stats,
+            statsOptions, null, null);
+    }
+
+    /**
+     * Parses and authorises one command.
+     *
+     * <p>Order is the whole point of this method, and it must not be rearranged:
+     * <ol>
+     *   <li>the verb is resolved to a canonical command through the alias table, so every spelling
+     *       of a restricted command reaches the same rule;</li>
+     *   <li>the permission check runs — <em>before</em> any memory write, any reply, any AI call;</li>
+     *   <li>only then does the command body execute.</li>
+     * </ol>
+     * A denied command returns a refusal with no side effect at all, so a rejected
+     * {@code !remember} cannot leave a fact behind.
+     *
+     * @param identity the sender as the client can verify them; never a name taken from the message
+     */
+    private Decision fromCommand(SenderIdentity identity, String content, AssistantConfig config,
+                                 long now, ServerStats stats, StatsCommands.Options statsOptions,
+                                 PermissionSet permissions, ChatActivity activity) {
+        return fromCommand(identity, content, config, now, stats, statsOptions, permissions,
+            activity, -1);
+    }
+
+    private Decision fromCommand(SenderIdentity identity, String content, AssistantConfig config,
+                                 long now, ServerStats stats, StatsCommands.Options statsOptions,
+                                 PermissionSet permissions, ChatActivity activity,
+                                 int requesterPing) {
         String prefix = config.commandPrefix();
         String trimmed = content.strip();
         if (!trimmed.startsWith(prefix)) return null;
@@ -215,26 +372,61 @@ public final class AssistantBrain {
         if (body.isEmpty()) return null;
 
         String[] parts = body.split("\\s+", 3);
-        String verb = parts[0].toLowerCase(Locale.ROOT);
-        String rest = parts.length > 1 ? body.substring(verb.length()).strip() : "";
+        String word = parts[0].toLowerCase(Locale.ROOT);
+        String rest = parts.length > 1 ? body.substring(verbLength(body)).strip() : "";
 
-        Decision memory = memoryCommand(sender, verb, rest, body, config, now);
-        if (memory != null) return memory;
+        // A configured stats verb is an alias for its figure, so renaming `ping` to `latency` does
+        // not create a second, unchecked command.
+        String canonical = CommandCatalog.canonical(word).orElse(null);
+        if (canonical == null) canonical = statsCanonical(word, statsOptions);
+        if (canonical == null) return null;
 
-        // Stats answer after an explicit memory verb so a user's own command name still wins, but
-        // before the AI, so a stats question never costs a model call.
-        java.util.Optional<String> statsReply =
-            StatsCommands.answer(body, stats, statsOptions);
-        if (statsReply.isPresent()) {
-            return reply(config.memoryReplyMode(), statsReply.get(), false);
+        PermissionSet perms = permissions == null ? PermissionSet.permissive() : permissions;
+        PermissionSet.Verdict verdict = perms.permits(canonical, identity);
+        if (!verdict.allowed()) {
+            // Refused without executing: no memory write, no AI call, no reply beyond the reason.
+            return Decision.refusal(config.memoryReplyMode(), verdict.reason());
+        }
+
+        ChatActivity observed = activity == null ? new ChatActivity() : activity;
+        Decision decision = dispatch(identity, canonical, word, rest, config, now, stats,
+            statsOptions, observed, perms, requesterPing);
+        if (decision == null) return null;
+        // Only a command that actually ran is counted; a refusal is recorded separately so
+        // `!activity` cannot report a command as used when the gate turned it away.
+        if (decision.acts() && !decision.denied()) observed.recordCommand(canonical);
+        return decision;
+    }
+
+    /** The canonical command a configured stats verb refers to, or null. */
+    private static String statsCanonical(String word, StatsCommands.Options options) {
+        if (options == null) return null;
+        for (java.util.Map.Entry<String, String> entry : options.verbs().entrySet()) {
+            if (entry.getValue() != null && entry.getValue().equalsIgnoreCase(word)) {
+                return entry.getKey();
+            }
         }
         return null;
     }
 
-    /** The memory verbs, or null when {@code verb} is not one of them. */
-    private Decision memoryCommand(String sender, String verb, String rest, String body,
-                                   AssistantConfig config, long now) {
-        return switch (verb) {
+    /** The length of the first word in {@code body}, so the remainder can be sliced safely. */
+    private static int verbLength(String body) {
+        for (int i = 0; i < body.length(); i++) {
+            if (Character.isWhitespace(body.charAt(i))) return i;
+        }
+        return body.length();
+    }
+
+    /** Runs an authorised command. */
+    private Decision dispatch(SenderIdentity identity, String canonical, String word, String rest,
+                              AssistantConfig config, long now, ServerStats stats,
+                              StatsCommands.Options statsOptions, ChatActivity activity,
+                              PermissionSet perms, int requesterPing) {
+        String sender = identity.name();
+        return switch (canonical) {
+            case "help" -> commandHelp(identity, config, rest, statsOptions, perms);
+            case "status" -> commandStatus(config, activity, perms);
+            case "activity" -> commandActivity(config, activity, now);
             case "remember" -> commandRemember(sender, rest, config, now);
             case "forget" -> commandForget(sender, rest, config, now);
             case "fact" -> commandFact(sender, rest, config);
@@ -242,9 +434,205 @@ public final class AssistantBrain {
             case "memory" -> commandMemory(sender, config);
             case "forgetme" -> commandForgetMe(sender, config, now);
             case "history" -> commandHistory(config);
+            case "hello" -> commandHello(sender, config, now, stats);
+            case "gg" -> commandGoodGame(sender, config, now, stats);
             case "whoami" -> commandWhoAmI(sender, config);
+            case "ping", "tps", "stats", "coords", "health", "fps", "server", "time",
+                 "players", "uptime", "world", "speed" -> {
+                // The stats table answers on the configured verb, so it is asked with the word the
+                // player typed first. An alias from the catalogue (for example `latency` for
+                // `ping`) is not a stats verb, so the canonical name is the fallback.
+                String requester = identity.local() ? "" : sender;
+                java.util.Optional<String> text = StatsCommands.answer(word + restSuffix(rest),
+                    stats, statsOptions, requesterPing, requester);
+                if (text.isEmpty() && !word.equals(canonical)) {
+                    text = StatsCommands.answer(canonical + restSuffix(rest), stats, statsOptions,
+                        requesterPing, requester);
+                }
+                yield text.map(value -> reply(config.memoryReplyMode(), value, false)).orElse(null);
+            }
             default -> null;
         };
+    }
+
+    /**
+     * {@code !hello}: the greeting that suits the current hour.
+     *
+     * <p>Drawn from the same pools the join greeting uses, so a user configures the wording once.
+     */
+    private Decision commandHello(String sender, AssistantConfig config, long now,
+                                  ServerStats stats) {
+        java.time.LocalTime clock = java.time.LocalTime.now();
+        String template = GreetingPools.greeting(greetingPools, clock, null);
+        return templated(template, sender, config, now, stats);
+    }
+
+    /** {@code !gg}: the configured good-game line. */
+    private Decision commandGoodGame(String sender, AssistantConfig config, long now,
+                                     ServerStats stats) {
+        return templated(goodGameReply, sender, config, now, stats);
+    }
+
+    /** Expands one configured template and delivers it, or declines when it comes out blank. */
+    private Decision templated(String template, String sender, AssistantConfig config, long now,
+                               ServerStats stats) {
+        if (template == null || template.isBlank()) return Decision.NONE;
+        ResponseTemplate.Context context = new ResponseTemplate.Context(
+            sender == null ? "" : sender, "", "", memory, now,
+            stats == null ? ServerStats.OFFLINE : stats);
+        String text = clamp(ResponseTemplate.expand(template, context), config.maxReplyLength());
+        if (text.isBlank()) return Decision.NONE;
+        return reply(config.memoryReplyMode(), text, false);
+    }
+
+    private static String restSuffix(String rest) {
+        return rest == null || rest.isEmpty() ? "" : " " + rest;
+    }
+
+    /** {@code !help}: every command the assistant answers, as one row per command. */
+    private Decision commandHelp(SenderIdentity identity, AssistantConfig config, String rest,
+                                 StatsCommands.Options statsOptions, PermissionSet perms) {
+        int page = parsePage(rest);
+        ReplyFormat.Embed embed = helpEmbed(identity, config, statsOptions, perms, page);
+        if (embed.fields().isEmpty()) {
+            return reply(config.memoryReplyMode(), "No commands are available to you.", false);
+        }
+        return embedReply(config.memoryReplyMode(), embed, false);
+    }
+
+    /**
+     * How many command rows one help page holds.
+     *
+     * <p>Four, not eight: a row with its description, aliases and level wraps to two lines in a
+     * narrow chat window, and a page has to stay inside the delivery cap or the tail is cut off.
+     */
+    public static final int HELP_PAGE_SIZE = 4;
+
+    /** The page number in {@code rest} ({@code "2"} or {@code "page 2"}), clamped to 1 or more. */
+    static int parsePage(String rest) {
+        if (rest == null || rest.isBlank()) return 1;
+        java.util.regex.Matcher matcher =
+            java.util.regex.Pattern.compile("(\\d+)").matcher(rest);
+        if (!matcher.find()) return 1;
+        try {
+            return Math.max(1, Integer.parseInt(matcher.group(1)));
+        } catch (NumberFormatException tooLarge) {
+            return Integer.MAX_VALUE;
+        }
+    }
+
+    /**
+     * The help block: one row per command the caller may actually use.
+     *
+     * <p>Derived from {@link CommandCatalog} and the live {@link PermissionSet}, so it cannot list a
+     * command that no longer exists, or claim a level that is not the one enforced. Commands the
+     * speaker could not run are omitted rather than advertised, and a whitelist is named but never
+     * enumerated — printing the members would leak the very list the whitelist protects.
+     *
+     * @param page the 1-based page to render
+     */
+    public ReplyFormat.Embed helpEmbed(SenderIdentity identity, AssistantConfig config,
+                                       StatsCommands.Options statsOptions, PermissionSet perms,
+                                       int page) {
+        AssistantConfig cfg = config == null ? AssistantConfig.DEFAULTS : config;
+        PermissionSet live = perms == null ? PermissionSet.permissive() : perms;
+        int wanted = Math.max(1, page);
+
+        java.util.List<ReplyFormat.Field> rows = new java.util.ArrayList<>();
+        int available = 0;
+        int firstShown = 0;
+        for (CommandCatalog.Command command : CommandCatalog.all()) {
+            // The caller's own view: a command they could not run is not advertised to them, and a
+            // rule that was switched off is not listed either.
+            PermissionSet.Verdict verdict = live.permits(command.name(), identity);
+            if (!verdict.allowed()) continue;
+            PermissionLevel level = live.effectiveLevel(command.name());
+            available++;
+            int index = available - 1;
+            if (index < (wanted - 1) * HELP_PAGE_SIZE) continue;
+            if (rows.size() >= HELP_PAGE_SIZE) continue;
+            if (firstShown == 0) firstShown = available;
+
+            StringBuilder value = new StringBuilder(command.description());
+            if (!command.aliases().isEmpty()) {
+                value.append(" (").append(String.join(", ", command.aliases())).append(')');
+            }
+            value.append(" - ").append(levelLabel(level));
+            rows.add(new ReplyFormat.Field(cfg.commandPrefix() + command.name(), value.toString()));
+        }
+
+        if (statsOptions != null && statsOptions.enabled() && wanted == 1) {
+            for (java.util.Map.Entry<String, String> entry : statsOptions.verbs().entrySet()) {
+                if (entry.getKey().equals(entry.getValue())) continue;
+                rows.add(new ReplyFormat.Field(cfg.commandPrefix() + entry.getValue(),
+                    "Renamed figure, same as " + entry.getKey() + "."));
+            }
+        }
+
+        int pages = Math.max(1, (available + HELP_PAGE_SIZE - 1) / HELP_PAGE_SIZE);
+        String footer;
+        if (rows.isEmpty()) {
+            footer = "";
+        } else if (pages > 1) {
+            footer = "Page " + Math.min(wanted, pages) + " of " + pages + " - "
+                + cfg.commandPrefix() + "help " + (Math.min(wanted, pages) < pages
+                    ? (Math.min(wanted, pages) + 1) : 1) + " for the next.";
+        } else {
+            footer = available + (available == 1 ? " command." : " commands.");
+        }
+        return new ReplyFormat.Embed(cfg.name() + " commands", rows, footer,
+            ReplyFormat.Style.LIST);
+    }
+
+    /** The words a player sees for a level. Whitelist members are never included. */
+    public static String levelLabel(PermissionLevel level) {
+        if (level == null) return "Everyone";
+        return switch (level) {
+            case EVERYONE -> "Everyone";
+            case WHITELIST -> "Whitelist";
+            case ADMINISTRATORS -> "Administrators";
+            case LOCAL_ONLY -> "Local only";
+            case DISABLED -> "Switched off";
+        };
+    }
+
+    /** {@code !status}: a short summary of the assistant and what it has done this session. */
+    private Decision commandStatus(AssistantConfig config, ChatActivity activity,
+                                   PermissionSet perms) {
+        ChatActivity seen = activity == null ? new ChatActivity() : activity;
+        PermissionSet live = perms == null ? PermissionSet.permissive() : perms;
+        java.util.List<ReplyFormat.Field> fields = java.util.List.of(
+            new ReplyFormat.Field("Facts", String.valueOf(memory.facts().size())),
+            new ReplyFormat.Field("Players known", String.valueOf(memory.knownPlayers().size())),
+            new ReplyFormat.Field("Lines seen", String.valueOf(seen.seen())),
+            new ReplyFormat.Field("Answered", String.valueOf(seen.answered())),
+            new ReplyFormat.Field("Permissions", live.enabled() ? "on" : "off"));
+        return embedReply(config.memoryReplyMode(),
+            new ReplyFormat.Embed(config.name(), fields, "", ReplyFormat.Style.BOX), false);
+    }
+
+    /** {@code !activity}: how busy chat has been this session. */
+    private Decision commandActivity(AssistantConfig config, ChatActivity activity, long now) {
+        if (activity == null || activity.seen() == 0) {
+            return reply(config.memoryReplyMode(), "Nothing seen in chat yet.", false);
+        }
+        java.util.List<ReplyFormat.Field> fields = new java.util.ArrayList<>();
+        fields.add(new ReplyFormat.Field("Lines", String.valueOf(activity.seen())));
+        fields.add(new ReplyFormat.Field("Players", String.valueOf(activity.activePlayers())));
+        ChatActivity.PlayerCount busiest = activity.mostActive();
+        if (busiest != null) {
+            fields.add(new ReplyFormat.Field("Busiest",
+                busiest.name() + " (" + busiest.messages() + ")"));
+        }
+        long span = activity.sessionMs(now);
+        if (span > 0) fields.add(new ReplyFormat.Field("Session", ServerStats.formatUptime(span)));
+        fields.add(new ReplyFormat.Field("Answered", String.valueOf(activity.answered())));
+        if (activity.suppressed() > 0) {
+            fields.add(new ReplyFormat.Field("Duplicates dropped",
+                String.valueOf(activity.suppressed())));
+        }
+        return embedReply(config.memoryReplyMode(),
+            new ReplyFormat.Embed("Chat activity", fields, "", ReplyFormat.Style.BOX), false);
     }
 
     private Decision commandRemember(String sender, String rest, AssistantConfig config, long now) {
@@ -351,12 +739,45 @@ public final class AssistantBrain {
     }
 
     private Decision reply(TriggerRule.ReplyMode mode, String text, boolean remember) {
-        Delivery delivery = switch (mode) {
+        return new Decision(deliveryFor(mode), text, null, false, remember, true);
+    }
+
+    /** A reply carried as a block, so the caller can render it one line per field. */
+    private Decision embedReply(TriggerRule.ReplyMode mode, ReplyFormat.Embed embed,
+                                boolean remember) {
+        // The text is the complete single-line fallback, never a truncated summary: callers that
+        // can only show one line still get every field. The chat path renders the block instead.
+        return new Decision(deliveryFor(mode), ReplyFormat.oneLine(embed, Integer.MAX_VALUE), null,
+            false, remember, true, false, embed);
+    }
+
+    private static Delivery deliveryFor(TriggerRule.ReplyMode mode) {
+        return switch (mode == null ? TriggerRule.ReplyMode.NOTIFY : mode) {
             case CHAT -> Delivery.CHAT;
             case NOTIFY -> Delivery.NOTIFY;
             case SILENT -> Delivery.SILENT;
         };
-        return new Decision(delivery, text, null, false, remember, true);
+    }
+
+    /**
+     * The greeting for {@code now}, with the player and their facts filled in.
+     *
+     * <p>Returned as a normal {@link Decision} so the module delivers it through the same path as
+     * everything else — the same rate limit, the same self-reply guard, the same reply mode.
+     *
+     * @param identity the player being greeted, or null when the client has no player yet
+     * @param pools    the configured greeting pools, keyed by bucket id
+     */
+    public Decision greeting(SenderIdentity identity, java.util.Map<String, String> pools,
+                             AssistantConfig config, java.time.LocalTime now, long epochMillis) {
+        AssistantConfig cfg = config == null ? AssistantConfig.DEFAULTS : config;
+        String name = identity == null ? "" : identity.name();
+        String template = GreetingPools.greeting(pools, now, null);
+        ResponseTemplate.Context context = new ResponseTemplate.Context(
+            name, "", "", memory, epochMillis, ServerStats.OFFLINE);
+        String text = clamp(ResponseTemplate.expand(template, context), cfg.maxReplyLength());
+        if (text.isBlank()) return Decision.NONE;
+        return reply(cfg.memoryReplyMode(), text, false);
     }
 
     private static String clamp(String text, int max) {
