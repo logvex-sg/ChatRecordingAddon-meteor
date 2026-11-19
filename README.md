@@ -415,7 +415,10 @@ its own recent replies, is ignored.
 
 A reply can contain placeholders, which are replaced with live values just before the message is
 sent. Names are case-insensitive and may be written with spaces, so `{tps}`, `{TPS}` and `{ Tps }`
-are the same placeholder. Run `!ai placeholders` in game to see every name with its current value.
+are the same placeholder. Run `!ai placeholders` in game for an index of the sections, then
+`!ai placeholders <section>` (for example `!ai placeholders server`) to list one section with its
+current values. The reference is split because listing every placeholder at once pushed the chat
+box off the screen.
 
 | Placeholder | Value |
 | --- | --- |
@@ -798,7 +801,7 @@ It shows a single "Disabled" line when the module is off, so it never displays s
 | `!ai forget <key>` | Removes a fact. |
 | `!ai test <message>` | Shows what the assistant would do with a message. |
 | `!ai history` | Recent remembered exchanges. |
-| `!ai placeholders` | Every placeholder, with its current value. |
+| `!ai placeholders [section]` | With no section, an index of the placeholder sections and how many each holds. With a section (`player`, `time`, `server`, `world`, `position`, `client`), that section only, each name with its current value. |
 | `!ai perms` | Lists every command with its permission level and whitelist. |
 | `!ai perms gui` | Opens the permissions screen. |
 | `!ai perms set <command> <level>` | Sets one command's level. |
@@ -1395,7 +1398,7 @@ The addon registers a `!log` command (alias `!la`). Run `!log help` for the list
 | `!ai forget <key>` | Removes a fact. |
 | `!ai test <message>` | Shows what the assistant would do with a message. |
 | `!ai history` | Recent remembered exchanges. |
-| `!ai placeholders` | Lists every placeholder with its current value. |
+| `!ai placeholders [section]` | Lists placeholders one section at a time, with current values. |
 | `!ai save` / `!ai clear` | Save memory now / clear all memory. |
 
 Commands are registered through the addon's own `PostInit` hook, and are intercepted from the

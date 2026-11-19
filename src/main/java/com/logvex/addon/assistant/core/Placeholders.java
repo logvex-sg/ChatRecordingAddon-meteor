@@ -39,6 +39,8 @@ public final class Placeholders {
 
     private final Map<String, Resolver> exact = new LinkedHashMap<>();
     private final Map<String, Resolver> families = new LinkedHashMap<>();
+    /** Which group each exact name belongs to, so a reference list can be shown in sections. */
+    private final Map<String, String> groups = new LinkedHashMap<>();
 
     private Placeholders() {
     }
@@ -55,6 +57,7 @@ public final class Placeholders {
         Placeholders clone = new Placeholders();
         clone.exact.putAll(exact);
         clone.families.putAll(families);
+        clone.groups.putAll(groups);
         return clone;
     }
 
@@ -81,6 +84,26 @@ public final class Placeholders {
     /** The names this registry answers exactly, in registration order. */
     public java.util.Set<String> names() {
         return java.util.Collections.unmodifiableSet(exact.keySet());
+    }
+
+    /** The group a name belongs to, or {@code Other} when it was registered without one. */
+    public String group(String name) {
+        String group = groups.get(normalize(name));
+        return group == null ? "Other" : group;
+    }
+
+    /**
+     * The exact names split into their groups, in registration order.
+     *
+     * <p>A flat list of every placeholder is unreadable in chat once the count passes a handful, so
+     * the reference is shown one section at a time.
+     */
+    public Map<String, java.util.List<String>> byGroup() {
+        Map<String, java.util.List<String>> out = new LinkedHashMap<>();
+        for (String name : exact.keySet()) {
+            out.computeIfAbsent(group(name), ignored -> new java.util.ArrayList<>()).add(name);
+        }
+        return out;
     }
 
     /** The families this registry answers, in registration order. */
@@ -148,47 +171,43 @@ public final class Placeholders {
     // ------------------------------------------------------------------ built-ins
 
     private void installDefaults() {
-        register("player", ctx -> Messages.player(ctx.player()));
-        register("message", ctx -> ctx.message() == null ? "" : ctx.message());
-        register("time", ctx -> Messages.clock(ctx.now()));
-        register("date", ctx -> Messages.dateTime(ctx.now()));
-        register("server", ctx -> ctx.server() == null ? "" : ctx.server());
-        register("memory", ctx ->
+        grouped("Player", "player", ctx -> Messages.player(ctx.player()));
+        grouped("Player", "message", ctx -> ctx.message() == null ? "" : ctx.message());
+        grouped("Time", "time", ctx -> Messages.clock(ctx.now()));
+        grouped("Time", "date", ctx -> Messages.dateTime(ctx.now()));
+        grouped("Server", "server", ctx -> ctx.server() == null ? "" : ctx.server());
+        grouped("Server", "memory", ctx ->
             ctx.memory() == null ? "0" : String.valueOf(ctx.memory().facts().size()));
 
-        // Server and connection figures.
-        register("tps", ctx -> ctx.stats().tps() <= 0f
+        grouped("Server", "tps", ctx -> ctx.stats().tps() <= 0f
             ? "n/a" : ServerStats.formatTps(ctx.stats().tps()));
-        register("mspt", ctx -> ctx.stats().mspt() < 0f
+        grouped("Server", "mspt", ctx -> ctx.stats().mspt() < 0f
             ? "n/a" : String.format(Locale.ROOT, "%.1f", ctx.stats().mspt()));
-        register("ping", ctx -> ctx.stats().latency() < 0
+        grouped("Server", "ping", ctx -> ctx.stats().latency() < 0
             ? "n/a" : ctx.stats().latency() + " ms");
-        register("players", ctx -> String.valueOf(ctx.stats().players()));
-        register("uptime", ctx -> ServerStats.formatUptime(ctx.stats().uptimeMs()));
-        register("verdict", ctx -> ctx.stats().verdict());
+        grouped("Server", "players", ctx -> String.valueOf(ctx.stats().players()));
+        grouped("Server", "uptime", ctx -> ServerStats.formatUptime(ctx.stats().uptimeMs()));
+        grouped("Server", "verdict", ctx -> ctx.stats().verdict());
 
-        // World figures.
-        register("dimension", ctx -> orQuestion(ctx.stats().dimension()));
-        register("world", ctx -> orQuestion(ctx.stats().world()));
-        register("biome", ctx -> orQuestion(ctx.stats().biome()));
-        register("worldtime", ctx -> ServerStats.formatWorldTime(ctx.stats().worldTime()));
-        register("facing", ctx -> orQuestion(ctx.stats().facing()));
+        grouped("World", "dimension", ctx -> orQuestion(ctx.stats().dimension()));
+        grouped("World", "world", ctx -> orQuestion(ctx.stats().world()));
+        grouped("World", "biome", ctx -> orQuestion(ctx.stats().biome()));
+        grouped("World", "worldtime", ctx -> ServerStats.formatWorldTime(ctx.stats().worldTime()));
+        grouped("World", "facing", ctx -> orQuestion(ctx.stats().facing()));
 
-        // Player figures.
-        register("health", ctx -> String.format(Locale.ROOT, "%.1f/%.0f",
+        grouped("Position", "health", ctx -> String.format(Locale.ROOT, "%.1f/%.0f",
             ctx.stats().health(), ctx.stats().maxHealth()));
-        register("hunger", ctx -> String.valueOf(ctx.stats().food()));
-        register("x", ctx -> String.format(Locale.ROOT, "%.0f", ctx.stats().x()));
-        register("y", ctx -> String.format(Locale.ROOT, "%.0f", ctx.stats().y()));
-        register("z", ctx -> String.format(Locale.ROOT, "%.0f", ctx.stats().z()));
-        register("coords", ctx -> String.format(Locale.ROOT, "%.0f, %.0f, %.0f",
+        grouped("Position", "hunger", ctx -> String.valueOf(ctx.stats().food()));
+        grouped("Position", "x", ctx -> String.format(Locale.ROOT, "%.0f", ctx.stats().x()));
+        grouped("Position", "y", ctx -> String.format(Locale.ROOT, "%.0f", ctx.stats().y()));
+        grouped("Position", "z", ctx -> String.format(Locale.ROOT, "%.0f", ctx.stats().z()));
+        grouped("Position", "coords", ctx -> String.format(Locale.ROOT, "%.0f, %.0f, %.0f",
             ctx.stats().x(), ctx.stats().y(), ctx.stats().z()));
-        register("speed", ctx -> String.format(Locale.ROOT, "%.2f", ctx.stats().speed()));
+        grouped("Position", "speed", ctx -> String.format(Locale.ROOT, "%.2f", ctx.stats().speed()));
 
-        // Client figures.
-        register("fps", ctx -> String.valueOf(ctx.stats().fps()));
+        grouped("Client", "fps", ctx -> String.valueOf(ctx.stats().fps()));
 
-        // Memory families.
+        // Families take an argument ({fact:key}) rather than a fixed name.
         registerFamily("fact:", (argument, ctx) -> {
             if (ctx.memory() == null) return "";
             return ctx.memory().fact(argument).map(AssistantMemory.Fact::value).orElse("");
@@ -197,6 +216,12 @@ public final class Placeholders {
             if (ctx.memory() == null) return "0";
             return String.valueOf(ctx.memory().counter(argument));
         });
+    }
+
+    /** Registers {@code name} and records the section it belongs to for the reference list. */
+    private void grouped(String group, String name, Function<ResponseTemplate.Context, String> resolver) {
+        register(name, resolver);
+        groups.put(normalize(name), group);
     }
 
     private static String orQuestion(String value) {

@@ -12,6 +12,7 @@ import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import net.minecraft.command.CommandSource;
 
 import java.util.List;
+import java.util.Locale;
 
 /**
  * The {@code .ai} command tree: the text front end for the assistant.
@@ -42,10 +43,16 @@ public class AssistantCommand extends Command {
             return SINGLE_SUCCESS;
         }));
 
-        builder.then(literal("placeholders").executes(context -> {
-            placeholders();
-            return SINGLE_SUCCESS;
-        }));
+        builder.then(literal("placeholders")
+            .executes(context -> {
+                placeholders("");
+                return SINGLE_SUCCESS;
+            })
+            .then(argument("section", StringArgumentType.word()).executes(context -> {
+                placeholders(StringArgumentType.getString(context, "section"));
+                return SINGLE_SUCCESS;
+            }))
+        );
 
         builder.then(literal("perms").executes(context -> {
             permissions();
@@ -243,12 +250,20 @@ public class AssistantCommand extends Command {
         info("  (highlight)" + pfx() + "ai test <message>(default) - see what the assistant would do.");
         info("  (highlight)" + pfx() + "ai history(default) - recent remembered exchanges.");
         info("  (highlight)" + pfx() + "ai model [status|ask <text>|teach <intent> <example>|save](default).");
-        info("  (highlight)" + pfx() + "ai placeholders(default) - every placeholder a reply can use.");
+        info("  (highlight)" + pfx() + "ai placeholders [section](default) - the reply placeholders, one section at a time.");
         info("  (highlight)" + pfx() + "ai perms [list|gui|set|allow|deny|admin|reset](default) - who may run each command.");
         info("  (highlight)" + pfx() + "ai clear(default) - clear all memory.");
     }
 
-    private void placeholders() {
+    /**
+     * Lists the placeholders a reply template can use, one section at a time.
+     *
+     * <p>There are close to thirty of them, and printing every one in a single go pushed the chat
+     * box off the screen — the reader could not find the one they wanted and the rest of the
+     * conversation scrolled away. With no argument this shows the sections and their counts;
+     * naming a section lists just that section, which fits on one screen.
+     */
+    private void placeholders(String section) {
         AssistantModule module = assistant();
         com.logvex.addon.assistant.core.Placeholders registry =
             com.logvex.addon.assistant.core.ResponseTemplate.registry();
@@ -261,17 +276,44 @@ public class AssistantCommand extends Command {
                 module == null ? null : module.memory(),
                 System.currentTimeMillis(), stats);
 
-        info("Placeholders (shown with their current value):");
-        for (String name : registry.names()) {
-            info("  (highlight){%s}(default) -> %s", name,
-                Messages.truncate(com.logvex.addon.assistant.core.ResponseTemplate.expand(
-                    "{" + name + "}", ctx), 48));
+        java.util.Map<String, java.util.List<String>> grouped = registry.byGroup();
+        if (section == null || section.isBlank()) {
+            java.util.List<com.logvex.addon.assistant.core.ReplyFormat.Field> fields =
+                new java.util.ArrayList<>();
+            for (var entry : grouped.entrySet()) {
+                fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field(entry.getKey(),
+                    com.logvex.addon.common.Messages.plural(entry.getValue().size(), "placeholder")));
+            }
+            fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Families",
+                com.logvex.addon.common.Messages.plural(registry.families().size(), "family", "families")
+                    + " (take an argument, e.g. {fact:home})"));
+            CommandOutput.send(this, "Placeholders", fields,
+                "Show one with " + pfx() + "ai placeholders <section>");
+            return;
         }
-        for (String family : registry.families()) {
-            info("  (highlight){%s<name>}(default) - stored memory lookup.", family.substring(0, family.length() - 1));
+
+        String match = findSection(grouped, section);
+        if (match == null) {
+            error("No section called '%s'. Sections: %s.", section, String.join(", ", grouped.keySet()));
+            return;
         }
-        info("Unknown placeholders are left as written, so a typo is visible in the reply.");
-        info("Reply templates may hold alternatives separated by |, e.g. \"Hi {player}|Hello {player}\".");
+        java.util.List<com.logvex.addon.assistant.core.ReplyFormat.Field> fields = new java.util.ArrayList<>();
+        for (String name : grouped.get(match)) {
+            fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("{" + name + "}",
+                com.logvex.addon.common.Messages.truncate(
+                    com.logvex.addon.assistant.core.ResponseTemplate.expand("{" + name + "}", ctx), 40)));
+        }
+        CommandOutput.send(this, match + " placeholders", fields,
+            "Values are what they resolve to right now");
+    }
+
+    /** Resolves a typed section name case-insensitively, or null when there is no such section. */
+    private static String findSection(java.util.Map<String, java.util.List<String>> grouped, String typed) {
+        String needle = typed.trim().toLowerCase(Locale.ROOT);
+        for (String name : grouped.keySet()) {
+            if (name.toLowerCase(Locale.ROOT).equals(needle)) return name;
+        }
+        return null;
     }
 
     // ------------------------------------------------------------------ permissions

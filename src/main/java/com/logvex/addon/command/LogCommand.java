@@ -526,42 +526,19 @@ public class LogCommand extends Command {
     // ------------------------------------------------------------------ sections
 
     /** How many block lines one command answer may occupy before the rest is summarised. */
-    private static final int MAX_EMBED_LINES = 12;
-
     /** The addon's configured command prefix, so this list matches what the user actually types. */
     private static String pfx() {
         return com.logvex.addon.framework.systems.config.ClientConfig.get().prefix();
     }
 
-    /**
-     * Prints a summary block in the same embed layout the assistant uses.
-     *
-     * <p>A status answer is a handful of labelled figures, and loose lines make the reader hunt for
-     * the one they want. The block lines up the values instead, so the eye can run down one column.
-     * The user's own reply style and width are honoured, so {@code !log status} looks like every
-     * other answer they get; when the assistant module is absent the defaults are used.
-     */
+    /** Prints a summary block; see {@link CommandOutput} for the layout rules. */
     private void embed(String title, java.util.List<com.logvex.addon.assistant.core.ReplyFormat.Field> fields) {
-        embed(title, fields, "");
+        CommandOutput.send(this, title, fields);
     }
 
     private void embed(String title, java.util.List<com.logvex.addon.assistant.core.ReplyFormat.Field> fields,
                        String footer) {
-        if (fields == null || fields.isEmpty()) return;
-        var module = LogCommands.modules().get(com.logvex.addon.assistant.modules.AssistantModule.class);
-        int width = module == null ? com.logvex.addon.assistant.core.ReplyFormat.DEFAULT_WIDTH
-            : module.replyWidth();
-        com.logvex.addon.assistant.core.ReplyFormat.Style style = module == null
-            ? com.logvex.addon.assistant.core.ReplyFormat.Style.BOX
-            : module.replyStyle();
-        if (style == null) style = com.logvex.addon.assistant.core.ReplyFormat.Style.BOX;
-
-        var block = new com.logvex.addon.assistant.core.ReplyFormat.Embed(title, fields, footer, style);
-        java.util.List<String> lines = com.logvex.addon.assistant.core.ReplyFormat.render(block, width);
-        for (int i = 0; i < lines.size() && i < MAX_EMBED_LINES; i++) info("%s", lines.get(i));
-        if (lines.size() > MAX_EMBED_LINES) {
-            info("(%d more lines)", lines.size() - MAX_EMBED_LINES);
-        }
+        CommandOutput.send(this, title, fields, footer);
     }
 
     private void help() {
