@@ -19,6 +19,13 @@ import java.util.List;
 final class CommandOutput {
     /** How many block lines one answer may occupy before the rest is summarised. */
     private static final int MAX_LINES = 12;
+    /**
+     * Budget for an explicitly requested command list.
+     *
+     * <p>A group listing is asked for by name, so cutting it off mid-group defeats the request. The
+     * larger cap still bounds the chat spam that {@link #MAX_LINES} exists to prevent.
+     */
+    private static final int MAX_LIST_LINES = 60;
 
     private CommandOutput() {
     }
@@ -35,19 +42,52 @@ final class CommandOutput {
      * title, which reads as a broken message rather than an answer.
      */
     static void send(Command command, String title, List<Field> fields, String footer) {
+        send(command, title, fields, footer, null);
+    }
+
+    /**
+     * Sends {@code fields} as a list of {@code label - value} rows.
+     *
+     * <p>Used for command help, where every row is a whole usage line. The two-column box wastes
+     * most of its width on a long label and then wraps the value mid-word, so a list of commands
+     * reads better as a list than as a table of figures.
+     */
+    static void sendList(Command command, String title, List<Field> fields, String footer) {
+        send(command, title, fields, footer, ReplyFormat.Style.LIST, MAX_LIST_LINES);
+    }
+
+    private static void send(Command command, String title, List<Field> fields, String footer,
+                             ReplyFormat.Style preferred) {
+        send(command, title, fields, footer, preferred, MAX_LINES);
+    }
+
+    private static void send(Command command, String title, List<Field> fields, String footer,
+                             ReplyFormat.Style preferred, int maxLines) {
         if (command == null || fields == null || fields.isEmpty()) return;
 
         AssistantModule module = Modules.get().get(AssistantModule.class);
         int width = module == null ? ReplyFormat.DEFAULT_WIDTH : module.replyWidth();
-        ReplyFormat.Style style = module == null ? ReplyFormat.Style.BOX : module.replyStyle();
+        ReplyFormat.Style style = preferred;
+        if (style == null) {
+            style = module == null ? ReplyFormat.Style.BOX : module.replyStyle();
+        }
         if (style == null) style = ReplyFormat.Style.BOX;
 
         List<String> lines = ReplyFormat.render(new ReplyFormat.Embed(title, fields, footer, style), width);
-        int shown = Math.min(lines.size(), MAX_LINES);
+        int shown = Math.min(lines.size(), maxLines);
         for (int i = 0; i < shown; i++) command.info("%s", lines.get(i));
-        if (lines.size() > MAX_LINES) {
-            command.info("... %d more lines; ask for one section to see them all.",
-                lines.size() - MAX_LINES);
+        if (lines.size() > maxLines) {
+            command.info("... %d more lines; %sprefix copies the full list to the clipboard.",
+                lines.size() - maxLines, prefixOrEmpty());
+        }
+    }
+
+    /** The addon prefix for hint text, or empty when the config is not reachable. */
+    private static String prefixOrEmpty() {
+        try {
+            return com.logvex.addon.framework.systems.config.ClientConfig.get().prefix();
+        } catch (RuntimeException e) {
+            return "";
         }
     }
 }

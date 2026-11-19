@@ -18,7 +18,7 @@ import net.minecraft.client.gui.DrawContext;
 public class WNavItem extends WPressable {
     /** A tiny vector-ish glyph for a rail entry. */
     public enum Glyph {
-        MODULES, HUD, THEME, SETTINGS, INFO
+        MODULES, HUD, COMMANDS, THEME, SETTINGS, INFO
     }
 
     private static final double RADIUS = 3;
@@ -105,6 +105,12 @@ public class WNavItem extends WPressable {
                 // A monitor: an outline with a stand.
                 Render2D.roundedOutline(context, left, top, 9, 7, 1, color, 1);
                 Render2D.rect(context, left + 3.5, top + 7, 2, 2, color);
+            }
+            case COMMANDS -> {
+                // A terminal prompt: a chevron and a rule.
+                Render2D.line(context, left + 0.5, top + 1, left + 4, top + 4.5, 1.6, color);
+                Render2D.line(context, left + 4, top + 4.5, left + 0.5, top + 8, 1.6, color);
+                Render2D.rect(context, left + 5.5, top + 7.2, 4, 1.4, color);
             }
             case THEME -> {
                 // A paint droplet: a diamond over a dot.

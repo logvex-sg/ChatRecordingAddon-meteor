@@ -156,6 +156,8 @@ public class LogClient extends MeteorAddon {
         meteordevelopment.meteorclient.commands.Commands.add(new com.logvex.addon.command.LogCommand());
         meteordevelopment.meteorclient.commands.Commands.add(new com.logvex.addon.command.BotCommand());
         meteordevelopment.meteorclient.commands.Commands.add(new com.logvex.addon.command.AssistantCommand());
+        meteordevelopment.meteorclient.commands.Commands.add(new com.logvex.addon.command.PrefixCommand());
+        meteordevelopment.meteorclient.commands.Commands.add(new com.logvex.addon.command.ChatQueryCommand());
     }
 
     @Override

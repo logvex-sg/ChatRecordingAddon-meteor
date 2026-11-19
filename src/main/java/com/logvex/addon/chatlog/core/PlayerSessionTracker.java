@@ -95,6 +95,19 @@ public final class PlayerSessionTracker {
         return out;
     }
 
+    /**
+     * Players with the longest online time first, counting the stretch still in progress.
+     *
+     * <p>{@link #byOnlineTime()} ranks on completed time only, so someone online for hours right
+     * now sorts below a player who left ten minutes ago. A leaderboard has to include the current
+     * stretch or it is simply wrong.
+     */
+    public synchronized List<PlayerSession> byOnlineTime(long now) {
+        List<PlayerSession> out = new ArrayList<>(players.values());
+        out.sort(Comparator.comparingLong((PlayerSession session) -> session.onlineMs(now)).reversed());
+        return out;
+    }
+
     private void evictIfNeeded() {
         while (players.size() > MAX_PLAYERS) {
             String oldest = null;

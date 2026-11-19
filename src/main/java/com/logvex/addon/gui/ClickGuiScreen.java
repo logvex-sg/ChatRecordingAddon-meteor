@@ -44,9 +44,10 @@ import java.util.Locale;
  * what lets the rail and the content scroll independently.
  */
 public class ClickGuiScreen extends WidgetScreen {
-    private static final String[] TABS = {"Modules", "HUD", "Theme", "About"};
+    private static final String[] TABS = {"Modules", "HUD", "Commands", "Theme", "About"};
     private static final WNavItem.Glyph[] GLYPHS = {
-        WNavItem.Glyph.MODULES, WNavItem.Glyph.HUD, WNavItem.Glyph.THEME, WNavItem.Glyph.INFO
+        WNavItem.Glyph.MODULES, WNavItem.Glyph.HUD, WNavItem.Glyph.COMMANDS,
+        WNavItem.Glyph.THEME, WNavItem.Glyph.INFO
     };
     /** Width of the navigation rail. */
     private static final double RAIL_WIDTH = 108;
@@ -111,7 +112,8 @@ public class ClickGuiScreen extends WidgetScreen {
         switch (tab) {
             case 0 -> renderModules(theme);
             case 1 -> renderHud(theme);
-            case 2 -> renderTheme(theme);
+            case 2 -> renderCommands(theme);
+            case 3 -> renderTheme(theme);
             default -> renderAbout(theme);
         }
     }
@@ -151,7 +153,7 @@ public class ClickGuiScreen extends WidgetScreen {
         header.add(theme.label(summary()).color(theme.muted)).widget();
         add(header).expandX();
 
-        if (tab != 3) {
+        if (tab != 4) {
             WTextBox search = add(theme.textBox(query, searchHint())).expandX().widget();
             search.action = () -> {
                 query = search.get();
@@ -164,13 +166,19 @@ public class ClickGuiScreen extends WidgetScreen {
         return switch (tab) {
             case 0 -> "Modules";
             case 1 -> "HUD elements";
-            case 2 -> "Appearance";
+            case 2 -> "Commands";
+            case 3 -> "Appearance";
             default -> "About";
         };
     }
 
     private String searchHint() {
-        return tab == 0 ? "Search modules..." : "Search HUD elements...";
+        return switch (tab) {
+            case 0 -> "Search modules...";
+            case 1 -> "Search HUD elements...";
+            case 2 -> "Search commands...";
+            default -> "Search...";
+        };
     }
 
     // ------------------------------------------------------------------ modules
@@ -279,6 +287,83 @@ public class ClickGuiScreen extends WidgetScreen {
         return card;
     }
 
+    // ------------------------------------------------------------------ commands
+
+    /**
+     * Lists every command, grouped, with the prefix already applied.
+     *
+     * <p>The copy button is the point of the page: the whole list goes to the clipboard as one
+     * runnable line per command, so it can be pasted into chat or handed to someone else without
+     * retyping it. The example line shows what a copied entry looks like, so it is obvious the
+     * prefix is included.
+     */
+    private void renderCommands(GuiTheme theme) {
+        String prefix = ClientConfig.get().prefix();
+        String needle = query.strip().toLowerCase(Locale.ROOT);
+
+        add(theme.horizontalSeparator("Copy")).expandX();
+        WCard copyCard = theme.card();
+        WVerticalList copyRows = theme.verticalList();
+        copyRows.add(theme.label("Every command, one per line, prefix included.").color(theme.muted)).expandX();
+        copyRows.add(theme.label("Example: " + com.logvex.addon.common.CommandCatalog.example(prefix))
+            .color(theme.accent)).expandX();
+
+        WHorizontalList copyButtons = theme.horizontalList();
+        WButton copyAll = copyButtons.add(theme.button("Copy all prefixes")).expandX().widget();
+        copyAll.action = () -> {
+            MinecraftClient mc = MinecraftClient.getInstance();
+            mc.keyboard.setClipboard(com.logvex.addon.common.CommandCatalog.copyableBlock(prefix));
+        };
+        WButton copyExample = copyButtons.add(theme.button("Copy example")).widget();
+        copyExample.action = () -> {
+            MinecraftClient mc = MinecraftClient.getInstance();
+            mc.keyboard.setClipboard(com.logvex.addon.common.CommandCatalog.example(prefix));
+        };
+        copyRows.add(copyButtons).expandX();
+        copyCard.add(copyRows).expandX();
+        add(copyCard).expandX();
+
+        add(theme.horizontalSeparator("Commands (" + com.logvex.addon.common.CommandCatalog.count() + ")")).expandX();
+
+        boolean any = false;
+        for (com.logvex.addon.common.CommandCatalog.Group group
+            : com.logvex.addon.common.CommandCatalog.Group.values()) {
+            java.util.List<com.logvex.addon.common.CommandCatalog.Entry> entries =
+                new java.util.ArrayList<>();
+            for (com.logvex.addon.common.CommandCatalog.Entry entry
+                : com.logvex.addon.common.CommandCatalog.inGroup(group)) {
+                if (matchesCommand(entry, needle)) entries.add(entry);
+            }
+            if (entries.isEmpty()) continue;
+            any = true;
+
+            add(theme.horizontalSeparator(group.title())).expandX();
+            WCard card = theme.card();
+            WVerticalList rows = theme.verticalList();
+            for (com.logvex.addon.common.CommandCatalog.Entry entry : entries) {
+                String usage = com.logvex.addon.common.CommandCatalog.prefixed(prefix, entry);
+                WHorizontalList row = theme.horizontalList();
+                row.add(theme.label(usage).color(theme.accent)).expandX();
+                WButton copyOne = row.add(theme.button("Copy")).widget();
+                copyOne.action = () -> MinecraftClient.getInstance().keyboard.setClipboard(usage);
+                rows.add(row).expandX();
+                rows.add(theme.label(entry.description()).color(theme.muted)).expandX();
+            }
+            card.add(rows).expandX();
+            add(card).expandX();
+        }
+
+        if (!any) {
+            empty(theme, "commands", query);
+        }
+    }
+
+    private boolean matchesCommand(com.logvex.addon.common.CommandCatalog.Entry entry, String needle) {
+        if (needle.isEmpty()) return true;
+        return entry.usage().toLowerCase(Locale.ROOT).contains(needle)
+            || entry.description().toLowerCase(Locale.ROOT).contains(needle);
+    }
+
     // ------------------------------------------------------------------ theme
 
     private void renderTheme(GuiTheme theme) {
@@ -368,12 +453,16 @@ public class ClickGuiScreen extends WidgetScreen {
     // ------------------------------------------------------------------ helpers
 
     private void empty(GuiTheme theme, String what, String query) {
-        boolean none = what.equals("modules") ? Modules.get().getAll().isEmpty() : Hud.get().infos().isEmpty();
+        boolean none = switch (what) {
+            case "modules" -> Modules.get().getAll().isEmpty();
+            case "hud" -> Hud.get().infos().isEmpty();
+            default -> com.logvex.addon.common.CommandCatalog.count() == 0;
+        };
         WCard card = theme.card();
         WVerticalList column = theme.verticalList();
         column.add(theme.label(none ? "Nothing is registered yet." : "No results").color(theme.text)).expandX();
         column.add(theme.label(none
-            ? "Modules appear here once they are registered."
+            ? "Entries appear here once they are registered."
             : "Nothing matches \"" + query + "\". Try a shorter search.").color(theme.muted)).expandX();
         card.add(column).expandX();
         add(card).expandX();

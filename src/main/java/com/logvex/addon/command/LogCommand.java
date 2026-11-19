@@ -42,10 +42,16 @@ public class LogCommand extends Command {
             return SINGLE_SUCCESS;
         });
 
-        builder.then(literal("help").executes(context -> {
-            help();
-            return SINGLE_SUCCESS;
-        }));
+        builder.then(literal("help")
+            .executes(context -> {
+                help();
+                return SINGLE_SUCCESS;
+            })
+            .then(argument("group", StringArgumentType.word()).executes(context -> {
+                help(StringArgumentType.getString(context, "group"));
+                return SINGLE_SUCCESS;
+            }))
+        );
 
         builder.then(literal("status").executes(context -> {
             status();
@@ -542,36 +548,37 @@ public class LogCommand extends Command {
     }
 
     private void help() {
-        info("Log Client commands:");
-        info("  (highlight)" + pfx() + "log gui(default) - open the addon window.");
-        info("  (highlight)" + pfx() + "log status(default) - overall status.");
-        info("  (highlight)" + pfx() + "log modules(default) - list Log Client modules.");
-        info("  (highlight)" + pfx() + "log stats(default) - session statistics.");
-        info("  (highlight)" + pfx() + "log record <on|off>(default) - toggle chat recording.");
-        info("  (highlight)" + pfx() + "log notifications [count|clear](default) - recent notifications.");
-        info("  (highlight)" + pfx() + "log tasks [list|start|pause|resume|stop|clear](default) - the bot queue.");
-        info("  (highlight)" + pfx() + "log tasks add <type> <item> [amount](default) - queue a task.");
-        info("  (highlight)" + pfx() + "log waypoints [list|add <name>](default) - bot waypoints.");
-        info("  (highlight)" + pfx() + "log import <file>(default) - import a material list.");
-        info("  (highlight)" + pfx() + "log importlog <file>(default) - import a chat log into the archive.");
-        info("  (highlight)" + pfx() + "log alerts [count|clear](default) - recent keyword/webhook/error alerts.");
-        info("  (highlight)" + pfx() + "log playtime [player](default) - observed player session durations.");
-        info("  (highlight)" + pfx() + "log schematic [status|load <path>|start|pause|resume|stop](default).");
-        info("  (highlight)" + pfx() + "log acquire [start|pause|resume|stop|status|retry|import <path>](default) - Creative material acquisition.");
-        info("  (highlight)" + pfx() + "log digest(default) - summarise recent chat activity.");
-        info("  (highlight)" + pfx() + "log search [terms](default) - search the archive; "
-            + SearchArgs.usage() + ".");
-        info("  (highlight)" + pfx() + "log timeline [filter](default) - recent session milestones.");
-        info("  (highlight)" + pfx() + "log filter [stats|reset](default) - chat filter status.");
-        info("  (highlight)" + pfx() + "log notes [list|add <player> <text>|remove <player>|search <filter>](default).");
-        info("  (highlight)" + pfx() + "log identities [renamed|watch|unwatch|watchlist|clear|<filter>](default) - observed name changes.");
-        info("  (highlight)" + pfx() + "log sessions [list|clear](default) - past recording sessions.");
-        info("  (highlight)" + pfx() + "log webhook [status|test|preview|digest|leaderboard|profile <player>|set <url>|accent <name>](default) - webhook embeds.");
-        info("  (highlight)" + pfx() + "log companion [status|start|stop|token|regenerate|gui](default) - the companion web app.");
-        info("  (highlight)" + pfx() + "log update [status|check|download|channel <stable|beta>|gui](default) - GitHub release updates.");
-        info("  (highlight)" + pfx() + "log world [status|map|places [query]|nearest [category]|mark <name>|export](default) - world intelligence.");
-        info("  (highlight)" + pfx() + "log web(default) - open the local web console in your browser.");
-        info("  (highlight)" + pfx() + "ai [status|triggers|facts|remember|forget|test|gui](default) - the chat assistant.");
+        java.util.List<com.logvex.addon.assistant.core.ReplyFormat.Field> fields = new java.util.ArrayList<>();
+        for (com.logvex.addon.common.CommandCatalog.GroupSummary row
+            : com.logvex.addon.common.CommandCatalog.groupSummary()) {
+            fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field(
+                row.group().title(),
+                row.count() + (row.count() == 1 ? " command - " : " commands - ")
+                    + pfx() + "log help " + row.group().key()));
+        }
+        CommandOutput.sendList(this, "Log Client commands", fields,
+            pfx() + "prefix copies every command to the clipboard");
+    }
+
+    /** One group of commands, in detail. */
+    private void help(String groupName) {
+        com.logvex.addon.common.CommandCatalog.Group group =
+            com.logvex.addon.common.CommandCatalog.Group.parse(groupName);
+        if (group == null) {
+            warning("No group called '%s'. Groups: %s", groupName,
+                java.util.Arrays.stream(com.logvex.addon.common.CommandCatalog.Group.values())
+                    .map(com.logvex.addon.common.CommandCatalog.Group::key)
+                    .collect(java.util.stream.Collectors.joining(", ")));
+            return;
+        }
+        java.util.List<com.logvex.addon.assistant.core.ReplyFormat.Field> fields = new java.util.ArrayList<>();
+        for (com.logvex.addon.common.CommandCatalog.Entry entry
+            : com.logvex.addon.common.CommandCatalog.inGroup(group)) {
+            fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field(
+                com.logvex.addon.common.CommandCatalog.prefixed(pfx(), entry), entry.description()));
+        }
+        CommandOutput.sendList(this, group.title() + " commands", fields,
+            pfx() + "prefix to copy every command");
     }
 
     private void status() {
