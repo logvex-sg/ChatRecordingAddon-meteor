@@ -1,7 +1,7 @@
 package com.logvex.addon.assistant.core;
 
 import com.logvex.addon.stats.ServerStats;
-import com.logvex.addon.stats.StatsCommands;
+import com.logvex.addon.stats.StatusCommands;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
@@ -146,11 +146,11 @@ public final class AssistantRuntime {
      * Evaluates one message with live server figures available to the stats commands.
      *
      * @param stats        the current snapshot, or {@link ServerStats#OFFLINE}
-     * @param statsOptions which stats commands may answer, or null for the defaults
+     * @param statusSettings which status commands may answer, or null for the defaults
      */
     public AssistantBrain.Decision handle(String sender, String content, long now,
-                                          ServerStats stats, StatsCommands.Options statsOptions) {
-        return handle(SenderIdentity.unverified(sender), content, now, stats, statsOptions);
+                                          ServerStats stats, StatusCommands.Settings statusSettings) {
+        return handle(SenderIdentity.unverified(sender), content, now, stats, statusSettings);
     }
 
     /**
@@ -160,8 +160,8 @@ public final class AssistantRuntime {
      * decisions use it, so this is the overload the module calls.
      */
     public AssistantBrain.Decision handle(SenderIdentity identity, String content, long now,
-                                          ServerStats stats, StatsCommands.Options statsOptions) {
-        return handle(identity, content, now, stats, statsOptions, -1);
+                                          ServerStats stats, StatusCommands.Settings statusSettings) {
+        return handle(identity, content, now, stats, statusSettings, -1);
     }
 
     /**
@@ -173,7 +173,7 @@ public final class AssistantRuntime {
      * @param requesterPing the speaker's latency in milliseconds, or a negative value when unknown
      */
     public AssistantBrain.Decision handle(SenderIdentity identity, String content, long now,
-                                          ServerStats stats, StatsCommands.Options statsOptions,
+                                          ServerStats stats, StatusCommands.Settings statusSettings,
                                           int requesterPing) {
         if (content == null || content.isBlank()) {
             ignored++;
@@ -214,7 +214,7 @@ public final class AssistantRuntime {
             // Only the command parser runs here: the trigger path already declined, and the AI must
             // not be reached from this branch or its reply would be counted as a command.
             AssistantBrain.Decision command =
-                brain.command(sender, content, cfg, now, liveStats, statsOptions, permissions,
+                brain.command(sender, content, cfg, now, liveStats, statusSettings, permissions,
                     activity, helpEnabled, requesterPing);
             if (command != null && command.acts()) {
                 if (command.denied()) {

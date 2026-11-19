@@ -159,6 +159,15 @@ public class WebhookRelayModule extends AddonModule {
         .build()
     );
 
+    private final Setting<String> adminWebhookUrl = sgEvents.add(new StringSetting.Builder()
+        .name("admin-webhook-url")
+        .description("A separate webhook for figures about you: position, gear and targets. "
+            + "Leave blank to keep those local. Never post them to the public webhook.")
+        .defaultValue("")
+        .wide()
+        .build()
+    );
+
     private final Setting<Boolean> allowReports = sgEvents.add(new BoolSetting.Builder()
         .name("allow-reports")
         .description("Let !mod and !report post a report card and ping the moderator role.")
@@ -266,6 +275,29 @@ public class WebhookRelayModule extends AddonModule {
     /** The role id (or plain text) to ping on a report; may be blank. */
     public String moderatorRole() {
         return moderatorRoleId.get() == null ? "" : moderatorRoleId.get().strip();
+    }
+
+    /** The admin-only webhook URL, or blank when none is set. */
+    public String adminUrl() {
+        return adminWebhookUrl.get() == null ? "" : adminWebhookUrl.get().strip();
+    }
+
+    /** True when a status card may be posted to the admin webhook. */
+    public boolean adminStatusAllowed() {
+        return enabled.get() && !adminUrl().isBlank();
+    }
+
+    /**
+     * Posts a status card to the admin webhook.
+     *
+     * <p>This is a second, separate target on purpose. The public webhook may be visible to a whole
+     * Discord server, so a figure such as the local player's coordinates must never go there. A user
+     * who wants those in a private channel sets this URL and nothing else changes.
+     */
+    public boolean sendAdminStatus(com.logvex.addon.stats.ServerStats stats,
+                                   com.logvex.addon.chatlog.core.WebhookQueue.Listener listener) {
+        if (!adminStatusAllowed() || stats == null) return false;
+        return service.notifyStatus(adminUrl(), username(), stats, listener);
     }
 
     /** Posts a report card, pinging the configured moderator role. */

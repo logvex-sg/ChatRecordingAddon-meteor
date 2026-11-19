@@ -9,7 +9,7 @@ import com.logvex.addon.assistant.core.MacroSet;
 import com.logvex.addon.assistant.core.SenderIdentity;
 import com.logvex.addon.assistant.core.TriggerSet;
 import com.logvex.addon.stats.ServerStats;
-import com.logvex.addon.stats.StatsCommands;
+import com.logvex.addon.stats.StatusCommands;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -135,7 +135,7 @@ class MacroCommandsTest {
     @DisplayName("!who lists the visible players as a block")
     void whoLists() {
         AssistantBrain.Decision decision = runtime().handle(SenderIdentity.unverified("Notch"), "!who", 1_000L,
-            online(3, List.of("Alex", "Steve", "Herobrine")), StatsCommands.Options.DEFAULTS, -1);
+            online(3, List.of("Alex", "Steve", "Herobrine")), StatusCommands.Settings.DEFAULTS, -1);
         assertTrue(decision.acts());
         assertTrue(decision.hasEmbed());
         String rendered = String.join(" ", decision.lines(60, null));
@@ -147,7 +147,7 @@ class MacroCommandsTest {
     @DisplayName("!who reports the visible count against the server's own count")
     void whoCountsVisible() {
         AssistantBrain.Decision decision = runtime().handle(SenderIdentity.unverified("Notch"), "!who", 1_000L,
-            online(10, List.of("Alex", "Steve")), StatsCommands.Options.DEFAULTS, -1);
+            online(10, List.of("Alex", "Steve")), StatusCommands.Settings.DEFAULTS, -1);
         String rendered = String.join(" ", decision.lines(60, null));
         assertTrue(rendered.contains("2 of 10"), rendered);
     }
@@ -156,7 +156,7 @@ class MacroCommandsTest {
     @DisplayName("!who is answered as a single sentence when the client is not connected")
     void whoOffline() {
         AssistantBrain.Decision decision = runtime().handle(SenderIdentity.unverified("Notch"), "!who", 1_000L,
-            ServerStats.OFFLINE, StatsCommands.Options.DEFAULTS, -1);
+            ServerStats.OFFLINE, StatusCommands.Settings.DEFAULTS, -1);
         assertTrue(decision.acts());
         assertFalse(decision.hasEmbed(), "there is no roster to lay out when disconnected");
         assertEquals("Not connected.", decision.text());
@@ -261,7 +261,7 @@ class MacroCommandsTest {
         AssistantRuntime runtime = runtime();
         for (String command : List.of("!macros", "!macrohelp", "!who", "!report x", "!mod x")) {
             AssistantBrain.Decision decision = runtime.handle(SenderIdentity.unverified("Notch"), command, 1_000L,
-                online(1, List.of("Notch")), StatsCommands.Options.DEFAULTS, -1);
+                online(1, List.of("Notch")), StatusCommands.Settings.DEFAULTS, -1);
             assertNotNull(decision, command);
             assertTrue(decision.acts(), "no answer for " + command);
         }
@@ -276,6 +276,6 @@ class MacroCommandsTest {
         assertTrue(runtime.handle("Notch", "!alert help me", 1_002L).hasReport());
         assertTrue(runtime.handle("Notch", "!mods help me", 1_003L).hasReport());
         assertTrue(runtime.handle(SenderIdentity.unverified("Notch"), "!onlineplayers", 1_004L,
-            online(1, List.of("Notch")), StatsCommands.Options.DEFAULTS, -1).acts());
+            online(1, List.of("Notch")), StatusCommands.Settings.DEFAULTS, -1).acts());
     }
 }

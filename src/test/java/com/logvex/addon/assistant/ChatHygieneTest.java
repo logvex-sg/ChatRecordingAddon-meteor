@@ -335,17 +335,18 @@ class ChatHygieneTest {
     }
 
     @Test
-    @DisplayName("status reports the memory size")
-    void statusReportsMemorySize() {
+    @DisplayName("about reports the memory size")
+    void aboutReportsMemorySize() {
         AssistantRuntime runtime = new AssistantRuntime(new AssistantMemory());
         runtime.setConfig(AssistantConfig.DEFAULTS);
         runtime.setDuplicateFilter(false);
 
         runtime.handle(SenderIdentity.local("Me", null), "!remember a = b", 1_000L, null, null);
-        AssistantBrain.Decision decision = runtime.handle("Player", "!status", 2_000L);
+        // `!status` is the live server overview; the assistant's own state moved to `!about`.
+        AssistantBrain.Decision decision = runtime.handle("Player", "!about", 2_000L);
 
         assertTrue(decision.acts());
-        // Status is a labelled block now: the fact count appears as a field rather than a phrase.
+        // About is a labelled block now: the fact count appears as a field rather than a phrase.
         assertTrue(decision.text().contains("Facts 1"), "got: " + decision.text());
     }
 
@@ -392,16 +393,19 @@ class ChatHygieneTest {
         runtime.setConfig(AssistantConfig.DEFAULTS);
         runtime.setDuplicateFilter(false);
 
-        com.logvex.addon.stats.StatsCommands.Options options =
-            new com.logvex.addon.stats.StatsCommands.Options(
-                true, "latency", "tps", "stats", "coords", "health", "fps", "server", "time",
-                com.logvex.addon.stats.ServerStats.Detail.BRIEF, " | ");
+        java.util.Map<String, com.logvex.addon.stats.StatusOutput> commands =
+            new java.util.LinkedHashMap<>(com.logvex.addon.stats.StatusOutput.defaultsAll());
+        commands.put("ping", new com.logvex.addon.stats.StatusOutput(true,
+            com.logvex.addon.stats.StatusOutput.Output.LOCAL,
+            "Ping: {ping}ms ({verdict})", "latency"));
+        com.logvex.addon.stats.StatusCommands.Settings options =
+            new com.logvex.addon.stats.StatusCommands.Settings(true, commands);
 
         AssistantBrain.Decision renamed = runtime.handle("Player", "!latency", 1_000L,
             com.logvex.addon.stats.ServerStats.OFFLINE, options);
         AssistantBrain.Decision defaultVerb = runtime.handle("Player", "!ping", 2_000L,
             com.logvex.addon.stats.ServerStats.OFFLINE,
-            com.logvex.addon.stats.StatsCommands.Options.DEFAULTS);
+            com.logvex.addon.stats.StatusCommands.Settings.DEFAULTS);
 
         assertTrue(renamed.acts(), "the configured verb must be answered");
         // The figures are the same either way; only the verb the player types has changed.

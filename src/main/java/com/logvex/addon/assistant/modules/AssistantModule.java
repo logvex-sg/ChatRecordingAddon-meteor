@@ -28,7 +28,8 @@ import com.logvex.addon.common.Messages;
 import com.logvex.addon.stats.McServerStats;
 import com.logvex.addon.stats.SpeedTracker;
 import com.logvex.addon.stats.ServerStats;
-import com.logvex.addon.stats.StatsCommands;
+import com.logvex.addon.stats.StatusCommands;
+import com.logvex.addon.stats.StatusOutput;
 import meteordevelopment.meteorclient.events.game.ReceiveMessageEvent;
 import meteordevelopment.meteorclient.events.game.SendMessageEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
@@ -93,7 +94,7 @@ public class AssistantModule extends AutomationModule {
     private final SettingGroup sgMemory = settings.createGroup("Memory");
     private final SettingGroup sgAi = settings.createGroup("Local AI");
     private final SettingGroup sgLimits = settings.createGroup("Limits");
-    private final SettingGroup sgStats = settings.createGroup("Stats Commands");
+    private final SettingGroup sgStatus = settings.createGroup("Live Status");
     private final SettingGroup sgMacros = settings.createGroup("Chat Command Macros");
     private final SettingGroup sgGreetings = settings.createGroup("Greetings");
     private final SettingGroup sgPermissions = settings.createGroup("Permissions");
@@ -131,100 +132,51 @@ public class AssistantModule extends AutomationModule {
         .build()
     );
 
-    // ------------------------------------------------------------------ stats commands
+    // ------------------------------------------------------------------ live status
 
-    private final Setting<Boolean> statsCommands = sgStats.add(new BoolSetting.Builder()
-        .name("stats-commands")
-        .description("Answer !ping, !tps, !stats and the other live server figures in chat.")
+    private final Setting<Boolean> statusEnabled = sgStatus.add(new BoolSetting.Builder()
+        .name("status-commands")
+        .description("Answer the live status commands: !status, !tps, !ping, !coords and the rest.")
         .defaultValue(true)
+        .onChanged(ignored -> rebuild())
         .build()
     );
 
-    private final Setting<String> pingCommand = sgStats.add(new StringSetting.Builder()
-        .name("ping-command")
-        .description("The word that reports latency.")
-        .defaultValue("ping")
-        .visible(statsCommands::get)
+    private final Setting<List<String>> statusLines = sgStatus.add(new StringListSetting.Builder()
+            .name("status-table")
+            .description("One command per line: name = on/off | local/chat | template. "
+                + "Reset to defaults to restore the shipped table.")
+            .defaultValue(defaultStatusLines())
+            .visible(statusEnabled::get)
+            .onChanged(ignored -> rebuild())
+            .build()
+        );
+
+    private final Setting<Boolean> statusChatConfirmation = sgStatus.add(new BoolSetting.Builder()
+        .name("chat-confirmation")
+        .description("Say a status answer in chat only after you confirm it, so a misconfigured "
+            + "command cannot flood the server.")
+        .defaultValue(false)
+        .visible(statusEnabled::get)
         .build()
     );
 
-    private final Setting<String> tpsCommand = sgStats.add(new StringSetting.Builder()
-        .name("tps-command")
-        .description("The word that reports the server's tick rate.")
-        .defaultValue("tps")
-        .visible(statsCommands::get)
+    private final Setting<Boolean> statusWebhook = sgStatus.add(new BoolSetting.Builder()
+        .name("status-webhook")
+        .description("Post a status card to the webhook when you run !status locally. "
+            + "Player-identifying figures are always left out of the card.")
+        .defaultValue(false)
+        .visible(statusEnabled::get)
         .build()
     );
 
-    private final Setting<String> statsCommand = sgStats.add(new StringSetting.Builder()
-        .name("stats-command")
-        .description("The word that reports every figure at once.")
-        .defaultValue("stats")
-        .visible(statsCommands::get)
-        .build()
-    );
-
-    private final Setting<String> coordsCommand = sgStats.add(new StringSetting.Builder()
-        .name("coords-command")
-        .description("The word that reports your position.")
-        .defaultValue("coords")
-        .visible(statsCommands::get)
-        .build()
-    );
-
-    private final Setting<String> healthCommand = sgStats.add(new StringSetting.Builder()
-        .name("health-command")
-        .description("The word that reports health and hunger.")
-        .defaultValue("health")
-        .visible(statsCommands::get)
-        .build()
-    );
-
-    private final Setting<String> fpsCommand = sgStats.add(new StringSetting.Builder()
-        .name("fps-command")
-        .description("The word that reports the frame rate.")
-        .defaultValue("fps")
-        .visible(statsCommands::get)
-        .build()
-    );
-
-    private final Setting<String> serverCommand = sgStats.add(new StringSetting.Builder()
-        .name("server-command")
-        .description("The word that reports the server name and session length.")
-        .defaultValue("server")
-        .visible(statsCommands::get)
-        .build()
-    );
-
-    private final Setting<String> timeCommand = sgStats.add(new StringSetting.Builder()
-        .name("time-command")
-        .description("The word that reports the in-game clock.")
-        .defaultValue("time")
-        .visible(statsCommands::get)
-        .build()
-    );
-
-    private final Setting<ServerStats.Detail> statsDetail = sgStats.add(new EnumSetting.Builder<ServerStats.Detail>()
-        .name("stats-detail")
-        .description("How much !stats reports: the short form or every figure.")
-        .defaultValue(ServerStats.Detail.BRIEF)
-        .visible(statsCommands::get)
-        .build()
-    );
-
-    private final Setting<String> statsSeparator = sgStats.add(new StringSetting.Builder()
-        .name("stats-separator")
-        .description("What to put between the figures in !stats.")
-        .defaultValue(" | ")
-        .visible(statsCommands::get)
-        .build()
-    );
-
-    private final Setting<String> whoCommand = sgStats.add(new StringSetting.Builder()
-        .name("who-command")
-        .description("The word that lists the players the client can see.")
-        .defaultValue("who")
-        .visible(statsCommands::get)
+    private final Setting<Integer> statusRefreshSeconds = sgStatus.add(new IntSetting.Builder()
+        .name("refresh-seconds")
+        .description("How often the status preview refreshes, in seconds.")
+        .defaultValue(5)
+        .range(1, 60)
+        .sliderRange(1, 30)
+        .visible(statusEnabled::get)
         .build()
     );
 
@@ -644,7 +596,7 @@ public class AssistantModule extends AutomationModule {
         SenderIdentity identity = identify(sender);
         AssistantBrain.Decision decision = runtime.handle(identity, content, now,
             McServerStats.snapshot(mc, now, sessionStart, speed.blocksPerSecond()),
-            statsOptions(), requesterPing(identity, sender));
+            statusSettings(), requesterPing(identity, sender));
         if (!decision.acts()) return;
         deliver(decision, sender);
         // Learning is deliberately conservative: the AI only absorbs a line it already understood, so
@@ -682,6 +634,20 @@ public class AssistantModule extends AutomationModule {
         });
     }
 
+    /**
+     * Mirrors a local {@code !status} readout to the admin webhook, when one is configured.
+     *
+     * <p>Only the overview is pushed, and only when it was answered locally: a command already sent
+     * to public chat has been seen by everyone there, so posting it again adds nothing. The card goes
+     * to the admin webhook specifically because it carries the player's own figures.
+     */
+    private void pushStatusCard(AssistantBrain.Decision decision) {
+        WebhookRelayModule relay = Modules.get().get(WebhookRelayModule.class);
+        if (relay == null || !relay.adminStatusAllowed()) return;
+        relay.sendAdminStatus(McServerStats.snapshot(mc, System.currentTimeMillis(),
+            com.logvex.addon.LogClient.sessionStartMs()), null);
+    }
+
     // ------------------------------------------------------------------ delivery
 
     private void deliver(AssistantBrain.Decision decision, String sender) {
@@ -694,6 +660,9 @@ public class AssistantModule extends AutomationModule {
                 "Report not sent: the webhook is not configured. Tell a moderator another way.");
             if (decision.sound()) playAlert();
             return;
+        }
+        if (statusWebhook.get() && decision.hasStatusCard()) {
+            pushStatusCard(decision);
         }
         switch (decision.delivery()) {
             case CHAT -> speakAll(decision);
@@ -880,22 +849,15 @@ public class AssistantModule extends AutomationModule {
         return profile == null || profile.getName() == null ? "" : profile.getName();
     }
 
-    /** The stats command settings as the core reads them. */
-    private StatsCommands.Options statsOptions() {
-        return new StatsCommands.Options(
-            statsCommands.get(),
-            pingCommand.get(),
-            tpsCommand.get(),
-            statsCommand.get(),
-            coordsCommand.get(),
-            healthCommand.get(),
-            fpsCommand.get(),
-            serverCommand.get(),
-            timeCommand.get(),
-            whoCommand.get(),
-            statsDetail.get(),
-            statsSeparator.get()
-        );
+    /** The live status settings as the core reads them. */
+    private StatusCommands.Settings statusSettings() {
+        if (!statusEnabled.get()) return new StatusCommands.Settings(false, null);
+        return new StatusCommands.Settings(true, StatusOutput.decodeAll(statusLines.get()));
+    }
+
+    /** The shipped status table, as configuration lines. */
+    private static List<String> defaultStatusLines() {
+        return StatusOutput.encodeAll(StatusOutput.defaultsAll());
     }
 
     /** Rebuilds the runtime's rules, config and permissions from the current settings. */
@@ -941,6 +903,16 @@ public class AssistantModule extends AutomationModule {
     /** The raw macro configuration lines, as the setting holds them. */
     public Setting<List<String>> macroLinesSetting() {
         return macroLines;
+    }
+
+    /** The live status table, as the setting holds it. */
+    public Setting<List<String>> statusLinesSetting() {
+        return statusLines;
+    }
+
+    /** True when the status commands may answer at all. */
+    public boolean statusEnabled() {
+        return statusEnabled.get();
     }
 
     /** Adds a macro from one configuration line. Returns false when the line is not a macro. */
@@ -1057,7 +1029,7 @@ public class AssistantModule extends AutomationModule {
             ? SenderIdentity.unverified(ownName)
             : SenderIdentity.local(mc.player.getGameProfile().getName(), mc.player.getUuid());
         AssistantBrain.Decision decision = runtime.handle(identity, message, now,
-            McServerStats.snapshot(mc, now, sessionStart, speed.blocksPerSecond()), statsOptions(), -1);
+            McServerStats.snapshot(mc, now, sessionStart, speed.blocksPerSecond()), statusSettings(), -1);
         if (decision == null || !decision.acts()) return false;
 
         event.cancel();
@@ -1373,7 +1345,7 @@ public class AssistantModule extends AutomationModule {
         SenderIdentity identity = identify(sender);
         AssistantBrain.Decision decision = runtime.handle(identity, content, now,
             McServerStats.snapshot(mc, now, sessionStart, speed.blocksPerSecond()),
-            statsOptions(), requesterPing(identity, sender));
+            statusSettings(), requesterPing(identity, sender));
         if (decision.acts()) deliver(decision, sender);
         return decision;
     }

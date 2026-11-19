@@ -2,7 +2,8 @@ package com.logvex.addon.assistant.core;
 
 import com.logvex.addon.ai.core.AiEngine;
 import com.logvex.addon.stats.ServerStats;
-import com.logvex.addon.stats.StatsCommands;
+import com.logvex.addon.stats.StatusCommands;
+import com.logvex.addon.stats.StatusTemplate;
 
 import java.util.List;
 import java.util.Locale;
@@ -46,25 +47,43 @@ public final class AssistantBrain {
      */
     public record Decision(Delivery delivery, String text, TriggerRule rule,
                            boolean sound, boolean remember, boolean command, boolean denied,
-                           ReplyFormat.Embed embed, String report) {
+                           ReplyFormat.Embed embed, String report, String statusCard) {
         public static final Decision NONE =
-            new Decision(Delivery.NONE, "", null, false, false, false, false, null, null);
+            new Decision(Delivery.NONE, "", null, false, false, false, false, null, null, null);
+
+        public Decision(Delivery delivery, String text, TriggerRule rule,
+                        boolean sound, boolean remember, boolean command, boolean denied,
+                        ReplyFormat.Embed embed, String report) {
+            this(delivery, text, rule, sound, remember, command, denied, embed, report, null);
+        }
 
         public Decision(Delivery delivery, String text, TriggerRule rule,
                         boolean sound, boolean remember, boolean command, boolean denied,
                         ReplyFormat.Embed embed) {
-            this(delivery, text, rule, sound, remember, command, denied, embed, null);
+            this(delivery, text, rule, sound, remember, command, denied, embed, null, null);
         }
 
         public Decision(Delivery delivery, String text, TriggerRule rule,
                         boolean sound, boolean remember, boolean command, boolean denied) {
-            this(delivery, text, rule, sound, remember, command, denied, null, null);
+            this(delivery, text, rule, sound, remember, command, denied, null, null, null);
         }
 
         /** The original six-field form, for every decision that was not a refusal. */
         public Decision(Delivery delivery, String text, TriggerRule rule,
                         boolean sound, boolean remember, boolean command) {
-            this(delivery, text, rule, sound, remember, command, false, null, null);
+            this(delivery, text, rule, sound, remember, command, false, null, null, null);
+        }
+
+        /**
+         * The status command this decision answers, or null.
+         *
+         * <p>Separate from {@link #report} because the two are delivered differently: a report is a
+         * message to the public webhook, while a status card is a local readout the caller may
+         * mirror to the admin webhook. Overloading one field for both would make an overview post a
+         * public report.
+         */
+        public boolean hasStatusCard() {
+            return statusCard != null && !statusCard.isBlank();
         }
 
         /**
@@ -218,8 +237,8 @@ public final class AssistantBrain {
      * them keeps the original behaviour for callers that only need memory commands.
      */
     public Decision command(String sender, String content, AssistantConfig config, long now,
-                            ServerStats stats, StatsCommands.Options statsOptions) {
-        return fromCommand(sender, content, config, now, stats, statsOptions);
+                            ServerStats stats, StatusCommands.Settings statusSettings) {
+        return fromCommand(sender, content, config, now, stats, statusSettings);
     }
 
     /**
@@ -230,9 +249,9 @@ public final class AssistantBrain {
      * @param activity    where to record the command, or null for a throwaway
      */
     public Decision command(SenderIdentity identity, String content, AssistantConfig config,
-                            long now, ServerStats stats, StatsCommands.Options statsOptions,
+                            long now, ServerStats stats, StatusCommands.Settings statusSettings,
                             PermissionSet permissions, ChatActivity activity) {
-        return command(identity, content, config, now, stats, statsOptions, permissions, activity,
+        return command(identity, content, config, now, stats, statusSettings, permissions, activity,
             true);
     }
 
@@ -243,9 +262,9 @@ public final class AssistantBrain {
      *                    command list without restricting it for everyone else
      */
     public Decision command(SenderIdentity identity, String content, AssistantConfig config,
-                            long now, ServerStats stats, StatsCommands.Options statsOptions,
+                            long now, ServerStats stats, StatusCommands.Settings statusSettings,
                             PermissionSet permissions, ChatActivity activity, boolean helpEnabled) {
-        return command(identity, content, config, now, stats, statsOptions, permissions, activity,
+        return command(identity, content, config, now, stats, statusSettings, permissions, activity,
             helpEnabled, -1);
     }
 
@@ -259,11 +278,11 @@ public final class AssistantBrain {
      * @param requesterPing the speaker's latency in milliseconds, or a negative value when unknown
      */
     public Decision command(SenderIdentity identity, String content, AssistantConfig config,
-                            long now, ServerStats stats, StatsCommands.Options statsOptions,
+                            long now, ServerStats stats, StatusCommands.Settings statusSettings,
                             PermissionSet permissions, ChatActivity activity, boolean helpEnabled,
                             int requesterPing) {
         if (!helpEnabled && isHelpRequest(content, config)) return Decision.NONE;
-        return fromCommand(identity, content, config, now, stats, statsOptions, permissions,
+        return fromCommand(identity, content, config, now, stats, statusSettings, permissions,
             activity, requesterPing);
     }
 
@@ -363,9 +382,9 @@ public final class AssistantBrain {
     }
 
     private Decision fromCommand(String sender, String content, AssistantConfig config, long now,
-                                 ServerStats stats, StatsCommands.Options statsOptions) {
+                                 ServerStats stats, StatusCommands.Settings statusSettings) {
         return fromCommand(SenderIdentity.unverified(sender), content, config, now, stats,
-            statsOptions, null, null);
+            statusSettings, null, null);
     }
 
     /**
@@ -384,14 +403,14 @@ public final class AssistantBrain {
      * @param identity the sender as the client can verify them; never a name taken from the message
      */
     private Decision fromCommand(SenderIdentity identity, String content, AssistantConfig config,
-                                 long now, ServerStats stats, StatsCommands.Options statsOptions,
+                                 long now, ServerStats stats, StatusCommands.Settings statusSettings,
                                  PermissionSet permissions, ChatActivity activity) {
-        return fromCommand(identity, content, config, now, stats, statsOptions, permissions,
+        return fromCommand(identity, content, config, now, stats, statusSettings, permissions,
             activity, -1);
     }
 
     private Decision fromCommand(SenderIdentity identity, String content, AssistantConfig config,
-                                 long now, ServerStats stats, StatsCommands.Options statsOptions,
+                                 long now, ServerStats stats, StatusCommands.Settings statusSettings,
                                  PermissionSet permissions, ChatActivity activity,
                                  int requesterPing) {
         String prefix = config.commandPrefix();
@@ -407,7 +426,7 @@ public final class AssistantBrain {
         // A configured stats verb is an alias for its figure, so renaming `ping` to `latency` does
         // not create a second, unchecked command.
         String canonical = CommandCatalog.canonical(word).orElse(null);
-        if (canonical == null) canonical = statsCanonical(word, statsOptions);
+        if (canonical == null) canonical = statsCanonical(word, statusSettings);
         if (canonical == null) return null;
 
         PermissionSet perms = permissions == null ? PermissionSet.permissive() : permissions;
@@ -419,7 +438,7 @@ public final class AssistantBrain {
 
         ChatActivity observed = activity == null ? new ChatActivity() : activity;
         Decision decision = dispatch(identity, canonical, word, rest, config, now, stats,
-            statsOptions, observed, perms, requesterPing);
+            statusSettings, observed, perms, requesterPing);
         if (decision == null) return null;
         // Only a command that actually ran is counted; a refusal is recorded separately so
         // `!activity` cannot report a command as used when the gate turned it away.
@@ -428,7 +447,7 @@ public final class AssistantBrain {
     }
 
     /** The canonical command a configured stats verb refers to, or null. */
-    private static String statsCanonical(String word, StatsCommands.Options options) {
+    private static String statsCanonical(String word, StatusCommands.Settings options) {
         if (options == null) return null;
         for (java.util.Map.Entry<String, String> entry : options.verbs().entrySet()) {
             if (entry.getValue() != null && entry.getValue().equalsIgnoreCase(word)) {
@@ -449,18 +468,18 @@ public final class AssistantBrain {
     /** Runs an authorised command. */
     private Decision dispatch(SenderIdentity identity, String canonical, String word, String rest,
                               AssistantConfig config, long now, ServerStats stats,
-                              StatsCommands.Options statsOptions, ChatActivity activity,
+                              StatusCommands.Settings statusSettings, ChatActivity activity,
                               PermissionSet perms, int requesterPing) {
         String sender = identity.name();
         return switch (canonical) {
-            case "help" -> commandHelp(identity, config, rest, statsOptions, perms);
-            case "status" -> commandStatus(config, activity, perms);
+            case "help" -> commandHelp(identity, config, rest, statusSettings, perms);
+            case "about" -> commandAbout(config, activity, perms);
             case "activity" -> commandActivity(config, activity, now);
             case "remember" -> commandRemember(sender, rest, config, now);
             case "forget" -> commandForget(sender, rest, config, now);
             case "fact" -> commandFact(sender, rest, config);
             case "facts" -> commandFacts(config);
-            case "memory" -> commandMemory(sender, config);
+            case "memories" -> commandMemories(sender, config);
             case "forgetme" -> commandForgetMe(sender, config, now);
             case "history" -> commandHistory(config);
             case "hello" -> commandHello(sender, config, now, stats);
@@ -470,22 +489,50 @@ public final class AssistantBrain {
             case "macrohelp" -> commandMacroHelp(rest, config);
             case "mod", "report" -> commandReport(sender, canonical, rest, config);
             case "who" -> commandWho(config, stats);
-            case "ping", "tps", "stats", "coords", "health", "fps", "server", "time",
-                 "players", "uptime", "world", "speed" -> {
-                // The stats table answers on the configured verb, so it is asked with the word the
-                // player typed first. An alias from the catalogue (for example `latency` for
-                // `ping`) is not a stats verb, so the canonical name is the fallback.
-                String requester = identity.local() ? "" : sender;
-                java.util.Optional<String> text = StatsCommands.answer(word + restSuffix(rest),
-                    stats, statsOptions, requesterPing, requester);
-                if (text.isEmpty() && !word.equals(canonical)) {
-                    text = StatsCommands.answer(canonical + restSuffix(rest), stats, statsOptions,
-                        requesterPing, requester);
-                }
-                yield text.map(value -> reply(config.memoryReplyMode(), value, false)).orElse(null);
-            }
-            default -> null;
+            case "stats" -> commandStats(config, stats);
+            default -> statusCommand(identity, canonical, word, config, stats, statusSettings,
+                requesterPing);
         };
+    }
+
+    /**
+     * Answers one live status command, honouring its configured output mode.
+     *
+     * <p>The mode is the whole point of this path. {@code LOCAL} produces a notification this client
+     * shows and never transmits; {@code CHAT} produces exactly one ordinary chat message. Nothing
+     * here can reach a server command, so no status answer can be broadcast by accident.
+     */
+    private Decision statusCommand(SenderIdentity identity, String canonical, String word,
+                                   AssistantConfig config, ServerStats stats,
+                                   StatusCommands.Settings settings, int requesterPing) {
+        ServerStats live = stats == null ? ServerStats.OFFLINE : stats;
+        // Only the local player's own figure is this client's reading; for anyone else the tab list
+        // is the only source, and the caller passes it in. A negative value means "not known".
+        int ping = requesterPing >= 0 ? requesterPing
+            : (identity.local() ? live.latency() : -1);
+        StatusTemplate.Context context = new StatusTemplate.Context(identity.name(), ping);
+        java.util.Optional<StatusCommands.Answer> answer =
+            StatusCommands.answer(canonical, live, settings, context);
+        if (answer.isEmpty() && !word.equals(canonical)) {
+            answer = StatusCommands.answer(word, live, settings, context);
+        }
+        if (answer.isEmpty()) return null;
+        // A command that describes the player is answered for the local player only. The output is
+        // already forced local, so nothing would leak; refusing remote senders instead stops a
+        // stranger from making this client's notification area churn on demand.
+        if (answer.get().sensitive() && !identity.local()) {
+            return Decision.refusal(config.memoryReplyMode(),
+                "Only the local player may use " + config.commandPrefix() + canonical + ".");
+        }
+        StatusCommands.Answer value = answer.get();
+        // A local answer is a notification; a chat answer is one line of ordinary chat. Both are
+        // non-remembered: a status readout is not part of the conversation.
+        Delivery delivery = value.localOnly() ? Delivery.NOTIFY : Delivery.CHAT;
+        // Only the overview is mirrored to the admin webhook: a card per figure would flood the
+        // channel the moment someone polls two commands in a row.
+        String card = "status".equals(value.command()) ? value.command() : null;
+        return new Decision(delivery, value.text(), null, false, false, true, false, null, null,
+            card);
     }
 
     /**
@@ -524,9 +571,9 @@ public final class AssistantBrain {
 
     /** {@code !help}: every command the assistant answers, as one row per command. */
     private Decision commandHelp(SenderIdentity identity, AssistantConfig config, String rest,
-                                 StatsCommands.Options statsOptions, PermissionSet perms) {
+                                 StatusCommands.Settings statusSettings, PermissionSet perms) {
         int page = parsePage(rest);
-        ReplyFormat.Embed embed = helpEmbed(identity, config, statsOptions, perms, page);
+        ReplyFormat.Embed embed = helpEmbed(identity, config, statusSettings, perms, page);
         if (embed.fields().isEmpty()) {
             return reply(config.memoryReplyMode(), "No commands are available to you.", false);
         }
@@ -565,7 +612,7 @@ public final class AssistantBrain {
      * @param page the 1-based page to render
      */
     public ReplyFormat.Embed helpEmbed(SenderIdentity identity, AssistantConfig config,
-                                       StatsCommands.Options statsOptions, PermissionSet perms,
+                                       StatusCommands.Settings statusSettings, PermissionSet perms,
                                        int page) {
         AssistantConfig cfg = config == null ? AssistantConfig.DEFAULTS : config;
         PermissionSet live = perms == null ? PermissionSet.permissive() : perms;
@@ -594,8 +641,8 @@ public final class AssistantBrain {
             rows.add(new ReplyFormat.Field(cfg.commandPrefix() + command.name(), value.toString()));
         }
 
-        if (statsOptions != null && statsOptions.enabled() && wanted == 1) {
-            for (java.util.Map.Entry<String, String> entry : statsOptions.verbs().entrySet()) {
+        if (statusSettings != null && statusSettings.enabled() && wanted == 1) {
+            for (java.util.Map.Entry<String, String> entry : statusSettings.verbs().entrySet()) {
                 if (entry.getKey().equals(entry.getValue())) continue;
                 rows.add(new ReplyFormat.Field(cfg.commandPrefix() + entry.getValue(),
                     "Renamed figure, same as " + entry.getKey() + "."));
@@ -630,7 +677,7 @@ public final class AssistantBrain {
     }
 
     /** {@code !status}: a short summary of the assistant and what it has done this session. */
-    private Decision commandStatus(AssistantConfig config, ChatActivity activity,
+    private Decision commandAbout(AssistantConfig config, ChatActivity activity,
                                    PermissionSet perms) {
         ChatActivity seen = activity == null ? new ChatActivity() : activity;
         PermissionSet live = perms == null ? PermissionSet.permissive() : perms;
@@ -732,7 +779,7 @@ public final class AssistantBrain {
         return reply(config.memoryReplyMode(), sb.toString(), false);
     }
 
-    private Decision commandMemory(String sender, AssistantConfig config) {
+    private Decision commandMemories(String sender, AssistantConfig config) {
         String summary = memory.facts().size() + " facts, " + memory.knownPlayers().size() + " players, "
             + memory.historySize() + " remembered lines";
         return reply(config.memoryReplyMode(), summary, false);
@@ -807,12 +854,29 @@ public final class AssistantBrain {
      * instead of a paragraph. The count is carried as its own field so it stays legible even when the
      * names wrap.
      */
+    /**
+     * {@code !stats}: every figure the client can see, as a labelled block.
+     *
+     * <p>A block rather than the old pipe-joined line: one figure per line stays readable when the
+     * full set is shown, and a narrow chat window wraps it without turning the separators into
+     * noise.
+     */
+    private Decision commandStats(AssistantConfig config, ServerStats stats) {
+        ServerStats live = stats == null ? ServerStats.OFFLINE : stats;
+        java.util.List<ReplyFormat.Field> fields = new java.util.ArrayList<>();
+        for (ServerStats.Line line : live.lines(ServerStats.Detail.FULL)) {
+            fields.add(new ReplyFormat.Field(line.label(), line.value()));
+        }
+        return embedReply(config.memoryReplyMode(),
+            new ReplyFormat.Embed("Server stats", fields, "", ReplyFormat.Style.BOX), false);
+    }
+
     private Decision commandWho(AssistantConfig config, ServerStats stats) {
         ServerStats live = stats == null ? ServerStats.OFFLINE : stats;
         if (!live.inWorld()) {
             return reply(config.memoryReplyMode(), "Not connected.", false);
         }
-        java.util.List<String> lines = StatsCommands.whoLines(live, 44);
+        java.util.List<String> lines = StatusCommands.whoLines(live, 44);
         java.util.List<ReplyFormat.Field> fields = new java.util.ArrayList<>();
         int shown = live.onlinePlayers().size();
         fields.add(new ReplyFormat.Field("Visible", shown + " of " + live.players()));

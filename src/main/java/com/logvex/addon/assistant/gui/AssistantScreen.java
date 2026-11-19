@@ -5,6 +5,11 @@ import com.logvex.addon.assistant.core.ChatActivity;
 import com.logvex.addon.assistant.core.ChatMacro;
 import com.logvex.addon.assistant.core.TriggerRule;
 import com.logvex.addon.assistant.modules.AssistantModule;
+import com.logvex.addon.stats.ServerStats;
+import com.logvex.addon.stats.StatusCommand;
+import com.logvex.addon.stats.StatusCommands;
+import com.logvex.addon.stats.StatusOutput;
+import com.logvex.addon.stats.StatusTemplate;
 import com.logvex.addon.common.Messages;
 import com.logvex.addon.framework.gui.GuiThemes;
 import com.logvex.addon.framework.gui.WindowScreen;
@@ -18,7 +23,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * The assistant manager: a single window with a Triggers tab, a Macros tab and a Memory tab.
+ * The assistant manager: triggers, macros, memory, the local AI and the live status commands,
+ * one tab each.
  *
  * <p>Every control is wired to real {@link AssistantModule} methods, so the screen can never drift
  * from the module's behaviour. A rule is edited as its encoded string, which keeps the full feature
@@ -416,32 +422,49 @@ public class AssistantScreen extends WindowScreen {
     // ------------------------------------------------------------------ status
 
     private void renderStatus() {
-        AssistantMemory memory = module.memory();
+        if (!module.statusEnabled()) {
+            add(theme.label("The live status commands are switched off in the module settings."))
+                .expandX().widget().color(MUTED);
+            return;
+        }
 
-        WVerticalList info = add(theme.verticalList()).expandX().widget();
-        keyValue(info, "Name:", module.config().name());
-        keyValue(info, "Triggers:", String.valueOf(module.triggers().rules().size()));
-        keyValue(info, "Facts:", String.valueOf(memory.facts().size()));
-        keyValue(info, "Players known:", String.valueOf(memory.knownPlayers().size()));
-        keyValue(info, "Remembered lines:", String.valueOf(memory.historySize()));
-        keyValue(info, "Handled:", String.valueOf(module.runtime().handled()));
-        keyValue(info, "Rate limited:", String.valueOf(module.runtime().rateLimited()));
-        keyValue(info, "Refused:", String.valueOf(module.runtime().denied()));
-        keyValue(info, "AI replies:", String.valueOf(module.runtime().aiReplies()));
-        keyValue(info, "Permissions:", module.permissionsEnabled()
-            ? "on (" + module.permissions().rules().size() + " rules)" : "off");
-        keyValue(info, "Memory file:", com.logvex.addon.assistant.mc.FileAssistantStore.defaultPath().toString());
+        ServerStats stats = module.liveStats();
+        add(theme.label(stats.offline()
+            ? "Join a world to preview live figures; every figure reads n/a while disconnected."
+            : "Each command as it would answer you right now."))
+            .expandX().widget().color(MUTED);
+
+        // Previews go through the same path chat uses, so a custom template shows exactly what it
+        // would deliver rather than a second, drifting rendering.
+        StatusCommands.Settings settings =
+            new StatusCommands.Settings(true, StatusOutput.decodeAll(module.statusLinesSetting().get()));
+
+        WVerticalList previews = add(theme.verticalList()).expandX().widget();
+        for (StatusCommand.Definition command : StatusCommand.all()) {
+            StatusCommands.Answer answer =
+                StatusCommands.answer(command.name(), stats, settings, module.selfName())
+                    .orElse(null);
+            String badge = answer == null ? "off" : answer.localOnly() ? "local" : "chat";
+            keyValue(previews, module.config().commandPrefix() + command.name() + " [" + badge + "]",
+                answer == null ? "(switched off)" : answer.text());
+        }
+
+        add(theme.horizontalSeparator("Placeholders")).expandX();
+        add(theme.label("Write these in a status template. A figure the client cannot read shows n/a."))
+            .expandX().widget().color(MUTED);
+        WVerticalList placeholders = add(theme.verticalList()).expandX().widget();
+        for (StatusTemplate.Placeholder placeholder : StatusTemplate.placeholders()) {
+            keyValue(placeholders, "{" + placeholder.name() + "} e.g. " + placeholder.sample(),
+                placeholder.detail());
+        }
 
         add(theme.horizontalSeparator("This session")).expandX();
-        WVerticalList activity = add(theme.verticalList()).expandX().widget();
-        ChatActivity seen = module.activity();
-        keyValue(activity, "Lines seen:", String.valueOf(seen.seen()));
-        keyValue(activity, "Players talking:", String.valueOf(seen.activePlayers()));
-        keyValue(activity, "Answered:", String.valueOf(seen.answered()));
-        keyValue(activity, "Duplicates dropped:", String.valueOf(seen.suppressed()));
-        ChatActivity.PlayerCount busiest = seen.mostActive();
-        keyValue(activity, "Busiest:", busiest == null ? "-"
-            : busiest.name() + " (" + busiest.messages() + ")");
+        WVerticalList info = add(theme.verticalList()).expandX().widget();
+        AssistantMemory memory = module.memory();
+        keyValue(info, "Triggers:", String.valueOf(module.triggers().rules().size()));
+        keyValue(info, "Facts:", String.valueOf(memory.facts().size()));
+        keyValue(info, "Handled:", String.valueOf(module.runtime().handled()));
+        keyValue(info, "Refused:", String.valueOf(module.runtime().denied()));
 
         add(theme.horizontalSeparator("Test a message")).expandX();
         WTextBox test = add(theme.textBox("", "Type a message to test the triggers")).expandX().widget();
