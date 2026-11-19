@@ -708,6 +708,7 @@ instead of a paste. Embeds are also not collapsed behind a "show more" link the 
 | Mention | `mention-alerts` sees your name or a watched name used in chat (opt-in). |
 | Leaderboard | `.log webhook leaderboard`, the relay widget's **Leaderboard** button. |
 | Player profile | `.log webhook profile <player>`, or **Profile...** on the relay widget. |
+| Server status | `.log webhook sendstatus`, or **Status** on the relay widget. |
 | Test | The **Test Embed** button or `.log webhook test`. |
 
 ### Settings
@@ -742,6 +743,7 @@ summaries, renames, mentions, leaderboards, profiles and the test card.
 | `.log webhook digest` | Sends a digest embed now. |
 | `.log webhook leaderboard` | Sends the most active players as a leaderboard embed. |
 | `.log webhook profile <player>` | Sends one player's observed activity as a profile embed. |
+| `.log webhook sendstatus` | Sends the live server figures (TPS, ping, players, world) as a status embed. |
 | `.log webhook set <url>` | Sets the webhook URL. |
 | `.log webhook accent <name>` | Sets the accent (or `auto`). |
 

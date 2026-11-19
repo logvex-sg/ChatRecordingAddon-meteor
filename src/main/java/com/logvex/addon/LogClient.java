@@ -37,6 +37,13 @@ public class LogClient extends MeteorAddon {
     public static final Category CATEGORY = new Category("Log Client");
     public static final HudGroup HUD_GROUP = new HudGroup("Log Client");
 
+    private static final long SESSION_START_MS = System.currentTimeMillis();
+
+    /** When this client session began, for uptime figures that outlive any single module. */
+    public static long sessionStartMs() {
+        return SESSION_START_MS;
+    }
+
     @Override
     public void onInitialize() {
         LOG.info("Initializing Log Client");

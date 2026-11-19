@@ -356,6 +356,26 @@ public class WebhookRelayModule extends AddonModule {
         });
     }
 
+    /** Sends the current server figures as a status embed. */
+    public void sendStatus() {
+        if (!configured()) {
+            warning("Set a webhook URL first.");
+            return;
+        }
+        var mc = net.minecraft.client.MinecraftClient.getInstance();
+        com.logvex.addon.stats.ServerStats stats =
+            com.logvex.addon.stats.McServerStats.snapshot(mc, System.currentTimeMillis(),
+                com.logvex.addon.LogClient.sessionStartMs());
+        if (stats.offline()) {
+            warning("Join a world first so there is something to report.");
+            return;
+        }
+        service.notifyStatus(url(), username(), stats, (success, message) -> {
+            if (success) info("Server status embed sent.");
+            else warning("Status send failed: %s", message);
+        });
+    }
+
     @Override
     public String getInfoString() {
         return configured() ? (enabled.get() ? "on" : "muted") : null;
@@ -395,6 +415,8 @@ public class WebhookRelayModule extends AddonModule {
         leaderboard.action = this::sendLeaderboard;
         WButton profile = extra.add(theme.button("Profile...")).expandX().widget();
         profile.action = () -> mc.setScreen(new com.logvex.addon.chatlog.gui.PlayerProfileScreen(this));
+        WButton status = extra.add(theme.button("Status")).expandX().widget();
+        status.action = this::sendStatus;
 
         list.add(theme.label(configured()
             ? "Target: " + Messages.truncate(com.logvex.addon.chatlog.core.WebhookDeliveryLog.hostOf(url()), 40)

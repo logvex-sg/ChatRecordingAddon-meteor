@@ -1,6 +1,7 @@
 package com.logvex.addon.chatlog.core;
 
 import com.logvex.addon.common.Messages;
+import com.logvex.addon.stats.ServerStats;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -231,6 +232,40 @@ public final class WebhookEmbeds {
         if (style.showServer()) embed.field("Server", server(entry.server()), true);
         embed.field("When", ReportFormatting.time(entry.timestamp()), true);
         return decorate(embed, style, MessageType.DEATH);
+    }
+
+    /**
+     * A server-status card: the same figures the stats HUD and {@code !stats} show, as one clean
+     * card with a verdict-coloured accent.
+     */
+    public static DiscordEmbed status(Style style, ServerStats stats) {
+        ServerStats s = stats == null ? ServerStats.OFFLINE : stats;
+        DiscordEmbed embed = new DiscordEmbed()
+            .title("\uD83D\uDCE1 Server status")
+            .description("**" + s.verdict().toUpperCase(java.util.Locale.ROOT) + "**")
+            .color(s.offline() ? EmbedColor.RED
+                : s.lagging() ? EmbedColor.ORANGE
+                : s.latency() > 400 ? EmbedColor.YELLOW
+                : EmbedColor.GREEN);
+
+        if (s.offline()) {
+            embed.field("Connection", "not connected", true);
+            return decorate(embed, style, MessageType.SYSTEM);
+        }
+
+        embed.field("Server", server(s.server()), true);
+        embed.field("TPS", ServerStats.formatTps(s.tps()) + " / " + ServerStats.formatTps(ServerStats.TARGET_TPS), true);
+        embed.field("Ping", s.latency() < 0 ? "n/a" : s.latency() + " ms", true);
+        embed.field("Players", s.maxPlayers() > 0 ? s.players() + "/" + s.maxPlayers() : String.valueOf(s.players()), true);
+        embed.field("Uptime", ServerStats.formatUptime(s.uptimeMs()), true);
+        embed.field("FPS", String.valueOf(s.fps()), true);
+        embed.field("Dimension", s.dimension().isBlank() ? "?" : s.dimension(), true);
+        embed.field("Biome", s.biome().isBlank() ? "?" : s.biome(), true);
+        embed.field("World time", ServerStats.formatWorldTime(s.worldTime()), true);
+        embed.field("Health", String.format(java.util.Locale.ROOT, "%.1f/%.0f", s.health(), s.maxHealth()), true);
+        embed.field("Food", String.valueOf(s.food()), true);
+        embed.field("Position", String.format(java.util.Locale.ROOT, "%.0f, %.0f, %.0f", s.x(), s.y(), s.z()), true);
+        return decorate(embed, style, MessageType.SYSTEM);
     }
 
     /** A server-announcement card. */

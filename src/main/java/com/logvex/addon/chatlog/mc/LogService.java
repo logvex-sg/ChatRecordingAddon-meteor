@@ -435,6 +435,15 @@ public final class LogService {
         return webhook.enqueue(url, payload, listener);
     }
 
+    /** Sends a server-status card built from the figures the client can see. */
+    public boolean notifyStatus(String url, String username,
+                                com.logvex.addon.stats.ServerStats stats,
+                                WebhookQueue.Listener listener) {
+        if (url == null || url.isBlank()) return false;
+        String payload = WebhookPayload.status(username, stats, embedStyle);
+        return webhook.enqueue(url, payload, listener);
+    }
+
     /** Sends a death notice card. */
     public boolean notifyDeath(String url, String username, ChatEntry entry) {
         if (url == null || url.isBlank() || entry == null) return false;

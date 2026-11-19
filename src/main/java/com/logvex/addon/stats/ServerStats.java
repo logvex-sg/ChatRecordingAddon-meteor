@@ -68,6 +68,11 @@ public record ServerStats(
         if (uptimeMs < 0L) uptimeMs = 0L;
     }
 
+    /** True when there is no world, so every measurement is absent. */
+    public boolean offline() {
+        return !inWorld;
+    }
+
     /** True when the tick rate is low enough that the server is visibly lagging. */
     public boolean lagging() {
         return inWorld && tps > 0f && tps < LAG_TPS;

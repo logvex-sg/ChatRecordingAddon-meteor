@@ -77,6 +77,12 @@ public final class WebhookPayload {
         return WebhookEmbeds.payload(username, WebhookEmbeds.profile(style, activity, server));
     }
 
+    /** A server-status card. */
+    public static String status(String username, com.logvex.addon.stats.ServerStats stats,
+                                WebhookEmbeds.Style style) {
+        return WebhookEmbeds.payload(username, WebhookEmbeds.status(style, stats));
+    }
+
     /** A test card. */
     public static String test(String username) {
         return test(username, "", WebhookEmbeds.Style.defaults());

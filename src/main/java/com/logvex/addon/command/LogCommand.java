@@ -442,6 +442,10 @@ public class LogCommand extends Command {
                 webhookProfile(StringArgumentType.getString(context, "player"));
                 return SINGLE_SUCCESS;
             })))
+            .then(literal("sendstatus").executes(context -> {
+                webhookStatusEmbed();
+                return SINGLE_SUCCESS;
+            }))
         );
 
         builder.then(literal("update")
@@ -1463,6 +1467,15 @@ public class LogCommand extends Command {
             return;
         }
         relay.sendProfile(player == null ? "" : player.trim());
+    }
+
+    private void webhookStatusEmbed() {
+        var relay = relayModule();
+        if (relay == null) {
+            warning("The webhook-relay module is not available.");
+            return;
+        }
+        relay.sendStatus();
     }
 
     private void webhookAccent(String name) {
