@@ -121,6 +121,7 @@ public class LogClient extends MeteorAddon {
         Hud.get().register(com.logvex.addon.chatlog.hud.ActivityGraphHud.INFO);
         Hud.get().register(com.logvex.addon.chatlog.hud.RecentPlayersHud.INFO);
         Hud.get().register(com.logvex.addon.chatlog.hud.PlayerIdentityHud.INFO);
+        Hud.get().register(com.logvex.addon.stats.ServerStatsHud.INFO);
 
         // Rename the pre-rebrand data folder before anything reads or creates it, so an upgrade keeps
         // the recorded logs, identities, bot memory and config instead of starting empty.

@@ -42,6 +42,11 @@ public class AssistantCommand extends Command {
             return SINGLE_SUCCESS;
         }));
 
+        builder.then(literal("placeholders").executes(context -> {
+            placeholders();
+            return SINGLE_SUCCESS;
+        }));
+
         builder.then(literal("gui").executes(context -> {
             AssistantModule module = assistant();
             if (module == null) {
@@ -178,15 +183,37 @@ public class AssistantCommand extends Command {
         info("  (highlight).ai test <message>(default) - see what the assistant would do.");
         info("  (highlight).ai history(default) - recent remembered exchanges.");
         info("  (highlight).ai model [status|ask <text>|teach <intent> <example>|save](default).");
+        info("  (highlight).ai placeholders(default) - every placeholder a reply can use.");
         info("  (highlight).ai clear(default) - clear all memory.");
+    }
+
+    private void placeholders() {
+        AssistantModule module = assistant();
+        com.logvex.addon.assistant.core.Placeholders registry =
+            com.logvex.addon.assistant.core.ResponseTemplate.registry();
+        com.logvex.addon.stats.ServerStats stats = module == null
+            ? com.logvex.addon.stats.ServerStats.OFFLINE
+            : module.liveStats();
+        com.logvex.addon.assistant.core.ResponseTemplate.Context ctx =
+            new com.logvex.addon.assistant.core.ResponseTemplate.Context(
+                mc.player == null ? "" : mc.player.getGameProfile().getName(), "", stats.server(),
+                module == null ? null : module.memory(),
+                System.currentTimeMillis(), stats);
+
+        info("Placeholders (shown with their current value):");
+        for (String name : registry.names()) {
+            info("  (highlight){%s}(default) -> %s", name,
+                Messages.truncate(com.logvex.addon.assistant.core.ResponseTemplate.expand(
+                    "{" + name + "}", ctx), 48));
+        }
+        for (String family : registry.families()) {
+            info("  (highlight){%s<name>}(default) - stored memory lookup.", family.substring(0, family.length() - 1));
+        }
+        info("Unknown placeholders are left as written, so a typo is visible in the reply.");
     }
 
     private void modelStatus() {
         AssistantModule module = assistant();
-        if (module == null) {
-            error("The assistant module is not available.");
-            return;
-        }
         com.logvex.addon.ai.core.AiEngine engine = module.aiEngine();
         info("Local AI: %s, %d%% confidence, %s intents",
             engine.enabled() ? "on" : "off",

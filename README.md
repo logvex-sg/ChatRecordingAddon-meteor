@@ -356,7 +356,7 @@ pattern;sender=;reply=;mode=chat|notify|silent;cooldown=3000;limit=0;sound=false
 | `case` | Match case-sensitively (`false` by default). |
 | `whole` | Only match whole words, so `cat` does not fire inside `concatenate`. |
 | `sender` | Only fire for this player. Blank matches anyone. |
-| `reply` | What to say. Supports `{player}`, `{message}`, `{time}`, `{date}`, `{server}`, `{fact:key}`, `{count:name}` and `{memory}`. |
+| `reply` | What to say. Supports the full placeholder set below, e.g. `{player}`, `{tps}`, `{ping}`, `{biome}`, `{fact:key}`. |
 | `mode` | `chat` says it publicly, `notify` raises a local notification only, `silent` records the match without speaking. |
 | `cooldown` | Minimum milliseconds between two fires of the same rule. |
 | `limit` | Maximum fires per session; `0` is unlimited. |
@@ -371,6 +371,47 @@ keyword appears in every message.
 
 The assistant never answers itself: a message from the local player, or one that matches one of
 its own recent replies, is ignored.
+
+### Placeholders
+
+A reply can contain placeholders, which are replaced with live values just before the message is
+sent. Names are case-insensitive and may be written with spaces, so `{tps}`, `{TPS}` and `{ Tps }`
+are the same placeholder. Run `.ai placeholders` in game to see every name with its current value.
+
+| Placeholder | Value |
+| --- | --- |
+| `{player}` | The sender of the message that fired the rule. |
+| `{message}` | The message text that fired the rule. |
+| `{time}` / `{date}` | The local clock time (`HH:mm:ss`) and full timestamp. |
+| `{server}` | The server's name, or `single-player`. |
+| `{tps}` / `{mspt}` | The server's measured tick rate and the milliseconds per tick it implies. |
+| `{ping}` | Round-trip latency in milliseconds. |
+| `{players}` | How many players the server has sent the client. |
+| `{uptime}` | How long the current session has been open. |
+| `{verdict}` | `good`, `fair`, `poor`, `lagging` or `offline`. |
+| `{dimension}` / `{world}` | The full dimension id and its short name. |
+| `{biome}` | The biome at the player's feet. |
+| `{worldtime}` | The in-game clock, e.g. `12:00 day`. |
+| `{facing}` | The compass direction the player is looking, e.g. `north`. |
+| `{health}` / `{hunger}` | Health as `current/max` and the food level. |
+| `{x}` / `{y}` / `{z}` / `{coords}` | Position, one axis at a time or as `x, y, z`. |
+| `{speed}` | Measured horizontal walking speed in blocks per second. |
+| `{fps}` | The client's frame rate. |
+| `{memory}` | How many facts are stored. |
+| `{fact:key}` / `{count:name}` | A stored fact, or a stored counter. |
+
+Two rules keep this honest:
+
+* **Only figures the client can see are reported.** TPS comes from Meteor's keep-alive measurement,
+  ping from the player list, the biome from the loaded chunk. Nothing is queried from the server, so
+  the same reply works in single-player and on any remote server. A figure the client does not have
+  yet reads `n/a` rather than a made-up number.
+* **Unknown placeholders are left exactly as written.** `{nonsense}` stays `{nonsense}`, so a typo
+  shows up in the reply instead of silently blanking part of it.
+
+New placeholders can be added in code without touching the parser: register a name on
+`Placeholders` and every reply path picks it up. `Placeholders.standard().copy()` gives a private
+registry for an experiment without changing the shared one.
 
 ### Memory commands
 
@@ -390,6 +431,29 @@ understood:
 
 How the assistant answers these is controlled by `memory-reply-mode` (`chat`, `notify` or
 `silent`). The default, `notify`, keeps answers out of public chat.
+
+### Server stats commands
+
+The same prefix answers live server questions, so `!tps` in chat gets an answer without opening a
+menu. These run before the local AI, so a stats question never costs a model call. Every verb can be
+renamed or switched off in the **Stats** settings group, and the whole set has one on/off switch.
+
+| Command | Answer |
+| --- | --- |
+| `!ping` | Latency and a verdict, e.g. `Ping 42 ms (good).` |
+| `!tps` | The tick rate out of 20, with a `lagging` note when it is behind. |
+| `!stats` | Every figure the client can see, joined on one line. |
+| `!coords` | Position and dimension. |
+| `!health` | Health and food. |
+| `!fps` | The client's frame rate. |
+| `!server` | The server name and session length. |
+| `!time` | The in-game clock. |
+
+The `stats-detail` setting chooses between `brief` (connection figures only) and `full` (adds
+dimension, biome, health, position and memory), and `stats-separator` sets the text between the
+fields of `!stats`.
+
+`!stats` and the `server-stats` HUD read the same snapshot, so the two never disagree.
 
 ### Settings
 
@@ -1023,6 +1087,7 @@ The addon registers a `.log` command (alias `.la`). Run `.log help` for the list
 | `.ai forget <key>` | Removes a fact. |
 | `.ai test <message>` | Shows what the assistant would do with a message. |
 | `.ai history` | Recent remembered exchanges. |
+| `.ai placeholders` | Lists every placeholder with its current value. |
 | `.ai save` / `.ai clear` | Save memory now / clear all memory. |
 
 Commands are registered through the addon's own `PostInit` hook, and are intercepted from the
@@ -1120,6 +1185,16 @@ archive with in-memory doubles (no Minecraft runtime required):
   precedence, every memory command, reply clamping and silent rules.
 - `ResponseTemplateTest` — placeholder expansion for player/message/server/fact/counter/memory, and
   that an unknown or malformed placeholder is left verbatim instead of throwing.
+- `PlaceholdersTest` — every built-in placeholder (server, world, player, time), the `n/a` result
+  for figures the client cannot see, case and whitespace tolerance, and that a copy of the registry
+  can gain a placeholder without changing the shared one.
+- `ServerStatsTest` — tick-rate and uptime formatting, the lagging and verdict thresholds, the
+  day/night world clock wrapping at 24000 ticks, compass names for every yaw quadrant, the
+  brief/full views and normalisation of null or out-of-range input.
+- `StatsCommandsTest` — which verb answers, the wording of each answer, custom verb names, the
+  per-command and global switches, and the "Not connected." reply outside a world.
+- `SpeedTrackerTest` — straight-line and diagonal measurement, ignoring too-frequent samples,
+  dropping the reference after a long gap, and reset.
 - `FileAssistantStoreTest` — memory round-trip, a missing file loading as empty, corruption
   recovery, refusal of a newer-version file and no temporary file left behind.
 - `CompanionRouterTest` — the HTTP surface driven through a fake API: authentication (header,

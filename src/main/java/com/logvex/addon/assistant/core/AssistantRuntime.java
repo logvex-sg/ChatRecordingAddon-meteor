@@ -1,5 +1,8 @@
 package com.logvex.addon.assistant.core;
 
+import com.logvex.addon.stats.ServerStats;
+import com.logvex.addon.stats.StatsCommands;
+
 import java.util.ArrayDeque;
 import java.util.Deque;
 
@@ -67,6 +70,17 @@ public final class AssistantRuntime {
      * @return the decision, or {@link AssistantBrain.Decision#NONE} when nothing should happen
      */
     public AssistantBrain.Decision handle(String sender, String content, long now) {
+        return handle(sender, content, now, ServerStats.OFFLINE, null);
+    }
+
+    /**
+     * Evaluates one message with live server figures available to the stats commands.
+     *
+     * @param stats        the current snapshot, or {@link ServerStats#OFFLINE}
+     * @param statsOptions which stats commands may answer, or null for the defaults
+     */
+    public AssistantBrain.Decision handle(String sender, String content, long now,
+                                          ServerStats stats, StatsCommands.Options statsOptions) {
         if (content == null || content.isBlank()) {
             ignored++;
             return AssistantBrain.Decision.NONE;
@@ -85,13 +99,14 @@ public final class AssistantRuntime {
                 return AssistantBrain.Decision.NONE;
             }
             handled++;
-            return brain.trigger(rule, sender, content, cfg, now);
+            return brain.trigger(rule, sender, content, cfg, now, stats);
         }
 
         if (cfg.memoryCommands()) {
             // Only the command parser runs here: the trigger path already declined, and the AI must
             // not be reached from this branch or its reply would be counted as a command.
-            AssistantBrain.Decision command = brain.command(sender, content, cfg, now);
+            AssistantBrain.Decision command =
+                brain.command(sender, content, cfg, now, stats, statsOptions);
             if (command != null && command.acts()) {
                 if (!allowGlobalReply(cfg, now)) {
                     rateLimited++;
@@ -102,7 +117,7 @@ public final class AssistantRuntime {
             }
         }
         if (cfg.localAi()) {
-            AssistantBrain.Decision ai = brain.ai(sender, content, cfg, now);
+            AssistantBrain.Decision ai = brain.ai(sender, content, cfg, now, stats);
             if (ai != null && ai.acts()) {
                 if (!allowGlobalReply(cfg, now)) {
                     rateLimited++;

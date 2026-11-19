@@ -14,6 +14,10 @@ import com.logvex.addon.automation.modules.AutomationModule;
 import com.logvex.addon.chatlog.core.ChatClassifier;
 import com.logvex.addon.chatlog.core.MessageType;
 import com.logvex.addon.common.Messages;
+import com.logvex.addon.stats.McServerStats;
+import com.logvex.addon.stats.SpeedTracker;
+import com.logvex.addon.stats.ServerStats;
+import com.logvex.addon.stats.StatsCommands;
 import meteordevelopment.meteorclient.events.game.ReceiveMessageEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import com.logvex.addon.framework.gui.GuiTheme;
@@ -57,6 +61,7 @@ public class AssistantModule extends AutomationModule {
     private final SettingGroup sgMemory = settings.createGroup("Memory");
     private final SettingGroup sgAi = settings.createGroup("Local AI");
     private final SettingGroup sgLimits = settings.createGroup("Limits");
+    private final SettingGroup sgStats = settings.createGroup("Stats Commands");
 
     private final Setting<String> assistantName = sgGeneral.add(new StringSetting.Builder()
         .name("name")
@@ -88,6 +93,95 @@ public class AssistantModule extends AutomationModule {
         .defaultValue("!")
         .visible(memoryCommands::get)
         .onChanged(ignored -> rebuild())
+        .build()
+    );
+
+    // ------------------------------------------------------------------ stats commands
+
+    private final Setting<Boolean> statsCommands = sgStats.add(new BoolSetting.Builder()
+        .name("stats-commands")
+        .description("Answer !ping, !tps, !stats and the other live server figures in chat.")
+        .defaultValue(true)
+        .build()
+    );
+
+    private final Setting<String> pingCommand = sgStats.add(new StringSetting.Builder()
+        .name("ping-command")
+        .description("The word that reports latency.")
+        .defaultValue("ping")
+        .visible(statsCommands::get)
+        .build()
+    );
+
+    private final Setting<String> tpsCommand = sgStats.add(new StringSetting.Builder()
+        .name("tps-command")
+        .description("The word that reports the server's tick rate.")
+        .defaultValue("tps")
+        .visible(statsCommands::get)
+        .build()
+    );
+
+    private final Setting<String> statsCommand = sgStats.add(new StringSetting.Builder()
+        .name("stats-command")
+        .description("The word that reports every figure at once.")
+        .defaultValue("stats")
+        .visible(statsCommands::get)
+        .build()
+    );
+
+    private final Setting<String> coordsCommand = sgStats.add(new StringSetting.Builder()
+        .name("coords-command")
+        .description("The word that reports your position.")
+        .defaultValue("coords")
+        .visible(statsCommands::get)
+        .build()
+    );
+
+    private final Setting<String> healthCommand = sgStats.add(new StringSetting.Builder()
+        .name("health-command")
+        .description("The word that reports health and hunger.")
+        .defaultValue("health")
+        .visible(statsCommands::get)
+        .build()
+    );
+
+    private final Setting<String> fpsCommand = sgStats.add(new StringSetting.Builder()
+        .name("fps-command")
+        .description("The word that reports the frame rate.")
+        .defaultValue("fps")
+        .visible(statsCommands::get)
+        .build()
+    );
+
+    private final Setting<String> serverCommand = sgStats.add(new StringSetting.Builder()
+        .name("server-command")
+        .description("The word that reports the server name and session length.")
+        .defaultValue("server")
+        .visible(statsCommands::get)
+        .build()
+    );
+
+    private final Setting<String> timeCommand = sgStats.add(new StringSetting.Builder()
+        .name("time-command")
+        .description("The word that reports the in-game clock.")
+        .defaultValue("time")
+        .visible(statsCommands::get)
+        .build()
+    );
+
+    private final Setting<ServerStats.Detail> statsDetail = sgStats.add(new EnumSetting.Builder<ServerStats.Detail>()
+        .name("stats-detail")
+        .description("How much !stats reports: the short form or every figure.")
+        .defaultValue(ServerStats.Detail.BRIEF)
+        .visible(statsCommands::get)
+        .build()
+    );
+
+    private final Setting<String> statsSeparator = sgStats.add(new StringSetting.Builder()
+        .name("stats-separator")
+        .description("What to put between the figures in !stats.")
+        .defaultValue(" | ")
+        .visible(statsCommands::get)
         .build()
     );
 
@@ -240,6 +334,9 @@ public class AssistantModule extends AutomationModule {
     private long lastSaveAt;
     private boolean memoryDirty;
     private boolean aiDirty;
+    /** When the current session began, for the stats uptime figure. */
+    private long sessionStart = System.currentTimeMillis();
+    private final SpeedTracker speed = new SpeedTracker();
 
     public AssistantModule() {
         super("assistant", "A configurable chat assistant with keyword triggers, persistent memory and a small local AI.");
@@ -268,6 +365,7 @@ public class AssistantModule extends AutomationModule {
     @Override
     protected void onWorldJoin() {
         ownName = localPlayerName();
+        sessionStart = System.currentTimeMillis();
         runtime.resetSession();
     }
 
@@ -281,6 +379,9 @@ public class AssistantModule extends AutomationModule {
 
     @EventHandler
     private void onTick(TickEvent.Post event) {
+        if (mc.player != null) {
+            speed.sample(mc.player.getX(), mc.player.getZ(), System.currentTimeMillis());
+        }
         // Persist on a slow cadence rather than on every memory write, so a busy chat cannot cause
         // a disk write storm. The dirty flag makes this a no-op when nothing changed.
         if (System.currentTimeMillis() - lastSaveAt < 30_000L) return;
@@ -302,7 +403,10 @@ public class AssistantModule extends AutomationModule {
         String sender = result.sender().isBlank() ? "" : result.sender();
         if (isOwnMessage(sender, content)) return;
 
-        AssistantBrain.Decision decision = runtime.handle(sender, content, System.currentTimeMillis());
+        long now = System.currentTimeMillis();
+        AssistantBrain.Decision decision = runtime.handle(sender, content, now,
+            McServerStats.snapshot(mc, now, sessionStart, speed.blocksPerSecond()),
+            statsOptions());
         if (!decision.acts()) return;
         deliver(decision, sender);
         // Learning is deliberately conservative: the AI only absorbs a line it already understood, so
@@ -369,6 +473,23 @@ public class AssistantModule extends AutomationModule {
         if (mc.player == null) return "";
         var profile = mc.player.getGameProfile();
         return profile == null || profile.getName() == null ? "" : profile.getName();
+    }
+
+    /** The stats command settings as the core reads them. */
+    private StatsCommands.Options statsOptions() {
+        return new StatsCommands.Options(
+            statsCommands.get(),
+            pingCommand.get(),
+            tpsCommand.get(),
+            statsCommand.get(),
+            coordsCommand.get(),
+            healthCommand.get(),
+            fpsCommand.get(),
+            serverCommand.get(),
+            timeCommand.get(),
+            statsDetail.get(),
+            statsSeparator.get()
+        );
     }
 
     /** Rebuilds the runtime's rules and config from the current settings. */
@@ -439,6 +560,12 @@ public class AssistantModule extends AutomationModule {
         return service.memory();
     }
 
+    /** The current server and player figures, as the chat commands and placeholders see them. */
+    public ServerStats liveStats() {
+        return McServerStats.snapshot(mc, System.currentTimeMillis(), sessionStart,
+            speed.blocksPerSecond());
+    }
+
     public TriggerSet triggers() {
         return parsed;
     }
@@ -503,7 +630,10 @@ public class AssistantModule extends AutomationModule {
 
     /** Runs {@code text} as if it arrived from {@code sender}; used by the test command. */
     public AssistantBrain.Decision simulate(String sender, String content) {
-        AssistantBrain.Decision decision = runtime.handle(sender, content, System.currentTimeMillis());
+        long now = System.currentTimeMillis();
+        AssistantBrain.Decision decision = runtime.handle(sender, content, now,
+            McServerStats.snapshot(mc, now, sessionStart, speed.blocksPerSecond()),
+            statsOptions());
         if (decision.acts()) deliver(decision, sender);
         return decision;
     }

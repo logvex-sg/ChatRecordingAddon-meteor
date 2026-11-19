@@ -1,6 +1,8 @@
 package com.logvex.addon.assistant.core;
 
 import com.logvex.addon.ai.core.AiEngine;
+import com.logvex.addon.stats.ServerStats;
+import com.logvex.addon.stats.StatsCommands;
 
 import java.util.List;
 import java.util.Locale;
@@ -96,7 +98,13 @@ public final class AssistantBrain {
     /** The decision for an already-matched trigger rule. */
     public Decision trigger(TriggerRule rule, String sender, String content,
                             AssistantConfig config, long now) {
-        return fromTrigger(rule, sender, content, config, now);
+        return fromTrigger(rule, sender, content, config, now, ServerStats.OFFLINE);
+    }
+
+    /** The decision for an already-matched trigger rule, with live figures for its template. */
+    public Decision trigger(TriggerRule rule, String sender, String content,
+                            AssistantConfig config, long now, ServerStats stats) {
+        return fromTrigger(rule, sender, content, config, now, stats);
     }
 
     /** The decision for a memory command, or null when {@code content} is not one. */
@@ -104,9 +112,27 @@ public final class AssistantBrain {
         return fromCommand(sender, content, config, now);
     }
 
+    /**
+     * The decision for a memory or stats command, or null when {@code content} is neither.
+     *
+     * <p>This is the form the live runtime uses: it carries the current {@link ServerStats} and the
+     * stats settings, so {@code !ping}, {@code !tps} and the rest can answer. The overload without
+     * them keeps the original behaviour for callers that only need memory commands.
+     */
+    public Decision command(String sender, String content, AssistantConfig config, long now,
+                            ServerStats stats, StatsCommands.Options statsOptions) {
+        return fromCommand(sender, content, config, now, stats, statsOptions);
+    }
+
     /** Asks the local AI for a reply, or null when it declines. See {@link #fromAi}. */
     public Decision ai(String sender, String content, AssistantConfig config, long now) {
-        return fromAi(sender, content, config, now);
+        return fromAi(sender, content, config, now, ServerStats.OFFLINE);
+    }
+
+    /** Asks the local AI for a reply, expanding placeholders in it against the live figures. */
+    public Decision ai(String sender, String content, AssistantConfig config, long now,
+                       ServerStats stats) {
+        return fromAi(sender, content, config, now, stats);
     }
 
     /**
@@ -116,7 +142,8 @@ public final class AssistantBrain {
      * the caller falls through to no-op. The reply mode decides whether it is spoken, notified or
      * kept silent; a chat reply that ends up empty is downgraded to silent rather than sent blank.
      */
-    private Decision fromAi(String sender, String content, AssistantConfig config, long now) {
+    private Decision fromAi(String sender, String content, AssistantConfig config, long now,
+                            ServerStats stats) {
         if (engine == null || !engine.enabled()) return null;
 
         java.util.Map<String, String> context = new java.util.HashMap<>(4);
@@ -128,6 +155,8 @@ public final class AssistantBrain {
 
         String text = engine.respond(content, sender, context, now);
         if (text == null || text.isBlank()) return null;
+        text = ResponseTemplate.expand(text, new ResponseTemplate.Context(
+            sender, content, stats.server(), memory, now, stats));
         text = clamp(text, config.maxReplyLength());
 
         Delivery delivery = switch (config.aiReplyMode()) {
@@ -146,9 +175,9 @@ public final class AssistantBrain {
     // ------------------------------------------------------------------ triggers
 
     private Decision fromTrigger(TriggerRule rule, String sender, String content,
-                                 AssistantConfig config, long now) {
+                                 AssistantConfig config, long now, ServerStats stats) {
         ResponseTemplate.Context context = new ResponseTemplate.Context(
-            sender, content, "", memory, now);
+            sender, content, stats.server(), memory, now, stats);
         String text = ResponseTemplate.expand(rule.reply(), context);
         text = clamp(text, config.maxReplyLength());
 
@@ -170,10 +199,15 @@ public final class AssistantBrain {
     // ------------------------------------------------------------------ memory commands
 
     /**
-     * Parses a memory command. Returns null when {@code content} is not a command the assistant
+     * Parses a command. Returns null when {@code content} is not a command the assistant
      * understands, so the caller can fall through to no-op.
      */
     private Decision fromCommand(String sender, String content, AssistantConfig config, long now) {
+        return fromCommand(sender, content, config, now, ServerStats.OFFLINE, null);
+    }
+
+    private Decision fromCommand(String sender, String content, AssistantConfig config, long now,
+                                 ServerStats stats, StatsCommands.Options statsOptions) {
         String prefix = config.commandPrefix();
         String trimmed = content.strip();
         if (!trimmed.startsWith(prefix)) return null;
@@ -184,6 +218,22 @@ public final class AssistantBrain {
         String verb = parts[0].toLowerCase(Locale.ROOT);
         String rest = parts.length > 1 ? body.substring(verb.length()).strip() : "";
 
+        Decision memory = memoryCommand(sender, verb, rest, body, config, now);
+        if (memory != null) return memory;
+
+        // Stats answer after an explicit memory verb so a user's own command name still wins, but
+        // before the AI, so a stats question never costs a model call.
+        java.util.Optional<String> statsReply =
+            StatsCommands.answer(body, stats, statsOptions);
+        if (statsReply.isPresent()) {
+            return reply(config.memoryReplyMode(), statsReply.get(), false);
+        }
+        return null;
+    }
+
+    /** The memory verbs, or null when {@code verb} is not one of them. */
+    private Decision memoryCommand(String sender, String verb, String rest, String body,
+                                   AssistantConfig config, long now) {
         return switch (verb) {
             case "remember" -> commandRemember(sender, rest, config, now);
             case "forget" -> commandForget(sender, rest, config, now);

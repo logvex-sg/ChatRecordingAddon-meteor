@@ -27,6 +27,40 @@ class AssistantBrainTest {
     }
 
     @Test
+    @DisplayName("a trigger reply sees the live figures through the placeholder registry")
+    void triggerReplyUsesLiveStats() {
+        AssistantRuntime runtime = runtime(
+            TriggerRule.of("status", "{player} on {server}: {tps} tps, {ping} ping, {biome}"));
+        com.logvex.addon.stats.ServerStats stats = new com.logvex.addon.stats.ServerStats(
+            true, "mc.example.net", 19.6f, 42, 12, 60, 7_500_000L,
+            "minecraft:overworld", "overworld", "plains", 6_000L,
+            17.5f, 20f, 15, 120.4, 64.0, -35.9, "north", 5.43, 144, 512L, 4096L);
+
+        AssistantBrain.Decision decision = runtime.handle("Notch", "status", 1_000L, stats, null);
+
+        assertTrue(decision.acts());
+        assertEquals("Notch on mc.example.net: 19.6 tps, 42 ms ping, plains", decision.text());
+    }
+
+    @Test
+    @DisplayName("a trigger reply without live figures says n/a rather than inventing numbers")
+    void triggerReplyWithoutStats() {
+        AssistantRuntime runtime = runtime(TriggerRule.of("status", "tps {tps}"));
+
+        AssistantBrain.Decision decision = runtime.handle("Notch", "status", 1_000L);
+
+        assertEquals("tps n/a", decision.text());
+    }
+
+    @Test
+    @DisplayName("an unknown placeholder in a reply is left for the user to notice")
+    void unknownPlaceholderSurvivesInReply() {
+        AssistantRuntime runtime = runtime(TriggerRule.of("typo", "value {tpss} here"));
+
+        assertEquals("value {tpss} here", runtime.handle("Notch", "typo", 1_000L).text());
+    }
+
+    @Test
     @DisplayName("a matching trigger produces a chat decision with an expanded reply")
     void triggerReplies() {
         AssistantRuntime runtime = runtime(TriggerRule.of("hello bot", "Hello {player}!"));
