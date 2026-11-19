@@ -689,10 +689,11 @@ public final class AssistantBrain {
     /**
      * How many command rows one help page holds.
      *
-     * <p>Four, not eight: a row with its description, aliases and level wraps to two lines in a
-     * narrow chat window, and a page has to stay inside the delivery cap or the tail is cut off.
+     * <p>Six, not eight: a row with its description and aliases can still wrap to two lines in a
+     * narrow chat window, and a page has to stay inside the delivery cap or the tail is cut off. The
+     * level is no longer repeated per row, which is what made six fit where four did.
      */
-    public static final int HELP_PAGE_SIZE = 4;
+    public static final int HELP_PAGE_SIZE = 6;
 
     /** The page number in {@code rest} ({@code "2"} or {@code "page 2"}), clamped to 1 or more. */
     static int parsePage(String rest) {
@@ -743,7 +744,11 @@ public final class AssistantBrain {
             if (!command.aliases().isEmpty()) {
                 value.append(" (").append(String.join(", ", command.aliases())).append(')');
             }
-            value.append(" - ").append(levelLabel(level));
+            // The permission is only worth a column when it is not the default. Repeating
+            // "- Everyone" on every row pushed the description off the line for no information.
+            if (level != null && level != PermissionLevel.EVERYONE) {
+                value.append(" [").append(levelLabel(level)).append(']');
+            }
             rows.add(new ReplyFormat.Field(cfg.commandPrefix() + command.name(), value.toString()));
         }
 

@@ -197,7 +197,18 @@ public final class AssistantRuntime {
         }
 
         AssistantConfig cfg = config;
-        TriggerRule rule = cfg.respondToTriggers() ? triggers.firstMatch(sender.name(), content) : null;
+        // A bare-word trigger must not swallow a prefixed command: with the shipped table, a trigger
+        // for "hello" would answer "!hello" before the command parser ever saw it, making the command
+        // unreachable. A trigger the user wrote *with* the prefix ("!remember") is deliberate, so it
+        // is still allowed to win — that escape hatch is what the precedence test pins.
+        String prefix = cfg.commandPrefix() == null ? "" : cfg.commandPrefix();
+        boolean addressedToAssistant = !prefix.isBlank() && content.strip().startsWith(prefix);
+        java.util.function.Predicate<TriggerRule> allowed = addressedToAssistant
+            ? rule -> rule.pattern().strip().startsWith(prefix)
+            : null;
+        TriggerRule rule = cfg.respondToTriggers()
+            ? triggers.firstMatch(sender.name(), content, allowed)
+            : null;
 
         if (rule != null) {
             if (!cooldowns.tryFire(rule, now)) {

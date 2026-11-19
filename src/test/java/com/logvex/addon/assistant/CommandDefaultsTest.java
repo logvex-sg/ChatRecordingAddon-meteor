@@ -55,13 +55,36 @@ class CommandDefaultsTest {
     @Test
     @DisplayName("no default trigger shadows a built-in command")
     void defaultsDoNotShadowCommands() {
+        // The runtime guarantees this structurally now: a prefixed line is only offered to triggers
+        // written with the prefix, so a bare "hello" rule cannot answer "!hello". A shipped rule that
+        // spells a command *with* the prefix would still be a trap, so the table is checked for that.
         List<String> clashes = new ArrayList<>();
         for (TriggerRule rule : TriggerRule.defaults()) {
             String pattern = rule.pattern().toLowerCase(Locale.ROOT).strip();
-            // A bare command word as a trigger would answer before the command is ever parsed.
-            if (CommandCatalog.canonical(pattern).isPresent()) clashes.add(pattern);
+            if (pattern.startsWith("!")) clashes.add(pattern);
         }
         assertTrue(clashes.isEmpty(), "these default triggers shadow a command: " + clashes);
+    }
+
+    @Test
+    @DisplayName("a prefixed command reaches its command even when a bare-word trigger exists")
+    void prefixedCommandBeatsBareTrigger() {
+        // "hello" is both a shipped trigger and a shipped command. Typing "!hello" must run the
+        // command, while typing "hello" in chat must still get the trigger reply.
+        com.logvex.addon.assistant.core.AssistantRuntime runtime =
+            new com.logvex.addon.assistant.core.AssistantRuntime(
+                new com.logvex.addon.assistant.core.AssistantMemory());
+        runtime.setTriggers(com.logvex.addon.assistant.core.TriggerSet.of(
+            List.of(TriggerRule.of("hello", "canned trigger reply"))));
+        runtime.setConfig(com.logvex.addon.assistant.core.AssistantConfig.DEFAULTS);
+        runtime.setDuplicateFilter(false);
+
+        String bare = runtime.handle("p", "hello", 1_000L).text();
+        assertEquals("canned trigger reply", bare, "unprefixed chat must still hit the trigger");
+
+        String prefixed = runtime.handle("p", "!hello", 2_000L).text();
+        assertFalse("canned trigger reply".equals(prefixed),
+            "a prefixed command must not be answered by a bare-word trigger");
     }
 
     @Test

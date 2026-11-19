@@ -337,8 +337,24 @@ dashboard and HUD use, so a command never diverges from the GUI:
 ## Assistant
 
 `assistant` is a chat bot that lives inside the addon. It is off by default; enable it like any
-other module. Nothing is said or done unless a rule you wrote asks for it, so an empty
-configuration is silent.
+other module. Once enabled it answers from the preconfigured trigger table below, so it works
+without any setup; clearing the table makes it silent again.
+
+### What the assistant can hear
+
+Triggers and the local AI only ever see chat that was classified as a player talking. Minecraft
+attaches a signed-chat indicator to properly signed player chat, and an earlier version used that
+indicator as the only proof that a player had spoken. That broke on every server that rewrites
+chat: an offline-mode server, a proxy such as Velocity, or any chat plugin sends the same line
+without the indicator. Those lines were classified as system messages, and with system watching
+off — the default — every player message was silently dropped. The assistant then worked on some
+servers and not others, which is exactly what "it only works half the time" looked like.
+
+The classifier now recovers the sender from the text as well: `<Steve> hello`, `Steve: hello` and
+`[MVP+] Steve: hello` all classify as public chat from `Steve`. The recovery is narrow on purpose.
+A name must be 3 to 16 characters and contain a letter, so a clock reading like `12:34` stays a
+system line, and a known tag such as `Server:`, `Note:` or `Announcement:` is never mistaken for a
+player. Join, leave, death and advancement lines keep their own types and are unaffected.
 
 ### Keyword triggers
 
@@ -349,6 +365,16 @@ single line each, so the whole feature set is editable from the settings list, t
 ```
 pattern;sender=;reply=;mode=chat|notify|silent;cooldown=1000;limit=0;sound=false;remember=false;enabled=true;aliases=;pool=
 ```
+
+A fresh install ships **19 preconfigured rules**, all enabled, all at the 1000 ms cooldown, and all
+matched on whole words. Greetings, thanks, farewells, `gg`/`wp`, small talk, and the live-figure
+questions (`where am i`, `what is my ping`, `what is the tps`, `what time is it`) answer out of the
+box — no setup step. The table is deliberately free of nested patterns: no rule's pattern is a
+substring of another's, so first-match-wins never has to break a tie. `.ai triggers restore` puts
+the same table back.
+
+A trigger only ever fires on chat. A line that starts with the command prefix is a command, so a
+bare `hello` rule answers chat but never swallows `!hello`.
 
 | Field | Meaning |
 | --- | --- |
@@ -677,6 +703,26 @@ Rules are stored in the `command-permissions` setting as
 and can be edited by hand. A rule written by an older build, which carried only `whitelist=true`, is
 migrated to the matching level. A rule whose level cannot be read resolves to `local-only` rather
 than to the open default, so a typo in the configuration closes a command instead of opening it.
+
+### How a free-form question is answered
+
+Anything that is not a trigger and not a command falls through to the local AI, which runs entirely
+on your machine: no network call, no model file. It decides what the message is about, then picks a
+reply from a pool written for that intent.
+
+The decision is a two-stage pipeline. A small ordered table of keyword rules runs first, and a rule
+fires only when *every* one of its tokens is present. That is what keeps the answers honest:
+`is the server lagging` contains `server`, but the tick-rate rule runs before the server-info rule,
+so it gets the tick rate rather than the server's name. The table is matched on raw tokens, including
+the stopwords a bag-of-words model discards, because those words are exactly what separates
+`how are you` from `what are you`.
+
+Anything the table does not claim goes to a naive-Bayes classifier over 2048 hashed buckets. The
+classifier is a fallback, not the primary path. Measured on 63 ordinary chat lines, the classifier
+alone picked the correct intent for 47 of them; on the other 16 it answered wrongly or not at all —
+`is it night` came back as a farewell, `what are you` as the prefix question, `are you a bot` as an
+insult. With the table in front, all 63 get an on-topic reply. A message neither stage understands
+gets no reply at all rather than a guess, and the confidence threshold decides that cutoff.
 
 ### Settings
 
@@ -1469,6 +1515,12 @@ archive with in-memory doubles (no Minecraft runtime required):
   reported as FAILED with a message instead of a thrown exception.
 - `AiCoreTest` — the local model: tokenisation, intent classification, the bigram model's
   teach/generate path, the naive-Bayes classifier, confidence gating and JSON round-trip.
+- `UnsignedChatAndRoutingTest` — the two behaviours that decide whether the assistant answers at
+  all: unsigned and plugin-rewritten chat (`<Steve> hi`, `Steve: hi`, `[MVP+] Steve: hi`) classifies
+  as public chat while clock readings and `Server:` tags stay system, and the keyword router picks
+  the on-topic intent ahead of the classifier. It also pins the measurement that justifies the
+  router — the classifier alone agrees on fewer lines than the router routes — so the claim cannot
+  go stale.
 
 ## Troubleshooting
 

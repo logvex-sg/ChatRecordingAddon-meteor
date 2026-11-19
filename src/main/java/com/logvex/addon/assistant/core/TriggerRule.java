@@ -232,12 +232,66 @@ public record TriggerRule(
             cooldown, limit, sound, remember, enabled, aliases, pool);
     }
 
-    /** A small set of ready-to-use rules offered on first run. */
+    /**
+     * The rules a fresh install starts with.
+     *
+     * <p>Delegates to {@link #preconfigured()} so the settings default and the "reset triggers"
+     * action cannot drift apart: a user who resets expects the same table a new install gets.
+     */
     public static java.util.List<TriggerRule> defaults() {
-        return java.util.List.of(
-            new TriggerRule("hello bot", false, false, "", "Hello {player}!", ReplyMode.CHAT,
-                DEFAULT_COOLDOWN_MS, 0, false, false, true)
-        );
+        return preconfigured();
+    }
+
+    /**
+     * The preconfigured trigger table shipped on a fresh install.
+     *
+     * <p>Every entry uses the 1000 ms default cooldown, matches whole words so {@code hi} does not
+     * fire inside {@code this}, and speaks in chat. The point is that a new install answers common
+     * chat out of the box instead of shipping one example rule the user has to discover.
+     *
+     * <p>Kept deliberately free of overlap: no rule's pattern is a substring of another's, so the
+     * first-match-wins order in {@link TriggerSet} never decides between two plausible rules.
+     * {@code hi} and {@code high} would collide, which is why the greeting rules use the longer
+     * forms only.
+     */
+    public static java.util.List<TriggerRule> preconfigured() {
+        java.util.List<TriggerRule> out = new java.util.ArrayList<>();
+        // Greetings and courtesies.
+        out.add(rule("hello", "Hello {player}!", "hi there,hey there,hello there"));
+        out.add(rule("good morning", "Morning, {player}!", "morning"));
+        out.add(rule("good night", "Night, {player}.", "gn"));
+        out.add(rule("thank you", "You are welcome, {player}.", "thanks,ty,thx"));
+        out.add(rule("goodbye", "See you, {player}.", "bye,cya"));
+        out.add(rule("good bot", "Thank you, {player}.", "nice bot"));
+        out.add(rule("good game", "Good game!", "gg,wp"));
+        // Identity and help.
+        out.add(rule("who are you", "I am {name}, a local assistant in the client.", "what are you"));
+        out.add(rule("what can you do", "I remember facts and answer keywords. Try {prefix}help.",
+            "help me,commands"));
+        out.add(rule("what is the prefix", "The prefix is {prefix}."));
+        // Live figures: these need the {..} placeholders expanded from the current world.
+        out.add(rule("what time is it", "It is {time}.", "time now"));
+        out.add(rule("where am i", "{coords}, {biome}, facing {facing}.", "my coords,coordinates"));
+        out.add(rule("what is my ping", "{ping} ms, {verdict}.", "my latency"));
+        out.add(rule("what is the weather", "The sky says {weather}.", "weather"));
+        out.add(rule("what server is this", "{server} - {dimension}.", "which server"));
+        out.add(rule("what is the tps", "{tps}/20, {mspt} ms per tick.", "server tps"));
+        // Small talk that otherwise gets no reply at all.
+        out.add(rule("how are you", "Running well, {player}.", "how is it going"));
+        out.add(rule("tell me a joke", "I would tell a mining joke, but it is too deep.", "joke"));
+        out.add(rule("what do you know", "I know {factcount} facts. Ask {prefix}facts.",
+            "your memory"));
+        return java.util.List.copyOf(out);
+    }
+
+    /** A chat rule at the default cooldown, whole-word matched, with optional aliases. */
+    private static TriggerRule rule(String pattern, String reply, String aliases) {
+        return new TriggerRule(pattern, false, true, "", reply, ReplyMode.CHAT,
+            DEFAULT_COOLDOWN_MS, 0, false, false, true, aliases, "");
+    }
+
+    private static TriggerRule rule(String pattern, String reply) {
+        return rule(pattern, reply, "");
     }
 
     private static String str(Object value) {

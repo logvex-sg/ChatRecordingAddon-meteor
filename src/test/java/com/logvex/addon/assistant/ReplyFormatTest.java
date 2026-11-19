@@ -135,6 +135,41 @@ class ReplyFormatTest {
     }
 
     @Test
+    @DisplayName("a wrapped list row is indented so it reads as one entry, not two")
+    void wrappedListRowKeepsItsEntry() {
+        ReplyFormat.Embed embed = new ReplyFormat.Embed("Commands", List.of(
+            new ReplyFormat.Field("!players",
+                "How many players are visible, and the maximum when known.")),
+            "", ReplyFormat.Style.LIST);
+
+        List<String> lines = ReplyFormat.render(embed, 40);
+
+        // Without the indent the second line began at column zero and looked like a new command.
+        assertTrue(lines.size() > 2, "the row should have wrapped at this width");
+        assertTrue(lines.get(2).startsWith("  "),
+            "continuation must be indented, was: '" + lines.get(2) + "'");
+        assertFalse(lines.get(2).startsWith("!") , "continuation must not look like a command");
+    }
+
+    @Test
+    @DisplayName("a long label does not starve the value column")
+    void longLabelKeepsValueReadable() {
+        ReplyFormat.Embed embed = new ReplyFormat.Embed("Activity", List.of(
+            new ReplyFormat.Field("Longest single description here",
+                "a value that is fairly long and will need to wrap somewhere")),
+            "", ReplyFormat.Style.BOX);
+
+        List<String> lines = ReplyFormat.render(embed, 48);
+
+        // Before the cap, the label took nearly the whole row and the value became a one-word
+        // column six lines tall. Capping the label keeps the two columns proportionate.
+        assertTrue(lines.size() <= 6,
+            "the value should wrap to a couple of rows, not a column: " + lines);
+        String valueRow = lines.get(1);
+        assertTrue(valueRow.length() > 30, "value column keeps room: '" + valueRow + "'");
+    }
+
+    @Test
     @DisplayName("an embed with no fields renders no rows at all")
     void emptyEmbedHasNoRows() {
         // A titled, empty box is just the two rules; an untitled one is empty.
@@ -201,14 +236,26 @@ class ReplyFormatTest {
     // ------------------------------------------------------------------ generated help
 
     @Test
-    @DisplayName("help lists commands with their aliases and the level that is enforced")
+    @DisplayName("help lists commands with their aliases, and only states a level when it restricts")
     void helpListsAliasesAndLevels() {
         AssistantBrain brain = brain();
         String rendered = allHelpPages(brain, SenderIdentity.local("Me", null),
             PermissionSet.permissive());
         assertTrue(rendered.contains("!ping"), rendered);
         assertTrue(rendered.contains("latency"), "aliases are shown: " + rendered);
-        assertTrue(rendered.contains("Everyone"), "the level is shown: " + rendered);
+        // "Everyone" is the default, so repeating it on every row was noise that pushed the
+        // description off the line. A level that actually restricts is still stated.
+        assertFalse(rendered.contains("Everyone"),
+            "the default level must not be repeated on every row: " + rendered);
+
+        PermissionSet restricted = PermissionSet.of(true, List.of(),
+            List.of("ping;level=whitelist;users=Steve"), PermissionSet.DefaultPolicy.OPEN, true);
+        // Asked as the whitelisted player: a command the asker cannot run is not listed at all, so
+        // the level only becomes visible to someone it actually applies to.
+        SenderIdentity steve = new SenderIdentity("Steve", null, false);
+        String withRestriction = allHelpPages(brain, steve, restricted);
+        assertTrue(withRestriction.contains("Whitelist"),
+            "a restricting level must be stated: " + withRestriction);
     }
 
     @Test

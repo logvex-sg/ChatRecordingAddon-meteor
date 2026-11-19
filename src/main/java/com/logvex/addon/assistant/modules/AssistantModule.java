@@ -250,7 +250,7 @@ public class AssistantModule extends AutomationModule {
     private final Setting<List<String>> rules = sgTriggers.add(new StringListSetting.Builder()
         .name("rules")
         .description("Trigger rules, one per line: pattern;sender=;reply=;mode=;cooldown=;limit=;sound=;remember=;enabled=")
-        .defaultValue(TriggerRule.defaults().stream().map(TriggerRule::encode).toList())
+        .defaultValue(TriggerRule.preconfigured().stream().map(TriggerRule::encode).toList())
         .onChanged(ignored -> rebuild())
         .build()
     );

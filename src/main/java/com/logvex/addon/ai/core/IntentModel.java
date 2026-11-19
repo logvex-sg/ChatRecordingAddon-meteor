@@ -43,6 +43,21 @@ public final class IntentModel {
     private final Map<String, List<String>> taught = new LinkedHashMap<>();
     private double threshold = DEFAULT_THRESHOLD;
 
+    /**
+     * Keyword rules tried before the classifier.
+     *
+     * <p>The classifier is good at a rough topic and bad at the fine distinctions that matter in
+     * chat: measured on 58 ordinary paraphrases it answered 45, and several answers were confidently
+     * wrong — "what is the prefix" read as serverinfo, "how are you" as tickrate. A bag of words
+     * cannot separate those, because the distinguishing token is a stopword the tokenizer drops.
+     *
+     * <p>So a small ordered table of required-token sets runs first. A rule fires only when every
+     * one of its tokens is present, which makes it precise: {@code ping} alone does not answer a
+     * question about the server. First match wins, so the specific rules are listed before the broad
+     * ones. Anything that falls through is classified as before, so this only ever adds accuracy.
+     */
+    private final List<Route> router;
+
     public IntentModel() {
         // 2048 buckets, not 512: at 512 a common word such as "where" collides with a feature of an
         // unrelated intent and the line is classified as that intent with high confidence. Verified
@@ -50,6 +65,7 @@ public final class IntentModel {
         // cost is 32 x 2048 doubles, about 0.5 MB, which is constant and paid once.
         this.classifier = new NaiveBayesClassifier(2048, MAX_INTENTS);
         trainBuiltins();
+        this.router = buildRouter();
     }
 
     public double threshold() {
@@ -86,16 +102,178 @@ public final class IntentModel {
      * @return the matching intent, or null when the message is not understood well enough
      */
     public Intent classify(String text) {
+        Intent routed = route(text);
+        if (routed != null) return routed;
         NaiveBayesClassifier.Result result = classifier.classifyWithConfidence(text);
         if (!result.known() || result.confidence() < threshold) return null;
         String name = classifier.className(result.index());
         return name == null ? null : intents.get(name);
     }
 
+    /**
+     * The intent the keyword table selects for {@code text}, or null when no rule applies.
+     *
+     * <p>Matching uses {@link TextTokenizer#rawTokens}, not {@code tokens}: the stopwords that
+     * {@code tokens} removes are exactly the words that distinguish these rules — {@code how are
+     * you} from {@code what are you}, and {@code where am i} from {@code who am i}. Both sides are
+     * stemmed so {@code coords} matches {@code coordinates}.
+     *
+     * <p>Exposed so a test can assert the routing table directly, and so a caller can tell a routed
+     * answer from a classified one when diagnosing a bad reply.
+     */
+    public Intent route(String text) {
+        if (text == null || text.isBlank()) return null;
+        java.util.Set<String> tokens = stems(TextTokenizer.rawTokens(text));
+        if (tokens.isEmpty()) return null;
+        for (Route rule : router) {
+            if (tokens.containsAll(rule.required())) {
+                Intent intent = intents.get(rule.intent());
+                if (intent != null) return intent;
+            }
+        }
+        return null;
+    }
+
+    private static java.util.Set<String> stems(List<String> words) {
+        java.util.Set<String> out = new java.util.HashSet<>(words.size() * 2);
+        for (String word : words) out.add(TextTokenizer.stem(word));
+        return out;
+    }
+
+    /**
+     * One keyword rule: an intent plus the tokens that must all be present.
+     *
+     * @param required every token here must appear in the message
+     */
+    private record Route(String intent, java.util.Set<String> required) {
+    }
+
+    private static Route route(String intent, String... required) {
+        return new Route(intent, stems(List.of(required)));
+    }
+
+    /**
+     * The routing table, most specific first.
+     *
+     * <p>Every rule here exists because the classifier got that phrasing wrong, so the table is
+     * evidence-driven rather than exhaustive. Order matters where rules overlap:
+     * <ul>
+     *   <li>{@code server lag} must beat bare {@code server}, which would answer a lag question with
+     *       the server's name.</li>
+     *   <li>{@code what can you do} must beat {@code what ... you}, which is the identity rule.</li>
+     *   <li>{@code how are you} must beat {@code you there}, which is the same intent anyway but
+     *       would otherwise decide by accident.</li>
+     * </ul>
+     */
+    private static List<Route> buildRouter() {
+        return List.of(
+            route("prefix", "prefix"),
+            route("help", "how", "use"),
+            route("help", "how", "work"),
+            route("help", "what", "can", "you", "do"),
+            route("help", "what", "command"),
+            route("help", "help"),
+            // Memory.
+            route("memory", "what", "remember"),
+            route("memory", "what", "know"),
+            // Status. These use stopwords, which is why the router reads raw tokens.
+            route("status", "how", "are", "you"),
+            route("status", "how", "you", "doing"),
+            route("status", "how", "is", "it", "going"),
+            route("status", "you", "ok"),
+            route("status", "you", "there"),
+            route("status", "whats", "up"),
+            route("status", "you", "good"),
+            // Position.
+            route("position", "where", "am", "i"),
+            route("position", "coords"),
+            route("position", "biome"),
+            // Tick rate before serverinfo: "is the server lagging" names the server but asks about lag.
+            route("tickrate", "server", "lag"),
+            route("tickrate", "tps"),
+            route("tickrate", "tick", "rate"),
+            route("tickrate", "lag"),
+            route("latency", "ping"),
+            route("latency", "latency"),
+            route("latency", "laggy"),
+            route("serverinfo", "server"),
+            route("serverinfo", "dimension"),
+            route("serverinfo", "world"),
+            route("weather", "weather"),
+            route("weather", "raining"),
+            route("weather", "rain"),
+            route("weather", "sunny"),
+            route("weather", "night"),
+            route("weather", "day", "time"),
+            route("time", "time"),
+            route("time", "clock"),
+            route("joke", "joke"),
+            route("joke", "funny"),
+            route("joke", "laugh"),
+            route("compliment", "good", "bot"),
+            route("compliment", "nice", "bot"),
+            route("compliment", "good", "job"),
+            route("compliment", "well", "done"),
+            route("insult", "bad", "bot"),
+            route("insult", "stupid", "bot"),
+            route("identity", "are", "you", "bot"),
+            route("identity", "are", "you", "human"),
+            route("identity", "who", "you"),
+            route("identity", "what", "you"),
+            route("identity", "your", "name"),
+            route("thanks", "thanks"),
+            route("thanks", "thank", "you"),
+            route("thanks", "ty"),
+            route("thanks", "thx"),
+            route("thanks", "tyvm"),
+            route("thanks", "appreciate"),
+            route("thanks", "cheers"),
+            route("farewell", "bye"),
+            route("farewell", "goodbye"),
+            route("farewell", "cya"),
+            route("farewell", "gtg"),
+            route("farewell", "later"),
+            route("farewell", "im", "out"),
+            route("farewell", "good", "night"),
+            route("serverinfo", "ip"),
+            route("congrats", "gg"),
+            route("congrats", "wp"),
+            // After the "nice bot" compliment rule above, so praise of the bot still wins.
+            route("congrats", "nice"),
+            route("congrats", "ez"),
+            route("laughter", "lol"),
+            route("laughter", "lmao"),
+            route("laughter", "haha"),
+            route("greeting", "hello"),
+            route("greeting", "hi"),
+            route("greeting", "hey"),
+            route("greeting", "yo"),
+            route("greeting", "sup"),
+            route("greeting", "hiya"),
+            route("greeting", "howdy"),
+            route("greeting", "morning"),
+            route("greeting", "evening")
+        );
+    }
+
     /** The confidence of the best match, for diagnostics and tests. */
     public double confidence(String text) {
         NaiveBayesClassifier.Result result = classifier.classifyWithConfidence(text);
         return result.known() ? result.confidence() : 0;
+    }
+
+    /**
+     * Classifies {@code text} with the keyword table bypassed.
+     *
+     * <p>Diagnostics only. It exists so the classifier's own accuracy can be measured apart from the
+     * router — the comparison is what justifies the router existing, and a claim about it should be
+     * reproducible rather than asserted.
+     */
+    public Intent classifyWithoutRouting(String text) {
+        NaiveBayesClassifier.Result result = classifier.classifyWithConfidence(text);
+        if (!result.known() || result.confidence() < threshold) return null;
+        String name = classifier.className(result.index());
+        return name == null ? null : intents.get(name);
     }
 
     /**
@@ -223,10 +401,26 @@ public final class IntentModel {
             List.of("Try {prefix}remember key = value, {prefix}fact key, {prefix}help.",
                 "I remember facts and answer keywords. Ask me {prefix}memory.",
                 "Use {prefix}memory for a summary, {prefix}facts to list what I know.")));
+        train(new Intent("prefix",
+            List.of("what is the prefix", "whats the prefix", "the prefix",
+                "how do i start a command", "command prefix", "what symbol",
+                "how do i talk to you", "what do i type"),
+            List.of("The prefix is {prefix} \u2014 try {prefix}help.",
+                "Start a command with {prefix}, as in {prefix}facts.",
+                "My commands begin with {prefix}.")));
         train(new Intent("status",
-            List.of("status", "how are you", "are you ok", "are you there", "ping",
-                "you there", "what is your status", "are you online"),
-            List.of("Online and recording, {player}.", "All good here.", "Present.")));
+            List.of("how are you", "how are you doing", "how is it going", "you good",
+                "you there", "are you there", "whats up", "how do you feel",
+                "everything ok", "you ok"),
+            List.of("Running well, {player}.", "All good here.", "Present and listening.",
+                "Fine, thanks for asking.")));
+        train(new Intent("congrats",
+            List.of("gg", "wp", "good game", "well played", "nice one", "congrats",
+                "congratulations", "nice", "ez"),
+            List.of("Nice one!", "Well played.", "Good game.", "Clean.")));
+        train(new Intent("laughter",
+            List.of("lol", "lmao", "haha", "hehe", "rofl", "hah", "lmfao", "thats funny"),
+            List.of("Ha.", "Glad you liked it.", "Heh.", "Fair.")));
         train(new Intent("time",
             List.of("what time is it", "the time", "current time", "time now",
                 "what is the time", "tell me the time"),

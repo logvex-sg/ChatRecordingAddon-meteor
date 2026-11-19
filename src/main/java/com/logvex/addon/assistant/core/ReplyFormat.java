@@ -74,6 +74,8 @@ public final class ReplyFormat {
     private static final String BAR = "\u2502";
     private static final String HORIZONTAL = "\u2500";
     private static final String ELLIPSIS = "\u2026";
+    /** Prefix for a wrapped list row, so the continuation reads as part of the entry above. */
+    private static final String CONTINUATION = "  ";
 
     private ReplyFormat() {
     }
@@ -117,7 +119,10 @@ public final class ReplyFormat {
             labelWidth = Math.max(labelWidth, field.label().length());
         }
         // A long label must not squeeze the value to nothing, so it is capped and wrapped instead.
-        labelWidth = Math.max(1, Math.min(labelWidth, width - 6));
+        // The cap is a share of the box, not just "width minus a little": one long label would
+        // otherwise take almost the whole row and leave the value a one-word-wide column.
+        int labelCap = Math.max(8, (width - 5) * 2 / 5);
+        labelWidth = Math.max(1, Math.min(labelWidth, Math.min(labelCap, width - 6)));
 
         List<String> lines = new ArrayList<>(embed.fields().size() + 2);
         if (!embed.title().isBlank()) {
@@ -161,8 +166,14 @@ public final class ReplyFormat {
                 ? field.value()
                 : field.label() + " - " + field.value();
             // Rows wrap rather than truncate: a help row whose permission level was cut off is
-            // worse than one that continues on the next line.
-            lines.addAll(wrap(row, width));
+            // worse than one that continues on the next line. Continuations are indented so they
+            // read as part of the entry above instead of as an unlabelled new one — without the
+            // indent a wrapped row looked like two separate commands.
+            List<String> wrapped = wrap(row, width);
+            lines.add(wrapped.get(0));
+            for (int i = 1; i < wrapped.size(); i++) {
+                lines.addAll(wrap(CONTINUATION + wrapped.get(i), width));
+            }
         }
         if (!embed.footer().isBlank()) lines.addAll(wrap(embed.footer(), width));
         return List.copyOf(lines);
