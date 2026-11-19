@@ -2,6 +2,7 @@ package com.logvex.addon.assistant.gui;
 
 import com.logvex.addon.assistant.core.AssistantMemory;
 import com.logvex.addon.assistant.core.ChatActivity;
+import com.logvex.addon.assistant.core.ChatMacro;
 import com.logvex.addon.assistant.core.TriggerRule;
 import com.logvex.addon.assistant.modules.AssistantModule;
 import com.logvex.addon.common.Messages;
@@ -17,7 +18,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * The assistant manager: a single window with a Triggers tab and a Memory tab.
+ * The assistant manager: a single window with a Triggers tab, a Macros tab and a Memory tab.
  *
  * <p>Every control is wired to real {@link AssistantModule} methods, so the screen can never drift
  * from the module's behaviour. A rule is edited as its encoded string, which keeps the full feature
@@ -36,6 +37,8 @@ public class AssistantScreen extends WindowScreen {
     private String newReply = "";
     private String newFactKey = "";
     private String newFactValue = "";
+    private String newMacro = "";
+    private String macroNotice = "";
 
     public AssistantScreen(AssistantModule module) {
         super(GuiThemes.get(), "Assistant");
@@ -57,15 +60,17 @@ public class AssistantScreen extends WindowScreen {
 
         WTable tabs = add(theme.table()).expandX().widget();
         tabButton(tabs, "Triggers", 0);
-        tabButton(tabs, "Memory", 1);
-        tabButton(tabs, "Local AI", 2);
-        tabButton(tabs, "Status", 3);
+        tabButton(tabs, "Macros", 1);
+        tabButton(tabs, "Memory", 2);
+        tabButton(tabs, "Local AI", 3);
+        tabButton(tabs, "Status", 4);
 
         add(theme.horizontalSeparator()).expandX();
         switch (tab) {
-            case 1 -> renderMemory();
-            case 2 -> renderAi();
-            case 3 -> renderStatus();
+            case 1 -> renderMacros();
+            case 2 -> renderMemory();
+            case 3 -> renderAi();
+            case 4 -> renderStatus();
             default -> renderTriggers();
         }
     }
@@ -146,6 +151,109 @@ public class AssistantScreen extends WindowScreen {
         WButton remove = row.add(theme.button("Remove")).widget();
         remove.action = () -> {
             module.removeRule(index);
+            taskAfterRender = this::render;
+        };
+        row.row();
+    }
+
+    // ------------------------------------------------------------------ macros
+
+    /**
+     * The macro editor: one row per shortcut, plus a box to add one.
+     *
+     * <p>The syntax is shown in full because it is the whole interface: a user who can read the
+     * example can write a macro, and no dialog is needed.
+     */
+    private void renderMacros() {
+        add(theme.label("A shortcut you type becomes a server command. Nothing is posted to chat."))
+            .expandX().widget().color(MUTED);
+        add(theme.label("Format: shortcut <arg> => /command {arg}")).expandX().widget().color(MUTED);
+        add(theme.label("Example: !tpa <player> => /tpa {player}   |   !spawn => /spawn"))
+            .expandX().widget().color(MUTED);
+
+        List<String> duplicates = module.macroDuplicates();
+        if (!duplicates.isEmpty()) {
+            add(theme.label("Two macros share: " + String.join(", ", duplicates)
+                + " - only the first can run.")).expandX().widget();
+        }
+        if (!macroNotice.isBlank()) {
+            add(theme.label(macroNotice)).expandX().widget().color(MUTED);
+        }
+
+        WTable addRow = add(theme.table()).expandX().widget();
+        WTextBox line = addRow.add(theme.textBox(newMacro, "!shortcut <arg> => /command {arg}"))
+            .expandCellX().widget();
+        line.action = () -> newMacro = line.get();
+        WButton add = addRow.add(theme.button("Add")).widget();
+        add.action = () -> {
+            if (newMacro.isBlank()) return;
+            // A rejected line stays in the box so the user can fix it instead of retyping it.
+            if (!module.addMacro(newMacro.strip())) {
+                macroNotice = "That line is not a macro. It needs 'shortcut => /command'.";
+                taskAfterRender = this::render;
+                return;
+            }
+            newMacro = "";
+            macroNotice = "";
+            taskAfterRender = this::render;
+        };
+        addRow.row();
+
+        List<String> lines = new ArrayList<>(module.macroLinesSetting().get());
+        if (lines.isEmpty()) {
+            add(theme.label("No macros configured. Add one above.")).expandX().widget().color(MUTED);
+        } else {
+            for (int i = 0; i < lines.size(); i++) {
+                renderMacro(i, lines.get(i));
+            }
+        }
+
+        WTable footer = add(theme.table()).expandX().widget();
+        WButton restore = footer.add(theme.button("Restore defaults")).widget();
+        restore.action = () -> {
+            module.restoreDefaultMacros();
+            macroNotice = "";
+            taskAfterRender = this::render;
+        };
+        WButton clear = footer.add(theme.button("Remove all")).widget();
+        clear.action = () -> {
+            // The setting's onChanged already rebuilds, so calling it here would rebuild twice.
+            module.macroLinesSetting().set(List.of());
+            macroNotice = "";
+            taskAfterRender = this::render;
+        };
+        footer.row();
+    }
+
+    private void renderMacro(int index, String encoded) {
+        WTable row = add(theme.table()).expandX().widget();
+
+        WTextBox box = row.add(theme.textBox(encoded)).expandCellX().widget();
+        box.action = () -> {
+            // An unparseable edit is refused, so the stored line is never replaced by garbage.
+            if (!module.replaceMacro(index, box.get())) {
+                macroNotice = "That line is not a macro, so the stored one was kept.";
+            } else {
+                macroNotice = "";
+            }
+            taskAfterRender = this::render;
+        };
+
+        ChatMacro macro = ChatMacro.decode(encoded);
+        String toggle = macro == null ? "Invalid" : macro.enabled() ? "Disable" : "Enable";
+        WButton enable = row.add(theme.button(toggle)).widget();
+        enable.action = () -> {
+            ChatMacro current = ChatMacro.decode(encoded);
+            if (current == null) return;
+            module.replaceMacro(index, current.with(current.shortcut(), current.usage(),
+                current.template(), current.description(), !current.enabled(),
+                current.aliases()).encode());
+            taskAfterRender = this::render;
+        };
+
+        WButton remove = row.add(theme.button("Remove")).widget();
+        remove.action = () -> {
+            module.removeMacro(index);
             taskAfterRender = this::render;
         };
         row.row();

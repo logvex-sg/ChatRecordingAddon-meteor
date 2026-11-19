@@ -13,6 +13,7 @@ import com.logvex.addon.chatlog.core.PlayerActivity;
 import com.logvex.addon.chatlog.core.PlayerTracker;
 import com.logvex.addon.chatlog.core.PlayerSessionTracker;
 import com.logvex.addon.chatlog.core.PlayerIdentityTracker;
+import com.logvex.addon.chatlog.core.ReportEmbed;
 import com.logvex.addon.chatlog.core.SessionHistory;
 import com.logvex.addon.chatlog.core.SessionRecord;
 import com.logvex.addon.chatlog.core.StatsCollector;
@@ -456,6 +457,21 @@ public final class LogService {
         if (url == null || url.isBlank() || entry == null) return false;
         String payload = WebhookEmbeds.payload(username, WebhookEmbeds.announcement(embedStyle, entry));
         return webhook.enqueue(url, payload, null);
+    }
+
+    /**
+     * Sends a report card with a role ping above it.
+     *
+     * <p>The one place a payload is allowed to mention a role. Every other notification pins the
+     * mention list to empty so captured chat can never ping anyone; a report is the deliberate
+     * exception, and only {@code roles} is enabled, never {@code everyone}.
+     */
+    public boolean notifyReport(String url, String username, String reporter, String reason,
+                                String roleId, String kind, WebhookQueue.Listener listener) {
+        if (url == null || url.isBlank()) return false;
+        String payload = ReportEmbed.payload(username, roleId,
+            ReportEmbed.card(embedStyle, reporter, reason, serverName, kind));
+        return webhook.enqueue(url, payload, listener);
     }
 
     /** Fires a one-off test delivery. */

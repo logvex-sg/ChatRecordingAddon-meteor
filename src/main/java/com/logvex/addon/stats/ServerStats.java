@@ -38,7 +38,8 @@ public record ServerStats(
     double speed,
     int fps,
     long usedMemoryMb,
-    long maxMemoryMb
+    long maxMemoryMb,
+    List<String> onlinePlayers
 ) {
     /** Tick rate a healthy server runs at. */
     public static final float TARGET_TPS = 20.0f;
@@ -48,7 +49,25 @@ public record ServerStats(
 
     /** Not connected: every measurement is absent rather than zero, so callers can omit them. */
     public static final ServerStats OFFLINE = new ServerStats(
-        false, "", 0f, -1, 0, 0, 0L, "", "", "", 0L, 0f, 0f, 0, 0, 0, 0, "", 0.0, 0, 0L, 0L);
+        false, "", 0f, -1, 0, 0, 0L, "", "", "", 0L, 0f, 0f, 0, 0, 0, 0, "", 0.0, 0, 0L, 0L,
+        List.of());
+
+    /**
+     * The form without the visible player list, for callers that do not have it.
+     *
+     * <p>Kept so a snapshot built before the list existed — and every test that constructs one —
+     * still compiles and reads as "no names observed" rather than as an empty server.
+     */
+    public ServerStats(
+        boolean inWorld, String server, float tps, int latency, int players, int maxPlayers,
+        long uptimeMs, String dimension, String world, String biome, long worldTime,
+        float health, float maxHealth, int food, double x, double y, double z, String facing,
+        double speed, int fps, long usedMemoryMb, long maxMemoryMb
+    ) {
+        this(inWorld, server, tps, latency, players, maxPlayers, uptimeMs, dimension, world,
+            biome, worldTime, health, maxHealth, food, x, y, z, facing, speed, fps,
+            usedMemoryMb, maxMemoryMb, List.of());
+    }
 
     public ServerStats {
         if (server == null) server = "";
@@ -66,6 +85,8 @@ public record ServerStats(
         if (speed < 0.0) speed = 0.0;
         if (fps < 0) fps = 0;
         if (uptimeMs < 0L) uptimeMs = 0L;
+        if (onlinePlayers == null) onlinePlayers = List.of();
+        onlinePlayers = List.copyOf(onlinePlayers);
     }
 
     /** True when there is no world, so every measurement is absent. */

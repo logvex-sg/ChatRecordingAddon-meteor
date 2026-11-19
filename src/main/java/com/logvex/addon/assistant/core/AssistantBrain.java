@@ -46,19 +46,36 @@ public final class AssistantBrain {
      */
     public record Decision(Delivery delivery, String text, TriggerRule rule,
                            boolean sound, boolean remember, boolean command, boolean denied,
-                           ReplyFormat.Embed embed) {
+                           ReplyFormat.Embed embed, String report) {
         public static final Decision NONE =
-            new Decision(Delivery.NONE, "", null, false, false, false, false, null);
+            new Decision(Delivery.NONE, "", null, false, false, false, false, null, null);
+
+        public Decision(Delivery delivery, String text, TriggerRule rule,
+                        boolean sound, boolean remember, boolean command, boolean denied,
+                        ReplyFormat.Embed embed) {
+            this(delivery, text, rule, sound, remember, command, denied, embed, null);
+        }
 
         public Decision(Delivery delivery, String text, TriggerRule rule,
                         boolean sound, boolean remember, boolean command, boolean denied) {
-            this(delivery, text, rule, sound, remember, command, denied, null);
+            this(delivery, text, rule, sound, remember, command, denied, null, null);
         }
 
         /** The original six-field form, for every decision that was not a refusal. */
         public Decision(Delivery delivery, String text, TriggerRule rule,
                         boolean sound, boolean remember, boolean command) {
-            this(delivery, text, rule, sound, remember, command, false, null);
+            this(delivery, text, rule, sound, remember, command, false, null, null);
+        }
+
+        /**
+         * True when this decision also asks the caller to post a report to the webhook.
+         *
+         * <p>The reason travels with the decision instead of being sent from here, so the brain stays
+         * free of network and settings code while the permission check that authorised the report
+         * still happens in the one place every other command is checked.
+         */
+        public boolean hasReport() {
+            return report != null && !report.isBlank();
         }
 
         public boolean acts() {
@@ -109,8 +126,20 @@ public final class AssistantBrain {
     private java.util.Map<String, String> greetingPools;
     private String goodGameReply = DEFAULT_GOOD_GAME_REPLY;
 
+    /** The macro table, so {@code !macros} and {@code !macrohelp} can describe it. */
+    private MacroSet macros = MacroSet.EMPTY;
+
     public AssistantBrain(AssistantMemory memory) {
         this.memory = memory == null ? new AssistantMemory() : memory;
+    }
+
+    /** Replaces the macro table the help commands read. */
+    public void setMacros(MacroSet macros) {
+        this.macros = macros == null ? MacroSet.EMPTY : macros;
+    }
+
+    public MacroSet macros() {
+        return macros;
     }
 
     public AssistantMemory memory() {
@@ -437,6 +466,10 @@ public final class AssistantBrain {
             case "hello" -> commandHello(sender, config, now, stats);
             case "gg" -> commandGoodGame(sender, config, now, stats);
             case "whoami" -> commandWhoAmI(sender, config);
+            case "macros" -> commandMacros(config);
+            case "macrohelp" -> commandMacroHelp(rest, config);
+            case "mod", "report" -> commandReport(sender, canonical, rest, config);
+            case "who" -> commandWho(config, stats);
             case "ping", "tps", "stats", "coords", "health", "fps", "server", "time",
                  "players", "uptime", "world", "speed" -> {
                 // The stats table answers on the configured verb, so it is asked with the word the
@@ -740,6 +773,116 @@ public final class AssistantBrain {
 
     private Decision reply(TriggerRule.ReplyMode mode, String text, boolean remember) {
         return new Decision(deliveryFor(mode), text, null, false, remember, true);
+    }
+
+    /**
+     * {@code !macros}: the shortcuts the local player can type, as one row per macro.
+     *
+     * <p>Only enabled, valid macros are listed, and a disabled or broken one is simply absent rather
+     * than shown as a shortcut that would not work. The rows carry the usage and the description, so
+     * the list doubles as a reference card.
+     */
+    private Decision commandMacros(AssistantConfig config) {
+        java.util.List<ChatMacro> enabled = macros.enabled();
+        if (enabled.isEmpty()) {
+            return reply(config.memoryReplyMode(),
+                "No chat command macros are enabled. Add one in the assistant's Macro screen.", false);
+        }
+        java.util.List<ReplyFormat.Field> fields = new java.util.ArrayList<>();
+        for (ChatMacro macro : enabled) {
+            String label = macro.args().isEmpty() ? "no arguments" : macro.usageLine();
+            fields.add(new ReplyFormat.Field(macro.usageLine(),
+                macro.description().isBlank() ? label : macro.description()));
+        }
+        String footer = enabled.size() + (enabled.size() == 1 ? " macro" : " macros")
+            + " - " + config.commandPrefix() + "macrohelp <name> for one";
+        return embedReply(config.memoryReplyMode(),
+            new ReplyFormat.Embed("Chat command macros", fields, footer, ReplyFormat.Style.BOX), false);
+    }
+
+    /**
+     * {@code !who}: the players the client can see, laid out as a block that fits the reply width.
+     *
+     * <p>Names are grouped into lines rather than crammed into one, so a busy server reads as a list
+     * instead of a paragraph. The count is carried as its own field so it stays legible even when the
+     * names wrap.
+     */
+    private Decision commandWho(AssistantConfig config, ServerStats stats) {
+        ServerStats live = stats == null ? ServerStats.OFFLINE : stats;
+        if (!live.inWorld()) {
+            return reply(config.memoryReplyMode(), "Not connected.", false);
+        }
+        java.util.List<String> lines = StatsCommands.whoLines(live, 44);
+        java.util.List<ReplyFormat.Field> fields = new java.util.ArrayList<>();
+        int shown = live.onlinePlayers().size();
+        fields.add(new ReplyFormat.Field("Visible", shown + " of " + live.players()));
+        StringBuilder names = new StringBuilder();
+        for (int i = 0; i < lines.size(); i++) {
+            if (i > 0) names.append('\n');
+            names.append(lines.get(i));
+        }
+        fields.add(new ReplyFormat.Field("Players", names.toString()));
+        if (shown > 0 && shown < live.players()) {
+            fields.add(new ReplyFormat.Field("Note", "The server hides some names."));
+        }
+        return embedReply(config.memoryReplyMode(),
+            new ReplyFormat.Embed("Who is online", fields, "", ReplyFormat.Style.BOX), false);
+    }
+
+    /** {@code !macrohelp <name>}: one macro's description, syntax and the command it sends. */
+    private Decision commandMacroHelp(String rest, AssistantConfig config) {
+        String wanted = rest == null ? "" : rest.strip();
+        if (wanted.isEmpty()) {
+            return reply(config.memoryReplyMode(),
+                "Usage: " + config.commandPrefix() + "macrohelp <name>.", false);
+        }
+        ChatMacro macro = macros.byWord(wanted);
+        if (macro == null) {
+            return reply(config.memoryReplyMode(),
+                "No macro named " + config.commandPrefix() + wanted.strip() + ".", false);
+        }
+        java.util.List<ReplyFormat.Field> fields = new java.util.ArrayList<>();
+        fields.add(new ReplyFormat.Field("Usage", macro.usageLine()));
+        fields.add(new ReplyFormat.Field("Sends", macro.template()));
+        if (!macro.description().isBlank()) {
+            fields.add(new ReplyFormat.Field("About", macro.description()));
+        }
+        if (!macro.aliases().isEmpty()) {
+            fields.add(new ReplyFormat.Field("Aliases", String.join(", ", macro.aliases())));
+        }
+        fields.add(new ReplyFormat.Field("Enabled", macro.enabled() ? "yes" : "no"));
+        return embedReply(config.memoryReplyMode(),
+            new ReplyFormat.Embed("Macro " + macro.shortcut(), fields, "", ReplyFormat.Style.BOX),
+            false);
+    }
+
+    /**
+     * {@code !mod} / {@code !report}: send a report to the webhook and ping the moderator role.
+     *
+     * <p>The decision carries the reason rather than sending anything itself: the module owns the
+     * webhook settings and the network queue, and keeping the send there means a report goes through
+     * exactly the same delivery path as every other card. What the brain contributes is the reason and
+     * the permission check, which has already run before this point.
+     */
+    private Decision commandReport(String sender, String canonical, String rest,
+                                   AssistantConfig config) {
+        String reason = rest == null ? "" : rest.strip();
+        if (reason.isEmpty()) {
+            return reply(config.memoryReplyMode(),
+                "Usage: " + config.commandPrefix() + canonical + " <what you need help with>.",
+                false);
+        }
+        String who = sender == null || sender.isBlank() ? "someone" : sender;
+        String kind = "mod".equalsIgnoreCase(canonical) ? "mod" : "report";
+        // Wording is deliberately neutral: the module knows whether the webhook accepted the card,
+        // and it replaces this line with a failure notice when nothing was queued. Saying "sent"
+        // here would be a promise this layer cannot keep.
+        String confirmation = kind.equals("mod")
+            ? "Sending a moderator request."
+            : "Sending your report to the moderators.";
+        String text = clamp(confirmation, config.maxReplyLength());
+        return new Decision(deliveryFor(config.memoryReplyMode()), text, null, false, false, true,
+            false, null, kind + "|" + who + "|" + reason);
     }
 
     /** A reply carried as a block, so the caller can render it one line per field. */

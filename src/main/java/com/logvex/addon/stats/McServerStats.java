@@ -75,8 +75,28 @@ public final class McServerStats {
             Math.max(0.0, blocksPerSecond),
             mc.getCurrentFps(),
             usedMb,
-            maxMb
+            maxMb,
+            onlineNames(mc)
         );
+    }
+
+    /**
+     * The names in the tab list, sorted, so the same server always reads the same way.
+     *
+     * <p>Read from the player list rather than tracked from chat, so a player who has not spoken is
+     * still counted. Servers that hide players from the tab list will show fewer names than are
+     * really online; there is no client-side way to see the rest.
+     */
+    private static java.util.List<String> onlineNames(MinecraftClient mc) {
+        if (mc.getNetworkHandler() == null) return java.util.List.of();
+        java.util.List<String> names = new java.util.ArrayList<>();
+        for (PlayerListEntry entry : mc.getNetworkHandler().getPlayerList()) {
+            if (entry.getProfile() == null) continue;
+            String name = entry.getProfile().getName();
+            if (name != null && !name.isBlank()) names.add(name);
+        }
+        names.sort(String.CASE_INSENSITIVE_ORDER);
+        return java.util.List.copyOf(names);
     }
 
     private static int latency(MinecraftClient mc) {

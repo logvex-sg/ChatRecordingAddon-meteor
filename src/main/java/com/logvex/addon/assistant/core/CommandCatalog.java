@@ -56,6 +56,8 @@ public final class CommandCatalog {
             "The in-game clock.", PermissionLevel.EVERYONE, false),
         new Command("players", List.of("playercount", "online"),
             "How many players are visible.", PermissionLevel.EVERYONE, false),
+        new Command("who", List.of("onlineplayers", "list"),
+            "The names of the players the client can see.", PermissionLevel.EVERYONE, false),
         new Command("uptime", List.of("session"),
             "How long this session has been connected.", PermissionLevel.EVERYONE, false),
         new Command("world", List.of("dimension", "biome"),
@@ -83,7 +85,16 @@ public final class CommandCatalog {
         new Command("forget", List.of("unlearn"),
             "Delete a fact.", PermissionLevel.LOCAL_ONLY, true),
         new Command("forgetme", List.of("clearme"),
-            "Delete everything stored about you.", PermissionLevel.LOCAL_ONLY, true)
+            "Delete everything stored about you.", PermissionLevel.LOCAL_ONLY, true),
+        new Command("macros", List.of("shortcuts"),
+            "List the enabled chat command macros.", PermissionLevel.EVERYONE, false),
+        new Command("macrohelp", List.of("macro"),
+            "One macro's description and syntax.", PermissionLevel.EVERYONE, false),
+        new Command("mod", List.of("mods"),
+            "Ping a moderator through the webhook with a report.", PermissionLevel.EVERYONE, true),
+        new Command("report", List.of("alert"),
+            "Send a report to the webhook and ping the moderator role.",
+            PermissionLevel.EVERYONE, true)
     );
 
     /** Alias to canonical name, built once from {@link #COMMANDS}. */

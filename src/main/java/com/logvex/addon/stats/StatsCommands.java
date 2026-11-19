@@ -1,5 +1,7 @@
 package com.logvex.addon.stats;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 
@@ -31,19 +33,42 @@ public final class StatsCommands {
         String uptime,
         String world,
         String speed,
+        String who,
         ServerStats.Detail detail,
         String separator
     ) {
         public static final Options DEFAULTS = new Options(
             true, "ping", "tps", "stats", "coords", "health", "fps", "server", "time",
-            "players", "uptime", "world", "speed", ServerStats.Detail.BRIEF, " | ");
+            "players", "uptime", "world", "speed", "who", ServerStats.Detail.BRIEF, " | ");
+
+        /** The form without the player-name list, for callers that predate it. */
+        public Options(boolean enabled, String ping, String tps, String stats, String coords,
+                       String health, String fps, String server, String time, String players,
+                       String uptime, String world, String speed,
+                       ServerStats.Detail detail, String separator) {
+            this(enabled, ping, tps, stats, coords, health, fps, server, time, players, uptime,
+                world, speed, "who", detail, separator);
+        }
+
+        /**
+         * The form for callers that set the verbs they expose and let the rest keep their defaults.
+         *
+         * <p>Only {@code who} is settable in the module, so naming it here avoids repeating the four
+         * default verbs at the call site, where a typo would silently rename a command.
+         */
+        public Options(boolean enabled, String ping, String tps, String stats, String coords,
+                       String health, String fps, String server, String time, String who,
+                       ServerStats.Detail detail, String separator) {
+            this(enabled, ping, tps, stats, coords, health, fps, server, time,
+                "players", "uptime", "world", "speed", who, detail, separator);
+        }
 
         /** The nine-field form, for callers that predate the extra figures. */
         public Options(boolean enabled, String ping, String tps, String stats, String coords,
                        String health, String fps, String server, String time,
                        ServerStats.Detail detail, String separator) {
             this(enabled, ping, tps, stats, coords, health, fps, server, time,
-                "players", "uptime", "world", "speed", detail, separator);
+                "players", "uptime", "world", "speed", "who", detail, separator);
         }
 
         public Options {
@@ -59,6 +84,7 @@ public final class StatsCommands {
             if (uptime == null || uptime.isBlank()) uptime = "uptime";
             if (world == null || world.isBlank()) world = "world";
             if (speed == null || speed.isBlank()) speed = "speed";
+            if (who == null || who.isBlank()) who = "who";
             if (detail == null) detail = ServerStats.Detail.BRIEF;
             if (separator == null) separator = " | ";
         }
@@ -84,6 +110,7 @@ public final class StatsCommands {
             map.put("uptime", uptime);
             map.put("world", world);
             map.put("speed", speed);
+            map.put("who", who);
             return java.util.Map.copyOf(map);
         }
     }
@@ -129,6 +156,7 @@ public final class StatsCommands {
         if (matches(verb, opts.server())) return Optional.of(server(s));
         if (matches(verb, opts.time())) return Optional.of(time(s));
         if (matches(verb, opts.players())) return Optional.of(players(s));
+        if (matches(verb, opts.who())) return Optional.of(who(s));
         if (matches(verb, opts.uptime())) return Optional.of(uptime(s));
         if (matches(verb, opts.world())) return Optional.of(world(s));
         if (matches(verb, opts.speed())) return Optional.of(speed(s));
@@ -243,6 +271,53 @@ public final class StatsCommands {
         int visible = s.players();
         if (visible <= 0) return "No players visible in the tab list.";
         return visible + (visible == 1 ? " player" : " players") + " visible.";
+    }
+
+    /**
+     * The names of the players the client can see, or a sentence saying why there are none.
+     *
+     * <p>Names come from the tab list, so a player who has never spoken is still listed. On a server
+     * that hides players from the tab list this shows fewer names than are really online; the wording
+     * says "visible" so the figure is never read as the server's own count.
+     */
+    public static String who(ServerStats s) {
+        if (!s.inWorld()) return "Not connected.";
+        List<String> online = s.onlinePlayers();
+        if (online.isEmpty()) {
+            int count = s.players();
+            if (count > 0) {
+                return count + (count == 1 ? " player is" : " players are")
+                    + " online, but the server hides their names.";
+            }
+            return "No players visible in the tab list.";
+        }
+        return online.size() + (online.size() == 1 ? " player" : " players") + ": "
+            + String.join(", ", online) + ".";
+    }
+
+    /**
+     * The visible players grouped into lines that fit {@code width}.
+     *
+     * <p>Returned as a list rather than one string so the caller can put them in an embed field and
+     * have each line stay inside the block's border.
+     */
+    public static List<String> whoLines(ServerStats s, int width) {
+        if (!s.inWorld()) return List.of("Not connected.");
+        List<String> online = s.onlinePlayers();
+        if (online.isEmpty()) return List.of(who(s));
+        int limit = Math.max(16, width);
+        List<String> out = new ArrayList<>();
+        StringBuilder line = new StringBuilder();
+        for (String name : online) {
+            if (line.length() > 0 && line.length() + 2 + name.length() > limit) {
+                out.add(line.toString());
+                line.setLength(0);
+            }
+            if (line.length() > 0) line.append(", ");
+            line.append(name);
+        }
+        if (line.length() > 0) out.add(line.toString());
+        return List.copyOf(out);
     }
 
     /** How long this session has been connected. */

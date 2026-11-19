@@ -35,6 +35,9 @@ public final class AssistantRuntime {
     /** How many refusals a minute the assistant will say out loud. */
     private static final int DENIALS_PER_MINUTE = 6;
 
+    /** How many reports one player may send a minute, so the webhook cannot be flooded. */
+    private static final int REPORTS_PER_MINUTE = 2;
+
     private final AssistantMemory memory;
     private final AssistantBrain brain;
     private final TriggerCooldownTracker cooldowns = new TriggerCooldownTracker();
@@ -52,6 +55,9 @@ public final class AssistantRuntime {
 
     /** Timestamps of recent refusals, which are capped separately from real replies. */
     private final Deque<Long> recentDenials = new ArrayDeque<>();
+
+    /** Per-player timestamps of recent reports, so one reporter cannot flood the webhook. */
+    private final java.util.Map<String, Deque<Long>> recentReports = new java.util.HashMap<>();
 
     private long handled;
     private long ignored;
@@ -223,6 +229,10 @@ public final class AssistantRuntime {
                     rateLimited++;
                     return AssistantBrain.Decision.NONE;
                 }
+                if (command.hasReport() && !allowReport(sender.name(), now)) {
+                    rateLimited++;
+                    return AssistantBrain.Decision.NONE;
+                }
                 handled++;
                 activity.recordReply();
                 return command;
@@ -243,6 +253,22 @@ public final class AssistantRuntime {
         }
         ignored++;
         return AssistantBrain.Decision.NONE;
+    }
+
+    /**
+     * The report budget for one player, kept per player and separate from the reply budget.
+     *
+     * <p>A report leaves the game for Discord, so it needs its own cap: without one, a single player
+     * could fill a moderator channel by repeating {@code !report}. Per player rather than global,
+     * because one player's spam must not stop everyone else from reporting.
+     */
+    public boolean allowReport(String reporter, long now) {
+        String key = reporter == null || reporter.isBlank() ? "" : reporter.strip().toLowerCase(java.util.Locale.ROOT);
+        Deque<Long> recent = recentReports.computeIfAbsent(key, k -> new ArrayDeque<>());
+        while (!recent.isEmpty() && now - recent.peekFirst() > RATE_WINDOW) recent.pollFirst();
+        if (recent.size() >= REPORTS_PER_MINUTE) return false;
+        recent.addLast(now);
+        return true;
     }
 
     /** True when the global per-minute reply budget allows another reply at {@code now}. */
@@ -302,6 +328,7 @@ public final class AssistantRuntime {
         duplicates.reset();
         recentReplies.clear();
         recentDenials.clear();
+        recentReports.clear();
         activity.reset();
         handled = 0;
         ignored = 0;

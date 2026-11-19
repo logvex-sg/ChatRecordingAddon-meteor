@@ -159,6 +159,21 @@ public class WebhookRelayModule extends AddonModule {
         .build()
     );
 
+    private final Setting<Boolean> allowReports = sgEvents.add(new BoolSetting.Builder()
+        .name("allow-reports")
+        .description("Let !mod and !report post a report card and ping the moderator role.")
+        .defaultValue(true)
+        .build()
+    );
+
+    private final Setting<String> moderatorRoleId = sgEvents.add(new StringSetting.Builder()
+        .name("moderator-role-id")
+        .description("Discord role to ping on a report: a role id, or plain text to show instead.")
+        .defaultValue("")
+        .visible(allowReports::get)
+        .build()
+    );
+
     // Digest
 
     private final Setting<Boolean> digestEnabled = sgDigest.add(new BoolSetting.Builder()
@@ -241,6 +256,24 @@ public class WebhookRelayModule extends AddonModule {
 
     public boolean configured() {
         return !url().isBlank();
+    }
+
+    /** True when reports may be posted through this webhook. */
+    public boolean reportsAllowed() {
+        return allowReports.get() && configured() && enabled.get();
+    }
+
+    /** The role id (or plain text) to ping on a report; may be blank. */
+    public String moderatorRole() {
+        return moderatorRoleId.get() == null ? "" : moderatorRoleId.get().strip();
+    }
+
+    /** Posts a report card, pinging the configured moderator role. */
+    public boolean sendReport(String reporter, String reason, String kind,
+                              com.logvex.addon.chatlog.core.WebhookQueue.Listener listener) {
+        if (!reportsAllowed()) return false;
+        return service.notifyReport(url(), username(), reporter, reason, moderatorRole(), kind,
+            listener);
     }
 
     // ------------------------------------------------------------------ events

@@ -3,6 +3,7 @@ package com.logvex.addon.stats;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -193,5 +194,95 @@ class StatsCommandsTest {
         assertEquals("stats", opts.stats());
         assertEquals(" | ", opts.separator());
         assertEquals(ServerStats.Detail.BRIEF, opts.detail());
+    }
+
+    // ------------------------------------------------------------------ !who
+
+    private static ServerStats withPlayers(int players, List<String> names) {
+        return new ServerStats(true, "mc.example.net", 20f, 42, players, 60, 60_000L,
+            "minecraft:overworld", "overworld", "plains", 6_000L,
+            20f, 20f, 20, 0, 64, 0, "north", 0, 60, 512L, 4096L, names);
+    }
+
+    @Test
+    @DisplayName("!who lists the visible players from the tab list")
+    void whoListsNames() {
+        ServerStats s = withPlayers(3, List.of("Alex", "Steve", "Herobrine"));
+        assertEquals("3 players: Alex, Steve, Herobrine.", StatsCommands.who(s));
+    }
+
+    @Test
+    @DisplayName("!who uses the singular for one player")
+    void whoSingular() {
+        assertEquals("1 player: Alex.", StatsCommands.who(withPlayers(1, List.of("Alex"))));
+    }
+
+    @Test
+    @DisplayName("!who says the names are hidden rather than claiming nobody is online")
+    void whoHidesNames() {
+        // A server can report a count while keeping the tab list empty; saying "no players" would be
+        // a lie about a server that has people on it.
+        String answer = StatsCommands.who(withPlayers(7, List.of()));
+        assertEquals("7 players are online, but the server hides their names.", answer);
+    }
+
+    @Test
+    @DisplayName("!who says nothing is visible when neither count nor names are known")
+    void whoEmpty() {
+        assertEquals("No players visible in the tab list.",
+            StatsCommands.who(withPlayers(0, List.of())));
+    }
+
+    @Test
+    @DisplayName("!who reports being disconnected instead of an empty roster")
+    void whoOffline() {
+        assertEquals("Not connected.", StatsCommands.who(ServerStats.OFFLINE));
+    }
+
+    @Test
+    @DisplayName("!who is reachable through the verb table under its own name")
+    void whoVerb() {
+        ServerStats s = withPlayers(2, List.of("Alex", "Steve"));
+        assertEquals("2 players: Alex, Steve.",
+            StatsCommands.answer("who", s, StatsCommands.Options.DEFAULTS).orElseThrow());
+    }
+
+    @Test
+    @DisplayName("the who verb can be renamed like every other verb")
+    void whoVerbRenamed() {
+        ServerStats s = withPlayers(1, List.of("Alex"));
+        StatsCommands.Options renamed = new StatsCommands.Options(
+            true, "ping", "tps", "stats", "coords", "health", "fps", "server", "time",
+            "players", "uptime", "world", "speed", "online", ServerStats.Detail.BRIEF, " | ");
+        assertTrue(StatsCommands.answer("who", s, renamed).isEmpty());
+        assertEquals("1 player: Alex.", StatsCommands.answer("online", s, renamed).orElseThrow());
+    }
+
+    @Test
+    @DisplayName("the roster wraps into lines that fit the width")
+    void whoLinesWrap() {
+        List<String> names = List.of("Alexander", "Stephanie", "Bartholomew", "Christopher");
+        List<String> lines = StatsCommands.whoLines(withPlayers(4, names), 30);
+        assertTrue(lines.size() > 1, "four long names cannot fit on one 30-column line");
+        for (String line : lines) {
+            assertTrue(line.length() <= 30, "line over width: " + line);
+        }
+        // Nothing is lost or duplicated by the wrapping.
+        assertEquals(String.join("", names),
+            String.join("", lines).replace(",", "").replace(" ", ""));
+    }
+
+    @Test
+    @DisplayName("the roster keeps a single line when it fits")
+    void whoLinesSingle() {
+        List<String> lines = StatsCommands.whoLines(withPlayers(2, List.of("Alex", "Steve")), 60);
+        assertEquals(List.of("Alex, Steve"), lines);
+    }
+
+    @Test
+    @DisplayName("an empty roster still yields one readable line, never an empty list")
+    void whoLinesNeverEmpty() {
+        assertFalse(StatsCommands.whoLines(withPlayers(0, List.of()), 40).isEmpty());
+        assertFalse(StatsCommands.whoLines(ServerStats.OFFLINE, 40).isEmpty());
     }
 }

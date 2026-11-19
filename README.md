@@ -466,12 +466,77 @@ renamed or switched off in the **Stats** settings group, and the whole set has o
 | `!world` | The dimension and its name. |
 | `!speed` | How fast you are moving, in blocks per second. |
 | `!time` | The in-game clock. |
+| `!who` | The players the tab list shows, as a wrapped list. |
 
 The `stats-detail` setting chooses between `brief` (connection figures only) and `full` (adds
 dimension, biome, health, position and memory), and `stats-separator` sets the text between the
-fields of `!stats`.
+fields of `!stats`. `who-command` renames `!who` like every other verb.
 
 `!stats` and the `server-stats` HUD read the same snapshot, so the two never disagree.
+
+`!who` reads names from the tab list, so a player who has never spoken is still listed. When a
+server reports a player count but hides the names, `!who` says so instead of claiming nobody is
+online.
+
+### Chat command macros
+
+A macro is a shortcut **you** type that becomes a server command. It is a different thing from a
+trigger: a trigger answers incoming chat, a macro rewrites your own outgoing message. They are
+separate types on purpose, so a macro can never be reached by another player's message and a
+trigger can never send a command.
+
+Macros are configured in the **Chat Command Macros** settings group or on the assistant screen's
+**Macros** tab. One line each:
+
+```text
+!tpa <player> => /tpa {player}
+!spawn => /spawn
+!msg <player> <message> => /msg {player} {message}
+```
+
+The part before `=>` is the usage: the shortcut, then its arguments. The part after is the command
+with placeholders in braces.
+
+| Form | Meaning |
+| --- | --- |
+| `<name>` | A required argument. |
+| `[name]` | An optional argument; a missing one is simply omitted. |
+| `{name}` | The value of that argument. |
+| `{message}` | Every remaining word, joined by single spaces. Must be last. |
+
+A trailing `;` section carries extras: `; what it does`, `; off` to disable it, and
+`; aliases=!hub,!l` to give it more spellings.
+
+When you type a shortcut the line is **cancelled** and the expanded command is sent instead, so the
+shortcut never reaches the server as chat. A macro that is misconfigured — no leading `/`, an
+unknown placeholder, a missing required argument, or too many arguments — refuses to send and
+explains itself instead. A macro whose command would be its own shortcut is blocked, so it cannot
+loop.
+
+| Command | Effect |
+| --- | --- |
+| `!macros` | List the enabled macros as a block, one row each. |
+| `!macrohelp <name>` | One macro's syntax, the command it sends and its aliases. |
+
+`macro-feedback` shows a local note when a macro runs or is refused. `echo-command` shows the
+expanded command in chat as if you had typed it; turn it off to send it silently.
+
+### Reports and moderator pings
+
+`!report` and `!mod` post a card to the Discord webhook configured in the **Webhook Relay** module
+and ping a role. This is the one place the addon pings anyone: captured chat never mentions a soul.
+
+| Command | Effect |
+| --- | --- |
+| `!report <what happened>` | Post a report card and ping the moderator role. |
+| `!mod <what you need>` | The same, titled as a moderator request. |
+
+Set `moderator-role-id` to a Discord role id (bare digits or the full `<@&…>` form). Only roles are
+allowed to parse, never `@everyone`, so a misconfigured report cannot mention the whole server.
+With no role set the card is posted without a mention — deliberately, rather than sending an
+`@here` that would render as dead text and look like a failed ping.
+
+`allow-reports` switches the feature off entirely; nothing is posted and nothing is queued.
 
 ### Chat features and command whitelist
 
