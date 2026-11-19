@@ -60,7 +60,7 @@ statistics, notifications, the automation task queue, waypoints and schematic co
 ./gradlew clean test build
 ```
 
-The jar is written to `build/libs/log-client-17.0.0.jar`. Drop it into `.minecraft/mods` alongside
+The jar is written to `build/libs/log-client-17.2.0.jar`. Drop it into `.minecraft/mods` alongside
 Meteor Client. Baritone is optional and only affects bot navigation.
 
 ### Java 21 is required for the Gradle daemon
