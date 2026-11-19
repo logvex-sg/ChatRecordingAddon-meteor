@@ -1,6 +1,7 @@
 package com.logvex.addon.companion.mc;
 
 import com.logvex.addon.framework.systems.modules.AddonModule;
+import com.logvex.addon.framework.SafeEventHandler;
 import com.logvex.addon.LogClient;
 import com.logvex.addon.bot.BotModule;
 import com.logvex.addon.bot.core.BotState;
@@ -303,10 +304,13 @@ public class CompanionModule extends AddonModule {
     @EventHandler
     private void onGameLeft(GameLeftEvent event) {
         if (events == null) return;
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("event", "left");
-        payload.put("server", LogService.get().serverName());
-        events.publish("session", CompanionJson.write(payload));
+        // Posted from inside MinecraftClient.disconnect(); a throw here would take the game down.
+        SafeEventHandler.run("CompanionModule.onGameLeft", () -> {
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("event", "left");
+            payload.put("server", LogService.get().serverName());
+            events.publish("session", CompanionJson.write(payload));
+        });
     }
 
     // ------------------------------------------------------------------ status

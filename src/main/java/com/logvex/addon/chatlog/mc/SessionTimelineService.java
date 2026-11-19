@@ -2,6 +2,7 @@ package com.logvex.addon.chatlog.mc;
 
 import com.logvex.addon.chatlog.core.ChatEntry;
 import com.logvex.addon.chatlog.core.SessionTimeline;
+import com.logvex.addon.framework.SafeEventHandler;
 import meteordevelopment.meteorclient.events.game.GameJoinedEvent;
 import meteordevelopment.meteorclient.events.game.GameLeftEvent;
 import meteordevelopment.orbit.IEventBus;
@@ -65,9 +66,12 @@ public final class SessionTimelineService {
     @EventHandler
     private void onGameLeft(GameLeftEvent event) {
         if (!recording) return;
-        timeline.add(System.currentTimeMillis(), SessionTimeline.Kind.SESSION_END, log.serverName(), "");
-        log.removeListener(entryListener);
-        started = false;
+        // Runs inside MinecraftClient.disconnect(); a throw here would take the game down.
+        SafeEventHandler.run("SessionTimelineService.onGameLeft", () -> {
+            timeline.add(System.currentTimeMillis(), SessionTimeline.Kind.SESSION_END, log.serverName(), "");
+            log.removeListener(entryListener);
+            started = false;
+        });
     }
 
     private final LogService.LiveListener entryListener = new LogService.LiveListener() {

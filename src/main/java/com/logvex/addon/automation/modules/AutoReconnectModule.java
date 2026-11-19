@@ -1,6 +1,7 @@
 package com.logvex.addon.automation.modules;
 
 import com.logvex.addon.automation.core.AutoReconnectController;
+import com.logvex.addon.framework.SafeEventHandler;
 import meteordevelopment.meteorclient.events.game.GameJoinedEvent;
 import meteordevelopment.meteorclient.events.game.GameLeftEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
@@ -92,15 +93,19 @@ public class AutoReconnectModule extends AutomationModule {
 
     @EventHandler
     private void onLeft(GameLeftEvent event) {
-        // Remember where we were before the client tears the world down.
-        ServerInfo entry = mc.getCurrentServerEntry();
-        if (entry != null && entry.address != null && !entry.address.isBlank()) target = entry;
-        waitingToReconnect = target != null && !(onlyOnServer.get() && isLocal(entry));
-        controller.reset();
-        controller.onDisconnect(System.currentTimeMillis());
-        if (waitingToReconnect) {
-            info("Disconnected. Reconnecting to %s.", target.name == null ? target.address : target.name);
-        }
+        // Posted from inside MinecraftClient.disconnect(); a throw here would take the game down.
+        SafeEventHandler.run("AutoReconnectModule.onLeft", () -> {
+            // Remember where we were before the client tears the world down.
+            ServerInfo entry = mc.getCurrentServerEntry();
+            if (entry != null && entry.address != null && !entry.address.isBlank()) target = entry;
+            waitingToReconnect = target != null && !(onlyOnServer.get() && isLocal(entry));
+            controller.reset();
+            controller.onDisconnect(System.currentTimeMillis());
+            if (waitingToReconnect) {
+                info("Disconnected. Reconnecting to %s.",
+                    target.name == null ? target.address : target.name);
+            }
+        });
     }
 
     @EventHandler
