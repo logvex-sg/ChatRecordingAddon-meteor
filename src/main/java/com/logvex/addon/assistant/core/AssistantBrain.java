@@ -1,6 +1,5 @@
 package com.logvex.addon.assistant.core;
 
-import com.logvex.addon.ai.core.AiEngine;
 import com.logvex.addon.stats.ServerStats;
 import com.logvex.addon.stats.StatusCommand;
 import com.logvex.addon.stats.StatusCommands;
@@ -146,7 +145,6 @@ public final class AssistantBrain {
     }
 
     private final AssistantMemory memory;
-    private AiEngine engine;
 
     /** The configured greeting pools, keyed by bucket id; null means the built-in defaults. */
     private java.util.Map<String, String> greetingPools;
@@ -243,17 +241,12 @@ public final class AssistantBrain {
             ? DEFAULT_GOOD_GAME_REPLY : reply;
     }
 
-    /** Attaches the local AI. Without one the brain only answers triggers and memory commands. */
-    public void setEngine(AiEngine engine) {
-        this.engine = engine;
-    }
-
     /**
      * Evaluates one incoming message, trying every source in priority order.
      *
      * <p>Kept for callers that want the whole decision in one call (and for tests). The live runtime
-     * uses the granular {@link #trigger}, {@link #command} and {@link #ai} methods instead, because
-     * each source has its own cooldown and rate-limit treatment.
+     * uses the granular {@link #trigger} and {@link #command} methods instead, because each source
+     * has its own cooldown and rate-limit treatment.
      */
     public Decision evaluate(String sender, String content, TriggerSet triggers,
                              AssistantConfig config, long now) {
@@ -268,10 +261,6 @@ public final class AssistantBrain {
         if (cfg.memoryCommands()) {
             Decision command = command(sender, content, cfg, now);
             if (command != null) return command;
-        }
-        if (cfg.localAi()) {
-            Decision ai = ai(sender, content, cfg, now);
-            if (ai != null) return ai;
         }
         return Decision.NONE;
     }
@@ -362,104 +351,6 @@ public final class AssistantBrain {
         return CommandCatalog.canonical(word).filter("help"::equals).isPresent();
     }
 
-    /** Asks the local AI for a reply, or null when it declines. See {@link #fromAi}. */
-    public Decision ai(String sender, String content, AssistantConfig config, long now) {
-        return fromAi(sender, content, config, now, ServerStats.OFFLINE);
-    }
-
-    /** Asks the local AI for a reply, expanding placeholders in it against the live figures. */
-    public Decision ai(String sender, String content, AssistantConfig config, long now,
-                       ServerStats stats) {
-        return fromAi(sender, content, config, now, stats);
-    }
-
-    /**
-     * Asks the local AI for a reply.
-     *
-     * <p>Returns null when the AI is not attached, is not confident enough, or produced nothing, so
-     * the caller falls through to no-op. The reply mode decides whether it is spoken, notified or
-     * kept silent; a chat reply that ends up empty is downgraded to silent rather than sent blank.
-     */
-    private Decision fromAi(String sender, String content, AssistantConfig config, long now,
-                            ServerStats stats) {
-        if (engine == null || !engine.enabled()) return null;
-
-        java.util.Map<String, String> context = new java.util.HashMap<>(4);
-        context.put("name", config.name());
-        context.put("prefix", config.commandPrefix());
-        context.put("factcount", Integer.toString(memory.facts().size()));
-        context.put("time", java.time.LocalTime.now()
-            .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")));
-
-        // Memory is consulted before the classifier. A stored fact is exact, user-authored and
-        // specific to this install, so it beats a guessed intent: if the user taught the assistant
-        // what "prefix" means, answering from the corpus instead would ignore their own data.
-        String text = recallReply(sender, content);
-        if (text == null) text = engine.respond(content, sender, context, now);
-        if (text == null || text.isBlank()) return null;
-        text = ResponseTemplate.expand(text, new ResponseTemplate.Context(
-            sender, content, stats.server(), memory, now, stats));
-        text = clamp(text, config.maxReplyLength());
-
-        Delivery delivery = switch (config.aiReplyMode()) {
-            case CHAT -> Delivery.CHAT;
-            case NOTIFY -> Delivery.NOTIFY;
-            case PRIVATE -> Delivery.PRIVATE;
-            case SILENT -> Delivery.SILENT;
-        };
-        boolean remember = config.rememberConversations();
-        if (remember) {
-            memory.recordConversation(sender, content, text, now);
-            memory.incrementCounter("ai-replies", 1);
-        }
-        return new Decision(delivery, text, null, false, remember, false);
-    }
-
-    /**
-     * Answers from a stored fact when the line names one, or null to let the classifier decide.
-     *
-     * <p>Only a question-shaped line is answered this way. A bare mention is not a request: "the
-     * server lagged" must not make the assistant recite the server fact, so the line has to read as
-     * a question before memory is used. That keeps recall from turning every keyword in normal chat
-     * into an unsolicited lecture.
-     *
-     * <p>The reply names the fact it used, because an answer the user cannot trace back to their own
-     * stored text is one they cannot correct.
-     */
-    private String recallReply(String sender, String content) {
-        if (!looksLikeQuestion(content)) return null;
-        java.util.Optional<AssistantMemory.Fact> found = memory.recall(content);
-        if (found.isEmpty()) return null;
-        AssistantMemory.Fact fact = found.get();
-        if (fact.value() == null || fact.value().isBlank()) return null;
-        memory.incrementCounter("recalls", 1);
-        return fact.key() + ": " + fact.value();
-    }
-
-    /**
-     * True when {@code content} is phrased as a question.
-     *
-     * <p>A question mark or an interrogative opener is enough. This is deliberately shallow: it is a
-     * gate on using memory, not an attempt to parse English, and a false positive costs only a
-     * slightly eager answer while a false negative costs a missed one.
-     */
-    private static boolean looksLikeQuestion(String content) {
-        if (content == null) return false;
-        String text = content.strip().toLowerCase(java.util.Locale.ROOT);
-        if (text.isEmpty()) return false;
-        if (text.indexOf('?') >= 0) return true;
-        for (String opener : QUESTION_OPENERS) {
-            if (text.startsWith(opener + " ")) return true;
-        }
-        return false;
-    }
-
-    /** Openers that make a line a question even without a question mark. */
-    private static final String[] QUESTION_OPENERS = {
-        "what", "whats", "where", "when", "who", "why", "how", "which", "is", "are", "can",
-        "could", "do", "does", "did", "tell me", "explain", "any idea"
-    };
-
     // ------------------------------------------------------------------ triggers
 
     private Decision fromTrigger(TriggerRule rule, String sender, String content,
@@ -486,7 +377,7 @@ public final class AssistantBrain {
         // An embed rule delivers the same figures as a labelled block, so the values line up instead
         // of running together in one sentence. The one-line text stays as the fallback for a caller
         // that can only show a single line, and as what memory records.
-        ReplyFormat.Embed embed = rule.embed() ? rule.toEmbed(text, rule.pattern()) : null;
+        ReplyFormat.Embed embed = rule.wantsEmbed(text) ? rule.toEmbed(text, rule.pattern()) : null;
         return new Decision(delivery, text, rule, rule.sound(), remember, false, false, embed);
     }
 

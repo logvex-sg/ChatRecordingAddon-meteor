@@ -115,29 +115,39 @@ public final class ReplyFormat {
             return List.of();
         }
         int labelWidth = 0;
+        boolean anyLabel = false;
         for (Field field : embed.fields()) {
             labelWidth = Math.max(labelWidth, field.label().length());
+            if (!field.label().isBlank()) anyLabel = true;
         }
+        // With no labels at all there is no column to align to, so a value starts at the frame
+        // instead of being pushed right by an empty label column.
+        if (!anyLabel) labelWidth = 0;
         // A long label must not squeeze the value to nothing, so it is capped and wrapped instead.
         // The cap is a share of the box, not just "width minus a little": one long label would
         // otherwise take almost the whole row and leave the value a one-word-wide column.
         int labelCap = Math.max(8, (width - 5) * 2 / 5);
-        labelWidth = Math.max(1, Math.min(labelWidth, Math.min(labelCap, width - 6)));
+        if (labelWidth > 0) {
+            labelWidth = Math.max(1, Math.min(labelWidth, Math.min(labelCap, width - 6)));
+        }
 
         List<String> lines = new ArrayList<>(embed.fields().size() + 2);
         if (!embed.title().isBlank()) {
             lines.add(border(TOP_LEFT, TOP_RIGHT, embed.title(), width));
         }
-        // "│ " + label + " " + value + " │" costs five columns of framing.
-        int room = Math.max(1, width - 5 - labelWidth);
+        // "│ " + label + " " + value + " │" costs five columns of framing; without a label
+        // column one of those spaces is not used, so the value gets it.
+        int room = Math.max(1, width - (labelWidth == 0 ? 4 : 5) - labelWidth);
         for (Field field : embed.fields()) {
-            List<String> label = wrap(field.label(), labelWidth);
+            List<String> label = labelWidth == 0 ? List.of() : wrap(field.label(), labelWidth);
             List<String> value = wrap(field.value(), room);
             int rows = Math.max(label.size(), value.size());
             for (int i = 0; i < rows; i++) {
                 String left = pad(i < label.size() ? label.get(i) : "", labelWidth);
                 String right = pad(i < value.size() ? value.get(i) : "", room);
-                lines.add(BAR + " " + left + " " + right + " " + BAR);
+                lines.add(labelWidth == 0
+                    ? BAR + " " + right + " " + BAR
+                    : BAR + " " + left + " " + right + " " + BAR);
             }
         }
         // A box is always closed. An open box reads as a truncated message, not a block.

@@ -89,7 +89,7 @@ class CapabilitiesTest {
     @Test
     @DisplayName("nothing available is reported as such rather than an empty list")
     void nothingAvailable() {
-        Capabilities caps = new Capabilities(false, false, false, false, false, false, false, 0, 0);
+        Capabilities caps = new Capabilities(false, false, false, false, false, false, 0, 0);
         assertTrue(caps.nothing());
         assertEquals("Nothing available right now.", caps.summary());
     }

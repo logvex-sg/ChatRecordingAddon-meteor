@@ -14,8 +14,8 @@ import java.util.List;
  * offer TPS while disconnected and claim a report had been filed when no webhook was configured.
  *
  * <p>This is derived from live state, never hardcoded: each ability is checked against the thing it
- * actually needs. That means the answer changes as the player connects, configures a webhook, or
- * turns the local model off — which is the point.
+ * actually needs. That means the answer changes as the player connects or configures a webhook —
+ * which is the point.
  *
  * <p>Deliberately a plain value object with no Minecraft types, so the rules can be tested without
  * a game.
@@ -23,7 +23,6 @@ import java.util.List;
 public record Capabilities(
     boolean connected,
     boolean inWorld,
-    boolean aiEnabled,
     boolean memoryEnabled,
     boolean triggersEnabled,
     boolean reportsEnabled,
@@ -42,7 +41,7 @@ public record Capabilities(
 
     /** Nothing is available: not connected, nothing configured. */
     public static final Capabilities NONE =
-        new Capabilities(false, false, false, false, false, false, false, 0, 0);
+        new Capabilities(false, false, false, false, false, false, 0, 0);
 
     /**
      * Derives the capabilities from live figures and configuration.
@@ -61,7 +60,6 @@ public record Capabilities(
         return new Capabilities(
             s.inWorld(),
             s.inWorld(),
-            cfg.localAi(),
             cfg.memoryCommands(),
             cfg.respondToTriggers(),
             reportsReady,
@@ -78,8 +76,6 @@ public record Capabilities(
                 : triggers == 0 ? "no rules configured" : triggers + " rules"));
         out.add(new Ability("Memory", memoryEnabled,
             memoryEnabled ? facts + " facts" : "switched off"));
-        out.add(new Ability("Local model", aiEnabled,
-            aiEnabled ? "answering keyword questions" : "switched off"));
         out.add(new Ability("Reports", reportsEnabled,
             reportsEnabled ? "posting to your reports channel"
                 : "no reports channel configured"));

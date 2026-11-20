@@ -32,20 +32,96 @@ public record TriggerRule(
     String aliases,
     String pool,
     String whisper,
-    boolean embed
+    EmbedMode embedMode
 ) {
     /**
-     * The shipped form, for every rule that answers with one line.
+     * The shipped form, for every rule that does not name a layout.
      *
      * <p>Kept so a rule can be built without naming the layout, which is what almost every caller
-     * and every test wants: {@code embed} is the exception, not the default.
+     * and every test wants. The default is {@link EmbedMode#AUTO}: a reply that is written as
+     * labelled clauses becomes a block, and a single line stays a single line.
      */
     public TriggerRule(String pattern, boolean caseSensitive, boolean wholeWord, String sender,
                        String reply, ReplyMode mode, long cooldownMs, int sessionLimit,
                        boolean sound, boolean remember, boolean enabled, String aliases,
                        String pool, String whisper) {
         this(pattern, caseSensitive, wholeWord, sender, reply, mode, cooldownMs, sessionLimit,
-            sound, remember, enabled, aliases, pool, whisper, false);
+            sound, remember, enabled, aliases, pool, whisper, EmbedMode.AUTO);
+    }
+
+    /** How a rule's reply is laid out when it is delivered. */
+    public enum EmbedMode {
+        /**
+         * Render a block when the reply is written as labelled clauses, otherwise keep one line.
+         *
+         * <p>The default: {@code "TPS 19.9, MSPT 12"} becomes aligned rows, while {@code "hello"}
+         * stays a single line instead of gaining a border it does not need.
+         */
+        AUTO,
+        /** Always render a block, even for a single value. */
+        ON,
+        /** Never render a block; send the reply as written. */
+        OFF;
+
+        public static EmbedMode parse(String value, EmbedMode fallback) {
+            if (value == null || value.isBlank()) return fallback;
+            return switch (value.trim().toLowerCase(Locale.ROOT)) {
+                case "auto", "detect" -> AUTO;
+                case "on", "true", "yes", "1", "box", "block", "embed" -> ON;
+                case "off", "false", "no", "0", "none", "line", "plain" -> OFF;
+                default -> fallback;
+            };
+        }
+
+        /** The stored form: {@code auto}, {@code on} or {@code off}. */
+        public String encoded() {
+            return name().toLowerCase(Locale.ROOT);
+        }
+    }
+
+    /**
+     * True when this rule is explicitly set to always render a block.
+     *
+     * <p>{@link EmbedMode#AUTO} reports false here because whether it renders depends on the reply
+     * text, which this method cannot see; use {@link #wantsEmbed(String)} for the real answer.
+     */
+    public boolean embed() {
+        return embedMode == EmbedMode.ON;
+    }
+
+    /**
+     * Whether {@code expanded} should be delivered as a block under this rule's mode.
+     *
+     * <p>{@link EmbedMode#AUTO} asks for a block only when both hold: the pattern is command-shaped
+     * (it starts with {@code !} or {@code /}), and the reply is two or more clauses that every one
+     * of carries a label. That combination is what a figures answer looks like — {@code "TPS 19.9,
+     * MSPT 12"}. An ordinary phrase trigger is left alone however many commas its reply has, and a
+     * trailing bare value such as {@code "Ping 42 ms, good"} keeps its one line, because there is no
+     * second label to align against.
+     */
+    public boolean wantsEmbed(String expanded) {
+        return switch (embedMode) {
+            case ON -> true;
+            case OFF -> false;
+            case AUTO -> isCommandShaped() && labelledClauses(expanded) >= 2;
+        };
+    }
+
+    /** True when the pattern is a prefixed command such as {@code !tps}, not a chat phrase. */
+    public boolean isCommandShaped() {
+        return pattern != null && !pattern.isBlank()
+            && (pattern.charAt(0) == '!' || pattern.charAt(0) == '/');
+    }
+
+    /** How many clauses carry a label; a bare value or a one-word clause does not count. */
+    private static int labelledClauses(String expanded) {
+        int labelled = 0;
+        int total = 0;
+        for (ReplyFormat.Field field : clauses(expanded)) {
+            total++;
+            if (!field.label().isBlank() && !field.value().isBlank()) labelled++;
+        }
+        return total > 0 && labelled == total ? labelled : 0;
     }
     /** How a matching rule delivers its reply. */
     public enum ReplyMode {
@@ -285,7 +361,7 @@ public record TriggerRule(
         map.put("reply", reply);
         map.put("mode", mode.name().toLowerCase(Locale.ROOT));
         map.put("cooldown", cooldownMs);
-        map.put("embed", embed);
+        map.put("embed", embedMode.encoded());
         map.put("limit", sessionLimit);
         map.put("sound", sound);
         map.put("remember", remember);
@@ -314,7 +390,8 @@ public record TriggerRule(
             bool(map.get("enabled"), true),
             str(map.get("aliases")),
             str(map.get("pool")),
-            str(map.get("whisper"))
+            str(map.get("whisper")),
+            EmbedMode.parse(str(map.get("embed")), EmbedMode.AUTO)
         );
     }
 
@@ -324,7 +401,7 @@ public record TriggerRule(
             + ";cooldown=" + cooldownMs + ";limit=" + sessionLimit + ";sound=" + sound
             + ";remember=" + remember + ";enabled=" + enabled
             + ";aliases=" + aliases + ";pool=" + pool + ";whisper=" + whisper
-            + ";embed=" + embed;
+            + ";embed=" + embedMode.encoded();
     }
 
     public static TriggerRule decode(String encoded) {
@@ -360,7 +437,7 @@ public record TriggerRule(
         String aliases = "";
         String pool = "";
         String whisper = DEFAULT_WHISPER;
-        boolean embed = false;
+        EmbedMode embedMode = EmbedMode.AUTO;
         java.util.Set<String> seen = new java.util.HashSet<>();
 
         for (int i = 1; i < parts.length; i++) {
@@ -388,7 +465,7 @@ public record TriggerRule(
                 case "aliases", "alias" -> aliases = value;
                 case "pool", "signoff" -> pool = value;
                 case "whisper", "msgcmd", "tell" -> whisper = value;
-                case "embed", "block", "format" -> embed = parseEmbed(value);
+                case "embed", "block", "format" -> embedMode = EmbedMode.parse(value, EmbedMode.AUTO);
                 default -> {
                     // Unknown key from a newer build: ignore it.
                 }
@@ -396,7 +473,7 @@ public record TriggerRule(
         }
 
         return new TriggerRule(pattern, caseSensitive, wholeWord, sender, reply, mode,
-            cooldown, limit, sound, remember, enabled, aliases, pool, whisper, embed);
+            cooldown, limit, sound, remember, enabled, aliases, pool, whisper, embedMode);
     }
 
     /**
@@ -577,7 +654,7 @@ public record TriggerRule(
      */
     private static TriggerRule embedRule(String pattern, String reply) {
         return new TriggerRule(pattern, false, true, "", reply, ReplyMode.PRIVATE,
-            TRIGGER_COOLDOWN_MS, 0, false, false, true, "", "", DEFAULT_WHISPER, true);
+            TRIGGER_COOLDOWN_MS, 0, false, false, true, "", "", DEFAULT_WHISPER, EmbedMode.ON);
     }
 
     /** A whispered rule at the shipped cooldown, whole-word matched, with optional aliases. */
@@ -615,21 +692,7 @@ public record TriggerRule(
     }
 
     /**
-     * Reads the {@code embed=} switch.
-     *
-     * <p>Anything but an explicit "on" leaves the rule as one line. A mistyped value therefore
-     * degrades to the plain form rather than silently changing how a reply looks.
-     */
-    private static boolean parseEmbed(String value) {
-        if (value == null) return false;
-        return switch (value.trim().toLowerCase(Locale.ROOT)) {
-            case "on", "true", "yes", "1", "box", "block", "embed" -> true;
-            default -> false;
-        };
-    }
-
-    /**
-     * This rule's reply as a labelled block, for {@link #embed} rules.
+     * This rule's reply as a labelled block.
      *
      * <p>A reply is written as comma-separated {@code Label value} clauses, which is how the
      * shipped table reads anyway: {@code "TPS {tps}, MSPT {mspt}, verdict {verdict}"}. Each clause
@@ -643,23 +706,32 @@ public record TriggerRule(
      * @param title    the block heading, usually the rule's pattern
      */
     public ReplyFormat.Embed toEmbed(String expanded, String title) {
+        return new ReplyFormat.Embed(title == null ? "" : title, clauses(expanded), "",
+            ReplyFormat.Style.BOX);
+    }
+
+    /**
+     * Splits a reply into labelled rows.
+     *
+     * <p>The first word of a clause is its label and the rest is the value. A clause of one word
+     * keeps it as an unlabelled value, so {@code "hello"} renders as a single row rather than
+     * vanishing. An empty reply yields no rows at all.
+     */
+    static java.util.List<ReplyFormat.Field> clauses(String expanded) {
         java.util.List<ReplyFormat.Field> fields = new java.util.ArrayList<>();
         String text = expanded == null ? "" : expanded.strip();
-        if (!text.isEmpty()) {
-            for (String clause : text.split(",\\s*")) {
-                String part = clause.strip();
-                if (part.isEmpty()) continue;
-                int space = part.indexOf(' ');
-                if (space <= 0) {
-                    fields.add(new ReplyFormat.Field("", part));
-                } else {
-                    String label = part.substring(0, space).strip();
-                    String value = part.substring(space + 1).strip();
-                    fields.add(new ReplyFormat.Field(label, value));
-                }
+        if (text.isEmpty()) return java.util.List.copyOf(fields);
+        for (String clause : text.split(",\\s*")) {
+            String part = clause.strip();
+            if (part.isEmpty()) continue;
+            int space = part.indexOf(' ');
+            if (space <= 0) {
+                fields.add(new ReplyFormat.Field("", part));
+            } else {
+                fields.add(new ReplyFormat.Field(
+                    part.substring(0, space).strip(), part.substring(space + 1).strip()));
             }
         }
-        return new ReplyFormat.Embed(title == null ? "" : title, fields, "",
-            ReplyFormat.Style.BOX);
+        return java.util.List.copyOf(fields);
     }
 }

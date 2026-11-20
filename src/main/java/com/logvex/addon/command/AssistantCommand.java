@@ -206,37 +206,6 @@ public class AssistantCommand extends Command {
             info("Assistant memory saved.");
             return SINGLE_SUCCESS;
         }));
-
-        builder.then(literal("model").executes(context -> {
-            modelStatus();
-            return SINGLE_SUCCESS;
-        })
-            .then(literal("status").executes(context -> {
-                modelStatus();
-                return SINGLE_SUCCESS;
-            }))
-            .then(literal("ask")
-                .then(argument("message", StringArgumentType.greedyString()).executes(context -> {
-                    modelAsk(StringArgumentType.getString(context, "message"));
-                    return SINGLE_SUCCESS;
-                })))
-            .then(literal("teach")
-                .then(argument("intent", StringArgumentType.word())
-                    .then(argument("example", StringArgumentType.greedyString()).executes(context -> {
-                        modelTeach(StringArgumentType.getString(context, "intent"),
-                            StringArgumentType.getString(context, "example"));
-                        return SINGLE_SUCCESS;
-                    }))))
-            .then(literal("save").executes(context -> {
-                AssistantModule module = assistant();
-                if (module == null) {
-                    error("The assistant module is not available.");
-                    return SINGLE_SUCCESS;
-                }
-                module.saveAi();
-                info("Local AI model saved.");
-                return SINGLE_SUCCESS;
-            })));
     }
 
     /** The addon's configured command prefix, so this list matches what the user actually types. */
@@ -255,8 +224,6 @@ public class AssistantCommand extends Command {
         addHelp(fields, "forget <key>", "remove a fact.");
         addHelp(fields, "test <message>", "see what the assistant would do.");
         addHelp(fields, "history", "recent remembered exchanges.");
-        addHelp(fields, "model [status|ask <text>|teach <intent> <example>|save]",
-            "the local intent model.");
         addHelp(fields, "placeholders [section]", "the reply placeholders, one section at a time.");
         addHelp(fields, "perms [list|gui|set|allow|deny|admin|reset]", "who may run each command.");
         addHelp(fields, "clear", "clear all memory.");
@@ -460,59 +427,6 @@ public class AssistantCommand extends Command {
             info("Cleared the rule for %s; it now uses the default level.", canonical.get());
         } else {
             warning("%s had no rule to clear.", canonical.get());
-        }
-    }
-
-    private void modelStatus() {
-        AssistantModule module = assistant();
-        com.logvex.addon.ai.core.AiEngine engine = module.aiEngine();
-        List<com.logvex.addon.assistant.core.ReplyFormat.Field> fields = new java.util.ArrayList<>();
-        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Model",
-            engine.enabled() ? "on" : "off"));
-        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Confidence",
-            Math.round(engine.threshold() * 100) + "%"));
-        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Intent count",
-            Messages.plural(engine.model().intentCount(), "intent")));
-        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Classified",
-            Messages.number(engine.classified()) + " lines"));
-        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Understood",
-            Messages.number(engine.understood()) + " ("
-                + Math.round(engine.understandingRate() * 100) + "%)"));
-        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Cache hits",
-            Messages.number(engine.cacheHits())));
-        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Intents",
-            String.join(", ", engine.model().intentNames())));
-        CommandOutput.sendLong(this, "Local AI model", fields, "");
-    }
-
-    private void modelAsk(String message) {
-        AssistantModule module = assistant();
-        if (module == null) {
-            error("The assistant module is not available.");
-            return;
-        }
-        com.logvex.addon.ai.core.AiEngine engine = module.aiEngine();
-        String intent = engine.intentOf(message);
-        if (intent == null) {
-            warning("The model does not understand \"%s\".", Messages.truncate(message, 60));
-            return;
-        }
-        String reply = engine.respond(message, "Tester", java.util.Map.of(), System.currentTimeMillis());
-        info("Intent '%s' (%.0f%%): %s", intent, engine.confidence(message) * 100,
-            Messages.truncate(reply, 120));
-    }
-
-    private void modelTeach(String intent, String example) {
-        AssistantModule module = assistant();
-        if (module == null) {
-            error("The assistant module is not available.");
-            return;
-        }
-        if (module.aiEngine().model().teach(intent, example)) {
-            module.saveAi();
-            info("Taught '%s' the phrase \"%s\".", intent, Messages.truncate(example, 60));
-        } else {
-            warning("Could not teach that; the model may be full.");
         }
     }
 

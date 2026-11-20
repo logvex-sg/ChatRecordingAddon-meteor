@@ -93,10 +93,28 @@ class TriggerPackTest {
             .filter(TriggerRule::embed).findFirst().orElseThrow();
         TriggerRule back = TriggerRule.decode(embed.encode());
         assertTrue(back.embed(), "'" + embed.pattern() + "' lost its embed flag on a round trip");
-        // The default must stay the plain form, or every hand-written rule would start as a block.
-        assertFalse(TriggerRule.of("hi", "hello").embed(), "a new rule should be one line");
-        assertFalse(TriggerRule.decode("hi;reply=hello").embed(), "an unset embed is off");
+
+        // A new rule auto-formats: a labelled command reply becomes a block, prose stays one line.
+        TriggerRule fresh = TriggerRule.of("!tps", "TPS 19.9, MSPT 12");
+        assertFalse(fresh.embed(), "a new rule is not forced into a block");
+        assertTrue(fresh.wantsEmbed("TPS 19.9, MSPT 12"), "a labelled command reply should be a block");
+        assertFalse(fresh.wantsEmbed("hello"), "a single value should stay one line");
+        assertFalse(fresh.wantsEmbed("Ping 42 ms, good"),
+            "a trailing bare value has no second label to align, so it stays one line");
+
+        // A phrase trigger is never boxed automatically, however its reply is punctuated.
+        TriggerRule phrase = TriggerRule.of("hello", "Hi there, nice to meet you");
+        assertFalse(phrase.wantsEmbed("Hi there, nice to meet you"),
+            "prose after a phrase trigger must not become a box");
+
+        // An explicit switch still wins over the automatic choice.
         assertTrue(TriggerRule.decode("hi;reply=hello;embed=true").embed(), "embed=true is honoured");
+        assertFalse(TriggerRule.decode("hi;reply=a b, c d;embed=off").wantsEmbed("a b, c d"),
+            "embed=off keeps a labelled reply on one line");
+        assertTrue(TriggerRule.decode("hi;reply=hello;embed=on").wantsEmbed("hello"),
+            "embed=on forces a block even for one value");
+        assertEquals(TriggerRule.EmbedMode.AUTO, TriggerRule.decode("hi;reply=hello").embedMode(),
+            "an unset embed means auto");
     }
 
     @Test

@@ -1,7 +1,5 @@
 package com.logvex.addon.assistant;
 
-import com.logvex.addon.ai.core.AiEngine;
-import com.logvex.addon.ai.core.IntentModel;
 import com.logvex.addon.assistant.core.TriggerRule;
 import com.logvex.addon.assistant.core.TriggerSet;
 import com.logvex.addon.chatlog.core.ChatClassifier;
@@ -117,99 +115,5 @@ class UnsignedChatAndRoutingTest {
                         + "', so first-match-wins would pick by accident");
             }
         }
-    }
-
-    // ---------------------------------------------------------------- AI routing
-
-    @Test
-    @DisplayName("the lines the classifier got wrong are now routed correctly")
-    void routingFixesMeasuredMistakes() {
-        AiEngine engine = new AiEngine();
-        // Each pair is a line the bag-of-words classifier answered with an unrelated intent.
-        String[][] cases = {
-            {"what is the prefix", "prefix"},
-            {"how do i use this", "help"},
-            {"what can you do", "help"},
-            {"how are you", "status"},
-            {"how is it going", "status"},
-            {"whats up", "status"},
-            {"is the server lagging", "tickrate"},
-            {"is it night", "weather"},
-            {"where am i", "position"},
-            {"what are my coords", "position"},
-            {"are you a bot", "identity"},
-            {"whats the ip", "serverinfo"},
-        };
-        for (String[] c : cases) {
-            assertEquals(c[1], engine.intentOf(c[0]), "intent for: " + c[0]);
-        }
-    }
-
-    @Test
-    @DisplayName("a plain chat line still gets an answer, and a question mark does not break it")
-    void ordinaryLinesAreAnswered() {
-        AiEngine engine = new AiEngine();
-        String[] lines = {
-            "yo", "hiya", "sup", "morning", "hello there",
-            "lol", "haha", "gg", "wp", "ez", "nice",
-            "tyvm", "appreciate it", "im out", "later", "cya",
-            "tps?", "check my ping", "server lag",
-        };
-        for (String line : lines) {
-            String reply = engine.respond(line, "Steve", null, 7L);
-            assertFalse(reply == null || reply.isBlank(), "no reply for: " + line);
-        }
-    }
-
-    @Test
-    @DisplayName("the router beats the classifier on the same lines")
-    void routerIsMoreAccurateThanTheClassifierAlone() {
-        // The routing table is only justified if it is measurably better than the classifier it sits
-        // in front of. This pins the measurement quoted in the README so a future corpus edit cannot
-        // quietly make the claim false.
-        String[] lines = {
-            "yo", "hiya", "hello there", "hey bot", "sup", "good evening", "morning",
-            "whats the weather like", "is it night", "is it day time", "how is the weather",
-            "whats the time", "got the time", "time please",
-            "how laggy am i", "whats my ping", "check my ping", "is the server lagging",
-            "tps?", "how many tps", "server lag",
-            "coords", "what are my coords", "where even am i", "which biome",
-            "who are you", "what are you", "are you a bot", "whats your name",
-            "help me", "what commands", "how do i use this", "what can you do",
-            "joke", "tell me something funny", "make me laugh",
-            "thanks a lot", "thank you", "tyvm", "appreciate it",
-            "cya", "later", "im out", "gtg",
-            "lol", "lmao", "haha", "gg", "wp", "nice", "ez",
-            "whats up", "how are you", "how is it going", "you good",
-            "what server", "whats the ip", "which world",
-            "what is the prefix", "hello", "hi bot", "goodbye", "thanks",
-        };
-        IntentModel model = new IntentModel();
-        int routed = 0;
-        int agrees = 0;
-        for (String line : lines) {
-            var truth = model.route(line);
-            if (truth == null) continue;
-            routed++;
-            var bare = model.classifyWithoutRouting(line);
-            if (bare != null && truth.name().equals(bare.name())) agrees++;
-        }
-        assertEquals(lines.length, routed, "the table should route every one of these lines");
-        assertTrue(agrees < routed,
-            "if the classifier already agreed on everything the router would be dead weight");
-        assertTrue(agrees >= routed * 3 / 4,
-            "the classifier should still be broadly right, got " + agrees + "/" + routed);
-    }
-
-    @Test
-    @DisplayName("the router only fires when every required token is present")
-    void routingRequiresAllTokens() {
-        AiEngine engine = new AiEngine();
-        // "ping" alone is the latency intent, but "is the server lagging" names the server and asks
-        // about lag, which must win over the bare "server" rule.
-        assertEquals("tickrate", engine.intentOf("is the server lagging"));
-        assertEquals("latency", engine.intentOf("what is my ping"));
-        // A message with no rule token falls through to the classifier rather than being forced.
-        assertNotEquals("prefix", engine.intentOf("the weather is nice today"));
     }
 }

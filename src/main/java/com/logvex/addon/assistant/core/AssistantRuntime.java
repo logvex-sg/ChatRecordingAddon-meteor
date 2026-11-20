@@ -62,7 +62,6 @@ public final class AssistantRuntime {
     private long handled;
     private long ignored;
     private long rateLimited;
-    private long aiReplies;
     private long denied;
 
     public AssistantRuntime(AssistantMemory memory) {
@@ -243,8 +242,8 @@ public final class AssistantRuntime {
         }
 
         if (cfg.memoryCommands()) {
-            // Only the command parser runs here: the trigger path already declined, and the AI must
-            // not be reached from this branch or its reply would be counted as a command.
+            // Only the command parser runs here: the trigger path already declined, and a command
+            // reply is counted separately from a trigger reply.
             AssistantBrain.Decision command =
                 brain.command(sender, content, cfg, now, liveStats, statusSettings, permissions,
                     activity, helpEnabled, requesterPing);
@@ -268,19 +267,6 @@ public final class AssistantRuntime {
                 handled++;
                 activity.recordReply();
                 return command;
-            }
-        }
-        if (cfg.localAi()) {
-            AssistantBrain.Decision ai = brain.ai(sender.name(), content, cfg, now, liveStats);
-            if (ai != null && ai.acts()) {
-                if (!allowGlobalReply(cfg, now)) {
-                    rateLimited++;
-                    return AssistantBrain.Decision.NONE;
-                }
-                handled++;
-                aiReplies++;
-                activity.recordReply();
-                return ai;
             }
         }
         ignored++;
@@ -349,11 +335,6 @@ public final class AssistantRuntime {
         return denied;
     }
 
-    /** How many of the handled messages were answered by the local AI. */
-    public long aiReplies() {
-        return aiReplies;
-    }
-
     /** Clears session state (cooldowns, rate window, activity) but keeps the persistent memory. */
     public void resetSession() {
         cooldowns.reset();
@@ -365,7 +346,6 @@ public final class AssistantRuntime {
         handled = 0;
         ignored = 0;
         rateLimited = 0;
-        aiReplies = 0;
         denied = 0;
     }
 

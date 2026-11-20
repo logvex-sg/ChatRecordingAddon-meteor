@@ -51,6 +51,19 @@ class ReplyFormatTest {
     // ------------------------------------------------------------------ layout
 
     @Test
+    @DisplayName("a box of values with no labels starts each value at the frame")
+    void boxWithoutLabelsDoesNotIndentValues() {
+        ReplyFormat.Embed embed = new ReplyFormat.Embed("!ping", List.of(
+            new ReplyFormat.Field("", "42 ms")), "", ReplyFormat.Style.BOX);
+
+        List<String> lines = ReplyFormat.render(embed, 40);
+
+        assertEquals(3, lines.size(), "a title, one value and the closing rule");
+        assertEquals("│ 42 ms" + " ".repeat(32) + "│", lines.get(1),
+            "an unlabelled value must not be pushed into an empty label column");
+    }
+
+    @Test
     @DisplayName("a box aligns values, is closed, and never exceeds the requested width")
     void boxAlignsAndFitsWidth() {
         ReplyFormat.Embed embed = new ReplyFormat.Embed("Server", List.of(

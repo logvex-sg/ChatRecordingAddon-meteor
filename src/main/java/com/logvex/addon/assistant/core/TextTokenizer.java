@@ -1,4 +1,4 @@
-package com.logvex.addon.ai.core;
+package com.logvex.addon.assistant.core;
 
 import java.util.ArrayList;
 import java.util.List;

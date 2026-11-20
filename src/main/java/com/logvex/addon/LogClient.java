@@ -215,7 +215,6 @@ public class LogClient extends MeteorAddon {
         flush("player-identity", () -> com.logvex.addon.chatlog.mc.PlayerIdentityService.get().shutdown());
         flush("world", () -> com.logvex.addon.world.mc.WorldService.get().shutdown());
         flush("assistant", () -> com.logvex.addon.assistant.mc.AssistantService.get().shutdown());
-        flush("ai", () -> com.logvex.addon.ai.mc.AiService.get().shutdown());
         flush("update", () -> com.logvex.addon.update.mc.UpdateService.get().engine().shutdown());
     }
 

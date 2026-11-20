@@ -1,7 +1,5 @@
 package com.logvex.addon.assistant.modules;
 
-import com.logvex.addon.ai.core.AiEngine;
-import com.logvex.addon.ai.mc.AiService;
 import com.logvex.addon.assistant.core.AssistantBrain;
 import com.logvex.addon.assistant.core.AssistantConfig;
 import com.logvex.addon.assistant.core.CommandDefaults;
@@ -93,7 +91,6 @@ public class AssistantModule extends AutomationModule {
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
     private final SettingGroup sgTriggers = settings.createGroup("Triggers");
     private final SettingGroup sgMemory = settings.createGroup("Memory");
-    private final SettingGroup sgAi = settings.createGroup("Local AI");
     private final SettingGroup sgLimits = settings.createGroup("Limits");
     private final SettingGroup sgStatus = settings.createGroup("Live Status");
     private final SettingGroup sgMacros = settings.createGroup("Chat Command Macros");
@@ -303,61 +300,6 @@ public class AssistantModule extends AutomationModule {
         .build()
     );
 
-    // Local AI. Off by default: an assistant that starts talking on its own would surprise an
-    // existing user, and the model is only worth enabling when someone actually wants a chatbot.
-
-    private final Setting<Boolean> localAi = sgAi.add(new BoolSetting.Builder()
-        .name("local-ai")
-        .description("Answer simple chat with a small on-device model. Runs locally; nothing is sent anywhere.")
-        .defaultValue(false)
-        .onChanged(ignored -> {
-            syncEngine();
-            rebuild();
-        })
-        .build()
-    );
-
-    private final Setting<Double> aiThreshold = sgAi.add(new DoubleSetting.Builder()
-        .name("ai-confidence")
-        .description("How sure the AI must be before it answers. Higher is quieter and safer.")
-        .defaultValue(0.45)
-        .min(0.05)
-        .max(0.95)
-        .sliderRange(0.05, 0.95)
-        .visible(localAi::get)
-        .onChanged(ignored -> {
-            syncEngine();
-            rebuild();
-        })
-        .build()
-    );
-
-    private final Setting<TriggerRule.ReplyMode> aiReplyMode = sgAi.add(new EnumSetting.Builder<TriggerRule.ReplyMode>()
-        .name("ai-reply-mode")
-        .description("How the AI delivers its replies: chat, notify, or silent.")
-        .defaultValue(TriggerRule.ReplyMode.CHAT)
-        .visible(localAi::get)
-        .onChanged(ignored -> rebuild())
-        .build()
-    );
-
-    private final Setting<Boolean> aiLearnFromChat = sgAi.add(new BoolSetting.Builder()
-        .name("ai-learn-from-chat")
-        .description("Let the AI learn new phrasings from chat it already understands. Off keeps it fixed.")
-        .defaultValue(false)
-        .visible(localAi::get)
-        .onChanged(ignored -> syncEngine())
-        .build()
-    );
-
-    private final Setting<Boolean> aiPersist = sgAi.add(new BoolSetting.Builder()
-        .name("ai-persist")
-        .description("Save what the AI has learned to disk so it survives a restart.")
-        .defaultValue(true)
-        .visible(localAi::get)
-        .build()
-    );
-
     // Greetings. Off by default so an existing user's chat is unchanged until they ask for it.
 
     private final Setting<Boolean> greetingsEnabled = sgGreetings.add(new BoolSetting.Builder()
@@ -470,7 +412,6 @@ public class AssistantModule extends AutomationModule {
     );
 
     private final AssistantService service = AssistantService.get();
-    private final AiService aiService = AiService.get();
     private final AssistantRuntime runtime;
     private TriggerSet parsed = TriggerSet.empty();
     private AssistantConfig config = AssistantConfig.DEFAULTS;
@@ -486,7 +427,6 @@ public class AssistantModule extends AutomationModule {
 
     private long lastSaveAt;
     private boolean memoryDirty;
-    private boolean aiDirty;
     /** When the current session began, for the stats uptime figure. */
     private long sessionStart = System.currentTimeMillis();
     private final SpeedTracker speed = new SpeedTracker();
@@ -510,16 +450,13 @@ public class AssistantModule extends AutomationModule {
     private boolean sendingMacro;
 
     public AssistantModule() {
-        super("assistant", "A configurable chat assistant with keyword triggers, persistent memory and a small local AI.");
+        super("assistant", "A configurable chat assistant with keyword triggers and persistent memory.");
         runtime = new AssistantRuntime(service.memory());
-        runtime.brain().setEngine(aiService.engine());
     }
 
     @Override
     public void onActivate() {
         service.loadAsync(this::rebuild);
-        aiService.loadAsync(this::syncEngine);
-        syncEngine();
         rebuild();
         ownName = localPlayerName();
         lastSaveAt = System.currentTimeMillis();
@@ -529,7 +466,6 @@ public class AssistantModule extends AutomationModule {
     @Override
     public void onDeactivate() {
         flushMemory();
-        flushAi();
         info("%s disabled.", config.name());
     }
 
@@ -560,7 +496,6 @@ public class AssistantModule extends AutomationModule {
         runtime.resetSession();
         selfReplies.reset();
         flushMemory();
-        flushAi();
     }
 
     @EventHandler
@@ -572,7 +507,6 @@ public class AssistantModule extends AutomationModule {
         // a disk write storm. The dirty flag makes this a no-op when nothing changed.
         if (System.currentTimeMillis() - lastSaveAt < 30_000L) return;
         if (memoryDirty && persist.get()) flushMemory();
-        if (aiDirty && aiPersist.get()) flushAi();
     }
 
     @EventHandler
@@ -603,13 +537,6 @@ public class AssistantModule extends AutomationModule {
             statusSettings(), requesterPing(identity, sender));
         if (!decision.acts()) return;
         deliver(decision, sender);
-        // Learning is deliberately conservative: the AI only absorbs a line it already understood, so
-        // it cannot drift on noise. A trigger has a rule and a memory command sets its flag, so a
-        // decision with neither is unambiguously an AI reply. The dirty flag defers the disk write.
-        if (localAi.get() && aiLearnFromChat.get() && decision.rule() == null && !decision.command()) {
-            String intent = aiService.engine().intentOf(content);
-            if (intent != null && aiService.engine().model().teach(intent, content)) aiDirty = true;
-        }
     }
 
     // ------------------------------------------------------------------ reports
@@ -959,11 +886,7 @@ public class AssistantModule extends AutomationModule {
             memoryReplyMode.get(),
             rememberConversations.get(),
             rateLimit.get(),
-            maxReplyLength.get(),
-            localAi.get(),
-            aiThreshold.get(),
-            aiReplyMode.get(),
-            aiLearnFromChat.get()
+            maxReplyLength.get()
         );
         runtime.setTriggers(parsed);
         runtime.brain().setTriggerSet(parsed);
@@ -1197,24 +1120,6 @@ public class AssistantModule extends AutomationModule {
         return java.util.Map.copyOf(pools);
     }
 
-    /** Pushes the AI tunables into the engine. Cheap; safe to call from a settings listener. */
-    public void syncEngine() {
-        AiEngine engine = aiService.engine();
-        engine.setEnabled(localAi.get());
-        engine.setThreshold(aiThreshold.get());
-        engine.setMaxReplyLength(maxReplyLength.get());
-        engine.setLearnFromChat(aiLearnFromChat.get());
-    }
-
-    private void flushAi() {
-        if (!aiPersist.get() || !localAi.get()) {
-            aiDirty = false;
-            return;
-        }
-        aiService.saveAsync();
-        aiDirty = false;
-    }
-
     private List<TriggerRule> parseRules() {
         List<TriggerRule> out = new ArrayList<>();
         for (String encoded : rules.get()) {
@@ -1414,20 +1319,6 @@ public class AssistantModule extends AutomationModule {
         administratorsSetting().set(updated);
         rebuild();
         return true;
-    }
-
-    /** The local AI engine, for the GUI and the {@code .ai} command. */
-    public AiEngine aiEngine() {
-        return aiService.engine();
-    }
-
-    public AiService aiService() {
-        return aiService;
-    }
-
-    /** Persists the AI immediately (GUI and command use this). */
-    public void saveAi() {
-        aiService.saveAsync();
     }
 
     /** The encoded rule list, for the GUI to edit in place. */

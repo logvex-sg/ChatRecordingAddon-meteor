@@ -353,7 +353,7 @@ without any setup; clearing the table makes it silent again.
 
 ### What the assistant can hear
 
-Triggers and the local AI only ever see chat that was classified as a player talking. Minecraft
+Triggers only ever see chat that was classified as a player talking. Minecraft
 attaches a signed-chat indicator to properly signed player chat, and an earlier version used that
 indicator as the only proof that a player had spoken. That broke on every server that rewrites
 chat: an offline-mode server, a proxy such as Velocity, or any chat plugin sends the same line
@@ -361,7 +361,7 @@ without the indicator. Those lines were classified as system messages, and with 
 off — the default — every player message was silently dropped. The assistant then worked on some
 servers and not others, which is exactly what "it only works half the time" looked like.
 
-The classifier now recovers the sender from the text as well: `<Steve> hello`, `Steve: hello` and
+The chat classifier now recovers the sender from the text as well: `<Steve> hello`, `Steve: hello` and
 `[MVP+] Steve: hello` all classify as public chat from `Steve`. The recovery is narrow on purpose.
 A name must be 3 to 16 characters and contain a letter, so a clock reading like `12:34` stays a
 system line, and a known tag such as `Server:`, `Note:` or `Announcement:` is never mistaken for a
@@ -420,16 +420,16 @@ bare `hello` rule answers chat but never swallows `!hello`.
 | `enabled` | Turn the rule off without deleting it. |
 | `aliases` | Extra phrases that fire the same rule, comma separated, e.g. `latency,ms`. |
 | `pool` | No longer used. Kept so a rule written by an older build still loads. |
-| `embed` | `true` sends the reply as an aligned block instead of one line. See below. |
+| `embed` | `auto` (default) renders a block for a command-shaped rule whose reply is all labelled clauses; `on` always renders one; `off` always sends one line. See below. |
 
-#### Block replies (`embed=true`)
+#### Block replies (`embed=auto`)
 
-A reply with several figures reads better as a block than as one long sentence, so a rule can opt
-into one. The reply is written as comma-separated `Label value` clauses and each clause becomes an
-aligned row:
+A reply with several figures reads better as a block than as one long sentence, so the assistant
+formats one automatically. A command-shaped rule (`!tps`) whose reply is comma-separated
+`Label value` clauses becomes an aligned row per clause, provided every clause carries a label:
 
 ```
-!tps;reply=TPS {tps}, MSPT {mspt} ms, Status {verdict};embed=true
+!tps;reply=TPS {tps}, MSPT {mspt} ms, Status {verdict}
 ```
 
 ```
@@ -440,11 +440,15 @@ aligned row:
 └──────────────────────────────────────┘
 ```
 
+A reply that is a single sentence or a single figure stays on one line, because a border around one
+value is harder to read than the value itself. A phrase trigger such as `hello` is never boxed
+automatically, however many commas its reply has: prose in a border is harder to read, not easier.
+`embed=on` forces a block in either case, and `embed=off` keeps a multi-figure reply on one line.
+
 Minecraft chat cannot carry a newline inside one message, so the block is sent as consecutive
-lines (up to 12). `!tps`, `!status`, `!memory`, `!world`, `!time` and `!health` ship this way. The
-one-line form is still built and used wherever only one line fits, so an embed rule never loses a
-figure. The module's **reply-format** setting (`auto`, `box`, `compact`, `plain`, `list`) overrides
-the layout globally; `auto` keeps each reply's own.
+lines (up to 12). The one-line form is still built and used wherever only one line fits, so a block
+never loses a figure. The module's **reply-format** setting (`auto`, `box`, `compact`, `plain`,
+`list`) overrides the layout globally; `auto` keeps each reply's own.
 
 **A reply is one literal answer, and it always says the same thing.** Two earlier behaviours are gone
 because they made output look broken:
@@ -581,7 +585,7 @@ version keeps working when new commands are added.
 ### Live status commands
 
 The same prefix answers live questions about the server and about you, so `!tps` in chat gets an
-answer without opening a menu. These run before the local AI, so a status question never costs a
+answer without opening a menu. These run before any free-form handling, so a status question never costs a
 model call.
 
 Each command is one entry in a table you can edit: its own on/off switch, its own output mode and
@@ -726,7 +730,7 @@ With no role set the card is posted without a mention — deliberately, rather t
 
 Every command has a permission level. The level is checked **before** the command runs, so a refused
 `!remember` stores nothing, a refused `!forget` deletes nothing, and a refused command never reaches
-the local AI. Refusals are counted separately in `!ai status` so a user can see them.
+any other source. Refusals are counted separately in `!ai status` so a user can see them.
 
 Permissions are **off** by default, which leaves every command exactly as it was before this feature
 existed. Turning them on is a deliberate choice, because it changes who can talk to the assistant.
@@ -785,31 +789,12 @@ and can be edited by hand. A rule written by an older build, which carried only 
 migrated to the matching level. A rule whose level cannot be read resolves to `local-only` rather
 than to the open default, so a typo in the configuration closes a command instead of opening it.
 
-### How a free-form question is answered
+### How an unclaimed line is handled
 
-Anything that is not a trigger and not a command falls through to the local AI, which runs entirely
-on your machine: no network call, no model file. It decides what the message is about, then picks a
-reply from a pool written for that intent.
-
-The decision is a two-stage pipeline. A small ordered table of keyword rules runs first, and a rule
-fires only when *every* one of its tokens is present. That is what keeps the answers honest:
-`is the server lagging` contains `server`, but the tick-rate rule runs before the server-info rule,
-so it gets the tick rate rather than the server's name. The table is matched on raw tokens, including
-the stopwords a bag-of-words model discards, because those words are exactly what separates
-`how are you` from `what are you`.
-
-Anything the table does not claim goes to a naive-Bayes classifier over 8192 hashed buckets. The
-classifier is a fallback, not the primary path. Measured on 63 ordinary chat lines, the classifier
-alone picked the correct intent for 49 of them; on the other 14 it answered wrongly or not at all —
-`is it night` came back as a farewell, `what are you` as the prefix question, `are you a bot` as an
-insult. With the table in front, all 63 get an on-topic reply. A message neither stage understands
-gets no reply at all rather than a guess, and the confidence threshold decides that cutoff.
-
-The bucket count is not arbitrary. A hash table is finite, so an unrelated word can land in a slot
-another intent already counted. At 2048 buckets `night` shared a slot with a game-help feature that
-does not exist, and that intent answered `is it night` with high confidence while naming nothing in
-the sentence. Widening the table to 8192 keeps a word and its bigrams in distinct slots; the cost is
-a constant 32 x 8192 doubles, about 2 MB, allocated once.
+Anything that is not a trigger and not a command is left alone. The assistant answers only what it
+was configured to answer: there is no model in the mod and no guessing at intent. A line that no
+rule and no command claims produces no reply, which is what keeps the assistant predictable — every
+answer it gives can be traced back to a rule you wrote or a command you enabled.
 
 ### Settings
 
@@ -1101,7 +1086,6 @@ derived from live state, so it never claims something it cannot do:
 |---|---|
 | Triggers | switched on, and at least one rule armed |
 | Memory | `memory-commands` |
-| Local model | `local-ai` |
 | Reports | webhook-relay configured with `allow-reports` |
 | Permissions | `permissions` |
 | Server figures | being connected (TPS and latency are measured, not reported) |
@@ -1778,24 +1762,17 @@ archive with in-memory doubles (no Minecraft runtime required):
 - `UpdateEngineTest` — the check/download state machine: an up-to-date check, a newer release
   becoming available, a download reaching READY, a checksum mismatch rejected, and a source failure
   reported as FAILED with a message instead of a thrown exception.
-- `AiCoreTest` — the local model: tokenisation, intent classification, the bigram model's
-  teach/generate path, the naive-Bayes classifier, confidence gating and JSON round-trip.
-- `AiRoutingTest` — the router and the classifier measured against each other on the same lines, so
-  the claim that the table is the primary path is checked rather than asserted. Includes a
-  regression for the hash-collision bug: an intent must not gain evidence from a word it was never
-  trained on.
 - `ModCallTest` — that a modcall builds a client-side report, never a server command, and that a
   reason containing a
   newline cannot become a second command.
 - `SummaryEmbedTest` — the requested-summary card: title and accent, the requested-by and note
   fields, the counts, and that the note is neutralised so it cannot ping a role or break the
   markdown.
-- `UnsignedChatAndRoutingTest` — the two behaviours that decide whether the assistant answers at
-  all: unsigned and plugin-rewritten chat (`<Steve> hi`, `Steve: hi`, `[MVP+] Steve: hi`) classifies
-  as public chat while clock readings and `Server:` tags stay system, and the keyword router picks
-  the on-topic intent ahead of the classifier. It also pins the measurement that justifies the
-  router — the classifier alone agrees on fewer lines than the router routes — so the claim cannot
-  go stale.
+- `UnsignedChatAndRoutingTest` — the behaviour that decides whether the assistant answers at all:
+  unsigned and plugin-rewritten chat (`<Steve> hi`, `Steve: hi`, `[MVP+] Steve: hi`) classifies as
+  public chat while clock readings and `Server:` tags stay system, join/leave/death lines keep their
+  own types, and the shipped trigger table fires on ordinary chat without nested patterns making
+  rule order decide the answer.
 - `ModuleNameTest` — every module's registered name is unique and none is a name Meteor ships. Meteor
   de-duplicates by name, so a clash silently deletes Meteor's module and crashes the code that looks
   it up by class; this test is the regression for the `auto-reconnect` crash on disconnect. It reads
@@ -1925,21 +1902,21 @@ MIT — see [LICENSE](LICENSE).
 ### Starter knowledge
 
 A fresh install is not empty. The assistant ships with a short set of facts — what it is, what the
-prefix is, how memory works, how macros work, and that player-specific answers stay local — so the
-first question you ask gets a real answer instead of "I do not understand".
+prefix is, how memory works, how macros work, and that player-specific answers stay local — so
+`!fact <key>` answers something useful on the first day instead of returning nothing.
 
 These are ordinary facts: `!facts` lists them, `!forget` removes them, and `!remember` overwrites
 them. The seed is only written when the store has never held anything, so a fact you delete stays
 deleted rather than reappearing at the next launch.
 
-The assistant also answers from what it has stored. Ask a question naming a fact and it replies
-with that fact rather than guessing from its fixed corpus:
+The assistant answers from what it has stored when you ask for it by name. `!fact <key>` reads one
+fact back and `!facts` lists them all:
 
 ```
-you: what is the prefix?
+you: !fact prefix
 bot: prefix: ! by default. Type !help for the command list.
 ```
 
-Matching is on whole words, so `fact` does not match `factory`. If a question names two unrelated
-facts the assistant stays quiet rather than picking one, because a wrong answer it cannot flag is
-worse than no answer.
+It does not answer a free-form question such as "what is the prefix?" on its own: there is no model
+in the mod, so a line that no trigger and no command claims is left alone. That is deliberate — an
+answer you did not configure is an answer you cannot check.
