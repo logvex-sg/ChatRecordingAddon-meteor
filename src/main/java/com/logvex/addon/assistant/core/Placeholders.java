@@ -205,7 +205,17 @@ public final class Placeholders {
             ctx.stats().x(), ctx.stats().y(), ctx.stats().z()));
         grouped("Position", "speed", ctx -> String.format(Locale.ROOT, "%.2f", ctx.stats().speed()));
 
+        grouped("World", "weather", ctx -> orQuestion(ctx.stats().weather()));
+
         grouped("Client", "fps", ctx -> String.valueOf(ctx.stats().fps()));
+
+        // The assistant's own identity and memory size. Both identity values come from the
+        // config the caller passed in; an empty value means there was no config, so each falls
+        // back to something still readable rather than rendering blank.
+        grouped("Assistant", "name", ctx -> ctx.assistant().isBlank() ? "the assistant" : ctx.assistant());
+        grouped("Assistant", "prefix", ctx -> ctx.prefix().isBlank() ? "!" : ctx.prefix());
+        grouped("Assistant", "factcount", ctx ->
+            ctx.memory() == null ? "0" : String.valueOf(ctx.memory().facts().size()));
 
         // Families take an argument ({fact:key}) rather than a fixed name.
         registerFamily("fact:", (argument, ctx) -> {

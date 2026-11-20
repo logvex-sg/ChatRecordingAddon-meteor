@@ -18,8 +18,9 @@ import com.logvex.addon.stats.ServerStats;
  *   <li>{@code {tps}} / {@code {mspt}} / {@code {ping}} / {@code {players}} / {@code {uptime}}</li>
  *   <li>{@code {dimension}} / {@code {world}} / {@code {biome}} / {@code {worldtime}} / {@code {facing}}</li>
  *   <li>{@code {health}} / {@code {hunger}} / {@code {x}} / {@code {y}} / {@code {z}} / {@code {coords}} / {@code {speed}}</li>
- *   <li>{@code {fps}} / {@code {verdict}}</li>
- *   <li>{@code {fact:key}} / {@code {count:name}} / {@code {memory}}</li>
+ *   <li>{@code {fps}} / {@code {verdict}} / {@code {weather}}</li>
+ *   <li>{@code {name}} / {@code {prefix}} — the assistant's own name and command prefix</li>
+ *   <li>{@code {fact:key}} / {@code {count:name}} / {@code {memory}} / {@code {factcount}}</li>
  * </ul>
  *
  * <p>A token no placeholder claims is left untouched, so a literal {@code {}} or an unknown name
@@ -38,14 +39,25 @@ public final class ResponseTemplate {
 
     /** The data a template can interpolate. */
     public record Context(String player, String message, String server, AssistantMemory memory,
-                          long now, ServerStats stats) {
+                          long now, ServerStats stats, String assistant, String prefix) {
+        /**
+         * {@code {name}} and {@code {prefix}} need the assistant's own identity, which a reply
+         * cannot read from anywhere else, so the caller that owns the config passes them in.
+         */
         public Context {
             if (stats == null) stats = ServerStats.OFFLINE;
+            if (assistant == null) assistant = "";
+            if (prefix == null) prefix = "";
         }
 
         /** A context with no live figures; every stats placeholder then resolves to {@code n/a}. */
         public Context(String player, String message, String server, AssistantMemory memory, long now) {
             this(player, message, server, memory, now, ServerStats.OFFLINE);
+        }
+
+        public Context(String player, String message, String server, AssistantMemory memory,
+                       long now, ServerStats stats) {
+            this(player, message, server, memory, now, stats, "", "");
         }
 
         public static Context of(String player, String message, AssistantMemory memory, long now) {

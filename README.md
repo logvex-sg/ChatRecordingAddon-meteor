@@ -440,7 +440,9 @@ box off the screen.
 | `{x}` / `{y}` / `{z}` / `{coords}` | Position, one axis at a time or as `x, y, z`. |
 | `{speed}` | Measured horizontal walking speed in blocks per second. |
 | `{fps}` | The client's frame rate. |
-| `{memory}` | How many facts are stored. |
+| `{weather}` | The current weather, e.g. `clear` or `rain`. |
+| `{name}` / `{prefix}` | The assistant's own name and command prefix, so a reply can describe itself. |
+| `{memory}` / `{factcount}` | How many facts are stored. |
 | `{fact:key}` / `{count:name}` | A stored fact, or a stored counter. |
 
 Two rules keep this honest:

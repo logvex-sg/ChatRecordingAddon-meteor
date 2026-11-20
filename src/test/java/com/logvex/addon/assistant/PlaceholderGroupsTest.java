@@ -28,7 +28,7 @@ class PlaceholderGroupsTest {
     @DisplayName("sections appear in the order their placeholders were registered")
     void sectionsPreserveOrder() {
         Map<String, List<String>> grouped = Placeholders.standard().byGroup();
-        assertEquals(List.of("Player", "Time", "Server", "World", "Position", "Client"),
+        assertEquals(List.of("Player", "Time", "Server", "World", "Position", "Client", "Assistant"),
             List.copyOf(grouped.keySet()));
     }
 
@@ -39,6 +39,7 @@ class PlaceholderGroupsTest {
         assertEquals(List.of("player", "message"), grouped.get("Player"));
         assertEquals(List.of("time", "date"), grouped.get("Time"));
         assertEquals(List.of("fps"), grouped.get("Client"));
+        assertEquals(List.of("name", "prefix", "factcount"), grouped.get("Assistant"));
         assertTrue(grouped.get("Position").containsAll(List.of("x", "y", "z", "coords")));
     }
 

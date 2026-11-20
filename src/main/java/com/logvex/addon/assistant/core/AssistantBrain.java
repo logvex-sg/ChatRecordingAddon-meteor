@@ -423,7 +423,8 @@ public final class AssistantBrain {
     private Decision fromTrigger(TriggerRule rule, String sender, String content,
                                  AssistantConfig config, long now, ServerStats stats) {
         ResponseTemplate.Context context = new ResponseTemplate.Context(
-            sender, content, stats.server(), memory, now, stats);
+            sender, content, stats.server(), memory, now, stats,
+            config.name(), config.commandPrefix());
         String text = ResponseTemplate.expand(rule.chosenReply(null), context);
         text = clamp(text, config.maxReplyLength());
 
@@ -665,7 +666,8 @@ public final class AssistantBrain {
         if (template == null || template.isBlank()) return Decision.NONE;
         ResponseTemplate.Context context = new ResponseTemplate.Context(
             sender == null ? "" : sender, "", "", memory, now,
-            stats == null ? ServerStats.OFFLINE : stats);
+            stats == null ? ServerStats.OFFLINE : stats,
+            config.name(), config.commandPrefix());
         String text = clamp(ResponseTemplate.expand(template, context), config.maxReplyLength());
         if (text.isBlank()) return Decision.NONE;
         return reply(config.memoryReplyMode(), text, false);
