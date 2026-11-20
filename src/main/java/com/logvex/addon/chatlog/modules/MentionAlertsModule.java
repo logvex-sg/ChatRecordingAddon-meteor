@@ -64,7 +64,7 @@ public class MentionAlertsModule extends AddonModule {
         .description("Shortest gap between two alerts for the same name. Mentions inside the gap "
             + "are counted and reported with the next alert instead of printing a line each.")
         .defaultValue(2)
-        .min(0)
+        .range(0, 3600)
         .sliderRange(0, 60)
         .onChanged(ignored -> rebuildThrottle())
         .build()

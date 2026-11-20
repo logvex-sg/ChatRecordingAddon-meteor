@@ -48,7 +48,7 @@ public class AutoLoginModule extends AutomationModule {
         .description("How many prompts to answer before giving up. Kept low: repeated failures look "
             + "like a brute-force attempt and can get the account banned.")
         .defaultValue(LoginAttemptPolicy.DEFAULT_MAX_ATTEMPTS)
-        .min(1)
+        .range(1, 5)
         .sliderRange(1, 5)
         .build()
     );
@@ -57,7 +57,7 @@ public class AutoLoginModule extends AutomationModule {
         .name("cooldown-seconds")
         .description("Minimum gap between two sends, so a prompt repeating every tick cannot flood the server.")
         .defaultValue(4)
-        .min(1)
+        .range(1, 300)
         .sliderRange(1, 30)
         .build()
     );

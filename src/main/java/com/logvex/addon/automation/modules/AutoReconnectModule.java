@@ -31,10 +31,14 @@ import java.util.Map;
 public class AutoReconnectModule extends AutomationModule {
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
 
+    // Each setting carries a hard range() as well as a sliderRange(): the slider only bounds the
+    // widget, so without a range a typed value such as 40000 attempts is accepted and saved. That
+    // turns a bounded backoff into an endless reconnect loop against a server that just kicked us.
     private final Setting<Integer> baseDelay = sgGeneral.add(new IntSetting.Builder()
         .name("base-delay-seconds")
         .description("Wait this long before the first reconnect attempt.")
         .defaultValue(5)
+        .range(1, 60)
         .sliderRange(1, 60)
         .build()
     );
@@ -43,6 +47,7 @@ public class AutoReconnectModule extends AutomationModule {
         .name("max-delay-seconds")
         .description("The delay doubles each attempt, up to this maximum.")
         .defaultValue(60)
+        .range(1, 300)
         .sliderRange(5, 300)
         .build()
     );
@@ -51,6 +56,7 @@ public class AutoReconnectModule extends AutomationModule {
         .name("max-attempts")
         .description("Give up after this many failed attempts.")
         .defaultValue(5)
+        .range(1, 50)
         .sliderRange(1, 50)
         .build()
     );

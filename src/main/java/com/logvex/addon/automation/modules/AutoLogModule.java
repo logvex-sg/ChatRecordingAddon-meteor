@@ -54,6 +54,7 @@ public class AutoLogModule extends AutomationModule {
         .name("food-threshold")
         .description("Food level at or below which the player leaves.")
         .defaultValue(2)
+        .range(0, 20)
         .sliderRange(0, 20)
         .visible(noFood::get)
         .build()
@@ -106,6 +107,7 @@ public class AutoLogModule extends AutomationModule {
         .name("grace-seconds")
         .description("Do not disconnect within this many seconds of joining.")
         .defaultValue(10)
+        .range(0, 120)
         .sliderRange(0, 120)
         .build()
     );
@@ -114,6 +116,7 @@ public class AutoLogModule extends AutomationModule {
         .name("rearm-seconds")
         .description("After a rule fires but the player stays, wait this long before checking again.")
         .defaultValue(5)
+        .range(1, 60)
         .sliderRange(1, 60)
         .build()
     );
