@@ -100,6 +100,31 @@ public final class ReportLog {
         return out;
     }
 
+    /**
+     * Replaces the outcome of {@code target} once delivery is known.
+     *
+     * <p>A report is written when it is queued, before delivery has happened, and updated here when
+     * the network worker reports back. Without this a queued-but-failed report would sit in the log
+     * marked delivered, which is the one lie a report log must not tell.
+     *
+     * <p>Matched by identity rather than by timestamp: two reports filed in the same millisecond
+     * would otherwise settle each other.
+     */
+    public synchronized boolean settle(Record target, boolean delivered, String note) {
+        if (target == null) return false;
+        List<Record> ordered = new ArrayList<>(records);
+        for (int i = 0; i < ordered.size(); i++) {
+            if (ordered.get(i) != target) continue;
+            Record old = ordered.get(i);
+            ordered.set(i, new Record(old.atMs(), old.reporter(), old.reason(), old.kind(),
+                delivered, note));
+            records.clear();
+            records.addAll(ordered);
+            return true;
+        }
+        return false;
+    }
+
     /** How many records were filed by {@code reporter}. */
     public synchronized int countBy(String reporter) {
         if (reporter == null || reporter.isBlank()) return 0;

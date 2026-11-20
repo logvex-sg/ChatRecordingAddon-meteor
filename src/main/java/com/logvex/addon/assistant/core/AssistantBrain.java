@@ -1244,7 +1244,8 @@ public final class AssistantBrain {
             }
         }
 
-        long lines = memory.history(0).stream()
+        // history(0) is empty by contract (it is "at most zero"), so ask for everything.
+        long lines = memory.allHistory().stream()
             .filter(entry -> entry.player() != null && entry.player().equalsIgnoreCase(name))
             .count();
         if (lines > 0) {

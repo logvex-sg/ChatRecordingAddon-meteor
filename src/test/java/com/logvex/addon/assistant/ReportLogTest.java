@@ -123,6 +123,45 @@ class ReportLogTest {
     }
 
     @Test
+    @DisplayName("a queued report is settled with the real delivery outcome")
+    void settleUpdatesOutcome() {
+        ReportLog log = new ReportLog();
+        ReportLog.Record queued = record(1_700_000_000_000L, "Alex", "griefer", false);
+        log.add(queued);
+
+        assertTrue(log.settle(queued, true, "delivered"));
+        assertTrue(log.all().get(0).delivered(), "a delivered report must not stay marked failed");
+        assertEquals("delivered", log.all().get(0).note());
+        assertEquals(0, log.failures());
+    }
+
+    @Test
+    @DisplayName("settling one record leaves a same-millisecond sibling alone")
+    void settleIsIdentityBased() {
+        ReportLog log = new ReportLog();
+        ReportLog.Record first = record(500L, "Alex", "one", false);
+        ReportLog.Record second = record(500L, "Alex", "two", false);
+        log.add(first);
+        log.add(second);
+
+        log.settle(first, true, "delivered");
+
+        // Only "one" settles; "two" is still failed despite sharing the timestamp.
+        assertEquals(1, log.failures());
+        ReportLog.Record two = log.all().stream()
+            .filter(r -> r.reason().equals("two")).findFirst().orElseThrow();
+        assertFalse(two.delivered());
+    }
+
+    @Test
+    @DisplayName("settling an unknown record is a no-op, not a throw")
+    void settleUnknownIsNoop() {
+        ReportLog log = new ReportLog();
+        assertFalse(log.settle(record(1, "Alex", "never added", false), true, "x"));
+        assertEquals(0, log.size());
+    }
+
+    @Test
     @DisplayName("a stranger cannot read the operator's report history")
     void reportsIsLocalOnly() {
         ReportLog log = new ReportLog();

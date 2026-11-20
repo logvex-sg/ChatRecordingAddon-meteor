@@ -311,11 +311,30 @@ public class WebhookRelayModule extends AddonModule {
         return reportLog;
     }
 
-    /** Records a filed report, then persists the log when it is set to persist. */
-    private void recordReport(String reporter, String reason, String kind, boolean delivered,
-                              String note) {
-        reportLog.add(new ReportLog.Record(System.currentTimeMillis(), reporter, reason, kind,
-            delivered, note));
+    /** Records a filed report and returns the record, so its outcome can be settled later. */
+    private ReportLog.Record recordReport(String reporter, String reason, String kind,
+                                          boolean delivered, String note) {
+        ReportLog.Record record = new ReportLog.Record(System.currentTimeMillis(), reporter, reason,
+            kind, delivered, note);
+        reportLog.add(record);
+        persistReportLog();
+        return record;
+    }
+
+    /**
+     * Settles a record with the outcome the network worker reported, then persists.
+     *
+     * <p>Runs on the client thread: the callback arrives on the webhook daemon, and a Meteor
+     * setting written from there races the config save.
+     */
+    private void settleReport(ReportLog.Record record, boolean delivered, String note) {
+        if (record == null) return;
+        mc.execute(() -> {
+            if (reportLog.settle(record, delivered, note)) persistReportLog();
+        });
+    }
+
+    private void persistReportLog() {
         if (reportLogPersist.get()) reportLogStored.set(reportLog.encodeAll());
     }
 
@@ -364,12 +383,17 @@ public class WebhookRelayModule extends AddonModule {
             recordReport(reporter, reason, kind, false, "reports not allowed");
             return false;
         }
+        // Written before queueing, so the record exists even if the queue invokes the listener
+        // immediately; a report that was attempted must never be missing from the log.
+        ReportLog.Record record = recordReport(reporter, reason, kind, false, "queued");
         boolean queued = service.notifyReport(url(), username(), reporter, reason, moderatorRole(),
             kind, (success, message) -> {
+                // Delivery happens on the network worker, after this method has returned, so the
+                // log is settled here with what really happened rather than with "queued".
+                settleReport(record, success, message);
                 if (listener != null) listener.onResult(success, message);
             });
-        recordReport(reporter, reason, kind, queued,
-            queued ? "queued" : "could not be queued");
+        if (!queued) settleReport(record, false, "could not be queued");
         return queued;
     }
 
