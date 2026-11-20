@@ -11,13 +11,18 @@ import com.logvex.addon.chatlog.modules.PlayerActivityModule;
 import com.logvex.addon.chatlog.modules.SessionStatsModule;
 import com.mojang.logging.LogUtils;
 import com.logvex.addon.framework.LogClientContext;
+import com.logvex.addon.framework.ModuleAudit;
 import com.logvex.addon.framework.systems.hud.Hud;
 import com.logvex.addon.framework.systems.hud.HudGroup;
 import meteordevelopment.meteorclient.addons.GithubRepo;
 import meteordevelopment.meteorclient.addons.MeteorAddon;
 import meteordevelopment.meteorclient.systems.modules.Category;
+import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.systems.modules.Modules;
 import org.slf4j.Logger;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Entry point for Log Client, a Meteor Client addon.
@@ -55,6 +60,9 @@ public class LogClient extends MeteorAddon {
         // config on Meteor's own tick and render events.
         LogClientContext.EVENT_BUS.subscribe(new ChatRecorder());
         LogClientContext.EVENT_BUS.subscribe(new com.logvex.addon.framework.AddonEvents());
+        // Subscribed before any command can be typed so `!log ...` is intercepted from the first
+        // message, not only after some other event happens to build the router.
+        LogClientContext.EVENT_BUS.subscribe(new com.logvex.addon.framework.AddonCommandRouter());
         com.logvex.addon.chatlog.mc.ChatFilterService.get().init(LogClientContext.EVENT_BUS);
         com.logvex.addon.chatlog.mc.SessionTimelineService.get().init(LogClientContext.EVENT_BUS);
         com.logvex.addon.chatlog.mc.PlayerIdentityService.get().init(LogClientContext.EVENT_BUS);
@@ -74,6 +82,8 @@ public class LogClient extends MeteorAddon {
         Modules.get().add(new com.logvex.addon.chatlog.modules.SessionHistoryModule());
         Modules.get().add(new com.logvex.addon.chatlog.modules.WebhookRelayModule());
         Modules.get().add(new com.logvex.addon.chatlog.modules.MentionAlertsModule());
+        Modules.get().add(new com.logvex.addon.chatlog.modules.ChatTimestampsModule());
+        Modules.get().add(new com.logvex.addon.chatlog.modules.RepeatCollapseModule());
 
         // Automation: Minecraft-facing shells over the Minecraft-free controllers in
         // com.logvex.addon.automation.core. Each is independent and cleans up on deactivate.
@@ -87,6 +97,9 @@ public class LogClient extends MeteorAddon {
         Modules.get().add(new com.logvex.addon.automation.modules.ArmorGuardModule());
         Modules.get().add(new com.logvex.addon.automation.modules.AutoLogModule());
         Modules.get().add(new com.logvex.addon.automation.modules.AutoReconnectModule());
+        Modules.get().add(new com.logvex.addon.automation.modules.AutoLoginModule());
+        Modules.get().add(new com.logvex.addon.automation.modules.WatchlistAlertsModule());
+        Modules.get().add(new com.logvex.addon.automation.modules.DeathTrackerModule());
         Modules.get().add(new com.logvex.addon.automation.modules.ServerMonitorModule());
 
         // Keep the existing Schematic Dropper module and its HUD.
@@ -103,6 +116,10 @@ public class LogClient extends MeteorAddon {
         // Configurable chat assistant: keyword triggers, memory and memory commands. The decision
         // logic is Minecraft-free; this is its Minecraft-facing shell.
         Modules.get().add(new com.logvex.addon.assistant.modules.AssistantModule());
+        // Standalone companions: each owns one command end to end, so either can run with the
+        // assistant itself switched off.
+        Modules.get().add(new com.logvex.addon.assistant.modules.FaqModule());
+        Modules.get().add(new com.logvex.addon.assistant.modules.ModCallModule());
         Hud.get().register(com.logvex.addon.assistant.hud.AssistantHud.INFO);
 
         // Notifications are the shared output bus every other feature reports through.
@@ -118,9 +135,6 @@ public class LogClient extends MeteorAddon {
         // network work runs on a daemon worker, and the module never installs anything itself.
         Modules.get().add(new com.logvex.addon.update.mc.UpdateModule());
 
-        // A one-shot module that opens the addon's own window; bind it to a key in Meteor's GUI.
-        Modules.get().add(new com.logvex.addon.gui.LogClientMenuModule());
-
         Hud.get().register(ChatLogHud.INFO);
         Hud.get().register(ActivityHud.INFO);
         Hud.get().register(StatsHud.INFO);
@@ -134,10 +148,34 @@ public class LogClient extends MeteorAddon {
         // the recorded logs, identities, bot memory and config instead of starting empty.
         LogClientContext.migrateLegacyDataFolder();
 
+        checkModuleNames();
+
         // Restore the saved configuration only after every module and HUD element exists.
         com.logvex.addon.framework.systems.config.ConfigManager.get().load();
 
         Runtime.getRuntime().addShutdownHook(new Thread(LogClient::shutdown, "log-client-shutdown"));
+    }
+
+    /**
+     * Reports every module whose name is claimed by more than one module.
+     *
+     * <p>Meteor's registry is keyed by class but de-duplicated by name: {@code Modules.add} drops any
+     * existing module that shares the new one's name. An addon that reuses a Meteor name therefore
+     * deletes Meteor's module, and Meteor's own code — which looks modules up by class — then reads
+     * null. That is not a cosmetic clash: {@code DisconnectedScreenMixin} initialises a field from
+     * {@code Modules.get().get(AutoReconnect.class).time}, so losing Meteor's {@code AutoReconnect}
+     * crashed the client on every disconnect. Names are checked after registration because Meteor
+     * builds its own modules before any addon's {@code onInitialize} runs.
+     */
+    private static void checkModuleNames() {
+        List<String> names = new ArrayList<>();
+        for (Module module : Modules.get().getAll()) names.add(module.name);
+
+        for (ModuleAudit.Clash clash : ModuleAudit.clashes(names)) {
+            LOG.error("Module name '{}' is claimed by {} modules. Meteor de-duplicates by name, so"
+                + " one of them was discarded — rename ours to avoid breaking the other addon.",
+                clash.name(), clash.count());
+        }
     }
 
     /**
@@ -153,6 +191,10 @@ public class LogClient extends MeteorAddon {
         meteordevelopment.meteorclient.commands.Commands.add(new com.logvex.addon.command.LogCommand());
         meteordevelopment.meteorclient.commands.Commands.add(new com.logvex.addon.command.BotCommand());
         meteordevelopment.meteorclient.commands.Commands.add(new com.logvex.addon.command.AssistantCommand());
+        meteordevelopment.meteorclient.commands.Commands.add(new com.logvex.addon.command.PrefixCommand());
+        meteordevelopment.meteorclient.commands.Commands.add(new com.logvex.addon.command.ChatQueryCommand());
+        meteordevelopment.meteorclient.commands.Commands.add(new com.logvex.addon.command.AutoLoginCommand());
+        meteordevelopment.meteorclient.commands.Commands.add(new com.logvex.addon.command.DeathsCommand());
     }
 
     @Override
@@ -160,19 +202,30 @@ public class LogClient extends MeteorAddon {
         Modules.registerCategory(CATEGORY);
     }
 
-    /** Flushes the addon configuration and releases every service's resources at client shutdown. */
+    /**
+     * Flushes the addon configuration and releases every service's resources at client shutdown.
+     *
+     * <p>Each step is isolated. This runs from a JVM shutdown hook, where a thrown exception aborts
+     * the remainder of the hook: without the guards, one failing service would stop every later
+     * service from writing its data, and the loss would be silent.
+     */
     public static void shutdown() {
+        flush("config", () -> com.logvex.addon.framework.systems.config.ConfigManager.get().save());
+        flush("session-timeline", () -> com.logvex.addon.chatlog.mc.SessionTimelineService.get().shutdown());
+        flush("player-identity", () -> com.logvex.addon.chatlog.mc.PlayerIdentityService.get().shutdown());
+        flush("world", () -> com.logvex.addon.world.mc.WorldService.get().shutdown());
+        flush("assistant", () -> com.logvex.addon.assistant.mc.AssistantService.get().shutdown());
+        flush("ai", () -> com.logvex.addon.ai.mc.AiService.get().shutdown());
+        flush("update", () -> com.logvex.addon.update.mc.UpdateService.get().engine().shutdown());
+    }
+
+    /** Runs one shutdown step, logging rather than propagating a failure. */
+    private static void flush(String what, Runnable step) {
         try {
-            com.logvex.addon.framework.systems.config.ConfigManager.get().save();
-        } catch (RuntimeException e) {
-            LOG.warn("Could not flush the addon config on shutdown", e);
+            step.run();
+        } catch (RuntimeException | LinkageError e) {
+            LOG.warn("Could not flush '{}' on shutdown; continuing with the rest", what, e);
         }
-        com.logvex.addon.chatlog.mc.SessionTimelineService.get().shutdown();
-        com.logvex.addon.chatlog.mc.PlayerIdentityService.get().shutdown();
-        com.logvex.addon.world.mc.WorldService.get().shutdown();
-        com.logvex.addon.assistant.mc.AssistantService.get().shutdown();
-        com.logvex.addon.ai.mc.AiService.get().shutdown();
-        com.logvex.addon.update.mc.UpdateService.get().engine().shutdown();
     }
 
     @Override

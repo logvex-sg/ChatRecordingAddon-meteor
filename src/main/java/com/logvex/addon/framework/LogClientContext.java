@@ -23,7 +23,28 @@ public final class LogClientContext {
     private static final Logger LOG = LogUtils.getLogger();
     public static final String MOD_ID = "logclient";
     public static final String NAME = "Log Client";
-    public static final String VERSION = "17.2.0";
+
+    /**
+     * The mod version, read from the metadata Fabric already loaded.
+     *
+     * <p>It used to be a hand-written constant, and it drifted: the build said 18.1.0 while this
+     * said 17.2.0, so the updater compared releases against the wrong number and the GUI rail
+     * displayed a version three releases old. Reading the loaded metadata makes the value correct by
+     * construction — {@code mod_version} in {@code gradle.properties} is the only place to edit.
+     */
+    public static final String VERSION = resolveVersion();
+
+    private static String resolveVersion() {
+        try {
+            return FabricLoader.getInstance().getModContainer(MOD_ID)
+                .map(container -> container.getMetadata().getVersion().getFriendlyString())
+                .orElse("dev");
+        } catch (RuntimeException e) {
+            // Not inside a Fabric runtime (a plain unit test, say). "dev" is honest; a made-up
+            // version number would be worse than an obviously unstamped one.
+            return "dev";
+        }
+    }
 
     /** The addon-wide event bus: modules, HUD and the recorder all publish and listen here. */
     /**

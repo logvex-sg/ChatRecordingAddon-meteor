@@ -45,6 +45,7 @@ import com.logvex.addon.schematicdropper.mc.RegistryItemResolver;
 import com.logvex.addon.schematicdropper.mc.SchematicFileImport;
 import com.logvex.addon.schematicdropper.mc.ServerInventoryTracker;
 import com.logvex.addon.framework.LogClientContext;
+import com.logvex.addon.framework.SafeEventHandler;
 import meteordevelopment.meteorclient.events.game.GameJoinedEvent;
 import meteordevelopment.meteorclient.events.game.GameLeftEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
@@ -578,9 +579,12 @@ public class SchematicDropperModule extends AddonModule {
 
     @EventHandler
     private void onGameLeft(GameLeftEvent event) {
-        engine.onWorldChanged();
-        acquisition.onWorldChanged();
-        build.onWorldChanged();
+        // Posted from inside MinecraftClient.disconnect(); a throw here would take the game down.
+        SafeEventHandler.run("SchematicDropperModule.onGameLeft", () -> {
+            engine.onWorldChanged();
+            acquisition.onWorldChanged();
+            build.onWorldChanged();
+        });
     }
 
     @Override

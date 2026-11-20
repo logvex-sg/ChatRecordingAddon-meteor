@@ -2,6 +2,7 @@ package com.logvex.addon.chatlog.modules;
 
 import com.logvex.addon.framework.systems.modules.AddonModule;
 import com.logvex.addon.LogClient;
+import com.logvex.addon.chatlog.core.AlertThrottle;
 import com.logvex.addon.chatlog.core.ChatEntry;
 import com.logvex.addon.chatlog.core.KeywordMatcher;
 import com.logvex.addon.chatlog.core.KeywordRule;
@@ -12,6 +13,7 @@ import com.logvex.addon.framework.gui.widgets.WWidget;
 import com.logvex.addon.framework.gui.widgets.containers.WVerticalList;
 import com.logvex.addon.framework.gui.widgets.pressable.WButton;
 import meteordevelopment.meteorclient.settings.BoolSetting;
+import meteordevelopment.meteorclient.settings.IntSetting;
 import meteordevelopment.meteorclient.settings.Setting;
 import meteordevelopment.meteorclient.settings.SettingGroup;
 import meteordevelopment.meteorclient.settings.StringListSetting;
@@ -44,6 +46,28 @@ public class KeywordAlertsModule extends AddonModule {
         .name("chat-feedback")
         .description("Print a chat note when a keyword matches.")
         .defaultValue(false)
+        .build()
+    );
+
+    private final Setting<Integer> cooldownSeconds = sgRules.add(new IntSetting.Builder()
+        .name("cooldown-seconds")
+        .description("Shortest gap between two alerts for the same rule. Matches inside the gap are "
+            + "counted and reported with the next alert instead of printing a line each.")
+        .defaultValue(2)
+        .range(0, 3600)
+        .sliderRange(0, 60)
+        .onChanged(ignored -> rebuildThrottle())
+        .build()
+    );
+
+    private final Setting<Integer> burstLimit = sgRules.add(new IntSetting.Builder()
+        .name("burst-limit")
+        .description("Most alerts allowed in ten seconds, across every rule. Keeps a common word "
+            + "from flooding chat and the webhook.")
+        .defaultValue(6)
+        .min(1)
+        .sliderRange(1, 50)
+        .onChanged(ignored -> rebuildThrottle())
         .build()
     );
 
@@ -84,6 +108,8 @@ public class KeywordAlertsModule extends AddonModule {
     private List<KeywordRule> parsed = List.of();
     private long lastSummaryAt;
     private long lastSeenTimestamp;
+    private long suppressedMatches;
+    private AlertThrottle throttle = AlertThrottle.defaults();
 
     public KeywordAlertsModule() {
         super(LogClient.CATEGORY, "keyword-alerts", "Alerts on configurable keywords with sound and webhook options.");
@@ -95,6 +121,8 @@ public class KeywordAlertsModule extends AddonModule {
         service.setKeywordRules(parsed);
         lastSummaryAt = System.currentTimeMillis();
         lastSeenTimestamp = System.currentTimeMillis();
+        suppressedMatches = 0;
+        throttle = newThrottle();
     }
 
     @Override
@@ -132,6 +160,10 @@ public class KeywordAlertsModule extends AddonModule {
     }
 
     private void evaluateRecent() {
+        // Drop throttle state for rules the user removed, so editing the list does not leave keys
+        // that can never fire again.
+        throttle.retain(parsed.stream().map(KeywordRule::pattern).toList());
+
         List<ChatEntry> recent = service.recent(50);
         long newest = lastSeenTimestamp;
         for (int i = recent.size() - 1; i >= 0; i--) {
@@ -140,17 +172,29 @@ public class KeywordAlertsModule extends AddonModule {
             newest = Math.max(newest, entry.timestamp());
             for (KeywordRule rule : KeywordMatcher.matches(parsed, entry)) {
                 service.stats().recordKeyword(rule.pattern());
+
+                // A rule that matches a common word would otherwise alert on every message. The
+                // throttle folds a burst into one alert plus a count.
+                AlertThrottle.Verdict verdict = throttle.admit(rule.pattern(), System.currentTimeMillis());
+                if (verdict != AlertThrottle.Verdict.FIRE) {
+                    // Counted per matching rule, which is the same unit as the alert count, so the
+                    // two figures cannot disagree.
+                    suppressedMatches++;
+                    continue;
+                }
+                long folded = throttle.takeFolded(rule.pattern());
+                String label = folded > 0 ? rule.pattern() + " (+" + folded + " more)" : rule.pattern();
                 service.alerts().record(com.logvex.addon.chatlog.core.AlertLog.Kind.KEYWORD,
-                    rule.pattern(), entry.sender().isBlank() ? entry.content() : entry.sender() + ": " + entry.content());
+                    label, entry.sender().isBlank() ? entry.content() : entry.sender() + ": " + entry.content());
                 com.logvex.addon.notify.mc.NotificationService.get().notify(
                     com.logvex.addon.notify.core.NotificationType.IMPORTANT_CHAT,
                     com.logvex.addon.notify.core.NotificationPriority.HIGH,
-                    "keyword-alerts", rule.pattern(),
+                    "keyword-alerts", label,
                     entry.sender().isBlank() ? entry.content() : entry.sender() + ": " + entry.content());
                 if (rule.sound()) playAlert();
                 if (rule.webhook()) service.notifyKeyword(targetUrl(), targetUsername(), rule, entry);
                 if (chatFeedback.get()) {
-                    warning("Keyword '%s' matched in %s", rule.pattern(), entry.sender().isBlank() ? "chat" : entry.sender());
+                    warning("Keyword '%s' matched in %s", label, entry.sender().isBlank() ? "chat" : entry.sender());
                 }
             }
         }
@@ -160,6 +204,19 @@ public class KeywordAlertsModule extends AddonModule {
     private void playAlert() {
         if (mc.player == null) return;
         mc.player.playSound(SoundEvents.BLOCK_NOTE_BLOCK_PLING.value(), 1.0f, 1.5f);
+    }
+
+    private AlertThrottle newThrottle() {
+        return new AlertThrottle(cooldownSeconds.get() * 1_000L, burstLimit.get(), 10_000L);
+    }
+
+    private void rebuildThrottle() {
+        throttle = newThrottle();
+    }
+
+    /** How many matches were folded into a later alert instead of printing their own line. */
+    public long suppressedMatches() {
+        return suppressedMatches;
     }
 
     /** Current rules, parsed from the settings. */

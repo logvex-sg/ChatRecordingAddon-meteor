@@ -301,4 +301,53 @@ class CommandPermissionGateTest {
         assertFalse(permissions.permits("remember",
             player("Stranger", STRANGER_UUID)).allowed());
     }
+
+    // ------------------------------------------------------------------ the summary command
+
+    @Test
+    @DisplayName("the local player can send a summary, and it is tagged as one")
+    void localPlayerCanSendSummary() {
+        AssistantRuntime runtime = runtime(PermissionSet.permissive());
+        AssistantBrain.Decision decision = runtime.handle(
+            SenderIdentity.local("Owner", null), "!summary weekly roundup", 1_000L, null, null);
+
+        assertNotNull(decision);
+        assertTrue(decision.hasReport(), "the summary travels on the report channel");
+        assertTrue(decision.report().startsWith("summary|"),
+            "the kind must be distinct so the module sends a card, not a report: "
+                + decision.report());
+        assertTrue(decision.report().contains("weekly roundup"), decision.report());
+    }
+
+    @Test
+    @DisplayName("the summary is declared local-only, so a closed policy protects it")
+    void summaryIsDeclaredLocalOnly() {
+        // The catalog level is what help shows and what a CLOSED default policy falls back to. It
+        // is not the only defence: with permissions switched off the brain lets anyone through, so
+        // the module also refuses a non-local reporter at the point of sending. This pins the
+        // declaration; the module gate is covered where it lives, because it needs a live client.
+        assertEquals(PermissionLevel.LOCAL_ONLY,
+            com.logvex.addon.assistant.core.CommandCatalog.level("summary"));
+
+        AssistantRuntime runtime = runtime(PermissionSet.of(true, List.of(), List.of(),
+            PermissionSet.DefaultPolicy.CLOSED, true));
+        AssistantBrain.Decision decision = runtime.handle(
+            player("Stranger", STRANGER_UUID), "!summary hello", 1_000L, null, null);
+
+        assertNotNull(decision);
+        assertTrue(decision.denied(), "a closed policy must refuse a stranger");
+        assertFalse(decision.hasReport(), "nothing may be queued for a refused caller");
+    }
+
+    @Test
+    @DisplayName("a summary with no note is still a valid request")
+    void summaryWithoutNoteIsValid() {
+        AssistantRuntime runtime = runtime(PermissionSet.permissive());
+        AssistantBrain.Decision decision = runtime.handle(
+            SenderIdentity.local("Owner", null), "!summary", 1_000L, null, null);
+
+        assertNotNull(decision);
+        assertTrue(decision.hasReport());
+        assertEquals("summary|Owner|", decision.report());
+    }
 }

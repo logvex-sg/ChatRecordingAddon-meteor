@@ -12,8 +12,8 @@ and is detected at runtime rather than compiled against.
 sound and optional webhook), `player-activity` (per-player activity tracking) and
 `session-stats` (session statistics), with matching HUD elements.
 
-**Chat intelligence** — `chat-filter` (ordered hide/allow rules applied in the chat mixin, so a
-filtered message never reaches chat, the recorder or the log), `chat-digest` (on-demand and timed
+**Chat intelligence** — `chat-filter` (ordered hide/allow rules applied on the incoming message
+event, so a filtered message never reaches chat, the recorder or the log), `chat-digest` (on-demand and timed
 summaries of chat activity), `session-timeline` (a bounded timeline of joins, leaves, deaths and
 keyword hits), `webhook-monitor` (delivery health, queue depth and a bounded delivery history),
 `webhook-relay` (one shared webhook and a consistent Discord **embed** look, with cards for keyword
@@ -21,8 +21,9 @@ hits, reports, digests, session ends, renames, deaths, announcements, mentions, 
 player profiles),
 `player-notes` (your own notes about players, shown next to their observed activity),
 `player-identity` (observed account name changes and a watchlist), `mention-alerts` (alerts when
-your name or a watched name is used in chat) and `session-history` (a
-browsable history of past recording sessions).
+your name or a watched name is used in chat), `chat-timestamps` (a clock time in front of every
+chat line) and `repeat-collapse` (repeated identical lines folded into one), plus `session-history`
+(a browsable history of past recording sessions).
 
 **Schematic Dropper** — imports a material report or a schematic, acquires missing materials in
 Creative mode, drops them one *server-confirmed* transfer at a time, and can place a schematic
@@ -42,7 +43,7 @@ server-sent events, the bot controls, the task queue, the module switches, chat 
 statistics and storage usage. It is off by default, binds to loopback, and needs an access token.
 See [Companion (web app)](#companion-web-app).
 
-**GUI** — `.log gui` opens the addon window: a Meteor-style interface with a
+**GUI** — `!log gui` opens the addon window: a Meteor-style interface with a
 navigation rail on the left (Modules, HUD, Theme, About) and a card list on the right. Every module
 and HUD element has an on/off switch and a Settings page, the list is searchable, and an enabled
 entry is marked with an accent bar. Rounded panels, eased hover and toggle animations and a soft
@@ -51,8 +52,14 @@ presets (Neon, Matrix, Amber, Crimson, Cyan) with a live swatch preview on the A
 Module settings are grouped and searchable, and every value is persisted to
 `<gamedir>/logclient/config.json`.
 
-**Commands** — a `.log` (alias `.la`) command tree exposes status, the module list, session
+**Commands** — a `!log` (alias `!la`) command tree exposes status, the module list, session
 statistics, notifications, the automation task queue, waypoints and schematic control from chat.
+
+Log Client commands use the `!` prefix by default; `!log gui`, `!ai status` and `!bot start` all
+work as typed. The prefix is configurable on the **Theme** page and is honoured for Log Client's own
+commands only, so a line is intercepted only when its first word is one of them. Plain chat, other
+mods' commands and server commands such as `/spawn` are never touched. Meteor's own commands keep
+using Meteor's prefix (a dot unless you change it in Meteor), so the two schemes coexist.
 
 ## Building
 
@@ -60,8 +67,12 @@ statistics, notifications, the automation task queue, waypoints and schematic co
 ./gradlew clean test build
 ```
 
-The jar is written to `build/libs/log-client-17.2.0.jar`. Drop it into `.minecraft/mods` alongside
-Meteor Client. Baritone is optional and only affects bot navigation.
+The jar is written to `build/libs/log-client-<version>.jar`, where the version comes from
+`mod_version` in `gradle.properties`. Drop it into `.minecraft/mods` alongside Meteor Client.
+Baritone is optional and only affects bot navigation.
+
+The version is read at runtime from the jar's own `fabric.mod.json`, so there is nothing else to
+update when bumping `mod_version` — the GUI rail, the updater and the companion API all follow it.
 
 ### Java 21 is required for the Gradle daemon
 
@@ -174,7 +185,7 @@ and on headless setups where the OS file dialog (`tinyfd`) returns nothing — w
 make loading a file look broken. The browser starts in `<gamedir>/schematicdropper`, pages
 a directory of any size, filters to the relevant extensions (including `.nbt` and `.dat`, which
 schematic exports often use), and has **Up** and **Data Folder** buttons. The typed-path buttons
-(**Import Material Path**, **Load Path**) and the `.log import` / `.log schematic load` commands
+(**Import Material Path**, **Load Path**) and the `!log import` / `!log schematic load` commands
 remain for scripted use.
 
 A schematic is identified by its **content**, not only its extension. The extension is a hint; when
@@ -303,7 +314,7 @@ actual position to be within the arrival tolerance.
 ### Profiles
 
 A **profile** is a named snapshot of the bot's settings. **Profiles...** on the bot dashboard (or
-the `.bot profile` command) lists the built-in profiles, applies one, captures the current settings
+the `!bot profile` command) lists the built-in profiles, applies one, captures the current settings
 under a new name, and deletes user profiles. Built-in profiles are marked and cannot be overwritten
 or deleted, so a known-good starting point is always available. Applying a profile changes only the
 settings the profile actually stores; everything else is left as it is, so a profile saved before a
@@ -313,42 +324,68 @@ resetting your configuration.
 
 ### Emergency stop
 
-The dashboard's **Emergency Stop** button (or `.bot emergency`) is the immediate, no-questions stop:
+The dashboard's **Emergency Stop** button (or `!bot emergency`) is the immediate, no-questions stop:
 it cancels the active task, clears the queue, cancels goals and scheduled tasks, stops navigation and
 cancels any in-flight block interaction, then returns to idle. It is deliberately more forceful than
 **Stop**, which keeps the queue so work can be resumed.
 
-### `.bot` command
+### `!bot` command
 
-The `.bot` command (alias `.b`) is the short front end for the bot, built on the same methods the
+The `!bot` command (alias `!b`) is the short front end for the bot, built on the same methods the
 dashboard and HUD use, so a command never diverges from the GUI:
 
 | Command | Effect |
 | --- | --- |
-| `.bot [status]` | Automation state, queue length, navigation backend and current destination. |
-| `.bot start\|pause\|resume\|stop` | Controls the automation, validating the current state first. |
-| `.bot emergency` | The immediate stop described above. |
-| `.bot goto <x y z>` or `.bot goto <waypoint>` | Queues a navigation task to a coordinate or a saved waypoint. |
-| `.bot tasks [clear]` | Lists the queue, or empties it. |
-| `.bot waypoint add\|del\|list <name>` | Manages named waypoints. |
-| `.bot profile [list\|apply\|save\|delete] <name>` | Manages bot profiles. |
+| `!bot [status]` | Automation state, queue length, navigation backend and current destination. |
+| `!bot start\|pause\|resume\|stop` | Controls the automation, validating the current state first. |
+| `!bot emergency` | The immediate stop described above. |
+| `!bot goto <x y z>` or `!bot goto <waypoint>` | Queues a navigation task to a coordinate or a saved waypoint. |
+| `!bot tasks [clear]` | Lists the queue, or empties it. |
+| `!bot waypoint add\|del\|list <name>` | Manages named waypoints. |
+| `!bot profile [list\|apply\|save\|delete] <name>` | Manages bot profiles. |
 
 
 ## Assistant
 
 `assistant` is a chat bot that lives inside the addon. It is off by default; enable it like any
-other module. Nothing is said or done unless a rule you wrote asks for it, so an empty
-configuration is silent.
+other module. Once enabled it answers from the preconfigured trigger table below, so it works
+without any setup; clearing the table makes it silent again.
+
+### What the assistant can hear
+
+Triggers and the local AI only ever see chat that was classified as a player talking. Minecraft
+attaches a signed-chat indicator to properly signed player chat, and an earlier version used that
+indicator as the only proof that a player had spoken. That broke on every server that rewrites
+chat: an offline-mode server, a proxy such as Velocity, or any chat plugin sends the same line
+without the indicator. Those lines were classified as system messages, and with system watching
+off — the default — every player message was silently dropped. The assistant then worked on some
+servers and not others, which is exactly what "it only works half the time" looked like.
+
+The classifier now recovers the sender from the text as well: `<Steve> hello`, `Steve: hello` and
+`[MVP+] Steve: hello` all classify as public chat from `Steve`. The recovery is narrow on purpose.
+A name must be 3 to 16 characters and contain a letter, so a clock reading like `12:34` stays a
+system line, and a known tag such as `Server:`, `Note:` or `Announcement:` is never mistaken for a
+player. Join, leave, death and advancement lines keep their own types and are unaffected.
 
 ### Keyword triggers
 
 A trigger watches incoming chat for a keyword or phrase and answers it. Triggers are stored as a
 single line each, so the whole feature set is editable from the settings list, the
-`.ai triggers` command or the Assistant Manager GUI:
+`!ai triggers` command or the Assistant Manager GUI:
 
 ```
 pattern;sender=;reply=;mode=chat|notify|silent;cooldown=1000;limit=0;sound=false;remember=false;enabled=true;aliases=;pool=
 ```
+
+A fresh install ships **19 preconfigured rules**, all enabled, all at the 1000 ms cooldown, and all
+matched on whole words. Greetings, thanks, farewells, `gg`/`wp`, small talk, and the live-figure
+questions (`where am i`, `what is my ping`, `what is the tps`, `what time is it`) answer out of the
+box — no setup step. The table is deliberately free of nested patterns: no rule's pattern is a
+substring of another's, so first-match-wins never has to break a tie. `!ai triggers restore` puts
+the same table back.
+
+A trigger only ever fires on chat. A line that starts with the command prefix is a command, so a
+bare `hello` rule answers chat but never swallows `!hello`.
 
 | Field | Meaning |
 | --- | --- |
@@ -379,7 +416,10 @@ its own recent replies, is ignored.
 
 A reply can contain placeholders, which are replaced with live values just before the message is
 sent. Names are case-insensitive and may be written with spaces, so `{tps}`, `{TPS}` and `{ Tps }`
-are the same placeholder. Run `.ai placeholders` in game to see every name with its current value.
+are the same placeholder. Run `!ai placeholders` in game for an index of the sections, then
+`!ai placeholders <section>` (for example `!ai placeholders server`) to list one section with its
+current values. The reference is split because listing every placeholder at once pushed the chat
+box off the screen.
 
 | Placeholder | Value |
 | --- | --- |
@@ -400,7 +440,9 @@ are the same placeholder. Run `.ai placeholders` in game to see every name with 
 | `{x}` / `{y}` / `{z}` / `{coords}` | Position, one axis at a time or as `x, y, z`. |
 | `{speed}` | Measured horizontal walking speed in blocks per second. |
 | `{fps}` | The client's frame rate. |
-| `{memory}` | How many facts are stored. |
+| `{weather}` | The current weather, e.g. `clear` or `rain`. |
+| `{name}` / `{prefix}` | The assistant's own name and command prefix, so a reply can describe itself. |
+| `{memory}` / `{factcount}` | How many facts are stored. |
 | `{fact:key}` / `{count:name}` | A stored fact, or a stored counter. |
 
 Two rules keep this honest:
@@ -445,6 +487,44 @@ so the three can never disagree.
 
 How the assistant answers these is controlled by `memory-reply-mode` (`chat`, `notify` or
 `silent`). The default, `notify`, keeps answers out of public chat.
+
+### Configuring every prefix command
+
+Status commands have their own table. Every *other* prefix command — `!hello`, `!gg`, `!who`,
+`!facts`, the memory commands — is configured in the **command-table** setting, one line per
+command, in the same shape:
+
+```
+name = on|off | local|chat|silent | optional template
+```
+
+The status table uses the same shape, with one difference worth knowing: a status template is free
+text and **may contain `|`** — the shipped `status` line joins three figures that way. Only the two
+leading fields are read as fields, so a pipe inside the wording is kept. To rename a command, append
+`|alias=newword`; a bare trailing word is still accepted from older configurations, but only when it
+is a single word.
+
+Both tables accept `{prefix}` and `{name}`, which expand to the configured command prefix and the
+assistant's own name.
+
+- `on`/`off` switches the command off entirely.
+- `local` shows the answer in your own chat box, `chat` sends it to the server, `silent` answers
+  nothing visible.
+- The template is optional. Leave it blank and the command keeps its built-in wording; write one
+  and it replaces that wording, expanded with the same placeholders the rest of the assistant uses
+  (`{player}`, `{server}`, `{ping}`, `{tps}`, and so on).
+
+```
+hello = on | chat | o/
+gg = on | chat | gf
+who = on | local | {playercount} online right now
+facts = off | local
+```
+
+Read-only commands default to `local`, because most people asking their own client a question do
+not mean to broadcast it. `!hello` and `!gg` default to `chat`, since their whole purpose is to be
+seen. A command you never mention stays at its shipped default, so a saved table from an older
+version keeps working when new commands are added.
 
 ### Live status commands
 
@@ -555,6 +635,10 @@ with placeholders in braces.
 A trailing `;` section carries extras: `; what it does`, `; off` to disable it, and
 `; aliases=!hub,!l` to give it more spellings.
 
+The shortcut is matched on the bare word, not the whole spelling, so changing the command prefix
+from `!` to `#` keeps every macro you already wrote reachable. Type the new prefix and the same
+shortcuts work; nothing has to be rewritten.
+
 When you type a shortcut the line is **cancelled** and the expanded command is sent instead, so the
 shortcut never reaches the server as chat. A macro that is misconfigured — no leading `/`, an
 unknown placeholder, a missing required argument, or too many arguments — refuses to send and
@@ -590,7 +674,7 @@ With no role set the card is posted without a mention — deliberately, rather t
 
 Every command has a permission level. The level is checked **before** the command runs, so a refused
 `!remember` stores nothing, a refused `!forget` deletes nothing, and a refused command never reaches
-the local AI. Refusals are counted separately in `.ai status` so a user can see them.
+the local AI. Refusals are counted separately in `!ai status` so a user can see them.
 
 Permissions are **off** by default, which leaves every command exactly as it was before this feature
 existed. Turning them on is a deliberate choice, because it changes who can talk to the assistant.
@@ -635,19 +719,45 @@ The local player is always identified as themselves and always passes `local-onl
 
 #### Editing the whitelist
 
-- `.ai perms` lists every command with its level and whitelist.
-- `.ai perms gui` opens the permissions screen: one row per command, a button that cycles the level,
+- `!ai perms` lists every command with its level and whitelist.
+- `!ai perms gui` opens the permissions screen: one row per command, a button that cycles the level,
   and a per-command whitelist editor.
-- `.ai perms set <command> <level>` sets one level.
-- `.ai perms allow <command> <user>` / `.ai perms deny <command> <user>` edit one whitelist.
-- `.ai perms admin add <user>` / `.ai perms admin remove <user>` edit the administrator list.
-- `.ai perms reset <command>` returns a command to its default level.
+- `!ai perms set <command> <level>` sets one level.
+- `!ai perms allow <command> <user>` / `!ai perms deny <command> <user>` edit one whitelist.
+- `!ai perms admin add <user>` / `!ai perms admin remove <user>` edit the administrator list.
+- `!ai perms reset <command>` returns a command to its default level.
 
 Rules are stored in the `command-permissions` setting as
 `command;level=<level>;whitelist=<bool>;users=<entries>;enabled=<bool>`, so they survive a restart
 and can be edited by hand. A rule written by an older build, which carried only `whitelist=true`, is
 migrated to the matching level. A rule whose level cannot be read resolves to `local-only` rather
 than to the open default, so a typo in the configuration closes a command instead of opening it.
+
+### How a free-form question is answered
+
+Anything that is not a trigger and not a command falls through to the local AI, which runs entirely
+on your machine: no network call, no model file. It decides what the message is about, then picks a
+reply from a pool written for that intent.
+
+The decision is a two-stage pipeline. A small ordered table of keyword rules runs first, and a rule
+fires only when *every* one of its tokens is present. That is what keeps the answers honest:
+`is the server lagging` contains `server`, but the tick-rate rule runs before the server-info rule,
+so it gets the tick rate rather than the server's name. The table is matched on raw tokens, including
+the stopwords a bag-of-words model discards, because those words are exactly what separates
+`how are you` from `what are you`.
+
+Anything the table does not claim goes to a naive-Bayes classifier over 8192 hashed buckets. The
+classifier is a fallback, not the primary path. Measured on 63 ordinary chat lines, the classifier
+alone picked the correct intent for 49 of them; on the other 14 it answered wrongly or not at all —
+`is it night` came back as a farewell, `what are you` as the prefix question, `are you a bot` as an
+insult. With the table in front, all 63 get an on-topic reply. A message neither stage understands
+gets no reply at all rather than a guess, and the confidence threshold decides that cutoff.
+
+The bucket count is not arbitrary. A hash table is finite, so an unrelated word can land in a slot
+another intent already counted. At 2048 buckets `night` shared a slot with a game-help feature that
+does not exist, and that intent answered `is it night` with high confidence while naming nothing in
+the sentence. Widening the table to 8192 keeps a word and its bigrams in distinct slots; the cost is
+a constant 32 x 8192 doubles, about 2 MB, allocated once.
 
 ### Settings
 
@@ -675,7 +785,7 @@ than to the open default, so a typo in the configuration closes a command instea
 
 ### Assistant Manager
 
-`.ai gui` (or the module's "Assistant Manager..." button) opens a window with three tabs:
+`!ai gui` (or the module's "Assistant Manager..." button) opens a window with three tabs:
 
 - **Triggers** — add, edit, enable/disable and remove rules; restore the defaults.
 - **Memory** — add, filter and forget facts, see recent exchanges, clear history or all memory.
@@ -698,29 +808,29 @@ greeting rather than sending nothing.
 The `assistant` HUD element shows the number of triggers, remembered facts and handled messages.
 It shows a single "Disabled" line when the module is off, so it never displays stale data.
 
-### `.ai` command
+### `!ai` command
 
 | Command | Effect |
 | --- | --- |
-| `.ai [status]` | Assistant state and memory summary. |
-| `.ai gui` | Opens the Assistant Manager. |
-| `.ai triggers [list]` | Lists the loaded triggers. |
-| `.ai triggers add <pattern> <reply>` | Adds a trigger. |
-| `.ai triggers remove <n>` | Removes trigger number `n`. |
-| `.ai triggers restore` | Restores the default triggers. |
-| `.ai facts` | Lists stored facts. |
-| `.ai remember <key> <value>` | Stores a fact. |
-| `.ai forget <key>` | Removes a fact. |
-| `.ai test <message>` | Shows what the assistant would do with a message. |
-| `.ai history` | Recent remembered exchanges. |
-| `.ai placeholders` | Every placeholder, with its current value. |
-| `.ai perms` | Lists every command with its permission level and whitelist. |
-| `.ai perms gui` | Opens the permissions screen. |
-| `.ai perms set <command> <level>` | Sets one command's level. |
-| `.ai perms allow\|deny <command> <user>` | Edits one command's whitelist. |
-| `.ai perms admin add\|remove <user>` | Edits the administrator list. |
-| `.ai perms reset <command>` | Returns a command to its default level. |
-| `.ai save` / `.ai clear` | Save memory now / clear all memory. |
+| `!ai [status]` | Assistant state and memory summary. |
+| `!ai gui` | Opens the Assistant Manager. |
+| `!ai triggers [list]` | Lists the loaded triggers. |
+| `!ai triggers add <pattern> <reply>` | Adds a trigger. |
+| `!ai triggers remove <n>` | Removes trigger number `n`. |
+| `!ai triggers restore` | Restores the default triggers. |
+| `!ai facts` | Lists stored facts. |
+| `!ai remember <key> <value>` | Stores a fact. |
+| `!ai forget <key>` | Removes a fact. |
+| `!ai test <message>` | Shows what the assistant would do with a message. |
+| `!ai history` | Recent remembered exchanges. |
+| `!ai placeholders [section]` | With no section, an index of the placeholder sections and how many each holds. With a section (`player`, `time`, `server`, `world`, `position`, `client`), that section only, each name with its current value. |
+| `!ai perms` | Lists every command with its permission level and whitelist. |
+| `!ai perms gui` | Opens the permissions screen. |
+| `!ai perms set <command> <level>` | Sets one command's level. |
+| `!ai perms allow\|deny <command> <user>` | Edits one command's whitelist. |
+| `!ai perms admin add\|remove <user>` | Edits the administrator list. |
+| `!ai perms reset <command>` | Returns a command to its default level. |
+| `!ai save` / `!ai clear` | Save memory now / clear all memory. |
 
 ### Storage
 
@@ -739,17 +849,28 @@ and releases any input it pressed when it is disabled.
 
 | Module | What it does |
 | --- | --- |
-| `auto-eat` | Eats from the hotbar when hunger drops to a threshold, preferring the held food with the highest nutrition. Only selects a slot and uses the item; it never creates food. |
-| `auto-tool` | Swaps to the best hotbar tool for the block being mined (suitability, then speed), optionally swapping back afterwards. It only changes the selected slot. |
-| `auto-replenish` | Keeps the items you list stocked on the hotbar by moving a stack into place with a normal slot swap. It never invents items and never takes a stack another requested slot needs. |
+| `log-eat` | Eats from the hotbar when hunger drops to a threshold, preferring the held food with the highest nutrition. Only selects a slot and uses the item; it never creates food. |
+| `log-tool` | Swaps to the best hotbar tool for the block being mined (suitability, then speed), optionally swapping back afterwards. It only changes the selected slot. |
+| `log-replenish` | Keeps the items you list stocked on the hotbar by moving a stack into place with a normal slot swap. It never invents items and never takes a stack another requested slot needs. |
 | `auto-sprint` | Holds sprint on while you move forward, optionally only above a food threshold. |
-| `safe-walk` | Releases the forward key at the edge of a drop, exactly as a cautious player would. It only ever removes movement input. |
-| `anti-afk` | Performs small, genuine client actions on a randomised schedule (look, jump, sneak, swing, step, swap hand) so you are not kicked for idling. |
+| `log-safe-walk` | Releases the forward key at the edge of a drop, exactly as a cautious player would. It only ever removes movement input. |
+| `log-anti-afk` | Performs small, genuine client actions on a randomised schedule (look, jump, sneak, swing, step, swap hand) so you are not kicked for idling. |
 | `armor-guard` | Warns when a piece of armour is close to breaking. A missing piece is reported as unavailable, never as "0 % durability". |
-| `auto-log` | Disconnects when health, food, inventory space, a hostile mob or another player crosses a rule you enabled. Off by default; every rule is opt-in, and there is a grace period after joining. |
-| `auto-reconnect` | Reconnects to the last **multiplayer** server after a disconnect, using vanilla's own connection screen, with a bounded backoff and a retry cap. |
+| `log-panic` | Disconnects when health, food, inventory space, a hostile mob or another player crosses a rule you enabled. Off by default; every rule is opt-in, and there is a grace period after joining. |
+| `log-reconnect` | Reconnects to the last **multiplayer** server after a disconnect, using vanilla's own connection screen, with a bounded backoff and a retry cap. |
 | `server-monitor` | Prints a periodic status line (duration, game mode, latency, free slots) and a session summary on leave, using only what the client can observe. |
+| `auto-login` | Answers a server's `/login` prompt with the password stored for that server. Only sends in reply to a recognised prompt, never on join, so a password cannot be sent as public chat on a server without an auth plugin. Passwords live in a separate owner-only file, never in the Meteor config. |
+| `watchlist-alerts` | Raises a notification when a player on the chat log's watchlist joins or leaves. Only real transitions alert, so a server that announces a join twice does not produce two notices. |
+| `death-tracker` | Remembers where you died. `!deaths` lists them newest first, `!back` shows the most recent in your current dimension. Coordinates from another dimension are reported, never offered as a return target. |
 | `auto-creative` | Imports a material list (or takes typed entries), acquires the items in Creative mode and can hand the ordered list to the Schematic Dropper queue. See below. |
+
+The `log-` prefix on several modules is deliberate, not decoration. Meteor's registry is keyed by
+class but de-duplicated by name, so an addon module that reuses a Meteor name **deletes Meteor's
+module from its own registry**. Meteor's mixins then look that module up by class, get `null`, and
+crash: while this addon called its reconnect module `auto-reconnect`, Meteor's
+`DisconnectedScreenMixin` read `Modules.get().get(AutoReconnect.class).time` and threw on every
+disconnect. `ModuleNameTest` fails the build if any name here clashes with Meteor's or with another
+module of ours, and `LogClient` logs an error at startup if a duplicate name reaches the registry.
 
 ### Automatic Creative acquisition
 
@@ -765,7 +886,7 @@ is retried a bounded number of times before the item is reported failed. In Surv
 creative permission, the module says so and does nothing.
 
 Open the acquisition manager from the module widget (**Open Acquisition Manager**) or run
-`.log acquire`. It shows each material with its icon, required/held/still-needed quantities, status
+`!log acquire`. It shows each material with its icon, required/held/still-needed quantities, status
 and the overall progress, and provides Start, Pause, Resume, Stop, Retry Failed, Restart Current and
 the two import buttons.
 
@@ -801,9 +922,11 @@ pluralisation.
 
 | Module | What it does |
 | --- | --- |
-| `chat-filter` | Ordered hide/allow rules. The first matching rule wins, so a specific `ALLOW` can punch a hole in a broad `HIDE`. A matched message is cancelled in the chat mixin, so it is removed before it reaches the chat HUD, the recorder or the log file. |
-| `chat-digest` | Summarises the last N messages: totals per message type, unique players, joins/leaves/deaths and the most active players. Run it on demand (`.log digest`) or on a timer. Optionally forwards each digest to the webhook. |
-| `session-timeline` | A bounded timeline of milestones the client can actually observe: session start/end, joins, leaves, deaths and keyword hits. Browsable in a GUI (`.log timeline`). |
+| `chat-filter` | Ordered hide/allow rules. The first matching rule wins, so a specific `ALLOW` can punch a hole in a broad `HIDE`. A matched message is cancelled on the incoming message event at the highest priority, so it is removed before it reaches the chat HUD, the recorder or the log file. |
+| `chat-timestamps` | Puts a clock time in front of every incoming chat line (`HH:mm`, `HH:mm:ss` or 12-hour), optionally dimmed. Only the displayed text changes: the log keeps its own timestamp field, so nothing is stored twice. |
+| `repeat-collapse` | Folds a run of identical consecutive chat lines into the first one plus a "(N more of the same line)" note. The window and whether your own messages are exempt are configurable. Every line is still written to the log, because the log is evidence. |
+| `chat-digest` | Summarises the last N messages: totals per message type, unique players, joins/leaves/deaths and the most active players. Run it on demand (`!log digest`) or on a timer. Optionally forwards each digest to the webhook. |
+| `session-timeline` | A bounded timeline of milestones the client can actually observe: session start/end, joins, leaves, deaths and keyword hits. Browsable in a GUI (`!log timeline`). |
 | `session-stats` | Live session counters, and a short **session summary printed when you leave a world** (messages, unique players, duration, rate, joins/leaves, deaths, keyword alerts and the most active players). |
 | `webhook-monitor` | Watches the shared webhook queue and reports its health. Keeps a bounded delivery history, warns in chat when a delivery fails and can note a recovery. The URL is never stored or shown — only the host. |
 | `webhook-relay` | Owns the single webhook target and the embed appearance every other feature sends through, and raises its own cards for session end, renames, watchlist presence, deaths and announcements. Can send a **leaderboard** card and a per-player **profile** card on demand. See **Webhook relay and embeds**. |
@@ -839,7 +962,7 @@ completed sessions and whether the player is believed to be online right now.
 - The **Recent Players** HUD lists the players seen most recently, with a time-ago and an online
   dot; the **Activity** HUD can add each player's online time; the **Player Activity** screen shows
   an *Online* column.
-- `.log playtime [player]` prints the table in chat. Players on the activity exclude list are not
+- `!log playtime [player]` prints the table in chat. Players on the activity exclude list are not
   tracked.
 
 ### Player identity and renames
@@ -850,8 +973,8 @@ announced under a **different name** in the server player list, so that is exact
 
 - Two different accounts that happen to share a name are tracked separately and never merged.
 - A first observation is not a rename; the previous name is retained and shown as `was <name>`.
-- `.log identities [renamed|watch <player>|unwatch <player>|watchlist|clear|<filter>]` browses the
-  index in chat; the **Player Identity** screen (`.log identities`, or the module's button) shows a
+- `!log identities [renamed|watch <player>|unwatch <player>|watchlist|clear|<filter>]` browses the
+  index in chat; the **Player Identity** screen (`!log identities`, or the module's button) shows a
   table with the current name, previous name, change count, last-seen time and a Watch toggle.
 - The **Player Identity** HUD lists the most recent renames as `old -> new`, with a time-ago; a
   watched player's line is highlighted. With nothing observed it says `No renames observed` rather
@@ -868,7 +991,7 @@ announced under a **different name** in the server player list, so that is exact
 Every session that ends is folded into a compact record: server, start and end time, and the
 message, player, join, leave, death and keyword-alert counts that were actually observed.
 
-- `.log sessions [list|clear]` prints the totals and the most recent sessions in chat.
+- `!log sessions [list|clear]` prints the totals and the most recent sessions in chat.
 - The **Session History** screen (the module's button) shows a table with a **View Log** button per
   session that opens the log viewer filtered to that session's id.
 - The history is bounded; the cap is the module's `history-size` setting and takes effect
@@ -880,7 +1003,7 @@ Chat output is deliberately terse, so a message that scrolled past is easy to mi
 hit, webhook delivery failure and internal error is also written to a bounded alert log.
 
 - The dashboard **Alerts** tab shows counts by kind and the most recent entries.
-- The **Alert History** screen (`.log alerts`, or the button on that tab) is searchable by kind,
+- The **Alert History** screen (`!log alerts`, or the button on that tab) is searchable by kind,
   title or detail, and can be cleared.
 - The log never grows without bound and holds no more than the configured capacity.
 
@@ -897,6 +1020,101 @@ shared webhook, and it is recorded in the alert log like any other noteworthy ev
 - **include-own-name** — also watch your own player name (on by default).
 - **others-only** — ignore lines you sent yourself (on by default).
 - **sound**, **notification**, **chat-feedback**, **webhook** — the output channels.
+- **cooldown-seconds** — shortest gap between two alerts for the same name (2 by default). Mentions
+  inside the gap are counted, not printed.
+- **burst-limit** — most alerts allowed in ten seconds across every name (6 by default).
+
+A watched name that appears in every message used to produce a chat line and a sound per message.
+Alerts are now throttled per name and capped per burst: one alert carries the count of what it
+absorbed, as `Steve (+4 more)`. Set **cooldown-seconds** to `0` to turn the per-name throttle off.
+`keyword-alerts` has the same two settings, because a rule that matches a common word floods the same
+way.
+
+### Summary
+
+`!summary [note]` posts a chat summary to the webhook as a formatted embed: totals, joins, leaves,
+deaths, the most active players and the keyword highlights for the recent window, with your note and
+name attached. It is the shareable counterpart to `!log digest`, which only prints to your own chat.
+
+It is **local-only** for the same reason as `!modcall`: the card describes your archive, and a
+stranger in public chat could otherwise fill your Discord channel. Nothing is sent unless a webhook
+URL is configured, and the module reports a failure rather than claiming the card went out.
+
+### Modcall
+
+`!modcall <reason>` sends a private message to a moderator you configure, so a request reaches them
+directly instead of being lost in public chat. It sends two messages:
+
+```
+/msg <modcall-target> Report has been submitted: <reason>
+/msg <you> !report <reason>
+```
+
+The first goes to the moderator; the second is a receipt to the reporter, so they can see what went
+out. Both wordings are settings (`modcall-message`, `modcall-receipt`); leave the receipt blank to
+send only the moderator message.
+
+`!modcall` is its own module (**modcall**), so it can be switched on and off on its own. Its
+settings are:
+
+- **target** — the moderator's exact in-game name. Nothing is sent until this is set; a call with no
+  target says so instead of failing silently.
+- **message**, **receipt** — the two wordings. Tokens: `{reason}`, `{reporter}`, `{moderator}`,
+  `{prefix}`.
+- **allow-remote** — off by default, so only you can trigger a call.
+- **feedback** — confirm locally when a call went out.
+- **cooldown-seconds** — per-player gap, 60 s by default, so one person cannot fill an inbox.
+
+This command sends from your own account, so it is **local-only**: only you can trigger it. That
+check does not depend on the `permissions` setting, which is off by default — otherwise a stranger
+could type `!modcall` in public chat and have their words delivered to a moderator under your name.
+
+The reason is text from chat pasted into a server command, so it is sanitised before sending: every
+control character becomes a space (a newline would otherwise send a second command), runs of
+whitespace are collapsed, and the reason is capped at 180 characters. The moderator's exact name is
+validated too, so a typo fails loudly instead of messaging a stranger.
+
+### FAQ entries: `!faq`
+
+`!faq` keeps up to **50** short key/answer notes in the assistant's memory and reads them back by
+name or by number. An FAQ entry *is* a stored fact, so `!faq add spawn = the blue bed` and the
+`{fact:spawn}` placeholder read the same value — there is no second store that can drift.
+
+```
+!faq                      show the subcommands
+!faq count                how many of the 50 slots are used
+!faq list [text]          list entries, numbered, optionally filtered by key or answer
+!faq 30                   read entry 30
+!faq view 30              the same, spelled out
+!faq view spawn           read the entry named "spawn"
+!faq add key = answer     create or update an entry
+!faq remove 30            delete entry 30
+!faq remove key           delete the entry named "key"
+```
+
+Every listing is numbered, and the number is the entry's position in the store, not its position in
+that one listing — so entry 30 is entry 30 whether you saw it in a full list, a filtered list, or
+typed it from memory. A listing shows twelve rows by default and then says how many it held back.
+
+`count` answers the "how many are there" question directly:
+
+```
+FAQ: Used 32 of 50, Spare 18, Read !faq <number>
+```
+
+The store stops at 50 entries. A new entry past the cap is refused with a message saying so; updating
+an existing key is always allowed, so a typo in entry 12 stays fixable even when the FAQ is full.
+
+**Numbers shift after a removal.** Numbering is positional, so deleting entry 30 moves the old 31 into
+slot 30. Numbers are a shortcut for reading, not stable identifiers — use the key when you need
+something that does not move.
+
+The FAQ is its own module (**faq**), so it answers even with the assistant switched off. Settings:
+
+- **chat-output** — off by default, so answers stay in your own notifications instead of filling
+  public chat. Turn it on to answer out loud.
+- **max-listed** — how many rows one listing shows before it asks you to narrow the search.
+- **allow-remote-write** — off by default, so a stranger in public chat cannot edit your memory.
 
 ### Chat filter rules
 
@@ -919,17 +1137,17 @@ instead of a paste. Embeds are also not collapsed behind a "show more" link the 
 | --- | --- |
 | Keyword alert | A keyword rule with `webhook=true` matches a line. |
 | Chat summary | The chat-logger sends a buffered report (timer or **Send Now**). |
-| Chat digest | The digest module forwards a digest, the relay's own timer fires, or `.log webhook digest`. |
+| Chat digest | The digest module forwards a digest, the relay's own timer fires, or `!log webhook digest`. |
 | Session summary | A recording session ends (leaving a world). |
 | Player rename | The same UUID is announced under a new name. |
 | Watchlist join/leave | A watched player joins or leaves (opt-in). |
 | Death | A death message is observed (opt-in). |
 | Announcement | A server announcement is observed (opt-in). |
 | Mention | `mention-alerts` sees your name or a watched name used in chat (opt-in). |
-| Leaderboard | `.log webhook leaderboard`, the relay widget's **Leaderboard** button. |
-| Player profile | `.log webhook profile <player>`, or **Profile...** on the relay widget. |
-| Server status | `.log webhook sendstatus`, or **Status** on the relay widget. |
-| Test | The **Test Embed** button or `.log webhook test`. |
+| Leaderboard | `!log webhook leaderboard`, the relay widget's **Leaderboard** button. |
+| Player profile | `!log webhook profile <player>`, or **Profile...** on the relay widget. |
+| Server status | `!log webhook sendstatus`, or **Status** on the relay widget. |
+| Test | The **Test Embed** button or `!log webhook test`. |
 
 ### Settings
 
@@ -947,25 +1165,25 @@ instead of a paste. Embeds are also not collapsed behind a "show more" link the 
 
 ### Embed preview
 
-**Preview Embeds...** (the relay's widget, the dashboard **Webhook** tab, or `.log webhook preview`)
+**Preview Embeds...** (the relay's widget, the dashboard **Webhook** tab, or `!log webhook preview`)
 renders every card type exactly as Discord would — accent stripe, title and fields — so the
 appearance can be checked without a webhook. **Copy JSON** puts the exact payload on the clipboard
 for a webhook tester. The card selector covers keyword alerts, summaries, digests, session
 summaries, renames, mentions, leaderboards, profiles and the test card.
 
-### `.log webhook`
+### `!log webhook`
 
 | Command | Effect |
 | --- | --- |
-| `.log webhook [status]` | Target host, accent and delivery health. |
-| `.log webhook test` | Sends a test embed. |
-| `.log webhook preview` | Opens the embed preview. |
-| `.log webhook digest` | Sends a digest embed now. |
-| `.log webhook leaderboard` | Sends the most active players as a leaderboard embed. |
-| `.log webhook profile <player>` | Sends one player's observed activity as a profile embed. |
-| `.log webhook sendstatus` | Sends the live server figures (TPS, ping, players, world) as a status embed. |
-| `.log webhook set <url>` | Sets the webhook URL. |
-| `.log webhook accent <name>` | Sets the accent (or `auto`). |
+| `!log webhook [status]` | Target host, accent and delivery health. |
+| `!log webhook test` | Sends a test embed. |
+| `!log webhook preview` | Opens the embed preview. |
+| `!log webhook digest` | Sends a digest embed now. |
+| `!log webhook leaderboard` | Sends the most active players as a leaderboard embed. |
+| `!log webhook profile <player>` | Sends one player's observed activity as a profile embed. |
+| `!log webhook sendstatus` | Sends the live server figures (TPS, ping, players, world) as a status embed. |
+| `!log webhook set <url>` | Sets the webhook URL. |
+| `!log webhook accent <name>` | Sets the accent (or `auto`). |
 
 ## Live Chat Relay
 
@@ -1002,7 +1220,7 @@ error messages, and the Discord payload explicitly disables mentions.
 computer on the same network can watch and control this client. It is the "app" that connects to
 the bots: the client is the server, the browser is the app, and nothing is installed on the phone.
 
-Enable **Companion** in the addon window (or run `.log companion start`). The server listens on
+Enable **Companion** in the addon window (or run `!log companion start`). The server listens on
 **127.0.0.1** by default; the module widget, the Companion screen and the command all offer a
 **Copy address** action that includes the access token, so you can paste one URL into a browser.
 
@@ -1033,21 +1251,21 @@ Enable **Companion** in the addon window (or run `.log companion start`). The se
   `Authorization: Bearer <token>` header or a `?token=` query parameter (the query form is what a
   browser and an `EventSource` can send).
 - The token is generated on first start and stored in the config. **Generate a new token** (module
-  widget, Companion screen or `.log companion regenerate`) replaces it and restarts the server.
+  widget, Companion screen or `!log companion regenerate`) replaces it and restarts the server.
 - Requests are rate limited per client, and every action runs on the client thread, so the app can
   only do what a user could do by hand — it never edits the inventory, never fabricates state and
   never blocks the game.
 
-### `.log companion`
+### `!log companion`
 
 | Command | Effect |
 | --- | --- |
-| `.log companion [status]` | Whether the server is listening, the port, the client count and the address. |
-| `.log companion start` | Turns the module on and starts the server. |
-| `.log companion stop` | Turns the module off and closes the port. |
-| `.log companion token` | Prints the access token (treat it like a password). |
-| `.log companion regenerate` | Replaces the token and restarts the server. |
-| `.log companion gui` | Opens the Companion screen. |
+| `!log companion [status]` | Whether the server is listening, the port, the client count and the address. |
+| `!log companion start` | Turns the module on and starts the server. |
+| `!log companion stop` | Turns the module off and closes the port. |
+| `!log companion token` | Prints the access token (treat it like a password). |
+| `!log companion regenerate` | Replaces the token and restarts the server. |
+| `!log companion gui` | Opens the Companion screen. |
 
 ### HTTP API
 
@@ -1145,9 +1363,9 @@ An existing export can be read back into the archive, so a log moved from anothe
 segment rescued from a backup) is searchable again.
 
 - Open **Log Archive** from the chat-logger widget or the dashboard and press **Import log...**, or
-  run `.log importlog <path>`.
+  run `!log importlog <path>`.
 - Supported inputs: the plain text export (`.txt`), CSV, JSON lines, and the addon's own compressed
-  segment (`.log.gz`). A native segment is CRC-checked, so a damaged file is refused rather than
+  segment (`!log.gz`). A native segment is CRC-checked, so a damaged file is refused rather than
   half-read.
 - The file is parsed on the storage worker, never on the client thread, so a large file does not
   stall the game.
@@ -1158,7 +1376,7 @@ segment rescued from a backup) is searchable again.
 
 ## GUI
 
-Press **Right Shift** in-game (or run `.log gui`) to open the addon window. It has a navigation
+Press **Right Shift** in-game (or run `!log gui`) to open the addon window. It has a navigation
 rail on the left and a card list on the right, in the style of a modern Meteor-client interface:
 
 - **Modules** — every module grouped by category, each row a card with an on/off switch and a
@@ -1167,7 +1385,7 @@ rail on the left and a card list on the right, in the style of a modern Meteor-c
 - **HUD** — every HUD element with an on/off switch and a **Settings** button, plus **Arrange HUD**
   (the editor), **Show all** and **Hide all**.
 - **Theme** — the colour scheme, a live swatch preview of the derived colours, the HUD text scale and
-  the command prefix.
+  the command prefix used by Log Client's own commands (default `!`).
 - **About** — the version, registration counts, the config path, the shortcuts and the licence.
 
 **Search** filters the module or HUD list by name, title or description, and shows a clear empty
@@ -1247,70 +1465,75 @@ the client stops.
 
 ## Commands
 
-The addon registers a `.log` command (alias `.la`). Run `.log help` for the list.
+The addon registers a `!log` command (alias `!la`). Run `!log help` for the list.
 
 | Command | Effect |
 | --- | --- |
-| `.log gui` | Opens the addon window (same as Right Shift). |
-| `.log status` | Chat logging state, automation state and notification counters. |
-| `.log modules` | Every Log Client module with its on/off state and description. |
-| `.log stats` | Session statistics: messages, players, joins/leaves, deaths, keyword alerts. |
-| `.log record <on\|off>` | Starts or stops chat recording (enabling the module if needed). |
-| `.log notifications [count]` | The most recent notifications. |
-| `.log notifications clear` | Empties the notification history. |
-| `.log tasks` | The automation queue and its history counters. |
-| `.log tasks <start\|pause\|resume\|stop\|clear>` | Controls the automation. |
-| `.log tasks add <type> <item> [amount]` | Queues a task, e.g. `.log tasks add mining diamond_ore 64`. |
-| `.log waypoints [list]` | Lists saved waypoints. |
-| `.log waypoints add <name>` | Saves your current position as a waypoint. |
-| `.log import <file>` | Imports a material list (or a schematic) from a path, without the file dialog. |
-| `.log importlog <file>` | Imports a chat log (.txt, .csv, .json or .log.gz) into the archive. |
-| `.log alerts [count]` | The most recent keyword, webhook and error alerts, with per-kind totals. |
-| `.log alerts clear` | Empties the alert history. |
-| `.log playtime [player]` | Observed player session durations (a dash when unknown). |
-| `.log schematic [status]` | The current build state and progress. |
-| `.log schematic load <path>` | Loads a schematic from a path (no file dialog). |
-| `.log schematic <start\|pause\|resume\|stop>` | Controls a build. |
-| `.log acquire [start\|pause\|resume\|stop\|status\|retry]` | Controls automatic Creative material acquisition. |
-| `.log acquire import <path>` | Imports a material list into the acquisition queue. |
-| `.log schematic acquire` | Starts acquisition from the current schematic/material list. |
-| `.log schematic import <path>` | Imports a material list into the Schematic Dropper queue. |
-| `.log digest` | Prints a summary of recent chat activity. |
-| `.log timeline [filter]` | Recent session milestones, optionally filtered. |
-| `.log filter [stats]` | Chat filter rule count, default action and how many messages were hidden. |
-| `.log filter reset` | Resets the filter counters. |
-| `.log notes [list]` | Lists saved player notes. |
-| `.log notes add <player> <text>` | Saves a note about a player. |
-| `.log notes remove <player>` | Removes a player's note. |
-| `.log notes search <filter>` | Searches notes by player or body. |
-| `.log identities [filter]` | Lists observed accounts and their names. |
-| `.log identities renamed` | Lists only the accounts seen under more than one name. |
-| `.log identities watch <player>` | Adds a player to the rename watchlist. |
-| `.log identities unwatch <player>` | Removes a player from the watchlist. |
-| `.log identities watchlist` | Lists the watched players. |
-| `.log identities clear` | Clears the identity index. |
-| `.log sessions [list]` | Totals and the most recent past recording sessions. |
-| `.log sessions clear` | Clears the session history. |
-| `.log companion [status]` | The companion web server: listening state, port, client count and address. |
-| `.log companion <start\|stop>` | Starts or stops the companion server. |
-| `.log companion token` | Prints the companion access token. |
-| `.log companion regenerate` | Replaces the token and restarts the server. |
-| `.log companion gui` | Opens the Companion screen. |
+| `!log gui` | Opens the addon window (same as Right Shift). |
+| `!log status` | Chat logging state, automation state and notification counters, in a titled block. |
+| `!log modules` | Every Log Client module with its on/off state and description. |
+| `!log modules check` | Reports module names claimed by more than one module. A clash silently deletes the earlier module and later crashes the code that looks it up by class, so this is worth running after installing another addon. |
+| `!autologin [status\|gui\|on\|off\|servers\|clear\|clearall\|test]` | Manages the per-server login password. The password is set in the module's GUI; no command ever prints it. |
+| `!deaths [back\|clear]` | Lists remembered deaths newest first, shows the most recent one in your dimension, or clears the history. |
+| `!log stats` | Session statistics in a titled block: messages, rate, players, joins/leaves, deaths and keyword alerts, with the most active players in the footer. |
+| `!log record <on\|off>` | Starts or stops chat recording (enabling the module if needed). |
+| `!log notifications [count]` | The most recent notifications. |
+| `!log notifications clear` | Empties the notification history. |
+| `!log tasks` | The automation queue and its history counters. |
+| `!log tasks <start\|pause\|resume\|stop\|clear>` | Controls the automation. |
+| `!log tasks add <type> <item> [amount]` | Queues a task, e.g. `!log tasks add mining diamond_ore 64`. |
+| `!log waypoints [list]` | Lists saved waypoints. |
+| `!log waypoints add <name>` | Saves your current position as a waypoint. |
+| `!log import <file>` | Imports a material list (or a schematic) from a path, without the file dialog. |
+| `!log importlog <file>` | Imports a chat log (.txt, .csv, .json or .log.gz) into the archive. |
+| `!log alerts [count]` | The most recent keyword, webhook and error alerts, with per-kind totals. |
+| `!log alerts clear` | Empties the alert history. |
+| `!log playtime [player]` | Observed player session durations (a dash when unknown). |
+| `!log schematic [status]` | The current build state and progress. |
+| `!log schematic load <path>` | Loads a schematic from a path (no file dialog). |
+| `!log schematic <start\|pause\|resume\|stop>` | Controls a build. |
+| `!log acquire [start\|pause\|resume\|stop\|status\|retry]` | Controls automatic Creative material acquisition. |
+| `!log acquire import <path>` | Imports a material list into the acquisition queue. |
+| `!log schematic acquire` | Starts acquisition from the current schematic/material list. |
+| `!log schematic import <path>` | Imports a material list into the Schematic Dropper queue. |
+| `!log digest` | Prints a summary of recent chat activity. |
+| `!log summary [note]` | Posts the same summary to the webhook as a formatted embed, with the note attached and the caller named. Unlike `!log digest` this leaves the archive, so it is the shareable form. |
+| `!log search [terms]` | Searches the recorded archive and prints the newest matches as an aligned block. Plain words search the message text; `player:<name>` filters the sender, `type:<chat,system,join,leave,death>` filters the message kind, and `limit:<n>` (max 50) sets how many are shown. Quote a phrase to keep it together. An unknown `key:value` is searched for literally, so a colon in chat never blocks a search. With no terms it lists the newest messages. |
+| `!log timeline [filter]` | Recent session milestones, optionally filtered. |
+| `!log filter [stats]` | Chat filter rule count, default action and how many messages were hidden. |
+| `!log filter reset` | Resets the filter counters. |
+| `!log notes [list]` | Lists saved player notes. |
+| `!log notes add <player> <text>` | Saves a note about a player. |
+| `!log notes remove <player>` | Removes a player's note. |
+| `!log notes search <filter>` | Searches notes by player or body. |
+| `!log identities [filter]` | Lists observed accounts and their names. |
+| `!log identities renamed` | Lists only the accounts seen under more than one name. |
+| `!log identities watch <player>` | Adds a player to the rename watchlist. |
+| `!log identities unwatch <player>` | Removes a player from the watchlist. |
+| `!log identities watchlist` | Lists the watched players. |
+| `!log identities clear` | Clears the identity index. |
+| `!log sessions [list]` | Totals and the most recent past recording sessions. |
+| `!log sessions clear` | Clears the session history. |
+| `!log companion [status]` | The companion web server: listening state, port, client count and address. |
+| `!log companion <start\|stop>` | Starts or stops the companion server. |
+| `!log companion token` | Prints the companion access token. |
+| `!log companion regenerate` | Replaces the token and restarts the server. |
+| `!log companion gui` | Opens the Companion screen. |
 
-### Assistant (`.ai`, alias `.assistant`)
+### Assistant (`!ai`, alias `!assistant`)
 
 | Command | Effect |
 | --- | --- |
-| `.ai [status]` | Assistant state and memory summary. |
-| `.ai gui` | Opens the Assistant Manager. |
-| `.ai triggers [list\|add <pattern> <reply>\|remove <n>\|restore]` | Manages keyword triggers. |
-| `.ai facts` | Lists stored facts. |
-| `.ai remember <key> <value>` | Stores a fact. |
-| `.ai forget <key>` | Removes a fact. |
-| `.ai test <message>` | Shows what the assistant would do with a message. |
-| `.ai history` | Recent remembered exchanges. |
-| `.ai placeholders` | Lists every placeholder with its current value. |
-| `.ai save` / `.ai clear` | Save memory now / clear all memory. |
+| `!ai [status]` | Assistant state and memory summary. |
+| `!ai gui` | Opens the Assistant Manager. |
+| `!ai triggers [list\|add <pattern> <reply>\|remove <n>\|restore]` | Manages keyword triggers. |
+| `!ai facts` | Lists stored facts. |
+| `!ai remember <key> <value>` | Stores a fact. |
+| `!ai forget <key>` | Removes a fact. |
+| `!ai test <message>` | Shows what the assistant would do with a message. |
+| `!ai history` | Recent remembered exchanges. |
+| `!ai placeholders [section]` | Lists placeholders one section at a time, with current values. |
+| `!ai save` / `!ai clear` | Save memory now / clear all memory. |
 
 Commands are registered through the addon's own `PostInit` hook, and are intercepted from the
 client's chat/command path by a mixin before vanilla handles them.
@@ -1357,7 +1580,7 @@ archive with in-memory doubles (no Minecraft runtime required):
 - `LogToolsTest` — the per-minute activity histogram (bucketing, gap materialisation, capacity
   bounding, peak/total), session-summary formatting, player-tracker exclusions (case-insensitive,
   applied only to new entries) and `forget`, and the log importer round-tripping every export format
-  (native `.log.gz`, JSON, CSV, text) plus unreadable-line reporting and CSV quoting.
+  (native `!log.gz`, JSON, CSV, text) plus unreadable-line reporting and CSV quoting.
 - `SessionsAndAlertsTest` — player session durations from observed join/leave pairs (measured time,
   unknown-vs-zero, an in-progress stretch, a repeated join without a leave, exclusions, forget,
   search ordering and the player cap); duplicate grouping (consecutive-only, sender-sensitive,
@@ -1372,8 +1595,8 @@ archive with in-memory doubles (no Minecraft runtime required):
   reported as success), a rejected give failing after the retry budget, an unknown id, missing
   creative mode, a full inventory waiting rather than failing, progress and ordering.
 - `AutomationControllersTest` — every automation controller: eat thresholds/nutrition/cooldown, tool
-  scoring and swap-back, sprint gating, safe-walk edge rules, armour classification and urgency,
-  the anti-AFK schedule and action set, hotbar replenish planning, and the auto-log rules and grace
+  scoring and swap-back, sprint gating, log-safe-walk edge rules, armour classification and urgency,
+  the log-anti-afk schedule and action set, hotbar replenish planning, and the log-panic rules and grace
   period.
 - `AutoCreativeImportTest` — the whole import path: the supplied 367-entry list becomes 367 ordered
   acquisition requests, the table report excludes raw resources, and `parseItems` tolerates
@@ -1440,6 +1663,36 @@ archive with in-memory doubles (no Minecraft runtime required):
   reported as FAILED with a message instead of a thrown exception.
 - `AiCoreTest` — the local model: tokenisation, intent classification, the bigram model's
   teach/generate path, the naive-Bayes classifier, confidence gating and JSON round-trip.
+- `AiRoutingTest` — the router and the classifier measured against each other on the same lines, so
+  the claim that the table is the primary path is checked rather than asserted. Includes a
+  regression for the hash-collision bug: an intent must not gain evidence from a word it was never
+  trained on.
+- `ModCallTest` — the two messages a modcall sends, their order, and that a reason containing a
+  newline cannot become a second command.
+- `SummaryEmbedTest` — the requested-summary card: title and accent, the requested-by and note
+  fields, the counts, and that the note is neutralised so it cannot ping a role or break the
+  markdown.
+- `UnsignedChatAndRoutingTest` — the two behaviours that decide whether the assistant answers at
+  all: unsigned and plugin-rewritten chat (`<Steve> hi`, `Steve: hi`, `[MVP+] Steve: hi`) classifies
+  as public chat while clock readings and `Server:` tags stay system, and the keyword router picks
+  the on-topic intent ahead of the classifier. It also pins the measurement that justifies the
+  router — the classifier alone agrees on fewer lines than the router routes — so the claim cannot
+  go stale.
+- `ModuleNameTest` — every module's registered name is unique and none is a name Meteor ships. Meteor
+  de-duplicates by name, so a clash silently deletes Meteor's module and crashes the code that looks
+  it up by class; this test is the regression for the `auto-reconnect` crash on disconnect. It reads
+  the sources because Meteor's registry only exists inside a running game.
+- `HighlightAnnouncerTest` — a highlighted message is announced once, a repeat delivery on a later
+  tick is ignored, a genuinely new message still announces, memory stays bounded, and the monitor no
+  longer polls the recent buffer on a tick (the cause of the same line being logged 20 times a second).
+- `LogServiceListenerTest` — live-listener registration is idempotent (activating a module twice
+  cannot double-announce), distinct listeners all fire, a removed listener is silent, and one listener
+  throwing neither stops recording nor silences the others.
+- `ModuleAuditTest` — duplicate detection used by both the startup guard and `!log modules check`:
+  counts every claimant, reports all clashes in a stable order, and ignores blank names.
+- `RowsTest` — the list-cap rule behind every truncated answer: a list that fits reports nothing
+  remaining, exactly-at-limit is not truncated, one over reports exactly one, and a non-positive
+  limit shows nothing while still counting every row.
 
 ## Troubleshooting
 
@@ -1450,8 +1703,8 @@ archive with in-memory doubles (no Minecraft runtime required):
 - **The OS file dialog does not open.** Expected on some Linux desktops and on headless setups:
   `tinyfd` returns nothing there. Use the addon's own file browser (**Import file...** /
   **Load Schematic...**), or set the `material-file` / `schematic-file` setting to a full path and
-  press the matching *Path* button. The typed-path route and the `.log import` /
-  `.log schematic load` commands never touch the native dialog.
+  press the matching *Path* button. The typed-path route and the `!log import` /
+  `!log schematic load` commands never touch the native dialog.
 - **Loading or importing does nothing.** The work is driven from the module's client tick, so the
   module has to be enabled and you have to be in a world. The buttons enable the module for you when
   they can, and otherwise say why.
@@ -1475,7 +1728,7 @@ archive with in-memory doubles (no Minecraft runtime required):
   machine's LAN address (`http://<host>:8765/?token=...`), and make sure the port is not blocked by a
   firewall. If the port is already in use the module says so and does not listen; change the port or
   free it. A `401` means the token is missing or wrong — copy the address again from the widget, the
-  Companion screen or `.log companion token`.
+  Companion screen or `!log companion token`.
 - **A config written by a newer build.** Unknown keys are preserved on save, so downgrading does not
   truncate them, and a missing or invalid value falls back to its default rather than aborting the
   load. A theme name from an older build (`DARK`, `ROSE`, `FOREST`) migrates to its nearest
@@ -1503,7 +1756,7 @@ archive with in-memory doubles (no Minecraft runtime required):
   the importer, the readers, the checkpoint store, the filter rules, the digest, the timeline, the
   notes store, the activity histogram, the automation controllers and the log importer are covered by
   unit tests that use fakes and the real 1.21.1 registries.
-- `auto-reconnect` only reconnects to a server the client already has a saved entry for, and does
+- `log-reconnect` only reconnects to a server the client already has a saved entry for, and does
   nothing for a single-player world (which cannot be resumed through the connection screen). It uses
   the same path the multiplayer list uses, so the server sees an ordinary client.
 - `server-monitor` reports only what the client can observe (duration, game mode, latency from the
@@ -1550,3 +1803,25 @@ archive with in-memory doubles (no Minecraft runtime required):
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+### Starter knowledge
+
+A fresh install is not empty. The assistant ships with a short set of facts — what it is, what the
+prefix is, how memory works, how macros work, and that player-specific answers stay local — so the
+first question you ask gets a real answer instead of "I do not understand".
+
+These are ordinary facts: `!facts` lists them, `!forget` removes them, and `!remember` overwrites
+them. The seed is only written when the store has never held anything, so a fact you delete stays
+deleted rather than reappearing at the next launch.
+
+The assistant also answers from what it has stored. Ask a question naming a fact and it replies
+with that fact rather than guessing from its fixed corpus:
+
+```
+you: what is the prefix?
+bot: prefix: ! by default. Type !help for the command list.
+```
+
+Matching is on whole words, so `fact` does not match `factory`. If a question names two unrelated
+facts the assistant stays quiet rather than picking one, because a wrong answer it cannot flag is
+worse than no answer.

@@ -47,6 +47,14 @@ public final class WebhookPayload {
         return WebhookEmbeds.payload(username, WebhookEmbeds.digest(style, summary, server));
     }
 
+    /** A requested chat-summary report card. */
+    public static String summaryReport(String username, ChatDigest.Summary summary,
+                                       String requestedBy, String note, String server,
+                                       WebhookEmbeds.Style style) {
+        return WebhookEmbeds.payload(username,
+            WebhookEmbeds.summaryReport(style, summary, requestedBy, note, server));
+    }
+
     /** A finished-session card. */
     public static String session(String username, SessionRecord record, long now, WebhookEmbeds.Style style) {
         return WebhookEmbeds.payload(username, WebhookEmbeds.session(style, record, now));

@@ -54,7 +54,7 @@ public class AutoReplenishModule extends AutomationModule {
     private long lastAttemptAt;
 
     public AutoReplenishModule() {
-        super("auto-replenish", "Keeps the items you choose stocked on the hotbar.");
+        super("log-replenish", "Keeps the items you choose stocked on the hotbar.");
     }
 
     @Override

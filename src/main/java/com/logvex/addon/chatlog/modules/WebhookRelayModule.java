@@ -338,7 +338,8 @@ public class WebhookRelayModule extends AddonModule {
             && service.watchlist().contains(entry.sender())) {
             service.notifyPresence(url(), username(),
                 entry.type() == com.logvex.addon.chatlog.core.MessageType.JOIN, entry.sender());
-            return;
+            // No early return: a watched player's death or announcement still deserves its own
+            // card, and returning here silently dropped both.
         }
 
         if (onDeaths.get() && entry.type() == com.logvex.addon.chatlog.core.MessageType.DEATH) {
@@ -358,9 +359,8 @@ public class WebhookRelayModule extends AddonModule {
         if (System.currentTimeMillis() - lastDigestAt < interval) return;
         lastDigestAt = System.currentTimeMillis();
         if (!configured()) return;
-        ChatDigestModule digest = Modules.get().get(ChatDigestModule.class);
-        ChatDigest.Summary summary = digest != null ? digest.summary()
-            : ChatDigest.summarise(service.recent(200), 5);
+        ChatDigest.Summary summary = fetchSummary();
+        if (summary.isEmpty()) return;
         service.notifyDigest(url(), username(), summary, null);
     }
 
@@ -401,6 +401,66 @@ public class WebhookRelayModule extends AddonModule {
             if (success) info("Leaderboard embed sent.");
             else warning("Leaderboard send failed: %s", message);
         });
+    }
+
+    /**
+     * The summary of the current window, without reporting anything.
+     *
+     * <p>Prefers the digest module's own figures so an on-demand card and the timed digest cannot
+     * disagree. Silent because the timer path runs unattended.
+     */
+    private ChatDigest.Summary fetchSummary() {
+        ChatDigestModule digest = Modules.get().get(ChatDigestModule.class);
+        return digest != null ? digest.summary() : ChatDigest.summarise(service.recent(200), 5);
+    }
+
+    /**
+     * The summary of the current window, or null when there is nothing to send.
+     *
+     * <p>Reports why it is empty, so each caller does not repeat the two warnings.
+     */
+    private ChatDigest.Summary currentSummary() {
+        if (!configured()) {
+            warning("Set a webhook URL first.");
+            return null;
+        }
+        ChatDigest.Summary summary = fetchSummary();
+        if (summary.isEmpty()) {
+            warning("No messages to summarise yet.");
+            return null;
+        }
+        return summary;
+    }
+
+    /** Sends the scheduled-style digest immediately, without waiting for the timer. */
+    public void sendDigest() {
+        ChatDigest.Summary summary = currentSummary();
+        if (summary == null) return;
+        service.notifyDigest(url(), username(), summary, (success, message) -> {
+            if (success) info("Digest embed sent.");
+            else warning("Digest send failed: %s", message);
+        });
+    }
+
+    /**
+     * Sends a chat-summary report on demand.
+     *
+     * <p>This is the "send it now" path: the summary of the current window, attributed to the
+     * requester, delivered as one card. The timer digest stays separate, so an operator can ask for
+     * a report without changing the schedule.
+     *
+     * @param requestedBy who asked, or blank when triggered from the module widget
+     * @param note        a short line for the card, or blank
+     */
+    public void sendSummary(String requestedBy, String note) {
+        ChatDigest.Summary summary = currentSummary();
+        if (summary == null) return;
+        boolean queued = service.notifySummaryReport(url(), username(), summary, requestedBy, note,
+            (success, message) -> {
+                if (success) info("Chat summary report sent.");
+                else warning("Chat summary send failed: %s", message);
+            });
+        if (!queued) warning("The summary report could not be queued.");
     }
 
     /** Sends one player's observed activity as a profile embed. */
@@ -456,24 +516,11 @@ public class WebhookRelayModule extends AddonModule {
         WButton preview = row.add(theme.button("Preview...")).expandX().widget();
         preview.action = () -> mc.setScreen(new EmbedPreviewScreen(this));
 
-        WButton sendDigest = list.add(theme.button("Send Digest Now")).expandX().widget();
-        sendDigest.action = () -> {
-            if (!configured()) {
-                warning("Set a webhook URL first.");
-                return;
-            }
-            ChatDigestModule digest = Modules.get().get(ChatDigestModule.class);
-            ChatDigest.Summary summary = digest != null ? digest.summary()
-                : ChatDigest.summarise(service.recent(200), 5);
-            if (summary.isEmpty()) {
-                warning("No messages to summarise.");
-                return;
-            }
-            service.notifyDigest(url(), username(), summary, (success, message) -> {
-                if (success) info("Digest embed sent.");
-                else warning("Digest send failed: %s", message);
-            });
-        };
+        WHorizontalList digestRow = list.add(theme.horizontalList()).expandX().widget();
+        WButton sendDigest = digestRow.add(theme.button("Send Digest")).expandX().widget();
+        sendDigest.action = this::sendDigest;
+        WButton sendSummary = digestRow.add(theme.button("Summary Report")).expandX().widget();
+        sendSummary.action = () -> sendSummary("", "");
 
         WHorizontalList extra = list.add(theme.horizontalList()).expandX().widget();
         WButton leaderboard = extra.add(theme.button("Leaderboard")).expandX().widget();

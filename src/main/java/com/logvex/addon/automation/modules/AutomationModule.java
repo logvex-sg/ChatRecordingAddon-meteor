@@ -2,6 +2,7 @@ package com.logvex.addon.automation.modules;
 
 import com.logvex.addon.framework.systems.modules.AddonModule;
 import com.logvex.addon.LogClient;
+import com.logvex.addon.framework.SafeEventHandler;
 import com.logvex.addon.automation.mc.AutomationSupport;
 import meteordevelopment.meteorclient.events.game.GameJoinedEvent;
 import meteordevelopment.meteorclient.events.game.GameLeftEvent;
@@ -44,7 +45,8 @@ public abstract class AutomationModule extends AddonModule {
     @EventHandler
     private void onLeft(GameLeftEvent event) {
         worldLoaded = false;
-        onWorldLeave();
+        // Posted from inside MinecraftClient.disconnect(); a throw here would take the game down.
+        SafeEventHandler.run("AutomationModule.onLeft", this::onWorldLeave);
     }
 
     /** Called after the client joins a world. */

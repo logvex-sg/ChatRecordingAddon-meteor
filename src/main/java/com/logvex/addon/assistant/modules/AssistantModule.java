@@ -4,6 +4,7 @@ import com.logvex.addon.ai.core.AiEngine;
 import com.logvex.addon.ai.mc.AiService;
 import com.logvex.addon.assistant.core.AssistantBrain;
 import com.logvex.addon.assistant.core.AssistantConfig;
+import com.logvex.addon.assistant.core.CommandDefaults;
 import com.logvex.addon.assistant.core.AssistantMemory;
 import com.logvex.addon.assistant.core.AssistantRuntime;
 import com.logvex.addon.assistant.core.ChatActivity;
@@ -142,6 +143,16 @@ public class AssistantModule extends AutomationModule {
         .build()
     );
 
+    private final Setting<List<String>> commandLines = sgGeneral.add(new StringListSetting.Builder()
+            .name("command-table")
+            .description("One prefix command per line: name = on/off | local/chat/silent | template. "
+                + "Blank template keeps the built-in wording. Reset to defaults to restore the "
+                + "shipped table.")
+            .defaultValue(CommandDefaults.encoded())
+            .onChanged(ignored -> rebuild())
+            .build()
+        );
+
     private final Setting<List<String>> statusLines = sgStatus.add(new StringListSetting.Builder()
             .name("status-table")
             .description("One command per line: name = on/off | local/chat | template. "
@@ -179,6 +190,8 @@ public class AssistantModule extends AutomationModule {
         .visible(statusEnabled::get)
         .build()
     );
+
+    // ------------------------------------------------------------------ modcall
 
     // ------------------------------------------------------------------ chat command macros
 
@@ -239,7 +252,7 @@ public class AssistantModule extends AutomationModule {
     private final Setting<List<String>> rules = sgTriggers.add(new StringListSetting.Builder()
         .name("rules")
         .description("Trigger rules, one per line: pattern;sender=;reply=;mode=;cooldown=;limit=;sound=;remember=;enabled=")
-        .defaultValue(TriggerRule.defaults().stream().map(TriggerRule::encode).toList())
+        .defaultValue(TriggerRule.preconfigured().stream().map(TriggerRule::encode).toList())
         .onChanged(ignored -> rebuild())
         .build()
     );
@@ -484,6 +497,10 @@ public class AssistantModule extends AutomationModule {
     private AssistantConfig config = AssistantConfig.DEFAULTS;
     private String ownName = "";
 
+    /** How often each guarded chat step has failed, so the log is not flooded by one fault. */
+    private final java.util.Map<String, Integer> failureCounts =
+        new java.util.concurrent.ConcurrentHashMap<>();
+
     /** The assistant's own recent replies, so it never answers itself. */
     /** Recognises echoes of the assistant's own replies; the single self-reply guard. */
     private final SelfReplyGuard selfReplies = new SelfReplyGuard();
@@ -503,6 +520,8 @@ public class AssistantModule extends AutomationModule {
      * being answered as if a player had said it, so they are never mixed.
      */
     private MacroSet macros = MacroSet.EMPTY;
+
+    /** Last modcall per speaker, for the per-player cooldown. */
     /**
      * Set while this module is itself sending a line.
      *
@@ -580,6 +599,13 @@ public class AssistantModule extends AutomationModule {
 
     @EventHandler
     private void onReceiveMessage(ReceiveMessageEvent event) {
+        // Guarded because this runs inside Meteor's event dispatch: an exception here would leave
+        // the chat pipeline rather than being reported, and one malformed line would take the whole
+        // assistant down until the game restarted.
+        guard("receive", () -> receiveStep(event));
+    }
+
+    private void receiveStep(ReceiveMessageEvent event) {
         if (!ready() || event.getMessage() == null) return;
 
         boolean fromPlayer = event.getIndicator() != null;
@@ -626,6 +652,17 @@ public class AssistantModule extends AutomationModule {
         WebhookRelayModule relay = Modules.get().get(WebhookRelayModule.class);
         if (relay == null || !relay.reportsAllowed()) return false;
 
+        if ("summary".equalsIgnoreCase(kind)) {
+            // Hard local-only gate, independent of the permissions setting, for the same reason as
+            // modcall: with permissions switched off - the default - a LOCAL_ONLY default is not
+            // enforced, and anyone in public chat could post the operator's chat archive to the
+            // operator's webhook under the operator's name.
+            if (!isLocalSpeaker(reporter)) return false;
+            if (!relay.configured()) return false;
+            relay.sendSummary(reporter, reason);
+            return true;
+        }
+
         return relay.sendReport(reporter, reason, kind, (success, message) -> {
             if (!success) {
                 notifyUser(NotificationType.IMPORTANT_CHAT, config.name(),
@@ -666,6 +703,7 @@ public class AssistantModule extends AutomationModule {
         }
         switch (decision.delivery()) {
             case CHAT -> speakAll(decision);
+            case PRIVATE -> whisperAll(decision, sender);
             case NOTIFY -> {
                 // A notification body can hold newlines, so a block keeps its shape here too.
                 String body = decision.hasEmbed()
@@ -710,6 +748,45 @@ public class AssistantModule extends AutomationModule {
         }
     }
 
+    /**
+     * Sends a decision to the speaker alone, through the server's private-message command.
+     *
+     * <p>Used by {@link TriggerRule.ReplyMode#PRIVATE}: the answer goes only to whoever asked, so a
+     * public chat full of people does not see the reply. The verb comes from the rule (default
+     * {@code msg}), and the recipient is the name this client could verify, never one the message
+     * claimed — otherwise a stranger could have their own words delivered to someone else.
+     */
+    private void whisperAll(AssistantBrain.Decision decision, String sender) {
+        if (sender == null || sender.isBlank()) {
+            // No verifiable name means no safe recipient. Falling back to public chat would leak a
+            // reply the rule asked to keep private, so nothing is sent.
+            return;
+        }
+        String verb = decision.rule() == null ? TriggerRule.DEFAULT_WHISPER
+            : decision.rule().whisperCommand();
+        java.util.List<String> lines = decision.lines(replyWidth.get(), replyFormat.get().style());
+        int limit = Math.min(lines.size(), MAX_EMBED_LINES);
+        for (int i = 0; i < limit; i++) {
+            whisper(verb, sender, lines.get(i));
+        }
+    }
+
+    /** Sends one line as {@code /<verb> <player> <text>}. */
+    private void whisper(String verb, String player, String text) {
+        if (text == null || text.isBlank()) return;
+        if (mc.player == null || mc.player.networkHandler == null) return;
+        String line = "/" + verb + " " + player + " " + text.strip();
+        // Recorded before sending for the same reason as speak(): the echo comes back through the
+        // chat pipeline and must be recognised as ours rather than answered.
+        rememberOwnReply(line);
+        sendingMacro = true;
+        try {
+            ChatUtils.sendPlayerMsg(line);
+        } finally {
+            sendingMacro = false;
+        }
+    }
+
     /** Sends {@code text} as a real chat message, guarding against self-reply loops. */
     private void speak(String text) {
         if (text == null || text.isBlank()) return;
@@ -745,6 +822,31 @@ public class AssistantModule extends AutomationModule {
     }
 
     // ------------------------------------------------------------------ helpers
+
+    /**
+     * Runs one chat-path step so a failure is reported instead of thrown.
+     *
+     * <p>The assistant is a listener on two of the game's busiest events. Anything thrown from a
+     * listener is not contained by the caller, so a single unexpected value — an odd item stack, a
+     * server that sends a strange player list, a hand-edited setting — would surface as a crash on
+     * the next chat line. Catching here keeps that failure to one dropped reply, and the log names
+     * the step so the cause is findable.
+     *
+     * <p>Repeats are counted rather than logged: a fault that fires on every message would otherwise
+     * fill the log and cost more than it reports.
+     */
+    private void guard(String where, Runnable step) {
+        try {
+            step.run();
+        } catch (Throwable failure) {
+            int seen = failureCounts.merge(where, 1, Integer::sum);
+            if (seen <= 3) {
+                info("Assistant %s step failed (%s). This is a bug; chat keeps working.", where,
+                    failure);
+                if (seen == 3) info("Further %s failures will be counted silently.", where);
+            }
+        }
+    }
 
     private boolean watched(MessageType type) {
         return switch (type) {
@@ -843,6 +945,14 @@ public class AssistantModule extends AutomationModule {
         return entry == null ? -1 : entry.getLatency();
     }
 
+    /** True when {@code sender} is this client's own player, so an action is really theirs. */
+    private boolean isLocalSpeaker(String sender) {
+        String mine = localPlayerName();
+        if (mine == null || mine.isBlank()) return false;
+        if (sender == null || sender.isBlank()) return false;
+        return mine.equalsIgnoreCase(sender.strip());
+    }
+
     private String localPlayerName() {
         if (mc.player == null) return "";
         var profile = mc.player.getGameProfile();
@@ -878,10 +988,12 @@ public class AssistantModule extends AutomationModule {
             aiLearnFromChat.get()
         );
         runtime.setTriggers(parsed);
+        runtime.brain().setTriggerSet(parsed);
         runtime.setConfig(config);
         runtime.setPermissions(buildPermissions());
         runtime.setDuplicateFilter(duplicateFilter.get());
         runtime.setHelpEnabled(helpCommand.get());
+        runtime.setCommandDefaults(CommandDefaults.parseAll(commandLines.get()));
         runtime.setGreetingPools(greetingPools());
         runtime.setGoodGameReply(goodGameReply.get());
         macros = macrosEnabled.get()
@@ -896,6 +1008,22 @@ public class AssistantModule extends AutomationModule {
     }
 
     /** The macro table as it stands, for the GUI and for a test. */
+    /** The widest line a formatted reply may use, so other commands can match the assistant. */
+    public int replyWidth() {
+        return replyWidth.get();
+    }
+
+    /**
+     * The layout the user chose for multi-field replies, resolved to a concrete style.
+     *
+     * <p>{@code AUTO} keeps whatever each reply was written for, so it resolves to the box here:
+     * that is what a caller building its own block wants when it has no layout of its own.
+     */
+    public com.logvex.addon.assistant.core.ReplyFormat.Style replyStyle() {
+        com.logvex.addon.assistant.core.ReplyFormat.Style style = replyFormat.get().style();
+        return style == null ? com.logvex.addon.assistant.core.ReplyFormat.Style.BOX : style;
+    }
+
     public MacroSet macroSet() {
         return macros;
     }
@@ -977,6 +1105,12 @@ public class AssistantModule extends AutomationModule {
      */
     @EventHandler
     private void onSendMessage(SendMessageEvent event) {
+        // Same reason as the receive path, and it matters more here: this runs on every message the
+        // player sends, so an unguarded throw would break ordinary chatting, not just the assistant.
+        guard("send", () -> sendStep(event));
+    }
+
+    private void sendStep(SendMessageEvent event) {
         if (!isActive() || event == null) return;
         if (!ready() || sendingMacro) return;
 
@@ -1343,11 +1477,11 @@ public class AssistantModule extends AutomationModule {
     public AssistantBrain.Decision simulate(String sender, String content) {
         long now = System.currentTimeMillis();
         SenderIdentity identity = identify(sender);
-        AssistantBrain.Decision decision = runtime.handle(identity, content, now,
+        // Deliberately does not deliver: this is the settings screen's preview, and a preview that
+        // spoke in chat would send a real message every time a user pressed the button.
+        return runtime.handle(identity, content, now,
             McServerStats.snapshot(mc, now, sessionStart, speed.blocksPerSecond()),
             statusSettings(), requesterPing(identity, sender));
-        if (decision.acts()) deliver(decision, sender);
-        return decision;
     }
 
     /** Persists memory immediately (GUI and command use this). */

@@ -1,6 +1,7 @@
 package com.logvex.addon.world.mc;
 
 import com.logvex.addon.framework.LogClientContext;
+import com.logvex.addon.framework.SafeEventHandler;
 import meteordevelopment.meteorclient.events.game.GameJoinedEvent;
 import meteordevelopment.meteorclient.events.game.GameLeftEvent;
 import meteordevelopment.orbit.IEventBus;
@@ -80,7 +81,8 @@ public final class WorldService {
 
     @EventHandler
     private void onGameLeft(GameLeftEvent event) {
-        saveAsync();
+        // Runs inside MinecraftClient.disconnect(); a throw here would take the game down.
+        SafeEventHandler.run("WorldService.onGameLeft", this::saveAsync);
     }
 
     private static String serverAddress() {
@@ -209,6 +211,7 @@ public final class WorldService {
     /** Flushes the database and stops the writer. Called once at shutdown. */
     public void shutdown() {
         if (loaded) io.execute(() -> WorldStore.save(dataDir(), intelligence));
-        io.shutdown();
+        // The writer is a daemon thread: without waiting, the JVM exits and the save above is lost.
+        com.logvex.addon.common.ShutdownFlush.await(io);
     }
 }

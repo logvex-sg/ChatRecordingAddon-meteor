@@ -22,17 +22,21 @@ public final class AddonEvents {
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc.player == null || mc.options.hudHidden) return;
 
-        HudRenderer renderer = HudRenderer.INSTANCE;
-        renderer.begin(event.drawContext, event.frameTime);
-        try {
-            Hud.get().render(renderer);
-        } finally {
-            renderer.end();
-        }
+        // A throw here escapes into the vanilla render loop, which treats it as fatal and exits.
+        SafeEventHandler.run("AddonEvents.onRender2D", () -> {
+            HudRenderer renderer = HudRenderer.INSTANCE;
+            renderer.begin(event.drawContext, event.frameTime);
+            try {
+                Hud.get().render(renderer);
+            } finally {
+                renderer.end();
+            }
+        });
     }
 
     @EventHandler
     private void onTick(TickEvent.Post event) {
-        ConfigManager.get().saveIfDirty();
+        // Same reasoning as the render hook: an exception in a tick handler closes the game.
+        SafeEventHandler.run("AddonEvents.onTick", () -> ConfigManager.get().saveIfDirty());
     }
 }

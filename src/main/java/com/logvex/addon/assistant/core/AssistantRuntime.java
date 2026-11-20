@@ -115,6 +115,11 @@ public final class AssistantRuntime {
         return helpEnabled;
     }
 
+    /** Forwards the per-command table to the brain; null restores the shipped defaults. */
+    public void setCommandDefaults(java.util.Map<String, CommandDefaults.Entry> entries) {
+        brain.setCommandDefaults(entries);
+    }
+
     /** Forwards the greeting pools to the brain, so the hello command uses the user's wording. */
     public void setGreetingPools(java.util.Map<String, String> pools) {
         brain.setGreetingPools(pools);
@@ -192,9 +197,27 @@ public final class AssistantRuntime {
         }
 
         AssistantConfig cfg = config;
-        TriggerRule rule = cfg.respondToTriggers() ? triggers.firstMatch(sender.name(), content) : null;
+        // A bare-word trigger must not swallow a prefixed command: with the shipped table, a trigger
+        // for "hello" would answer "!hello" before the command parser ever saw it, making the command
+        // unreachable. A trigger the user wrote *with* the prefix ("!remember") is deliberate, so it
+        // is still allowed to win — that escape hatch is what the precedence test pins.
+        String prefix = cfg.commandPrefix() == null ? "" : cfg.commandPrefix();
+        boolean addressedToAssistant = !prefix.isBlank() && content.strip().startsWith(prefix);
+        java.util.function.Predicate<TriggerRule> allowed = addressedToAssistant
+            ? rule -> rule.pattern().strip().startsWith(prefix)
+            : null;
+        TriggerRule rule = cfg.respondToTriggers()
+            ? triggers.firstMatch(sender.name(), content, allowed)
+            : null;
 
         if (rule != null) {
+            // A rule whose reply is a server command is gated by who is asking: a state-changing
+            // command may only run for the local player, so a stranger cannot type a trigger word
+            // and make this client run /tpaccept or /pay. A message-carrying command is safe.
+            if (!rule.allowsCommandFrom(sender.local())) {
+                denied++;
+                return AssistantBrain.Decision.NONE;
+            }
             if (!cooldowns.tryFire(rule, now)) {
                 ignored++;
                 return AssistantBrain.Decision.NONE;

@@ -48,7 +48,7 @@ public class SafeWalkModule extends AutomationModule {
     private boolean suppressed;
 
     public SafeWalkModule() {
-        super("safe-walk", "Stops you walking off ledges by releasing forward at the edge.");
+        super("log-safe-walk", "Stops you walking off ledges by releasing forward at the edge.");
     }
 
     @Override

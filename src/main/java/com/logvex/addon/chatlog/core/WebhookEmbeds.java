@@ -103,7 +103,17 @@ public final class WebhookEmbeds {
         DiscordEmbed embed = new DiscordEmbed()
             .title("\uD83D\uDCCA Chat digest")
             .color(style.accentFor(MessageType.SYSTEM));
+        return decorate(figures(embed, summary, style, server), style, MessageType.SYSTEM);
+    }
 
+    /**
+     * The counts, the top players and the highlights of {@code summary}, added to {@code embed}.
+     *
+     * <p>Shared by the digest and the requested summary so the two cards cannot report different
+     * numbers for the same window.
+     */
+    private static DiscordEmbed figures(DiscordEmbed embed, ChatDigest.Summary summary,
+                                        Style style, String server) {
         embed.field("Messages", Messages.number(summary.totalMessages()), true);
         embed.field("Players", Messages.number(summary.uniquePlayers()), true);
         embed.field("Window", Messages.duration(Math.max(0, summary.toTimestamp() - summary.fromTimestamp())), true);
@@ -121,7 +131,41 @@ public final class WebhookEmbeds {
             }
             embed.field("Most active", sb.toString(), false);
         }
-        return decorate(embed, style, MessageType.SYSTEM);
+        if (!summary.keywordHighlights().isEmpty()) {
+            StringBuilder sb = new StringBuilder();
+            for (String highlight : summary.keywordHighlights()) {
+                if (sb.length() > 0) sb.append(", ");
+                sb.append('`').append(highlight).append('`');
+            }
+            embed.field("Highlights", sb.toString(), false);
+        }
+        return embed;
+    }
+
+    /**
+     * A chat-summary report: the digest figures plus who asked for them.
+     *
+     * <p>Separate from {@link #digest} because this one is <em>requested</em>. A scheduled digest
+     * arrives on its own and needs no attribution; a summary someone asked for should say who
+     * asked, so a moderator reading it knows who to answer. The figures themselves are the same, so
+     * the two cards cannot disagree about what happened.
+     *
+     * @param requestedBy the player who asked, or blank for a scheduled send
+     * @param note        a short line explaining why it was sent, or blank
+     */
+    public static DiscordEmbed summaryReport(Style style, ChatDigest.Summary summary,
+                                             String requestedBy, String note, String server) {
+        DiscordEmbed embed = new DiscordEmbed()
+            .title("\uD83D\uDCCB Chat summary report")
+            .color(style.accentFor(MessageType.SYSTEM));
+
+        if (requestedBy != null && !requestedBy.isBlank()) {
+            embed.field("Requested by", neutralize(requestedBy), true);
+        }
+        if (note != null && !note.isBlank()) {
+            embed.field("Note", neutralize(note), false);
+        }
+        return decorate(figures(embed, summary, style, server), style, MessageType.SYSTEM);
     }
 
     /** A session-ended card: the totals for the stay that just finished. */

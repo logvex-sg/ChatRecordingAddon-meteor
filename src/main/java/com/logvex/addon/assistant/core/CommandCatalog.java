@@ -91,6 +91,25 @@ public final class CommandCatalog {
         out.add(new Command("report", List.of("alert"),
             "Send a report to the webhook and ping the moderator role.",
             PermissionLevel.EVERYONE, true));
+        // Local-only by default: this command makes the client send /msg from the local player's
+        // own account. Left open to everyone, a stranger could type it in public chat and have
+        // their words delivered to a moderator under someone else's name.
+        // Local-only: this posts a digest of the operator's own chat archive to the webhook. Left
+        // open to everyone, a stranger in public chat could fill the operator's Discord channel.
+        out.add(new Command("summary", List.of("digest"),
+            "Send a chat summary report to the webhook.",
+            PermissionLevel.LOCAL_ONLY, true));
+        out.add(new Command("modcall", List.of("callmod", "modhelp"),
+            "Privately message the configured moderator with what you need.",
+            PermissionLevel.LOCAL_ONLY, false));
+        // The FAQ is its own module and answers its own line, so this entry documents it in help
+        // rather than routing it through the assistant's command table.
+        out.add(new Command("faq", List.of("qanda"),
+            "Add, list, view, remove and count the assistant's stored FAQ entries.",
+            PermissionLevel.EVERYONE, false));
+        out.add(new Command("triggers", List.of("rules", "keywords"),
+            "List the trigger rules that are active, one page at a time.",
+            PermissionLevel.EVERYONE, false));
         return List.copyOf(out);
     }
 
@@ -146,6 +165,18 @@ public final class CommandCatalog {
     public static Optional<String> canonical(String word) {
         if (word == null) return Optional.empty();
         return Optional.ofNullable(ALIASES.get(word.trim().toLowerCase(Locale.ROOT)));
+    }
+
+    /**
+     * The declared permission level of {@code command}, or {@code null} when it is not a command.
+     *
+     * <p>This is the level the catalog advertises. The live gate reads the operator's rules and
+     * default policy, so this is what a caller checks to confirm a declaration rather than to
+     * decide access.
+     */
+    public static PermissionLevel level(String command) {
+        Optional<Command> found = find(command);
+        return found.map(Command::defaultLevel).orElse(null);
     }
 
     /** The first alias of {@code command}, or null when it has none. */

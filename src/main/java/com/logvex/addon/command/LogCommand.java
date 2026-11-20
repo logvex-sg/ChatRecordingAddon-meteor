@@ -1,5 +1,6 @@
 package com.logvex.addon.command;
 
+import com.logvex.addon.LogClient;
 import com.logvex.addon.bot.BotModule;
 import com.logvex.addon.bot.core.BotMemory;
 import com.logvex.addon.bot.core.BotTask;
@@ -8,6 +9,7 @@ import com.logvex.addon.chatlog.core.ReportFormatting;
 import com.logvex.addon.chatlog.core.StatsSnapshot;
 import com.logvex.addon.chatlog.modules.ChatLoggerModule;
 import com.logvex.addon.common.Messages;
+import com.logvex.addon.common.Rows;
 import com.logvex.addon.notify.NotificationModule;
 import com.logvex.addon.notify.core.Notification;
 import com.logvex.addon.schematicdropper.SchematicDropperModule;
@@ -19,6 +21,9 @@ import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.systems.modules.Modules;
 import net.minecraft.command.CommandSource;
 
+import com.logvex.addon.assistant.core.ReplyFormat.Field;
+
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
@@ -42,10 +47,16 @@ public class LogCommand extends Command {
             return SINGLE_SUCCESS;
         });
 
-        builder.then(literal("help").executes(context -> {
-            help();
-            return SINGLE_SUCCESS;
-        }));
+        builder.then(literal("help")
+            .executes(context -> {
+                help();
+                return SINGLE_SUCCESS;
+            })
+            .then(argument("group", StringArgumentType.word()).executes(context -> {
+                help(StringArgumentType.getString(context, "group"));
+                return SINGLE_SUCCESS;
+            }))
+        );
 
         builder.then(literal("status").executes(context -> {
             status();
@@ -57,10 +68,16 @@ public class LogCommand extends Command {
             return SINGLE_SUCCESS;
         }));
 
-        builder.then(literal("modules").executes(context -> {
-            modules();
-            return SINGLE_SUCCESS;
-        }));
+        builder.then(literal("modules")
+            .executes(context -> {
+                modules();
+                return SINGLE_SUCCESS;
+            })
+            .then(literal("check").executes(context -> {
+                modulesCheck();
+                return SINGLE_SUCCESS;
+            }))
+        );
 
         builder.then(literal("stats").executes(context -> {
             stats();
@@ -183,7 +200,7 @@ public class LogCommand extends Command {
 
         builder.then(literal("import")
             .executes(context -> {
-                info("Usage: (highlight).log import <file>(default).");
+                info("Usage: (highlight)" + pfx() + "log import <file>(default).");
                 return SINGLE_SUCCESS;
             })
             .then(argument("path", StringArgumentType.greedyString()).executes(context -> {
@@ -193,7 +210,7 @@ public class LogCommand extends Command {
 
         builder.then(literal("importlog")
             .executes(context -> {
-                info("Usage: (highlight).log importlog <file>(default).");
+                info("Usage: (highlight)" + pfx() + "log importlog <file>(default).");
                 return SINGLE_SUCCESS;
             })
             .then(argument("path", StringArgumentType.greedyString()).executes(context -> {
@@ -298,6 +315,33 @@ public class LogCommand extends Command {
             digest();
             return SINGLE_SUCCESS;
         }));
+
+        builder.then(literal("overview").executes(context -> {
+            overview();
+            return SINGLE_SUCCESS;
+        }));
+
+        builder.then(literal("summary")
+            .executes(context -> {
+                sendSummary("");
+                return SINGLE_SUCCESS;
+            })
+            .then(argument("note", StringArgumentType.greedyString()).executes(context -> {
+                sendSummary(StringArgumentType.getString(context, "note"));
+                return SINGLE_SUCCESS;
+            }))
+        );
+
+        builder.then(literal("search")
+            .executes(context -> {
+                search("");
+                return SINGLE_SUCCESS;
+            })
+            .then(argument("terms", StringArgumentType.greedyString()).executes(context -> {
+                search(StringArgumentType.getString(context, "terms"));
+                return SINGLE_SUCCESS;
+            }))
+        );
 
         builder.then(literal("timeline")
             .executes(context -> {
@@ -514,59 +558,99 @@ public class LogCommand extends Command {
 
     // ------------------------------------------------------------------ sections
 
+    /** How many block lines one command answer may occupy before the rest is summarised. */
+    /** The addon's configured command prefix, so this list matches what the user actually types. */
+    private static String pfx() {
+        return com.logvex.addon.framework.systems.config.ClientConfig.get().prefix();
+    }
+
+    /** Prints a summary block; see {@link CommandOutput} for the layout rules. */
+    private void embed(String title, java.util.List<com.logvex.addon.assistant.core.ReplyFormat.Field> fields) {
+        CommandOutput.send(this, title, fields);
+    }
+
+    private void embed(String title, java.util.List<com.logvex.addon.assistant.core.ReplyFormat.Field> fields,
+                       String footer) {
+        CommandOutput.send(this, title, fields, footer);
+    }
+
+    /** A block of records, allowed the larger line budget so the list is not cut short. */
+    private void embedLong(String title,
+                           java.util.List<com.logvex.addon.assistant.core.ReplyFormat.Field> fields) {
+        CommandOutput.sendLong(this, title, fields, "");
+    }
+
+    private void embedLong(String title,
+                           java.util.List<com.logvex.addon.assistant.core.ReplyFormat.Field> fields,
+                           String footer) {
+        CommandOutput.sendLong(this, title, fields, footer);
+    }
+
     private void help() {
-        info("Log Client commands:");
-        info("  (highlight).log gui(default) - open the addon window.");
-        info("  (highlight).log status(default) - overall status.");
-        info("  (highlight).log modules(default) - list Log Client modules.");
-        info("  (highlight).log stats(default) - session statistics.");
-        info("  (highlight).log record <on|off>(default) - toggle chat recording.");
-        info("  (highlight).log notifications [count|clear](default) - recent notifications.");
-        info("  (highlight).log tasks [list|start|pause|resume|stop|clear](default) - the bot queue.");
-        info("  (highlight).log tasks add <type> <item> [amount](default) - queue a task.");
-        info("  (highlight).log waypoints [list|add <name>](default) - bot waypoints.");
-        info("  (highlight).log import <file>(default) - import a material list.");
-        info("  (highlight).log importlog <file>(default) - import a chat log into the archive.");
-        info("  (highlight).log alerts [count|clear](default) - recent keyword/webhook/error alerts.");
-        info("  (highlight).log playtime [player](default) - observed player session durations.");
-        info("  (highlight).log schematic [status|load <path>|start|pause|resume|stop](default).");
-        info("  (highlight).log acquire [start|pause|resume|stop|status|retry|import <path>](default) - Creative material acquisition.");
-        info("  (highlight).log digest(default) - summarise recent chat activity.");
-        info("  (highlight).log timeline [filter](default) - recent session milestones.");
-        info("  (highlight).log filter [stats|reset](default) - chat filter status.");
-        info("  (highlight).log notes [list|add <player> <text>|remove <player>|search <filter>](default).");
-        info("  (highlight).log identities [renamed|watch|unwatch|watchlist|clear|<filter>](default) - observed name changes.");
-        info("  (highlight).log sessions [list|clear](default) - past recording sessions.");
-        info("  (highlight).log webhook [status|test|preview|digest|leaderboard|profile <player>|set <url>|accent <name>](default) - webhook embeds.");
-        info("  (highlight).log companion [status|start|stop|token|regenerate|gui](default) - the companion web app.");
-        info("  (highlight).log update [status|check|download|channel <stable|beta>|gui](default) - GitHub release updates.");
-        info("  (highlight).log world [status|map|places [query]|nearest [category]|mark <name>|export](default) - world intelligence.");
-        info("  (highlight).log web(default) - open the local web console in your browser.");
-        info("  (highlight).ai [status|triggers|facts|remember|forget|test|gui](default) - the chat assistant.");
+        java.util.List<com.logvex.addon.assistant.core.ReplyFormat.Field> fields = new java.util.ArrayList<>();
+        for (com.logvex.addon.common.CommandCatalog.GroupSummary row
+            : com.logvex.addon.common.CommandCatalog.groupSummary()) {
+            fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field(
+                row.group().title(),
+                row.count() + (row.count() == 1 ? " command - " : " commands - ")
+                    + pfx() + "log help " + row.group().key()));
+        }
+        CommandOutput.sendList(this, "Log Client commands", fields,
+            pfx() + "prefix copies every command to the clipboard");
+    }
+
+    /** One group of commands, in detail. */
+    private void help(String groupName) {
+        com.logvex.addon.common.CommandCatalog.Group group =
+            com.logvex.addon.common.CommandCatalog.Group.parse(groupName);
+        if (group == null) {
+            warning("No group called '%s'. Groups: %s", groupName,
+                java.util.Arrays.stream(com.logvex.addon.common.CommandCatalog.Group.values())
+                    .map(com.logvex.addon.common.CommandCatalog.Group::key)
+                    .collect(java.util.stream.Collectors.joining(", ")));
+            return;
+        }
+        java.util.List<com.logvex.addon.assistant.core.ReplyFormat.Field> fields = new java.util.ArrayList<>();
+        for (com.logvex.addon.common.CommandCatalog.Entry entry
+            : com.logvex.addon.common.CommandCatalog.inGroup(group)) {
+            fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field(
+                com.logvex.addon.common.CommandCatalog.prefixed(pfx(), entry), entry.description()));
+        }
+        CommandOutput.sendList(this, group.title() + " commands", fields,
+            pfx() + "prefix to copy every command");
     }
 
     private void status() {
+        java.util.List<com.logvex.addon.assistant.core.ReplyFormat.Field> fields = new java.util.ArrayList<>();
+
         ChatLoggerModule logger = LogCommands.logger();
         if (logger != null) {
-            info("Chat logging: %s, %s, %s",
-                logger.isRecording() ? "recording" : "stopped",
-                logger.storageSummary(),
-                logger.isActive() ? "module on" : "module off");
+            fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Recording",
+                logger.isRecording() ? "on" : "off"));
+            fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Storage",
+                logger.storageSummary()));
+            fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Logger module",
+                logger.isActive() ? "on" : "off"));
         } else {
             warning("Chat logger module not found.");
         }
 
         BotModule bot = LogCommands.bot();
         if (bot != null) {
-            info("Automation: %s", bot.statusLine());
+            fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Automation",
+                bot.statusLine()));
         }
 
         NotificationModule notifications = LogCommands.notifications();
         if (notifications != null) {
-            info("Notifications: %d stored, %d accepted, %d suppressed",
-                notifications.center().size(), notifications.center().accepted(),
-                notifications.center().suppressed());
+            fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Notifications",
+                Messages.number(notifications.center().size()) + " stored, "
+                    + Messages.number(notifications.center().accepted()) + " accepted, "
+                    + Messages.number(notifications.center().suppressed()) + " suppressed"));
         }
+
+        embed("Log Client status", fields,
+            "Log Client " + com.logvex.addon.framework.LogClientContext.VERSION);
     }
 
     private void modules() {
@@ -575,11 +659,40 @@ public class LogCommand extends Command {
             warning("No Log Client modules are registered.");
             return;
         }
-        info("%d Log Client module%s:", modules.size(), modules.size() == 1 ? "" : "s");
+        List<Field> rows = new ArrayList<>(modules.size());
         for (Module module : modules) {
-            info("  %s %s - %s", module.isActive() ? "(highlight)[on](default)" : "(highlight)[off](default)",
-                module.title, module.description);
+            rows.add(new Field(module.isActive() ? "[on] " + module.title : "[off] " + module.title,
+                Messages.truncate(module.description, 70)));
         }
+        CommandOutput.sendList(this, "Log Client modules (" + modules.size() + ")", rows,
+            "enabled " + modules.stream().filter(Module::isActive).count() + " of " + modules.size());
+    }
+
+    /**
+     * Reports module names that more than one module claims.
+     *
+     * <p>A clash is silent at runtime — Meteor simply drops the earlier module — and only shows up
+     * later as a crash in whatever looked that module up. This command makes it visible on demand,
+     * which matters after adding or renaming a module or installing another addon.
+     */
+    private void modulesCheck() {
+        java.util.Collection<Module> all = Modules.get().getAll();
+        List<String> names = new ArrayList<>(all.size());
+        for (Module module : all) names.add(module.name);
+
+        List<Field> fields = new ArrayList<>();
+        fields.add(new Field("Registered", Messages.number(all.size()) + " modules"));
+        fields.add(new Field("Ours", Messages.number(LogCommands.addonModules().size())
+            + " in the " + LogClient.CATEGORY.name + " category"));
+        for (com.logvex.addon.framework.ModuleAudit.Clash clash
+            : com.logvex.addon.framework.ModuleAudit.clashes(names)) {
+            fields.add(new Field(clash.name(), "claimed " + clash.count() + " times"));
+        }
+        if (fields.size() == 2) {
+            fields.add(new Field("Clashes", "none"));
+        }
+        embed("Module name check", fields,
+            "a clash deletes the earlier module");
     }
 
     private void stats() {
@@ -593,14 +706,22 @@ public class LogCommand extends Command {
             info("No session statistics yet.");
             return;
         }
-        info("Messages: %d over %s (%.1f/min)", snapshot.totalMessages(),
-            ReportFormatting.duration(snapshot.durationMs()), snapshot.messagesPerMinute());
-        info("Players seen: %d, joins/leaves: %d/%d, deaths: %d", snapshot.uniquePlayers(),
-            snapshot.joinEvents(), snapshot.leaveEvents(), snapshot.deathEvents());
-        info("Keyword alerts: %d", snapshot.keywordAlerts());
-        if (!snapshot.topPlayers().isEmpty()) {
-            info("Most active: %s", String.join(", ", snapshot.topPlayers()));
-        }
+        java.util.List<com.logvex.addon.assistant.core.ReplyFormat.Field> fields = new java.util.ArrayList<>();
+        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Messages",
+            Messages.number(snapshot.totalMessages()) + " in "
+                + ReportFormatting.duration(snapshot.durationMs())));
+        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Rate",
+            Messages.decimal(snapshot.messagesPerMinute(), 1) + " / min"));
+        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Players",
+            Messages.number(snapshot.uniquePlayers()) + " seen"));
+        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Joins / leaves",
+            Messages.number(snapshot.joinEvents()) + " / " + Messages.number(snapshot.leaveEvents())));
+        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Deaths",
+            Messages.number(snapshot.deathEvents())));
+        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Keyword alerts",
+            Messages.number(snapshot.keywordAlerts())));
+        embed("Session statistics", fields,
+            snapshot.topPlayers().isEmpty() ? "" : "Most active: " + String.join(", ", snapshot.topPlayers()));
     }
 
     private void notifications(int count) {
@@ -614,10 +735,12 @@ public class LogCommand extends Command {
             info("No notifications recorded.");
             return;
         }
-        info("Most recent %d notification%s:", recent.size(), recent.size() == 1 ? "" : "s");
+        List<Field> rows = new ArrayList<>(recent.size());
         for (Notification notification : recent) {
-            info("  [%s] %s", notification.priority().name().toLowerCase(Locale.ROOT), notification.line());
+            rows.add(new Field(notification.priority().name().toLowerCase(Locale.ROOT),
+                Messages.truncate(notification.line(), 80)));
         }
+        CommandOutput.sendList(this, "Recent notifications (" + recent.size() + ")", rows, "");
     }
 
     private void alerts(int count) {
@@ -627,15 +750,15 @@ public class LogCommand extends Command {
             info("No alerts recorded yet.");
             return;
         }
-        info("Most recent %d alert%s:", recent.size(), recent.size() == 1 ? "" : "s");
+        List<Field> rows = new ArrayList<>(recent.size());
         for (var alert : recent) {
-            info("  [%s] %s: %s", alert.kind().id(), alert.title(),
-                Messages.truncate(alert.detail(), 90));
+            rows.add(new Field(alert.kind().id() + " " + alert.title(),
+                Messages.truncate(alert.detail(), 70)));
         }
-        info("Totals: %d keyword, %d webhook, %d error.",
-            log.count(com.logvex.addon.chatlog.core.AlertLog.Kind.KEYWORD),
-            log.count(com.logvex.addon.chatlog.core.AlertLog.Kind.WEBHOOK),
-            log.count(com.logvex.addon.chatlog.core.AlertLog.Kind.ERROR));
+        CommandOutput.sendList(this, "Recent alerts (" + recent.size() + ")", rows,
+            "totals: " + log.count(com.logvex.addon.chatlog.core.AlertLog.Kind.KEYWORD) + " keyword, "
+                + log.count(com.logvex.addon.chatlog.core.AlertLog.Kind.WEBHOOK) + " webhook, "
+                + log.count(com.logvex.addon.chatlog.core.AlertLog.Kind.ERROR) + " error");
     }
 
     private void playtime(String filter) {
@@ -648,17 +771,18 @@ public class LogCommand extends Command {
         }
         long now = System.currentTimeMillis();
         int shown = Math.min(list.size(), 20);
-        info("%d player session%s%s:", list.size(), list.size() == 1 ? "" : "s",
-            filter.isBlank() ? "" : " matching '" + filter + "'");
+        List<Field> rows = new ArrayList<>(shown);
         for (int i = 0; i < shown; i++) {
             var session = list.get(i);
             String duration = session.hasMeasuredTime()
                 ? ReportFormatting.duration(session.onlineMs(now))
                 : "unknown";
-            info("  %s - %s across %d session%s%s", session.name(), duration, session.sessions(),
-                session.sessions() == 1 ? "" : "s", session.online() ? " (online)" : "");
+            rows.add(new Field(session.name() + (session.online() ? " (online)" : ""),
+                duration + " across " + Messages.plural(session.sessions(), "session", "sessions")));
         }
-        if (list.size() > shown) info("  ... and %d more.", list.size() - shown);
+        String footer = list.size() > shown ? "and " + (list.size() - shown) + " more" : "";
+        CommandOutput.sendLong(this, Messages.plural(list.size(), "player session", "player sessions")
+            + (filter.isBlank() ? "" : " matching '" + filter + "'"), rows, footer);
     }
 
     private void tasks() {
@@ -668,25 +792,25 @@ public class LogCommand extends Command {
             return;
         }
         var queue = bot.controller().queue();
-        info("Automation: %s", bot.statusLine());
+        List<Field> fields = new ArrayList<>();
+        fields.add(new Field("Automation", bot.statusLine()));
         if (queue.isEmpty()) {
-            info("The task queue is empty.");
+            fields.add(new Field("Queue", "empty"));
         } else {
-            info("%d queued task%s:", queue.size(), queue.size() == 1 ? "" : "s");
-            int shown = 0;
-            for (BotTask task : queue.tasks()) {
-                if (shown++ >= 20) {
-                    info("  ... and %d more.", queue.size() - 20);
-                    break;
-                }
-                info("  #%d %s %s (%d/%d) %s", task.id(), task.type(),
-                    task.label().isBlank() ? task.itemId() : task.label(),
-                    task.progress(), task.required(), task.state());
+            Rows.Capped<BotTask> capped = Rows.cap(queue.tasks(), 20);
+            for (BotTask task : capped.shown()) {
+                fields.add(new Field("#" + task.id(),
+                    task.type() + " "
+                        + (task.label().isBlank() ? task.itemId() : task.label())
+                        + " (" + task.progress() + "/" + task.required() + ") " + task.state()));
             }
+            if (capped.truncated()) fields.add(new Field("Queue", Rows.remainderNote(capped)));
         }
         var history = bot.controller().history();
-        info("History: %d recorded, %d succeeded, %d failed",
-            history.size(), history.successCount(), history.failureCount());
+        fields.add(new Field("History", Messages.number(history.size()) + " total, "
+            + Messages.number(history.successCount()) + " ok, "
+            + Messages.number(history.failureCount()) + " failed"));
+        embedLong("Automation tasks", fields);
     }
 
     private void botAction(String action) {
@@ -738,13 +862,15 @@ public class LogCommand extends Command {
         }
         List<BotMemory.Waypoint> waypoints = bot.memory().waypoints();
         if (waypoints.isEmpty()) {
-            info("No waypoints recorded. Stand somewhere and use (highlight).log waypoints add <name>(default).");
+            info("No waypoints recorded. Stand somewhere and use (highlight)" + pfx() + "log waypoints add <name>(default).");
             return;
         }
-        info("%d waypoint%s:", waypoints.size(), waypoints.size() == 1 ? "" : "s");
+        List<Field> rows = new ArrayList<>(waypoints.size());
         for (BotMemory.Waypoint waypoint : waypoints) {
-            info("  %s - %s", waypoint.name(), waypoint.describe());
+            rows.add(new Field(waypoint.name(), waypoint.describe()));
         }
+        CommandOutput.sendLong(this, Messages.plural(waypoints.size(), "waypoint", "waypoints"), rows,
+            "");
     }
 
     private void addWaypoint(String name) {
@@ -779,7 +905,7 @@ public class LogCommand extends Command {
             return;
         }
         if (!module.buildController().hasSchematic()) {
-            info("No schematic loaded. Use (highlight).log schematic load <path>(default).");
+            info("No schematic loaded. Use (highlight)" + pfx() + "log schematic load <path>(default).");
             return;
         }
         com.logvex.addon.schematicdropper.core.ProgressSnapshot snapshot = module.snapshot();
@@ -908,20 +1034,23 @@ public class LogCommand extends Command {
             info("No world is loaded yet. Join a world to start recording discoveries.");
             return;
         }
-        info("World: %s", profile.label());
-        info("Places: %d, biomes: %d, resource types: %d, chunks: %d",
-            profile.locations().size(), profile.biomes().size(),
-            profile.resources().size(), profile.chunks().size());
+        List<Field> fields = new ArrayList<>();
+        fields.add(new Field("Name", profile.label()));
+        fields.add(new Field("Places", Messages.number(profile.locations().size())));
+        fields.add(new Field("Biomes", Messages.number(profile.biomes().size())));
+        fields.add(new Field("Resources", Messages.number(profile.resources().size())));
+        fields.add(new Field("Chunks", Messages.number(profile.chunks().size())));
         var recent = profile.discoveries().recent(5);
         if (recent.isEmpty()) {
-            info("No discoveries recorded yet.");
+            fields.add(new Field("Discoveries", "none yet"));
         } else {
-            info("Recent discoveries:");
             for (var event : recent) {
-                info("  %s %s at %s", event.kind(), event.label(),
-                    com.logvex.addon.world.core.WorldFormat.coords(event.x(), event.y(), event.z()));
+                fields.add(new Field(String.valueOf(event.kind()),
+                    event.label() + " at " + com.logvex.addon.world.core.WorldFormat.coords(
+                        event.x(), event.y(), event.z())));
             }
         }
+        embedLong("World", fields);
     }
 
     private void openWorldMap() {
@@ -944,16 +1073,15 @@ public class LogCommand extends Command {
             info(query.isBlank() ? "No places recorded yet." : "No places match \"" + query + "\".");
             return;
         }
-        info("Found %d place%s:", places.size(), places.size() == 1 ? "" : "s");
-        int shown = 0;
-        for (var point : places) {
-            if (shown++ >= 20) {
-                info("  ... and %d more.", places.size() - 20);
-                break;
-            }
-            info("  %s (%s) %s", point.name().isBlank() ? "(unnamed)" : point.name(),
-                point.category(), com.logvex.addon.world.core.WorldFormat.coords(point.x(), point.y(), point.z()));
+        var capped = Rows.cap(places, 20);
+        List<Field> rows = new ArrayList<>(capped.shown().size());
+        for (var point : capped.shown()) {
+            rows.add(new Field(point.name().isBlank() ? "(unnamed)" : point.name(),
+                point.category() + " "
+                    + com.logvex.addon.world.core.WorldFormat.coords(point.x(), point.y(), point.z())));
         }
+        CommandOutput.sendLong(this, Messages.plural(places.size(), "place", "places"), rows,
+            capped.truncated() ? "and " + capped.remaining() + " more" : "");
     }
 
     private void worldNearest(String categoryRaw) {
@@ -978,15 +1106,16 @@ public class LogCommand extends Command {
             info("No known places nearby.");
             return;
         }
-        info("Nearest known places:");
+        List<Field> rows = new ArrayList<>(points.size());
         for (var point : points) {
             double dx = point.x() - mc.player.getX();
             double dy = point.y() - mc.player.getY();
             double dz = point.z() - mc.player.getZ();
             double distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-            info("  %s - %s", point.name().isBlank() ? point.category().toString() : point.name(),
-                com.logvex.addon.world.core.WorldFormat.distance(distance));
+            rows.add(new Field(point.name().isBlank() ? point.category().toString() : point.name(),
+                com.logvex.addon.world.core.WorldFormat.distance(distance)));
         }
+        CommandOutput.sendLong(this, "Nearest known places", rows, "");
     }
 
     private void worldMark(String name) {
@@ -1022,6 +1151,103 @@ public class LogCommand extends Command {
         else error("Could not write the export file.");
     }
 
+    /**
+     * Prints one card summarising every subsystem at once.
+     *
+     * <p>The figures each had a home already — session statistics, the player index, the alert log,
+     * the world database, the automation status — but no command showed them together, so "what has
+     * happened this session?" meant running five commands and remembering the answers. This card is
+     * built from the same readers those commands use, so it cannot drift from them.
+     *
+     * <p>Nothing is sent anywhere: unlike {@code log summary}, which pushes a report to a Discord
+     * webhook, this prints in chat and needs no configuration.
+     */
+    private void overview() {
+        ChatLoggerModule logger = LogCommands.logger();
+        if (logger == null) {
+            error("The chat logger module is not available.");
+            return;
+        }
+
+        StatsSnapshot snapshot = logger.service().snapshot();
+        String session = snapshot.durationMs() > 0
+            ? ReportFormatting.duration(snapshot.durationMs()) + ", "
+                + Messages.plural(snapshot.totalMessages(), "message")
+            : "";
+        String rate = snapshot.messagesPerMinute() > 0
+            ? Messages.decimal(snapshot.messagesPerMinute(), 1) + " messages / min"
+            : "";
+
+        var sessions = com.logvex.addon.chatlog.mc.LogService.get().sessions().search("");
+        int online = 0;
+        for (var player : sessions) if (player.online()) online++;
+        String onlineText = online > 0 ? online + " online now" : "";
+        String seenText = snapshot.uniquePlayers() > 0
+            ? Messages.plural(snapshot.uniquePlayers(), "player") + " seen"
+            : "";
+
+        var alerts = com.logvex.addon.chatlog.mc.LogService.get().alerts();
+        String keyword = alerts.count(com.logvex.addon.chatlog.core.AlertLog.Kind.KEYWORD) > 0
+            ? alerts.count(com.logvex.addon.chatlog.core.AlertLog.Kind.KEYWORD) + " keyword"
+            : "";
+        String other = com.logvex.addon.chatlog.core.SummaryCard.join(", ",
+            alerts.count(com.logvex.addon.chatlog.core.AlertLog.Kind.WEBHOOK) > 0
+                ? alerts.count(com.logvex.addon.chatlog.core.AlertLog.Kind.WEBHOOK) + " webhook" : "",
+            alerts.count(com.logvex.addon.chatlog.core.AlertLog.Kind.ERROR) > 0
+                ? alerts.count(com.logvex.addon.chatlog.core.AlertLog.Kind.ERROR) + " error" : "");
+
+        String places = "";
+        var world = LogCommands.world();
+        if (world != null) {
+            int known = world.service().intelligence().search("", null, null).size();
+            if (known > 0) places = Messages.plural(known, "place") + " recorded";
+        }
+
+        BotModule bot = LogCommands.bot();
+        String automation = bot != null ? bot.statusLine() : "";
+        var companion = LogCommands.modules()
+            .get(com.logvex.addon.companion.mc.CompanionModule.class);
+        String companionText = companion == null ? ""
+            : companion.isRunning() ? "listening on port " + companion.boundPort() : "off";
+
+        var inputs = new com.logvex.addon.chatlog.core.SummaryCard.Inputs(
+            session, rate, logger.storageSummary(), onlineText, seenText,
+            keyword, other, places, automation, companionText);
+        var sections = com.logvex.addon.chatlog.core.SummaryCard.sections(inputs);
+        if (sections.isEmpty()) {
+            info("Nothing recorded yet. Join a world and the card will fill in.");
+            return;
+        }
+
+        List<Field> fields = new ArrayList<>();
+        for (var pair : com.logvex.addon.chatlog.core.SummaryCard.fields(sections)) {
+            fields.add(new Field(pair.label(), pair.value()));
+        }
+        embed("Log Client overview", fields,
+            com.logvex.addon.framework.LogClientContext.VERSION);
+    }
+
+    /**
+     * Sends the chat summary to the configured webhook as a report card.
+     *
+     * <p>Separate from {@code digest}, which prints locally and only forwards when the module is
+     * set to. This one always goes to the webhook and records who asked, because its purpose is to
+     * hand a summary to somebody else.
+     */
+    private void sendSummary(String note) {
+        com.logvex.addon.chatlog.modules.WebhookRelayModule relay = LogCommands.relay();
+        if (relay == null) {
+            error("The webhook relay module is not available.");
+            return;
+        }
+        if (!relay.configured()) {
+            warning("Set a webhook URL on the webhook-relay module first.");
+            return;
+        }
+        String who = mc.player == null ? "" : mc.player.getGameProfile().getName();
+        relay.sendSummary(who, note);
+    }
+
     private void digest() {
         com.logvex.addon.chatlog.modules.ChatDigestModule module =
             LogCommands.modules().get(com.logvex.addon.chatlog.modules.ChatDigestModule.class);
@@ -1032,6 +1258,48 @@ public class LogCommand extends Command {
         module.digest(true);
     }
 
+    /**
+     * Searches the recorded archive and prints the newest matches.
+     *
+     * <p>The store already knows how to query; what was missing was any way to reach it from chat,
+     * which left a user staring at an archive they could only open in a text editor. Matches are
+     * printed oldest-last so the most recent hit is nearest the input box.
+     */
+    private void search(String terms) {
+        ChatLoggerModule logger = LogCommands.logger();
+        if (logger == null || logger.storage() == null) {
+            error("Storage is unavailable. Enable the Chat Logger module first.");
+            return;
+        }
+        SearchArgs.Parsed parsed = SearchArgs.parse(terms);
+        java.util.List<com.logvex.addon.chatlog.core.ChatEntry> matches;
+        try {
+            matches = logger.storage().store().query(parsed.query(), parsed.limit());
+        } catch (java.io.IOException e) {
+            error("Could not read the archive: %s", e.getMessage() == null ? "unknown error" : e.getMessage());
+            return;
+        }
+        if (matches.isEmpty()) {
+            info(terms.isBlank() ? "The archive is empty." : "No messages match that search.");
+            return;
+        }
+
+        // The store hands back newest first; chat grows upward, so printing in that order would put
+        // the newest match furthest from the input box. Reverse so the latest hit lands last.
+        java.util.List<com.logvex.addon.assistant.core.ReplyFormat.Field> fields = new java.util.ArrayList<>();
+        for (int i = matches.size() - 1; i >= 0; i--) {
+            var entry = matches.get(i);
+            fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field(
+                com.logvex.addon.common.Messages.clock(entry.timestamp()),
+                com.logvex.addon.common.Messages.player(entry.sender()) + ": "
+                    + com.logvex.addon.common.Messages.truncate(entry.content(), 60)));
+        }
+        String footer = matches.size() >= parsed.limit()
+            ? "Showing the newest " + parsed.limit() + " - raise it with limit:<n>"
+            : com.logvex.addon.common.Messages.plural(matches.size(), "match", "matches");
+        embed(terms.isBlank() ? "Recent messages" : "Search: " + terms, fields, footer);
+    }
+
     private void timeline(String filter) {
         com.logvex.addon.chatlog.core.SessionTimeline timeline =
             com.logvex.addon.chatlog.mc.SessionTimelineService.get().timeline();
@@ -1040,13 +1308,14 @@ public class LogCommand extends Command {
             info(filter.isBlank() ? "No session milestones yet." : "No milestones match that filter.");
             return;
         }
-        info("Session milestones: %d", events.size());
         int shown = Math.min(events.size(), 15);
+        List<Field> rows = new ArrayList<>(shown);
         for (int i = 0; i < shown; i++) {
             var event = events.get(i);
-            info("  %s - %s", com.logvex.addon.common.Messages.clock(event.timestamp()), event.line());
+            rows.add(new Field(com.logvex.addon.common.Messages.clock(event.timestamp()), event.line()));
         }
-        if (events.size() > shown) info("  ... and %d more.", events.size() - shown);
+        CommandOutput.sendLong(this, Messages.plural(events.size(), "session milestone", "session milestones"),
+            rows, events.size() > shown ? "and " + (events.size() - shown) + " more" : "");
     }
 
     private void filterStatus() {
@@ -1077,13 +1346,14 @@ public class LogCommand extends Command {
             info(filter.isBlank() ? "No player notes saved." : "No notes match that filter.");
             return;
         }
-        info("Player notes: %d", notes.size());
         int shown = Math.min(notes.size(), 15);
+        List<Field> rows = new ArrayList<>(shown);
         for (int i = 0; i < shown; i++) {
             var note = notes.get(i);
-            info("  %s: %s", note.player(), com.logvex.addon.common.Messages.truncate(note.text(), 80));
+            rows.add(new Field(note.player(), com.logvex.addon.common.Messages.truncate(note.text(), 80)));
         }
-        if (notes.size() > shown) info("  ... and %d more.", notes.size() - shown);
+        CommandOutput.sendLong(this, Messages.plural(notes.size(), "player note", "player notes"), rows,
+            notes.size() > shown ? "and " + (notes.size() - shown) + " more" : "");
     }
 
     private void notesAdd(String player, String text) {
@@ -1112,19 +1382,19 @@ public class LogCommand extends Command {
                 : "No observed accounts match that name.");
             return;
         }
-        info("Observed accounts: %d%s", list.size(),
-            filter.isBlank() ? "" : " matching '" + filter + "'");
         int shown = Math.min(list.size(), 20);
         long now = System.currentTimeMillis();
+        List<Field> rows = new ArrayList<>(shown);
         for (int i = 0; i < shown; i++) {
             var identity = list.get(i);
             String previous = identity.previousName();
-            info("  %s%s - %d name%s, last seen %s", identity.currentName(),
-                previous.isEmpty() ? "" : " (was " + previous + ")",
-                identity.nameCount(), identity.nameCount() == 1 ? "" : "s",
-                Messages.ago(identity.lastSeen(), now));
+            rows.add(new Field(identity.currentName() + (previous.isEmpty() ? "" : " (was " + previous + ")"),
+                Messages.plural(identity.nameCount(), "name", "names") + ", last seen "
+                    + Messages.ago(identity.lastSeen(), now)));
         }
-        if (list.size() > shown) info("  ... and %d more.", list.size() - shown);
+        CommandOutput.sendLong(this, Messages.plural(list.size(), "observed account", "observed accounts")
+            + (filter.isBlank() ? "" : " matching '" + filter + "'"), rows,
+            list.size() > shown ? "and " + (list.size() - shown) + " more" : "");
     }
 
     private void renames() {
@@ -1133,14 +1403,16 @@ public class LogCommand extends Command {
             info("No player renames observed yet.");
             return;
         }
-        info("Observed renames: %d", renames.size());
         long now = System.currentTimeMillis();
-        int shown = Math.min(renames.size(), 20);
-        for (int i = 0; i < shown; i++) {
-            var rename = renames.get(i);
-            info("  %s \u2192 %s (%s)", rename.from(), rename.to(), Messages.ago(rename.atMs(), now));
+        var capped = Rows.cap(renames, 20);
+        List<Field> fields = new ArrayList<>();
+        for (var rename : capped.shown()) {
+            fields.add(new Field(rename.from(), rename.to() + " (" + Messages.ago(rename.atMs(), now) + ")"));
         }
-        if (renames.size() > shown) info("  ... and %d more.", renames.size() - shown);
+        String footer = capped.truncated()
+            ? Rows.remainderNote(capped)
+            : Messages.plural(renames.size(), "rename") + " observed";
+        embedLong("Player renames", fields, footer);
     }
 
     private void watch(String player, boolean add) {
@@ -1161,7 +1433,7 @@ public class LogCommand extends Command {
     private void watchlist() {
         var watchlist = com.logvex.addon.chatlog.mc.LogService.get().watchlist();
         if (watchlist.isEmpty()) {
-            info("The watchlist is empty. Use (highlight).log identities watch <player>(default).");
+            info("The watchlist is empty. Use (highlight)" + pfx() + "log identities watch <player>(default).");
             return;
         }
         info("Watching %d player%s: %s", watchlist.size(), watchlist.size() == 1 ? "" : "s",
@@ -1174,19 +1446,19 @@ public class LogCommand extends Command {
             info("No past sessions recorded yet.");
             return;
         }
-        info("Sessions kept: %d, %s across %s.", history.size(),
-            Messages.plural(history.totalMessages(), "message"),
-            Messages.duration(history.totalDurationMs(System.currentTimeMillis())));
-        var records = history.search("");
-        int shown = Math.min(records.size(), 15);
-        for (int i = 0; i < shown; i++) {
-            var record = records.get(i);
-            info("  %s %s - %s, %s, %d player%s", Messages.dateTime(record.startedAt()),
-                record.server(), Messages.duration(record.durationMs(System.currentTimeMillis())),
-                Messages.plural(record.messages(), "message"), record.uniquePlayers(),
-                record.uniquePlayers() == 1 ? "" : "s");
+        var capped = Rows.cap(history.search(""), 15);
+        long now = System.currentTimeMillis();
+        List<Field> fields = new ArrayList<>();
+        for (var record : capped.shown()) {
+            fields.add(new Field(Messages.dateTime(record.startedAt()),
+                record.server() + " - " + Messages.duration(record.durationMs(now))
+                    + ", " + Messages.plural(record.messages(), "message")
+                    + ", " + Messages.plural(record.uniquePlayers(), "player")));
         }
-        if (records.size() > shown) info("  ... and %d more.", records.size() - shown);
+        String footer = Messages.plural(history.size(), "session") + " kept, "
+            + Messages.plural(history.totalMessages(), "message");
+        if (capped.truncated()) footer = Rows.remainderNote(capped) + ", " + footer;
+        embedLong("Past sessions", fields, footer);
     }
 
     // ------------------------------------------------------------------ companion
@@ -1202,11 +1474,11 @@ public class LogCommand extends Command {
             return;
         }
         if (!module.isActive()) {
-            info("The companion is off. Use .log companion start to turn it on.");
+            info("The companion is off. Use " + pfx() + "log companion start to turn it on.");
             return;
         }
         if (!module.isRunning()) {
-            warning("The companion is on but not listening. Use .log companion start to retry.");
+            warning("The companion is on but not listening. Use " + pfx() + "log companion start to retry.");
             return;
         }
         info("Companion listening on port %d with %s connected.",
@@ -1284,7 +1556,7 @@ public class LogCommand extends Command {
         info("%s", snapshot.statusLine());
         info("Last checked: %s.", snapshot.lastCheckedText());
         if (snapshot.hasUpdate()) {
-            info("Use (highlight).log update download(default) to fetch %s.", snapshot.latestVersion());
+            info("Use (highlight)" + pfx() + "log update download(default) to fetch %s.", snapshot.latestVersion());
         }
     }
 
@@ -1302,7 +1574,7 @@ public class LogCommand extends Command {
     private void updateDownload() {
         var snapshot = com.logvex.addon.update.mc.UpdateService.get().snapshot();
         if (!snapshot.hasUpdate()) {
-            warning("No update is available to download. Run (highlight).log update check(default) first.");
+            warning("No update is available to download. Run (highlight)" + pfx() + "log update check(default) first.");
             return;
         }
         com.logvex.addon.update.mc.UpdateService.get().download();
@@ -1354,7 +1626,7 @@ public class LogCommand extends Command {
         }
         String url = module.url();
         info("Web console listening on port %d.", module.boundPort());
-        info("Open %s in a browser. The access token is under (highlight).log companion token(default).", url);
+        info("Open %s in a browser. The access token is under (highlight)" + pfx() + "log companion token(default).", url);
         try {
             net.minecraft.util.Util.getOperatingSystem().open(java.net.URI.create(url));
         } catch (RuntimeException e) {
@@ -1375,7 +1647,7 @@ public class LogCommand extends Command {
             return;
         }
         if (!relay.configured()) {
-            info("No webhook configured. Use (highlight).log webhook set <url>(default).");
+            info("No webhook configured. Use (highlight)" + pfx() + "log webhook set <url>(default).");
             return;
         }
         info("Webhook relay: %s, accent %s, %s",

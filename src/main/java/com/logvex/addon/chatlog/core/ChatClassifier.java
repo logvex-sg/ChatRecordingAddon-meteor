@@ -29,6 +29,21 @@ public final class ChatClassifier {
         "^(?:\\[[^\\]]*]\\s*)?([A-Za-z0-9_]{1,16})\\s+(?:whispers to you|-> you|\\u2192 you|msg(?:es)? you)",
         Pattern.CASE_INSENSITIVE);
 
+    /**
+     * A player chat line in the shapes servers use when they strip the signed-chat indicator.
+     *
+     * <p>Minecraft only attaches a chat indicator to properly signed player chat. An offline-mode
+     * server, a proxy, or a server running a chat plugin sends the same line without one, so the
+     * indicator cannot be trusted as the sole signal that a player spoke. These patterns recover the
+     * sender from the text instead: {@code <Name> text}, {@code [Rank] Name: text} and
+     * {@code Name: text}. Without them such a line classified as SYSTEM and was dropped whenever
+     * system watching was off, which made triggers fire on some servers and not others.
+     */
+    private static final Pattern ANGLE_CHAT = Pattern.compile(
+        "^(?:\\[[^\\]]{1,32}]\\s*)?<([A-Za-z0-9_]{1,16})>\\s*\\S.*$");
+    private static final Pattern COLON_CHAT = Pattern.compile(
+        "^(?:\\[[^\\]]{1,32}]\\s*)?([A-Za-z0-9_]{1,16})\\s*:\\s*\\S.*$");
+
     private static final List<String> DEATH_PHRASES = List.of(
         "was slain by", "was shot by", "was blown up by", "blew up", "drowned", "burned to death",
         "burned to a crisp", "went up in flames", "was killed by", "was killed while trying",
@@ -99,11 +114,63 @@ public final class ChatClassifier {
             if (lower.contains(marker)) return new Result(MessageType.GAME, "");
         }
 
+        // Player chat whose signed-chat indicator was stripped by a proxy or chat plugin. Checked
+        // before the bracketed-system fallback: a rank prefix such as "[VIP] Steve: hi" is a player
+        // talking, not a system notice, and treating it as one is what silently dropped triggers.
+        Matcher angle = ANGLE_CHAT.matcher(body);
+        if (angle.matches()) {
+            String name = clean(angle.group(1));
+            if (isPlayerName(name)) return new Result(MessageType.PUBLIC_CHAT, name);
+        }
+
+        Matcher colon = COLON_CHAT.matcher(body);
+        if (colon.matches()) {
+            String name = clean(colon.group(1));
+            if (isPlayerName(name) && !looksLikeSystemTag(name)) {
+                return new Result(MessageType.PUBLIC_CHAT, name);
+            }
+        }
+
         if (body.startsWith("[") && body.indexOf(']') > 1 && body.indexOf(']') < 24) {
             return new Result(MessageType.SYSTEM, bracketTag(body));
         }
 
         return new Result(MessageType.SYSTEM, "");
+    }
+
+    /**
+     * True when a colon-prefixed word is a system tag rather than a player name.
+     *
+     * <p>{@code Server: restarting} and {@code Announcement: event} use the same shape as a player
+     * name, so the vocabulary has to decide. Only a known tag is rejected; an unknown word is
+     * treated as a player, because a missed reply is worse than an extra one.
+     */
+    private static boolean looksLikeSystemTag(String word) {
+        if (word == null) return true;
+        String lower = word.toLowerCase(Locale.ROOT);
+        return lower.equals("server") || lower.equals("system") || lower.equals("announcement")
+            || lower.equals("broadcast") || lower.equals("notice") || lower.equals("warning")
+            || lower.equals("error") || lower.equals("info") || lower.equals("admin")
+            || lower.equals("console") || lower.equals("note") || lower.equals("tip")
+            || lower.equals("hint") || lower.equals("news") || lower.equals("event");
+    }
+
+    /**
+     * True when {@code name} can be a Minecraft player name.
+     *
+     * <p>Vanilla allows 3 to 16 characters, so the length floor rejects a clock reading such as
+     * {@code 12:34}, and the letter requirement rejects a numeric label. Without both, an ordinary
+     * line of text shaped like {@code digits: digits} was read as somebody speaking.
+     */
+    private static boolean isPlayerName(String name) {
+        if (name == null || name.length() < 3 || name.length() > 16) return false;
+        boolean hasLetter = false;
+        for (int i = 0; i < name.length(); i++) {
+            char c = name.charAt(i);
+            if (!Character.isLetterOrDigit(c) && c != '_') return false;
+            if (Character.isLetter(c)) hasLetter = true;
+        }
+        return hasLetter;
     }
 
     /** Best-effort sender extraction from a decorated chat line such as {@code <Name> message}. */

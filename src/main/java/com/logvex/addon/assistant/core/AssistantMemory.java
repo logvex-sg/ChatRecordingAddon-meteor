@@ -1,5 +1,7 @@
 package com.logvex.addon.assistant.core;
 
+import com.logvex.addon.ai.core.TextTokenizer;
+
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -78,6 +80,66 @@ public final class AssistantMemory {
     /** Every stored fact, in insertion order. */
     public List<Fact> facts() {
         return List.copyOf(facts.values());
+    }
+
+    /**
+     * The stored fact whose key appears in {@code text}, if exactly one does.
+     *
+     * <p>This is what lets the assistant answer from its own memory instead of only from a fixed
+     * corpus: "what is the prefix" reaches the {@code prefix} fact without a trained example for
+     * that sentence. Matching is on whole words so {@code server} does not match {@code servers}
+     * and {@code fact} does not match {@code factory}.
+     *
+     * <p>Nesting is not ambiguity. A store holding {@code spawn} and {@code spawn point} answers the
+     * longer key when both match, because the longer key is the more specific reading of the same
+     * words. Two <em>unrelated</em> keys matching, such as {@code server} and {@code spawn} in
+     * "where is the server spawn", is genuine ambiguity and returns empty: a wrong fact is worse
+     * than none, because the user cannot see that a guess happened.
+     */
+    public Optional<Fact> recall(String text) {
+        if (text == null || text.isBlank() || facts.isEmpty()) return Optional.empty();
+        // rawTokens, not tokens: tokens() drops stopwords and stems, which would erase the very
+        // words a key is built from ("what is the prefix" must still reach the `prefix` key).
+        java.util.Set<String> words = new java.util.HashSet<>(TextTokenizer.rawTokens(text));
+        if (words.isEmpty()) return Optional.empty();
+
+        List<Fact> matches = new ArrayList<>(2);
+        for (Fact fact : facts.values()) {
+            if (mentionsKey(words, fact.key())) matches.add(fact);
+        }
+        if (matches.isEmpty()) return Optional.empty();
+        if (matches.size() == 1) return Optional.of(matches.get(0));
+
+        // Keep only the most specific matches: drop any whose words are a strict subset of another
+        // match. What survives is either one key (the nested case) or several unrelated ones.
+        List<Fact> mostSpecific = new ArrayList<>(matches.size());
+        for (Fact candidate : matches) {
+            boolean shadowed = false;
+            for (Fact other : matches) {
+                if (other != candidate && isStrictSubset(candidate.key(), other.key())) {
+                    shadowed = true;
+                    break;
+                }
+            }
+            if (!shadowed) mostSpecific.add(candidate);
+        }
+        return mostSpecific.size() == 1 ? Optional.of(mostSpecific.get(0)) : Optional.empty();
+    }
+
+    /** True when every word of {@code key} is present in {@code words}. */
+    private static boolean mentionsKey(java.util.Set<String> words, String key) {
+        if (key == null || key.isBlank()) return false;
+        for (String part : TextTokenizer.rawTokens(key)) {
+            if (!words.contains(part)) return false;
+        }
+        return true;
+    }
+
+    /** True when {@code narrower}'s words are all in {@code wider} and {@code wider} has more. */
+    private static boolean isStrictSubset(String narrower, String wider) {
+        List<String> narrow = TextTokenizer.rawTokens(narrower);
+        List<String> wide = TextTokenizer.rawTokens(wider);
+        return narrow.size() < wide.size() && wide.containsAll(narrow);
     }
 
     // ------------------------------------------------------------------ player facts

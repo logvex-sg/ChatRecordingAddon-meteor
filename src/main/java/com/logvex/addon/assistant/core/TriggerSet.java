@@ -52,8 +52,22 @@ public final class TriggerSet {
      * @param sender the player the message came from, or an empty string when unknown
      */
     public TriggerRule firstMatch(String sender, String content) {
+        return firstMatch(sender, content, null);
+    }
+
+    /**
+     * The first matching rule that also satisfies {@code allowed}.
+     *
+     * <p>The filter lets the caller exclude a class of rules without the set knowing why. The runtime
+     * uses it to keep a prefixed command out of reach of a trigger written for the bare word, while
+     * still honouring a trigger the user wrote with the prefix on purpose.
+     *
+     * @param allowed an extra condition, or null to accept every rule
+     */
+    public TriggerRule firstMatch(String sender, String content, java.util.function.Predicate<TriggerRule> allowed) {
         if (content == null || content.isBlank()) return null;
         for (TriggerRule rule : rules) {
+            if (allowed != null && !allowed.test(rule)) continue;
             if (!rule.senderAllowed(sender)) continue;
             if (matches(rule, content)) return rule;
         }

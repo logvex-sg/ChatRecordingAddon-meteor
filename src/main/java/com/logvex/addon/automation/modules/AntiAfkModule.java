@@ -28,6 +28,7 @@ public class AntiAfkModule extends AutomationModule {
         .name("min-interval-seconds")
         .description("Shortest wait between two actions.")
         .defaultValue(20)
+        .range(5, 3600)
         .sliderRange(5, 300)
         .build()
     );
@@ -36,6 +37,7 @@ public class AntiAfkModule extends AutomationModule {
         .name("max-interval-seconds")
         .description("Longest wait between two actions. A random value in this range is used.")
         .defaultValue(40)
+        .range(5, 3600)
         .sliderRange(5, 600)
         .build()
     );
@@ -59,7 +61,7 @@ public class AntiAfkModule extends AutomationModule {
     private int releaseKeyAt = -1;
 
     public AntiAfkModule() {
-        super("anti-afk", "Performs small actions so you are not kicked for idling.");
+        super("log-anti-afk", "Performs small actions so you are not kicked for idling.");
     }
 
     @Override

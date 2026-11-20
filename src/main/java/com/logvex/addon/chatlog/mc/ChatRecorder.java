@@ -2,6 +2,7 @@ package com.logvex.addon.chatlog.mc;
 
 import com.logvex.addon.chatlog.core.ChatClassifier;
 import com.logvex.addon.chatlog.core.ChatEntry;
+import com.logvex.addon.framework.SafeEventHandler;
 import meteordevelopment.meteorclient.events.game.GameJoinedEvent;
 import meteordevelopment.meteorclient.events.game.GameLeftEvent;
 import meteordevelopment.meteorclient.events.game.ReceiveMessageEvent;
@@ -40,7 +41,9 @@ public final class ChatRecorder {
 
     @EventHandler
     private void onGameLeft(GameLeftEvent event) {
-        service.endSession(System.currentTimeMillis());
+        // Runs inside MinecraftClient.disconnect(), which does not survive a listener throwing.
+        SafeEventHandler.run("ChatRecorder.onGameLeft",
+            () -> service.endSession(System.currentTimeMillis()));
     }
 
     private String serverAddress() {

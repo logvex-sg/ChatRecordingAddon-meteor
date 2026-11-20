@@ -78,6 +78,25 @@ class SessionsAndAlertsTest {
     }
 
     @Test
+    void onlineTimeRankingCountsTheStretchInProgress() {
+        PlayerSessionTracker tracker = new PlayerSessionTracker();
+        // Gone: a short completed session, so ranking on completed time alone puts them first.
+        tracker.record(entry(1000, MessageType.JOIN, "Gone", "Gone joined the game"));
+        tracker.record(entry(4000, MessageType.LEAVE, "Gone", "Gone left the game"));
+        // Here: still online, and has been for far longer than the other player was ever seen.
+        tracker.record(entry(1000, MessageType.JOIN, "Here", "Here joined the game"));
+
+        long now = 100_000;
+        List<PlayerSession> ranked = tracker.byOnlineTime(now);
+        assertEquals(2, ranked.size());
+        assertEquals("Here", ranked.get(0).name(),
+            "the player still online has the longest time and must rank first");
+        assertEquals("Gone", ranked.get(1).name());
+        // The old overload ignores the in-progress stretch, which is why the command needs this one.
+        assertEquals("Gone", tracker.byOnlineTime().get(0).name());
+    }
+
+    @Test
     void exclusionStopsTrackingAndForgetRemoves() {
         PlayerSessionTracker tracker = new PlayerSessionTracker();
         tracker.setExcluded(List.of("bob"));

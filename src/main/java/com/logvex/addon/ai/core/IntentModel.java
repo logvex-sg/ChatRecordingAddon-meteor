@@ -1,10 +1,12 @@
 package com.logvex.addon.ai.core;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * The whole local model: an intent classifier plus a small text generator, trained from a built-in
@@ -22,7 +24,7 @@ import java.util.Map;
 public final class IntentModel {
     /** Confidence below which the assistant admits it does not understand. */
     public static final double DEFAULT_THRESHOLD = 0.45;
-    private static final int MAX_INTENTS = 24;
+    private static final int MAX_INTENTS = 32;
     private static final int MAX_EXAMPLES_PER_INTENT = 40;
 
     /**
@@ -43,9 +45,52 @@ public final class IntentModel {
     private final Map<String, List<String>> taught = new LinkedHashMap<>();
     private double threshold = DEFAULT_THRESHOLD;
 
+    /**
+     * Keyword rules tried before the classifier.
+     *
+     * <p>The classifier is good at a rough topic and bad at the fine distinctions that matter in
+     * chat: measured on 58 ordinary paraphrases it answered 45, and several answers were confidently
+     * wrong — "what is the prefix" read as serverinfo, "how are you" as tickrate. A bag of words
+     * cannot separate those, because the distinguishing token is a stopword the tokenizer drops.
+     *
+     * <p>So a small ordered table of required-token sets runs first. A rule fires only when every
+     * one of its tokens is present, which makes it precise: {@code ping} alone does not answer a
+     * question about the server. First match wins, so the specific rules are listed before the broad
+     * ones. Anything that falls through is classified as before, so this only ever adds accuracy.
+     */
+    private final List<Route> router;
+
+    /**
+     * Repairs one-letter slips against the words this model was actually trained on.
+     *
+     * <p>Built from the corpus rather than a dictionary, so it can only ever suggest a word the
+     * classifier has evidence for. Rebuilt whenever a new example is taught.
+     */
+    private volatile TypoCorrector corrector;
+
     public IntentModel() {
-        this.classifier = new NaiveBayesClassifier(512, MAX_INTENTS);
+        // 8192 buckets, not 2048: at 2048 a word and an unrelated bigram still shared a slot often
+        // enough to matter — "night" was counted for the game-help class, which contains no such
+        // word, and that class then answered "is it night". The corpus holds well over a thousand
+        // distinct words and bigrams, so 8192 leaves several buckets per feature. The cost is
+        // 32 x 8192 doubles, about 2 MB, constant and paid once at load.
+        this.classifier = new NaiveBayesClassifier(8192, MAX_INTENTS);
         trainBuiltins();
+        this.router = buildRouter();
+        rebuildCorrector();
+    }
+
+    /** Rebuilds the typo vocabulary from every trained example. */
+    private void rebuildCorrector() {
+        Set<String> words = new HashSet<>();
+        for (Intent intent : intents.values()) words.addAll(TypoCorrector.wordsOf(intent.examples()));
+        for (List<String> examples : taught.values()) words.addAll(TypoCorrector.wordsOf(examples));
+        this.corrector = new TypoCorrector(words);
+    }
+
+    /** The typo corrector, exposed so a test can assert it against the trained corpus. */
+    public TypoCorrector corrector() {
+        return corrector;
     }
 
     public double threshold() {
@@ -82,16 +127,289 @@ public final class IntentModel {
      * @return the matching intent, or null when the message is not understood well enough
      */
     public Intent classify(String text) {
-        NaiveBayesClassifier.Result result = classifier.classifyWithConfidence(text);
+        Intent routed = route(text);
+        if (routed == null) {
+            // Route the repaired text too. "were am i" misses the "where am i" rule because the
+            // typo is a different token, and the classifier alone then picks the wrong class.
+            String repaired = correct(text);
+            if (!repaired.equals(text)) routed = route(repaired);
+        }
+        if (routed != null) return routed;
+        // Repair one-letter slips before classifying. A misspelt word is a feature the classifier
+        // has never seen, so "helo" scores zero everywhere and the line goes unanswered even though
+        // the meaning was plain. The router above runs on the raw tokens, because its rules are
+        // short and its own matching is already tolerant.
+        NaiveBayesClassifier.Result result = classifier.classifyWithConfidence(correct(text));
+        if (!result.known() || result.confidence() < threshold) {
+            // Still not confident: the correction may have been a coin flip between two real words
+            // ("helo" is one edit from both "hello" and "help"). Try each reading and keep the one
+            // the classifier is surest about, which is the reading that fits the rest of the line.
+            NaiveBayesClassifier.Result best = resolveAmbiguous(text);
+            if (best != null) result = best;
+        }
         if (!result.known() || result.confidence() < threshold) return null;
         String name = classifier.className(result.index());
         return name == null ? null : intents.get(name);
+    }
+
+    /**
+     * Classifies each reading of an ambiguous typo and returns the most confident one.
+     *
+     * <p>Returns null when there is nothing ambiguous to try. Bounded to a handful of variants so a
+     * pathological line cannot cause work proportional to the vocabulary.
+     */
+    private NaiveBayesClassifier.Result resolveAmbiguous(String text) {
+        TypoCorrector current = corrector;
+        if (current == null) return null;
+        List<String> variants = readings(text, current);
+        if (variants.isEmpty()) return null;
+        NaiveBayesClassifier.Result best = null;
+        for (String variant : variants) {
+            NaiveBayesClassifier.Result attempt = classifier.classifyWithConfidence(variant);
+            if (!attempt.known()) continue;
+            if (best == null || attempt.confidence() > best.confidence()) best = attempt;
+        }
+        return best == null ? null : best;
+    }
+
+    /** One variant per ambiguous word, with that word replaced by each of its candidates. */
+    private static List<String> readings(String text, TypoCorrector corrector) {
+        List<String> out = new ArrayList<>(2);
+        List<String> words = TextTokenizer.rawTokens(text);
+        for (String word : words) {
+            List<String> candidates = corrector.candidates(word);
+            if (candidates.isEmpty()) continue;
+            for (String candidate : candidates) {
+                out.add(replaceWord(text, word, candidate));
+                if (out.size() >= 4) return out;
+            }
+        }
+        return out;
+    }
+
+    /** Replaces whole-word occurrences of {@code from} with {@code to}, case-insensitively. */
+    private static String replaceWord(String text, String from, String to) {
+        StringBuilder out = new StringBuilder(text.length());
+        int i = 0;
+        while (i < text.length()) {
+            char c = text.charAt(i);
+            if (!Character.isLetterOrDigit(c)) {
+                out.append(c);
+                i++;
+                continue;
+            }
+            int start = i;
+            while (i < text.length() && Character.isLetterOrDigit(text.charAt(i))) i++;
+            String word = text.substring(start, i);
+            out.append(word.equalsIgnoreCase(from) ? to : word);
+        }
+        return out.toString();
+    }
+
+    /** The text with unknown one-letter-away words repaired, or the input when nothing is unclear. */
+    public String correct(String text) {
+        TypoCorrector current = corrector;
+        return current == null ? text : current.correct(text);
+    }
+
+    /**
+     * The intent the keyword table selects for {@code text}, or null when no rule applies.
+     *
+     * <p>Matching uses {@link TextTokenizer#rawTokens}, not {@code tokens}: the stopwords that
+     * {@code tokens} removes are exactly the words that distinguish these rules — {@code how are
+     * you} from {@code what are you}, and {@code where am i} from {@code who am i}. Both sides are
+     * stemmed so {@code coords} matches {@code coordinates}.
+     *
+     * <p>Exposed so a test can assert the routing table directly, and so a caller can tell a routed
+     * answer from a classified one when diagnosing a bad reply.
+     */
+    public Intent route(String text) {
+        if (text == null || text.isBlank()) return null;
+        java.util.Set<String> tokens = stems(TextTokenizer.rawTokens(text));
+        if (tokens.isEmpty()) return null;
+        for (Route rule : router) {
+            if (tokens.containsAll(rule.required())) {
+                Intent intent = intents.get(rule.intent());
+                if (intent != null) return intent;
+            }
+        }
+        return null;
+    }
+
+    private static java.util.Set<String> stems(List<String> words) {
+        java.util.Set<String> out = new java.util.HashSet<>(words.size() * 2);
+        for (String word : words) out.add(TextTokenizer.stem(word));
+        return out;
+    }
+
+    /**
+     * One keyword rule: an intent plus the tokens that must all be present.
+     *
+     * @param required every token here must appear in the message
+     */
+    private record Route(String intent, java.util.Set<String> required) {
+    }
+
+    private static Route route(String intent, String... required) {
+        return new Route(intent, stems(List.of(required)));
+    }
+
+    /**
+     * The routing table, most specific first.
+     *
+     * <p>Every rule here exists because the classifier got that phrasing wrong, so the table is
+     * evidence-driven rather than exhaustive. Order matters where rules overlap:
+     * <ul>
+     *   <li>{@code server lag} must beat bare {@code server}, which would answer a lag question with
+     *       the server's name.</li>
+     *   <li>{@code what can you do} must beat {@code what ... you}, which is the identity rule.</li>
+     *   <li>{@code how are you} must beat {@code you there}, which is the same intent anyway but
+     *       would otherwise decide by accident.</li>
+     * </ul>
+     */
+    private static List<Route> buildRouter() {
+        return List.of(
+            route("prefix", "prefix"),
+            // Before the "how do i" help rule below, which would otherwise swallow every how-to.
+            route("gamehelp", "claim", "land"),
+            route("gamehelp", "beacon"),
+            route("gamehelp", "village"),
+            route("gamehelp", "diamond"),
+            route("gamehelp", "craft"),
+            route("gamehelp", "enchant"),
+            route("gamehelp", "best", "sword"),
+            route("gamehelp", "best", "tool"),
+            route("help", "how", "use"),
+            route("help", "how", "work"),
+            route("help", "what", "can", "you", "do"),
+            route("help", "what", "command"),
+            route("help", "help"),
+            // Memory.
+            route("memory", "what", "remember"),
+            route("memory", "what", "know"),
+            // Status. These use stopwords, which is why the router reads raw tokens.
+            route("status", "how", "are", "you"),
+            route("status", "how", "you", "doing"),
+            route("status", "how", "is", "it", "going"),
+            route("status", "you", "ok"),
+            route("status", "you", "there"),
+            route("status", "whats", "up"),
+            route("status", "you", "good"),
+            route("status", "how", "r", "u"),
+            route("status", "how", "u", "doin"),
+            // Position. Before the gamehelp rules: "wheres the base" is a position question, and
+            // the village rule below would otherwise claim it because both are places.
+            route("position", "where", "am", "i"),
+            route("position", "wheres", "base"),
+            route("position", "where", "base"),
+            route("position", "coords"),
+            route("position", "biome"),
+            // Player count and who is around. Added because the classifier answered "how many
+            // players" with the tick rate and "whos online" with its own identity: with no
+            // examples for this topic it picked whichever class shared the most words.
+            route("players", "how", "many", "player"),
+            route("players", "player", "count"),
+            route("players", "how", "many", "ppl"),
+            route("players", "how", "many", "people"),
+            route("players", "who", "online"),
+            route("players", "whos", "online"),
+            route("players", "whose", "online"),
+            route("players", "whos", "on"),
+            route("players", "anyone", "online"),
+            route("players", "anybody", "online"),
+            route("players", "online", "now"),
+            route("players", "who", "here"),
+            // Tick rate before serverinfo: "is the server lagging" names the server but asks about lag.
+            route("tickrate", "server", "lag"),
+            route("tickrate", "tps"),
+            // "tickrate" is one word, so the two-token rule below never matched it. Both spellings
+            // are in common use and only the spaced one was covered.
+            route("tickrate", "tickrate"),
+            route("tickrate", "tick", "rate"),
+            route("tickrate", "lag"),
+            route("latency", "ping"),
+            route("latency", "latency"),
+            route("latency", "laggy"),
+            route("serverinfo", "server"),
+            route("serverinfo", "dimension"),
+            route("serverinfo", "world"),
+            route("weather", "weather"),
+            route("weather", "raining"),
+            route("weather", "rain"),
+            route("weather", "sunny"),
+            route("weather", "night"),
+            route("weather", "day", "time"),
+            route("time", "time"),
+            route("time", "clock"),
+            route("time", "date"),
+            route("time", "today"),
+            route("joke", "joke"),
+            route("joke", "funny"),
+            route("joke", "laugh"),
+            route("compliment", "good", "bot"),
+            route("compliment", "nice", "bot"),
+            route("compliment", "good", "job"),
+            route("compliment", "well", "done"),
+            route("insult", "bad", "bot"),
+            route("insult", "stupid", "bot"),
+            route("identity", "are", "you", "bot"),
+            route("identity", "are", "you", "human"),
+            route("identity", "who", "you"),
+            route("identity", "what", "you"),
+            route("identity", "your", "name"),
+            route("thanks", "thanks"),
+            route("thanks", "thank", "you"),
+            route("thanks", "ty"),
+            route("thanks", "thx"),
+            route("thanks", "tyvm"),
+            route("thanks", "appreciate"),
+            route("thanks", "cheers"),
+            route("farewell", "bye"),
+            route("farewell", "goodbye"),
+            route("farewell", "cya"),
+            route("farewell", "gtg"),
+            route("farewell", "later"),
+            route("farewell", "im", "out"),
+            route("farewell", "good", "night"),
+            route("serverinfo", "ip"),
+            route("congrats", "gg"),
+            route("congrats", "wp"),
+            // After the "nice bot" compliment rule above, so praise of the bot still wins.
+            route("congrats", "nice"),
+            route("congrats", "ez"),
+            route("laughter", "lol"),
+            route("laughter", "lmao"),
+            route("laughter", "haha"),
+            route("greeting", "hello"),
+            route("greeting", "hi"),
+            route("greeting", "hey"),
+            route("greeting", "yo"),
+            route("greeting", "sup"),
+            route("greeting", "hiya"),
+            route("greeting", "howdy"),
+            route("greeting", "morning"),
+            route("greeting", "evening")
+        );
     }
 
     /** The confidence of the best match, for diagnostics and tests. */
     public double confidence(String text) {
         NaiveBayesClassifier.Result result = classifier.classifyWithConfidence(text);
         return result.known() ? result.confidence() : 0;
+    }
+
+    /**
+     * Classifies {@code text} with the keyword table bypassed.
+     *
+     * <p>Diagnostics only. It exists so the classifier's own accuracy can be measured apart from the
+     * router — the comparison is what justifies the router existing, and a claim about it should be
+     * reproducible rather than asserted.
+     */
+    public Intent classifyWithoutRouting(String text) {
+        NaiveBayesClassifier.Result result = classifier.classifyWithConfidence(text);
+        if (!result.known() || result.confidence() < threshold) return null;
+        String name = classifier.className(result.index());
+        return name == null ? null : intents.get(name);
     }
 
     /**
@@ -126,6 +444,7 @@ public final class IntentModel {
             generator.train(example);
             exampleCounts.put(intentName, 1);
             taught.computeIfAbsent(intentName, key -> new ArrayList<>()).add(example);
+            rebuildCorrector();
             return true;
         }
         int count = exampleCounts.getOrDefault(intentName, existing.examples().size());
@@ -134,6 +453,7 @@ public final class IntentModel {
         generator.train(example);
         exampleCounts.put(intentName, count + 1);
         taught.computeIfAbsent(intentName, key -> new ArrayList<>()).add(example);
+        rebuildCorrector();
         return true;
     }
 
@@ -219,14 +539,73 @@ public final class IntentModel {
             List.of("Try {prefix}remember key = value, {prefix}fact key, {prefix}help.",
                 "I remember facts and answer keywords. Ask me {prefix}memory.",
                 "Use {prefix}memory for a summary, {prefix}facts to list what I know.")));
+        train(new Intent("prefix",
+            List.of("what is the prefix", "whats the prefix", "the prefix",
+                "how do i start a command", "command prefix", "what symbol",
+                "how do i talk to you", "what do i type"),
+            List.of("The prefix is {prefix} \u2014 try {prefix}help.",
+                "Start a command with {prefix}, as in {prefix}facts.",
+                "My commands begin with {prefix}.")));
         train(new Intent("status",
-            List.of("status", "how are you", "are you ok", "are you there", "ping",
-                "you there", "what is your status", "are you online"),
-            List.of("Online and recording, {player}.", "All good here.", "Present.")));
+            List.of("how are you", "how are you doing", "how is it going", "you good",
+                "you there", "are you there", "whats up", "how do you feel",
+                "everything ok", "you ok"),
+            List.of("Running well, {player}.", "All good here.", "Present and listening.",
+                "Fine, thanks for asking.")));
+        train(new Intent("congrats",
+            List.of("gg", "wp", "good game", "well played", "nice one", "congrats",
+                "congratulations", "nice", "ez"),
+            List.of("Nice one!", "Well played.", "Good game.", "Clean.")));
+        train(new Intent("laughter",
+            List.of("lol", "lmao", "haha", "hehe", "rofl", "hah", "lmfao", "thats funny"),
+            List.of("Ha.", "Glad you liked it.", "Heh.", "Fair.")));
         train(new Intent("time",
             List.of("what time is it", "the time", "current time", "time now",
                 "what is the time", "tell me the time"),
             List.of("It is {time}.", "The clock says {time}.")));
+        train(new Intent("serverinfo",
+            List.of("what server is this", "which server", "server name", "what is the server",
+                "what world is this", "which dimension", "what dimension is this"),
+            List.of("This is {server}, on {dimension}.", "{server} \u2014 {dimension}.",
+                "You are on {server} in {world}.")));
+        train(new Intent("latency",
+            List.of("what is my ping", "how is my ping", "my latency", "how laggy",
+                "is it lagging", "how is the connection", "connection quality"),
+            List.of("Your ping is {ping} ms \u2014 {verdict}.", "{ping} ms, {verdict}.",
+                "Latency {ping} ms ({verdict}).")));
+        train(new Intent("tickrate",
+            List.of("tps", "tickrate", "tick rate", "server tps", "whats the tps",
+                "how many tps", "is the server lagging", "how fast is the server",
+                "how many ticks per second", "server lag"),
+            List.of("TPS is {tps}/20 at {mspt} ms per tick.", "{tps}/20, {mspt} ms per tick.",
+                "The server is running at {tps}/20.")));
+        train(new Intent("position",
+            List.of("where am i", "what are my coordinates", "my coords", "what is my position",
+                "which biome is this", "what biome"),
+            List.of("You are at {coords} in {biome}.", "{coords}, {biome}, facing {facing}.",
+                "Coordinates {coords}.")));
+        // Game questions the corpus had no topic for. Without these the classifier answered
+        // "how do i claim land" with nothing at all, because no class shared its words.
+        //
+        // The examples deliberately omit the question scaffolding ("how do i", "where is the",
+        // "what is the best"). Those words appear in most other intents, so including them made
+        // this class claim "how are you" and "where even am i" — a broad class that swallows its
+        // neighbours is worse than the gap it fills. Only the domain nouns are listed.
+        train(new Intent("gamehelp",
+            List.of("claim land", "beacon recipe", "village nearby", "best sword",
+                "best pickaxe", "get diamonds", "make a farm", "enchant a sword"),
+            List.of("I cannot play the game for you, {player}, but ask {prefix}help for what I can do.",
+                "That is a game question I have no data on. I only know this client's chat and stats.",
+                "I have no recipe data. Try the wiki, or ask me for coords, ping or players.")));
+        // Domain nouns only, for the same reason as gamehelp: "who are you" and "how are you"
+        // both contain who/how/are/you, so examples built from those words made this class
+        // answer the identity and status questions. The router covers the phrasings.
+        train(new Intent("players",
+            List.of("player count", "players online", "how many players", "how many ppl",
+                "how many people online", "players in the tab", "tab list", "online players",
+                "population", "server population"),
+            List.of("There are {players} players online.", "{players} online right now.",
+                "{players} players in the tab list.")));
         train(new Intent("memory",
             List.of("what do you remember", "what do you know", "your memory",
                 "list facts", "what facts", "remember anything", "tell me what you know"),
@@ -256,7 +635,8 @@ public final class IntentModel {
         train(new Intent("weather",
             List.of("weather", "is it raining", "what is the weather", "is it sunny",
                 "is it night", "raining outside"),
-            List.of("Look outside, {player} \u2014 I only see chat.", "I cannot see the sky from here.")));
+            List.of("It is {weather} here, {player}.", "The sky says {weather}.",
+                "Weather: {weather}.")));
         train(new Intent("identity",
             List.of("who are you", "what are you", "your name", "what is your name",
                 "are you a bot", "are you human", "who is this"),

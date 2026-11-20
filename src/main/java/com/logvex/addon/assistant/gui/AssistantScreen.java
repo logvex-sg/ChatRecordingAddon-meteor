@@ -145,7 +145,9 @@ public class AssistantScreen extends WindowScreen {
         TriggerRule rule = TriggerRule.decode(encoded);
         WButton enable = row.add(theme.button(rule == null || rule.enabled() ? "Disable" : "Enable")).widget();
         enable.action = () -> {
-            TriggerRule current = TriggerRule.decode(encoded);
+            // Read the box, not the text captured when the row was built: after an edit the box is
+            // newer, and toggling the stale copy would silently undo what the user just typed.
+            TriggerRule current = TriggerRule.decode(box.get());
             if (current == null) return;
             module.replaceRule(index, new TriggerRule(current.pattern(), current.caseSensitive(),
                 current.wholeWord(), current.sender(), current.reply(), current.mode(),
@@ -422,6 +424,17 @@ public class AssistantScreen extends WindowScreen {
     // ------------------------------------------------------------------ status
 
     private void renderStatus() {
+        // A tab that throws leaves the user with a blank window and no way back, so the whole tab is
+        // built defensively: any failure is shown in place rather than escaping the screen.
+        try {
+            renderStatusBody();
+        } catch (RuntimeException failure) {
+            add(theme.label("The status tab could not be built: " + failure)).expandX().widget()
+                .color(MUTED);
+        }
+    }
+
+    private void renderStatusBody() {
         if (!module.statusEnabled()) {
             add(theme.label("The live status commands are switched off in the module settings."))
                 .expandX().widget().color(MUTED);
@@ -436,8 +449,10 @@ public class AssistantScreen extends WindowScreen {
 
         // Previews go through the same path chat uses, so a custom template shows exactly what it
         // would deliver rather than a second, drifting rendering.
+        java.util.List<String> stored = module.statusLinesSetting() == null
+            ? java.util.List.of() : module.statusLinesSetting().get();
         StatusCommands.Settings settings =
-            new StatusCommands.Settings(true, StatusOutput.decodeAll(module.statusLinesSetting().get()));
+            new StatusCommands.Settings(true, StatusOutput.decodeAll(stored));
 
         WVerticalList previews = add(theme.verticalList()).expandX().widget();
         for (StatusCommand.Definition command : StatusCommand.all()) {

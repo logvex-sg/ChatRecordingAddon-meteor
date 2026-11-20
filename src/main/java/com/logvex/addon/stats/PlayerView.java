@@ -33,11 +33,31 @@ public record PlayerView(
     List<String> armor,
     List<String> effects,
     String target,
-    boolean targetIsEntity
+    boolean targetIsEntity,
+    float saturation,
+    int level,
+    float xpProgress,
+    int air,
+    int totems
 ) {
     /** No player: every figure is absent. */
     public static final PlayerView EMPTY = new PlayerView(
-        0f, 0f, 0f, 0, -1, "", 0.0, 0.0, 0.0, "", 0.0, "", "", List.of(), List.of(), "", false);
+        0f, 0f, 0f, 0, -1, "", 0.0, 0.0, 0.0, "", 0.0, "", "", List.of(), List.of(), "", false,
+        0f, 0, 0f, 0, 0);
+
+    /**
+     * The original seventeen-field form.
+     *
+     * <p>Kept so a caller that predates the extra player figures still compiles, and so a test can
+     * describe only what it cares about. The added fields take their "absent" values.
+     */
+    public PlayerView(float health, float maxHealth, float absorption, int food, int gamemode,
+                      String gamemodeName, double x, double y, double z, String facing,
+                      double speed, String heldItem, String offhandItem, List<String> armor,
+                      List<String> effects, String target, boolean targetIsEntity) {
+        this(health, maxHealth, absorption, food, gamemode, gamemodeName, x, y, z, facing, speed,
+            heldItem, offhandItem, armor, effects, target, targetIsEntity, 0f, 0, 0f, 0, 0);
+    }
 
     public PlayerView {
         if (gamemodeName == null) gamemodeName = "";
@@ -54,6 +74,12 @@ public record PlayerView(
         if (absorption < 0f) absorption = 0f;
         if (food < 0) food = 0;
         if (speed < 0.0) speed = 0.0;
+        if (saturation < 0f) saturation = 0f;
+        if (level < 0) level = 0;
+        if (xpProgress < 0f) xpProgress = 0f;
+        if (xpProgress > 1f) xpProgress = 1f;
+        if (air < 0) air = 0;
+        if (totems < 0) totems = 0;
     }
 
     /** True when there is no player to read. */

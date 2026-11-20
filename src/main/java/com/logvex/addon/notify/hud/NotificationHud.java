@@ -54,11 +54,7 @@ public class NotificationHud extends HudElement {
         if (showSource.get() && !notification.source().isEmpty()) {
             sb.append('[').append(notification.source()).append("] ");
         }
-        String body = notification.title().isEmpty() ? notification.message()
-            : (notification.message().isEmpty()
-                ? notification.title()
-                : notification.title() + " " + notification.message());
-        sb.append(Messages.truncate(body, 48));
+        sb.append(Messages.truncate(notification.body(), 48));
         return sb.toString();
     }
 

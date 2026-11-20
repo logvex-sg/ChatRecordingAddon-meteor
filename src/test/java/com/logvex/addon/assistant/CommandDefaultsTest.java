@@ -1,6 +1,7 @@
 package com.logvex.addon.assistant;
 
 import com.logvex.addon.assistant.core.CommandCatalog;
+import com.logvex.addon.assistant.core.PermissionLevel;
 import com.logvex.addon.assistant.core.TriggerRule;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -53,15 +54,79 @@ class CommandDefaultsTest {
     }
 
     @Test
-    @DisplayName("no default trigger shadows a built-in command")
-    void defaultsDoNotShadowCommands() {
+    @DisplayName("a default trigger never shadows a restricted command")
+    void defaultsDoNotShadowRestrictedCommands() {
+        // A prefixed default ("!tps") is matched before the command parser, so it does take the
+        // place of that command. That is only acceptable when the command it replaces is already
+        // open to everyone: shadowing a LOCAL_ONLY or administrator command with a public reply
+        // would either hide a command from its owner or expose one it must not.
+        //
+        // A prefixed pattern that is not a command at all (for example "!inventory") shadows
+        // nothing and is always allowed.
         List<String> clashes = new ArrayList<>();
         for (TriggerRule rule : TriggerRule.defaults()) {
             String pattern = rule.pattern().toLowerCase(Locale.ROOT).strip();
-            // A bare command word as a trigger would answer before the command is ever parsed.
-            if (CommandCatalog.canonical(pattern).isPresent()) clashes.add(pattern);
+            if (!pattern.startsWith("!")) continue;
+            String verb = pattern.substring(1).split("\\s+", 2)[0];
+            if (verb.isEmpty()) continue;
+
+            String canonical = CommandCatalog.canonical(verb).orElse(null);
+            if (canonical == null) continue;
+            PermissionLevel level = CommandCatalog.defaultLevelFor(canonical);
+            if (level != PermissionLevel.EVERYONE) {
+                clashes.add(pattern + " would hide the " + level + " command !" + canonical);
+            }
         }
-        assertTrue(clashes.isEmpty(), "these default triggers shadow a command: " + clashes);
+        assertTrue(clashes.isEmpty(), "these default triggers shadow a restricted command: "
+            + clashes);
+    }
+
+    @Test
+    @DisplayName("every public default trigger resolves its placeholders")
+    void publicDefaultsExpand() {
+        // A public rule is written to be read by everyone in chat, so an unexpanded placeholder is
+        // visible to the whole server rather than just the author. Each shipped rule is expanded
+        // against a full context and must come out with no brace left behind.
+        com.logvex.addon.assistant.core.Placeholders placeholders =
+            com.logvex.addon.assistant.core.Placeholders.standard();
+        com.logvex.addon.stats.ServerStats stats = com.logvex.addon.stats.ServerStats.OFFLINE;
+        com.logvex.addon.assistant.core.ResponseTemplate.Context context =
+            new com.logvex.addon.assistant.core.ResponseTemplate.Context(
+                "p", "", "", new com.logvex.addon.assistant.core.AssistantMemory(),
+                1_000L, stats, "assistant", "!");
+
+        List<String> broken = new ArrayList<>();
+        for (TriggerRule rule : TriggerRule.defaults()) {
+            String pattern = rule.pattern().toLowerCase(Locale.ROOT).strip();
+            if (!pattern.startsWith("!")) continue;
+            String expanded = placeholders.expand(rule.reply(), context);
+            if (expanded.contains("{") || expanded.contains("}")) {
+                broken.add(pattern + " -> " + expanded);
+            }
+        }
+        assertTrue(broken.isEmpty(), "these public defaults leave a placeholder unexpanded: "
+            + broken);
+    }
+
+    @Test
+    @DisplayName("a prefixed command reaches its command even when a bare-word trigger exists")
+    void prefixedCommandBeatsBareTrigger() {
+        // "hello" is both a shipped trigger and a shipped command. Typing "!hello" must run the
+        // command, while typing "hello" in chat must still get the trigger reply.
+        com.logvex.addon.assistant.core.AssistantRuntime runtime =
+            new com.logvex.addon.assistant.core.AssistantRuntime(
+                new com.logvex.addon.assistant.core.AssistantMemory());
+        runtime.setTriggers(com.logvex.addon.assistant.core.TriggerSet.of(
+            List.of(TriggerRule.of("hello", "canned trigger reply"))));
+        runtime.setConfig(com.logvex.addon.assistant.core.AssistantConfig.DEFAULTS);
+        runtime.setDuplicateFilter(false);
+
+        String bare = runtime.handle("p", "hello", 1_000L).text();
+        assertEquals("canned trigger reply", bare, "unprefixed chat must still hit the trigger");
+
+        String prefixed = runtime.handle("p", "!hello", 2_000L).text();
+        assertFalse("canned trigger reply".equals(prefixed),
+            "a prefixed command must not be answered by a bare-word trigger");
     }
 
     @Test

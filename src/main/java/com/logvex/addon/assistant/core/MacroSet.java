@@ -81,13 +81,14 @@ public final class MacroSet {
 
         int split = 0;
         while (split < body.length() && !Character.isWhitespace(body.charAt(split))) split++;
-        String shortcut = prefix + body.substring(0, split);
+        String shortcut = body.substring(0, split);
         String input = body.substring(split).strip();
+        String wanted = bare(shortcut);
 
         for (ChatMacro macro : macros) {
             if (!macro.enabled() || !macro.valid()) continue;
             for (String trigger : macro.triggers()) {
-                if (trigger.equalsIgnoreCase(shortcut)) return Optional.of(new Call(macro, input));
+                if (bare(trigger).equals(wanted)) return Optional.of(new Call(macro, input));
             }
         }
         return Optional.empty();
@@ -102,10 +103,30 @@ public final class MacroSet {
     public boolean wouldRecurse(ChatMacro macro, String command) {
         if (macro == null || command == null) return false;
         String stripped = command.strip();
+        // Re-entry is only possible when the outgoing text would itself be read as a macro, which
+        // needs the prefix. Without this check `/spawn` and `!spawn` compare equal once the
+        // punctuation is dropped, and a perfectly good command would be refused as a loop.
+        if (!stripped.startsWith(prefix)) return false;
+        String wanted = bare(stripped);
         for (String trigger : macro.triggers()) {
-            if (stripped.equalsIgnoreCase(trigger)) return true;
+            if (bare(trigger).equals(wanted)) return true;
         }
         return false;
+    }
+
+    /**
+     * A spelling with any leading command punctuation removed, lower-cased.
+     *
+     * <p>Macros are stored with the prefix the user typed them with, but the prefix itself is a
+     * setting. Comparing bare spellings means changing {@code !} to {@code #} keeps every existing
+     * macro reachable instead of silently disabling the whole table.
+     */
+    static String bare(String spelling) {
+        if (spelling == null) return "";
+        String text = spelling.strip();
+        int start = 0;
+        while (start < text.length() && !Character.isLetterOrDigit(text.charAt(start))) start++;
+        return text.substring(start).toLowerCase(Locale.ROOT);
     }
 
     /** Every shortcut and alias, for a duplicate check and for {@code !macros}. */

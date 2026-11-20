@@ -1,22 +1,23 @@
 package com.logvex.addon.chatlog.modules;
 
-import com.logvex.addon.framework.systems.modules.AddonModule;
 import com.logvex.addon.LogClient;
 import com.logvex.addon.chatlog.core.ChatEntry;
+import com.logvex.addon.chatlog.core.HighlightAnnouncer;
 import com.logvex.addon.chatlog.core.MessageType;
 import com.logvex.addon.chatlog.mc.LogService;
-import meteordevelopment.meteorclient.events.world.TickEvent;
 import com.logvex.addon.framework.gui.GuiTheme;
 import com.logvex.addon.framework.gui.widgets.WWidget;
 import com.logvex.addon.framework.gui.widgets.containers.WVerticalList;
 import com.logvex.addon.framework.gui.widgets.pressable.WButton;
+import com.logvex.addon.framework.systems.modules.AddonModule;
+import com.logvex.addon.notify.core.NotificationType;
+import com.logvex.addon.notify.mc.NotificationService;
 import meteordevelopment.meteorclient.settings.BoolSetting;
 import meteordevelopment.meteorclient.settings.IntSetting;
 import meteordevelopment.meteorclient.settings.Setting;
 import meteordevelopment.meteorclient.settings.SettingGroup;
 import meteordevelopment.meteorclient.settings.StringListSetting;
-import meteordevelopment.meteorclient.systems.modules.Module;
-import meteordevelopment.orbit.EventHandler;
+import net.minecraft.sound.SoundEvents;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -103,28 +104,41 @@ public class ChatMonitorModule extends AddonModule {
 
     private final Setting<Boolean> desktopNotifications = sgNotify.add(new BoolSetting.Builder()
         .name("desktop-notifications")
-        .description("Log highlighted messages to the game log (a desktop-notification hook).")
+        .description("Post a highlighted message to the notification centre.")
         .defaultValue(false)
         .build()
     );
 
     private final LogService service = LogService.get();
 
+    /** Notified once per recorded entry, so each highlight is announced once and only once. */
+    private final LogService.LiveListener liveListener = this::onRecorded;
+
+    private final HighlightAnnouncer announcer = new HighlightAnnouncer();
+
     public ChatMonitorModule() {
         super(LogClient.CATEGORY, "chat-monitor", "Live chat feed with search, filters and highlighting.");
     }
 
-    @EventHandler
-    private void onTick(TickEvent.Post event) {
-        // Nothing to poll: the feed is read on demand. The handler keeps the module ticking so its
-        // notification settings are evaluated against newly recorded entries.
-        if (!notifySounds.get() && !desktopNotifications.get()) return;
-        List<ChatEntry> recent = service.recent(5);
-        for (ChatEntry entry : recent) {
-            if (!isHighlighted(entry)) continue;
-            if (desktopNotifications.get()) {
-                LogClient.LOG.info("[Log Client] highlighted: {}", entry.content());
-            }
+    @Override
+    public void onActivate() {
+        service.addListener(liveListener);
+    }
+
+    @Override
+    public void onDeactivate() {
+        service.removeListener(liveListener);
+        announcer.reset();
+    }
+
+    private void onRecorded(ChatEntry entry) {
+        if (!isHighlighted(entry) || !announcer.claim(entry)) return;
+        if (notifySounds.get() && mc.player != null) {
+            mc.player.playSound(SoundEvents.BLOCK_NOTE_BLOCK_PLING.value(), 1.0f, 1.5f);
+        }
+        if (desktopNotifications.get()) {
+            NotificationService.get().notify(NotificationType.IMPORTANT_CHAT, name,
+                entry.sender().isBlank() ? "Highlighted message" : entry.sender(), entry.content());
         }
     }
 

@@ -257,7 +257,12 @@ public final class ConfigManager {
         JsonObject client = object(root, "client");
         if (client == null) return;
         if (client.has("prefix")) {
-            ClientConfig.get().setPrefix(stringOr(client, "prefix", ClientConfig.get().prefix()));
+            String stored = stringOr(client, "prefix", ClientConfig.get().prefix());
+            // Before 18.2 the prefix was written to the file but nothing read it, so every saved
+            // value is the old untouched default ".". Honouring that would keep `!log` dead for
+            // exactly the people who had already run the mod once, so the dead default is dropped
+            // and a prefix the user deliberately changed is kept.
+            if (!".".equals(stored)) ClientConfig.get().setPrefix(stored);
         }
         if (client.has("text-scale")) {
             Hud.get().setTextScale(doubleOr(client, "text-scale", Hud.get().textScale()));

@@ -2,6 +2,7 @@ package com.logvex.addon.bot;
 
 import com.logvex.addon.framework.systems.modules.AddonModule;
 import com.logvex.addon.LogClient;
+import com.logvex.addon.framework.SafeEventHandler;
 import com.logvex.addon.bot.core.BotClock;
 import com.logvex.addon.bot.core.BotConfig;
 import com.logvex.addon.bot.core.BotController;
@@ -372,7 +373,8 @@ public class BotModule extends AddonModule {
     @EventHandler
     private void onGameLeft(GameLeftEvent event) {
         if (!isActive()) return;
-        controller.onWorldChanged();
+        // Posted from inside MinecraftClient.disconnect(); a throw here would take the game down.
+        SafeEventHandler.run("BotModule.onGameLeft", controller::onWorldChanged);
     }
 
     // ------------------------------------------------------------------ wiring

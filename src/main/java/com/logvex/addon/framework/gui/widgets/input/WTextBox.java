@@ -18,7 +18,10 @@ import net.minecraft.client.gui.DrawContext;
  * point.
  */
 public class WTextBox extends WWidget {
+    /** Fires on every edit, for callers that filter or preview as the user types. */
     public Runnable action;
+    /** Fires only when Enter is pressed, for a field that commits a value. */
+    public Runnable submit;
 
     private String text;
     private final String placeholder;
@@ -94,7 +97,8 @@ public class WTextBox extends WWidget {
         if (focused) {
             // A caret that blinks on a one-second cycle so it reads as a live cursor.
             if ((AnimationClock.time() % 1.0) < 0.5) {
-                int caretX = (int) x + 5 + tr.getWidth(text.substring(0, Math.min(cursor, text.length())));
+                int caretX = (int) x + 5
+                    + tr.getWidth(text.substring(0, Math.min(cursor, text.length())));
                 Render2D.rect(context, caretX, y + 3, 1, height - 6, Render2D.argb(theme == null
                     ? new meteordevelopment.meteorclient.utils.render.color.Color(224, 224, 224) : theme.accent));
             }
@@ -145,6 +149,7 @@ public class WTextBox extends WWidget {
             }
             case 257, 335 -> { // enter
                 changed();
+                if (submit != null) submit.run();
                 return true;
             }
             default -> {

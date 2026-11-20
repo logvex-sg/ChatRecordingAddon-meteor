@@ -78,13 +78,7 @@ public final class PlayerIdentityService {
         // Only write back when the persisted index was actually loaded first; otherwise this would
         // overwrite a good file with the empty in-memory tracker.
         if (loaded) io.execute(() -> PlayerIdentityStore.save(dataDir(), tracker));
-        io.shutdown();
-        try {
-            if (!io.awaitTermination(2, java.util.concurrent.TimeUnit.SECONDS)) io.shutdownNow();
-        } catch (InterruptedException e) {
-            io.shutdownNow();
-            Thread.currentThread().interrupt();
-        }
+        com.logvex.addon.common.ShutdownFlush.await(io);
     }
 
     public void addListener(RenameListener listener) {

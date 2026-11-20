@@ -100,11 +100,8 @@ public class NotificationCenterScreen extends WindowScreen {
                 table.add(theme.label(notification.priority().name())).widget()
                     .color(colorFor(notification.priority()));
                 table.add(theme.label(notification.source().isEmpty() ? "-" : notification.source())).widget();
-                String body = notification.title().isEmpty() ? notification.message()
-                    : (notification.message().isEmpty()
-                        ? notification.title()
-                        : notification.title() + " " + notification.message());
-                table.add(theme.label(Messages.truncate(body, 80))).expandCellX().widget();
+                table.add(theme.label(Messages.truncate(notification.body(), 80)))
+                    .expandCellX().widget();
                 table.row();
             }
         }

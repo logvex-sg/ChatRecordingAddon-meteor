@@ -97,7 +97,8 @@ public final class AiService {
             JsonObject snapshot = engine.toJson();
             io.execute(() -> writeToDisk(snapshot));
         }
-        io.shutdown();
+        // The writer is a daemon thread: without waiting, the JVM exits and the save above is lost.
+        com.logvex.addon.common.ShutdownFlush.await(io);
     }
 
     private void readFromDisk() {

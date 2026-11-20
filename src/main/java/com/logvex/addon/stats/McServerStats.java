@@ -64,6 +64,7 @@ public final class McServerStats {
         // The client only knows the players the server has sent it, which is the full list on most
         // servers but a subset on ones that hide players; the maximum is never transmitted.
         int players = mc.getNetworkHandler() == null ? 0 : mc.getNetworkHandler().getPlayerList().size();
+        TpsWindow.sample(TickRate.INSTANCE.getTickRate(), now);
         RegistryKey<World> key = mc.world.getRegistryKey();
         ServerInfo entry = mc.getCurrentServerEntry();
 
@@ -89,7 +90,19 @@ public final class McServerStats {
             usedMb,
             maxMb,
             onlineNames(mc),
-            playerView(mc, blocksPerSecond)
+            playerView(mc, blocksPerSecond),
+            TpsWindow.average(TpsWindow.ONE_MINUTE, now),
+            TpsWindow.average(5 * TpsWindow.ONE_MINUTE, now),
+            TpsWindow.average(15 * TpsWindow.ONE_MINUTE, now),
+            freeMemoryMb(),
+            serverVersion(mc),
+            serverBrand(mc),
+            -1L,
+            sessionStart,
+            difficultyName(mc),
+            net.minecraft.SharedConstants.getGameVersion().getName(),
+            fabricVersion(),
+            modCount()
         );
     }
 
@@ -114,7 +127,12 @@ public final class McServerStats {
             armor(player),
             effects(player),
             target(mc),
-            mc.crosshairTarget instanceof EntityHitResult
+            mc.crosshairTarget instanceof EntityHitResult,
+            player.getHungerManager().getSaturationLevel(),
+            player.experienceLevel,
+            player.experienceProgress,
+            player.getAir(),
+            totemCount(player)
         );
     }
 
@@ -246,5 +264,133 @@ public final class McServerStats {
         if (!mc.world.isChunkLoaded(pos.getX() >> 4, pos.getZ() >> 4)) return "";
         var entry = mc.world.getBiome(pos);
         return entry.getKey().map(RegistryKey::getValue).map(id -> id.getPath()).orElse("");
+    }
+
+    // ------------------------------------------------------------------ rolling tick rate
+
+    /**
+     * Rolling one, five and fifteen minute tick-rate averages.
+     *
+     * <p>Meteor's {@link TickRate} reports one instantaneous figure. An average over a window is what
+     * tells a player whether the server has been steady or just recovered, so the samples are kept
+     * here and averaged on demand. A window with no samples is reported as absent (-1) rather than
+     * as the current rate, so a fresh join does not claim a five-minute average it never measured.
+     */
+    private static final class TpsWindow {
+        private static final long ONE_MINUTE = 60_000L;
+        private static final long SAMPLE_GAP_MS = 1_000L;
+        private static final int CAPACITY = 16 * 60;
+
+        private static final long[] TIMES = new long[CAPACITY];
+        private static final float[] VALUES = new float[CAPACITY];
+        private static int head;
+        private static int size;
+        private static long lastSampleAt;
+
+        private TpsWindow() {
+        }
+
+        static synchronized void sample(float tps, long now) {
+            if (tps <= 0f) return;
+            if (now - lastSampleAt < SAMPLE_GAP_MS) {
+                // Keep the newest value in place so a rapid burst of replies sees a fresh figure.
+                if (size > 0) VALUES[(head - 1 + CAPACITY) % CAPACITY] = tps;
+                return;
+            }
+            lastSampleAt = now;
+            TIMES[head] = now;
+            VALUES[head] = tps;
+            head = (head + 1) % CAPACITY;
+            if (size < CAPACITY) size++;
+        }
+
+        /** The mean over {@code windowMs}, or -1 when nothing was sampled in that window. */
+        static synchronized float average(long windowMs, long now) {
+            float sum = 0f;
+            int count = 0;
+            for (int i = 0; i < size; i++) {
+                int index = (head - 1 - i + CAPACITY * 2) % CAPACITY;
+                if (now - TIMES[index] > windowMs) break;
+                sum += VALUES[index];
+                count++;
+            }
+            return count == 0 ? -1f : sum / count;
+        }
+    }
+
+    /** The Fabric Loader version, or empty when it cannot be read. */
+    private static String fabricVersion() {
+        try {
+            return net.fabricmc.loader.api.FabricLoader.getInstance()
+                .getModContainer("fabricloader")
+                .map(container -> container.getMetadata().getVersion().getFriendlyString())
+                .orElse("");
+        } catch (RuntimeException ignored) {
+            return "";
+        }
+    }
+
+    /** How many mods are loaded, or 0 when the loader cannot say. */
+    private static int modCount() {
+        try {
+            return net.fabricmc.loader.api.FabricLoader.getInstance().getAllMods().size();
+        } catch (RuntimeException ignored) {
+            return 0;
+        }
+    }
+
+    /** The free heap in megabytes, read from the running JVM. */
+    private static long freeMemoryMb() {
+        Runtime runtime = Runtime.getRuntime();
+        return Math.max(0L, runtime.freeMemory() / (1024L * 1024L));
+    }
+
+    /**
+     * The server software brand, when the client was told it.
+     *
+     * <p>Vanilla and most proxies send their brand in a plugin message, which the client stores on
+     * the network handler. An offline-mode or plugin-stripped server sends nothing, so this is
+     * absent rather than guessed.
+     */
+    private static String serverBrand(MinecraftClient mc) {
+        if (mc.getNetworkHandler() == null) return "";
+        String brand = mc.getNetworkHandler().getBrand();
+        return brand == null ? "" : brand.strip();
+    }
+
+    /** The server's game version as reported in the server list entry, or empty when unknown. */
+    private static String serverVersion(MinecraftClient mc) {
+        ServerInfo entry = mc.getCurrentServerEntry();
+        if (entry == null || entry.version == null) return "";
+        String version = entry.version.getString();
+        return version == null ? "" : version.strip();
+    }
+
+    /** The world difficulty, which single-player knows and a server sends on request. */
+    private static String difficultyName(MinecraftClient mc) {
+        if (mc.world == null) return "";
+        try {
+            return mc.world.getDifficulty().getName();
+        } catch (RuntimeException ignored) {
+            return "";
+        }
+    }
+
+    /** The number of totems of undying carried anywhere in the player's inventory. */
+    private static int totemCount(net.minecraft.entity.player.PlayerEntity player) {
+        if (player == null) return 0;
+        int count = 0;
+        for (int slot = 0; slot < player.getInventory().size(); slot++) {
+            ItemStack stack = player.getInventory().getStack(slot);
+            if (stack.isEmpty()) continue;
+            if (stack.isOf(net.minecraft.item.Items.TOTEM_OF_UNDYING)) count += stack.getCount();
+        }
+        // The offhand is part of the inventory on modern versions, but count it defensively so a
+        // totem held there is never missed.
+        if (player.getOffHandStack().isOf(net.minecraft.item.Items.TOTEM_OF_UNDYING)
+            && count == 0) {
+            count = player.getOffHandStack().getCount();
+        }
+        return count;
     }
 }

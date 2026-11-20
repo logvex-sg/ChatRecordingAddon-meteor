@@ -29,6 +29,7 @@ public class ServerMonitorModule extends AutomationModule {
         .name("interval-seconds")
         .description("How often to print a status line.")
         .defaultValue(300)
+        .range(30, 3600)
         .sliderRange(30, 3600)
         .build()
     );

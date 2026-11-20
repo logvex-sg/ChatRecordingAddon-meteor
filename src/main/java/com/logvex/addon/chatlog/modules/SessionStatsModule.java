@@ -5,6 +5,7 @@ import com.logvex.addon.LogClient;
 import com.logvex.addon.chatlog.core.SessionSummary;
 import com.logvex.addon.chatlog.core.StatsSnapshot;
 import com.logvex.addon.chatlog.mc.LogService;
+import com.logvex.addon.framework.SafeEventHandler;
 import meteordevelopment.meteorclient.events.game.GameLeftEvent;
 import com.logvex.addon.framework.gui.GuiTheme;
 import com.logvex.addon.framework.gui.widgets.WWidget;
@@ -47,9 +48,12 @@ public class SessionStatsModule extends AddonModule {
     @EventHandler
     private void onGameLeft(GameLeftEvent event) {
         if (!summaryOnLeave.get()) return;
-        StatsSnapshot snapshot = service.snapshot();
-        if (SessionSummary.isEmpty(snapshot)) return;
-        for (String line : SessionSummary.lines(snapshot)) info("%s", line);
+        // Runs inside MinecraftClient.disconnect(); a throw here would take the game down.
+        SafeEventHandler.run("SessionStatsModule.onGameLeft", () -> {
+            StatsSnapshot snapshot = service.snapshot();
+            if (SessionSummary.isEmpty(snapshot)) return;
+            for (String line : SessionSummary.lines(snapshot)) info("%s", line);
+        });
     }
 
     @Override

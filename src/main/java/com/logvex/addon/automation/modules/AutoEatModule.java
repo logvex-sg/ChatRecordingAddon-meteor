@@ -57,7 +57,7 @@ public class AutoEatModule extends AutomationModule {
     private final AutoEatController controller = new AutoEatController(14, 0);
 
     public AutoEatModule() {
-        super("auto-eat", "Automatically eats from the hotbar when hungry.");
+        super("log-eat", "Automatically eats from the hotbar when hungry.");
     }
 
     @Override

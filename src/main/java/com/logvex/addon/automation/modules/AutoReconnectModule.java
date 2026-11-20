@@ -1,6 +1,7 @@
 package com.logvex.addon.automation.modules;
 
 import com.logvex.addon.automation.core.AutoReconnectController;
+import com.logvex.addon.framework.SafeEventHandler;
 import meteordevelopment.meteorclient.events.game.GameJoinedEvent;
 import meteordevelopment.meteorclient.events.game.GameLeftEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
@@ -30,10 +31,14 @@ import java.util.Map;
 public class AutoReconnectModule extends AutomationModule {
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
 
+    // Each setting carries a hard range() as well as a sliderRange(): the slider only bounds the
+    // widget, so without a range a typed value such as 40000 attempts is accepted and saved. That
+    // turns a bounded backoff into an endless reconnect loop against a server that just kicked us.
     private final Setting<Integer> baseDelay = sgGeneral.add(new IntSetting.Builder()
         .name("base-delay-seconds")
         .description("Wait this long before the first reconnect attempt.")
         .defaultValue(5)
+        .range(1, 60)
         .sliderRange(1, 60)
         .build()
     );
@@ -42,6 +47,7 @@ public class AutoReconnectModule extends AutomationModule {
         .name("max-delay-seconds")
         .description("The delay doubles each attempt, up to this maximum.")
         .defaultValue(60)
+        .range(1, 300)
         .sliderRange(5, 300)
         .build()
     );
@@ -50,6 +56,7 @@ public class AutoReconnectModule extends AutomationModule {
         .name("max-attempts")
         .description("Give up after this many failed attempts.")
         .defaultValue(5)
+        .range(1, 50)
         .sliderRange(1, 50)
         .build()
     );
@@ -67,7 +74,7 @@ public class AutoReconnectModule extends AutomationModule {
     private boolean waitingToReconnect;
 
     public AutoReconnectModule() {
-        super("auto-reconnect", "Reconnects to the last multiplayer server after a disconnect.");
+        super("log-reconnect", "Reconnects to the last multiplayer server after a disconnect.");
     }
 
     @Override
@@ -92,15 +99,19 @@ public class AutoReconnectModule extends AutomationModule {
 
     @EventHandler
     private void onLeft(GameLeftEvent event) {
-        // Remember where we were before the client tears the world down.
-        ServerInfo entry = mc.getCurrentServerEntry();
-        if (entry != null && entry.address != null && !entry.address.isBlank()) target = entry;
-        waitingToReconnect = target != null && !(onlyOnServer.get() && isLocal(entry));
-        controller.reset();
-        controller.onDisconnect(System.currentTimeMillis());
-        if (waitingToReconnect) {
-            info("Disconnected. Reconnecting to %s.", target.name == null ? target.address : target.name);
-        }
+        // Posted from inside MinecraftClient.disconnect(); a throw here would take the game down.
+        SafeEventHandler.run("AutoReconnectModule.onLeft", () -> {
+            // Remember where we were before the client tears the world down.
+            ServerInfo entry = mc.getCurrentServerEntry();
+            if (entry != null && entry.address != null && !entry.address.isBlank()) target = entry;
+            waitingToReconnect = target != null && !(onlyOnServer.get() && isLocal(entry));
+            controller.reset();
+            controller.onDisconnect(System.currentTimeMillis());
+            if (waitingToReconnect) {
+                info("Disconnected. Reconnecting to %s.",
+                    target.name == null ? target.address : target.name);
+            }
+        });
     }
 
     @EventHandler

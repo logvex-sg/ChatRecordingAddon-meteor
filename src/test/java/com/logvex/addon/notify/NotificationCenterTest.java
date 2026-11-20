@@ -1,5 +1,6 @@
 package com.logvex.addon.notify;
 
+import com.logvex.addon.common.Messages;
 import com.logvex.addon.notify.core.Notification;
 import com.logvex.addon.notify.core.NotificationCenter;
 import com.logvex.addon.notify.core.NotificationPriority;
@@ -179,6 +180,26 @@ class NotificationCenterTest {
             Notification.defaultPriority(NotificationType.INVENTORY_FULL));
         assertEquals(NotificationPriority.NORMAL,
             Notification.defaultPriority(NotificationType.TASK_COMPLETED));
+    }
+
+    @Test
+    @DisplayName("a title and a message read as a labelled pair, not one run-on sentence")
+    void bodySeparatesTitleFromMessage() {
+        Notification withBoth = Notification.of(NotificationType.CONNECTION, "log-reconnect",
+            "Auto Reconnect", "gave up after 5 attempts");
+        assertEquals("Auto Reconnect: gave up after 5 attempts", withBoth.body());
+
+        Notification titleOnly = Notification.of(NotificationType.GENERAL, "src", "Saved", "");
+        assertEquals("Saved", titleOnly.body());
+
+        Notification messageOnly = Notification.of(NotificationType.GENERAL, "src", "", "plain text");
+        assertEquals("plain text", messageOnly.body());
+
+        Notification neither = Notification.of(NotificationType.GENERAL, "src", "", "");
+        assertEquals("", neither.body(), "an empty notification must not render a bare colon");
+        assertTrue(neither.line().startsWith(Messages.clock(neither.timestamp())),
+            "the line still carries its time so it can be placed in a timeline");
+        assertFalse(neither.line().contains(":"+":"));
     }
 
     @Test

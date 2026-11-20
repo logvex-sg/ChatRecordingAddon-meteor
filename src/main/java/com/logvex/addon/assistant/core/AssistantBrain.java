@@ -2,6 +2,7 @@ package com.logvex.addon.assistant.core;
 
 import com.logvex.addon.ai.core.AiEngine;
 import com.logvex.addon.stats.ServerStats;
+import com.logvex.addon.stats.StatusCommand;
 import com.logvex.addon.stats.StatusCommands;
 import com.logvex.addon.stats.StatusTemplate;
 
@@ -27,6 +28,8 @@ public final class AssistantBrain {
         CHAT,
         /** Raise a local notification only. */
         NOTIFY,
+        /** Whisper the text to the speaker, so only they see it. */
+        PRIVATE,
         /** Do nothing visible (memory bookkeeping only). */
         SILENT,
         /** Nothing to do. */
@@ -50,6 +53,7 @@ public final class AssistantBrain {
                            ReplyFormat.Embed embed, String report, String statusCard) {
         public static final Decision NONE =
             new Decision(Delivery.NONE, "", null, false, false, false, false, null, null, null);
+
 
         public Decision(Delivery delivery, String text, TriggerRule rule,
                         boolean sound, boolean remember, boolean command, boolean denied,
@@ -132,6 +136,9 @@ public final class AssistantBrain {
             Delivery delivery = switch (mode) {
                 case CHAT -> Delivery.CHAT;
                 case NOTIFY -> Delivery.NOTIFY;
+                // A refusal is still an answer to the person who asked, so a private rule keeps its
+                // refusal private too rather than leaking "denied" into public chat.
+                case PRIVATE -> Delivery.PRIVATE;
                 case SILENT -> Delivery.SILENT;
             };
             return new Decision(delivery, reason, null, false, false, true, true);
@@ -148,6 +155,16 @@ public final class AssistantBrain {
     /** The macro table, so {@code !macros} and {@code !macrohelp} can describe it. */
     private MacroSet macros = MacroSet.EMPTY;
 
+    /** The live trigger table, so {@code !triggers} can list what is actually armed. */
+    private TriggerSet triggerSet = TriggerSet.empty();
+
+    /**
+     * Per-command configuration for the non-status prefix commands.
+     *
+     * <p>Null means "use the shipped defaults", which is what a caller that has no settings passes.
+     */
+    private java.util.Map<String, CommandDefaults.Entry> commandDefaults;
+
     public AssistantBrain(AssistantMemory memory) {
         this.memory = memory == null ? new AssistantMemory() : memory;
     }
@@ -155,6 +172,30 @@ public final class AssistantBrain {
     /** Replaces the macro table the help commands read. */
     public void setMacros(MacroSet macros) {
         this.macros = macros == null ? MacroSet.EMPTY : macros;
+    }
+
+    /** Points the brain at the live rule table, so {@code !triggers} lists what will really fire. */
+    public void setTriggerSet(TriggerSet triggers) {
+        this.triggerSet = triggers == null ? TriggerSet.empty() : triggers;
+    }
+
+    public TriggerSet triggerSet() {
+        return triggerSet;
+    }
+
+    /** Replaces the per-command table; null restores the shipped defaults. */
+    public void setCommandDefaults(java.util.Map<String, CommandDefaults.Entry> entries) {
+        this.commandDefaults = entries;
+    }
+
+    /** The configured entry for {@code command}, or the shipped one, never null. */
+    private CommandDefaults.Entry commandEntry(String command) {
+        if (commandDefaults != null) {
+            CommandDefaults.Entry configured = commandDefaults.get(command);
+            if (configured != null) return configured;
+        }
+        return CommandDefaults.defaults().getOrDefault(command,
+            new CommandDefaults.Entry(command, true, CommandDefaults.defaultOutput(command), ""));
     }
 
     public MacroSet macros() {
@@ -327,7 +368,11 @@ public final class AssistantBrain {
         context.put("time", java.time.LocalTime.now()
             .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")));
 
-        String text = engine.respond(content, sender, context, now);
+        // Memory is consulted before the classifier. A stored fact is exact, user-authored and
+        // specific to this install, so it beats a guessed intent: if the user taught the assistant
+        // what "prefix" means, answering from the corpus instead would ignore their own data.
+        String text = recallReply(sender, content);
+        if (text == null) text = engine.respond(content, sender, context, now);
         if (text == null || text.isBlank()) return null;
         text = ResponseTemplate.expand(text, new ResponseTemplate.Context(
             sender, content, stats.server(), memory, now, stats));
@@ -336,6 +381,7 @@ public final class AssistantBrain {
         Delivery delivery = switch (config.aiReplyMode()) {
             case CHAT -> Delivery.CHAT;
             case NOTIFY -> Delivery.NOTIFY;
+            case PRIVATE -> Delivery.PRIVATE;
             case SILENT -> Delivery.SILENT;
         };
         boolean remember = config.rememberConversations();
@@ -346,18 +392,65 @@ public final class AssistantBrain {
         return new Decision(delivery, text, null, false, remember, false);
     }
 
+    /**
+     * Answers from a stored fact when the line names one, or null to let the classifier decide.
+     *
+     * <p>Only a question-shaped line is answered this way. A bare mention is not a request: "the
+     * server lagged" must not make the assistant recite the server fact, so the line has to read as
+     * a question before memory is used. That keeps recall from turning every keyword in normal chat
+     * into an unsolicited lecture.
+     *
+     * <p>The reply names the fact it used, because an answer the user cannot trace back to their own
+     * stored text is one they cannot correct.
+     */
+    private String recallReply(String sender, String content) {
+        if (!looksLikeQuestion(content)) return null;
+        java.util.Optional<AssistantMemory.Fact> found = memory.recall(content);
+        if (found.isEmpty()) return null;
+        AssistantMemory.Fact fact = found.get();
+        if (fact.value() == null || fact.value().isBlank()) return null;
+        memory.incrementCounter("recalls", 1);
+        return fact.key() + ": " + fact.value();
+    }
+
+    /**
+     * True when {@code content} is phrased as a question.
+     *
+     * <p>A question mark or an interrogative opener is enough. This is deliberately shallow: it is a
+     * gate on using memory, not an attempt to parse English, and a false positive costs only a
+     * slightly eager answer while a false negative costs a missed one.
+     */
+    private static boolean looksLikeQuestion(String content) {
+        if (content == null) return false;
+        String text = content.strip().toLowerCase(java.util.Locale.ROOT);
+        if (text.isEmpty()) return false;
+        if (text.indexOf('?') >= 0) return true;
+        for (String opener : QUESTION_OPENERS) {
+            if (text.startsWith(opener + " ")) return true;
+        }
+        return false;
+    }
+
+    /** Openers that make a line a question even without a question mark. */
+    private static final String[] QUESTION_OPENERS = {
+        "what", "whats", "where", "when", "who", "why", "how", "which", "is", "are", "can",
+        "could", "do", "does", "did", "tell me", "explain", "any idea"
+    };
+
     // ------------------------------------------------------------------ triggers
 
     private Decision fromTrigger(TriggerRule rule, String sender, String content,
                                  AssistantConfig config, long now, ServerStats stats) {
         ResponseTemplate.Context context = new ResponseTemplate.Context(
-            sender, content, stats.server(), memory, now, stats);
+            sender, content, stats.server(), memory, now, stats,
+            config.name(), config.commandPrefix());
         String text = ResponseTemplate.expand(rule.chosenReply(null), context);
         text = clamp(text, config.maxReplyLength());
 
         Delivery delivery = switch (rule.mode()) {
             case CHAT -> Delivery.CHAT;
             case NOTIFY -> Delivery.NOTIFY;
+            case PRIVATE -> Delivery.PRIVATE;
             case SILENT -> Delivery.SILENT;
         };
         if (text.isBlank() && delivery == Delivery.CHAT) delivery = Delivery.SILENT;
@@ -439,11 +532,45 @@ public final class AssistantBrain {
         ChatActivity observed = activity == null ? new ChatActivity() : activity;
         Decision decision = dispatch(identity, canonical, word, rest, config, now, stats,
             statusSettings, observed, perms, requesterPing);
+        decision = applyCommandDefaults(canonical, identity, rest, decision, now, stats);
         if (decision == null) return null;
         // Only a command that actually ran is counted; a refusal is recorded separately so
         // `!activity` cannot report a command as used when the gate turned it away.
         if (decision.acts() && !decision.denied()) observed.recordCommand(canonical);
         return decision;
+    }
+
+    /**
+     * Applies the per-command table to an answer that has already been produced.
+     *
+     * <p>Applied after dispatch so the table can govern every command without each one having to
+     * consult it: the command still decides <em>what</em> it would say, and this decides whether it
+     * may say it and where it goes. A custom template replaces the wording entirely.
+     *
+     * <p>Status commands are left alone. They already have a table of their own that models output
+     * and wording together, and running a second table over them would give one command two
+     * competing configurations with no rule for which wins.
+     */
+    private Decision applyCommandDefaults(String canonical, SenderIdentity identity, String rest,
+                                          Decision decision, long now, ServerStats stats) {
+        if (StatusCommand.find(canonical).isPresent()) return decision;
+        CommandDefaults.Entry entry = commandEntry(canonical);
+        if (!entry.enabled()) return Decision.NONE;
+        if (decision == null || decision.denied() || decision.hasReport()) return decision;
+
+        String text = entry.customised()
+            ? ResponseTemplate.expand(entry.template(), new ResponseTemplate.Context(
+                identity.name(), rest, stats.server(), memory, now, stats))
+            : decision.text();
+        Delivery delivery = switch (entry.output()) {
+            case CHAT -> Delivery.CHAT;
+            case LOCAL -> Delivery.NOTIFY;
+            case SILENT -> Delivery.SILENT;
+        };
+        if (delivery == decision.delivery() && !entry.customised()) return decision;
+        return new Decision(delivery, text, decision.rule(), decision.sound(), decision.remember(),
+            decision.command(), decision.denied(), decision.embed(), decision.report(),
+            decision.statusCard());
     }
 
     /** The canonical command a configured stats verb refers to, or null. */
@@ -486,8 +613,10 @@ public final class AssistantBrain {
             case "gg" -> commandGoodGame(sender, config, now, stats);
             case "whoami" -> commandWhoAmI(sender, config);
             case "macros" -> commandMacros(config);
+            case "triggers" -> commandTriggers(identity, config, rest);
             case "macrohelp" -> commandMacroHelp(rest, config);
             case "mod", "report" -> commandReport(sender, canonical, rest, config);
+            case "summary" -> commandSummary(sender, rest, config);
             case "who" -> commandWho(config, stats);
             case "stats" -> commandStats(config, stats);
             default -> statusCommand(identity, canonical, word, config, stats, statusSettings,
@@ -510,7 +639,8 @@ public final class AssistantBrain {
         // is the only source, and the caller passes it in. A negative value means "not known".
         int ping = requesterPing >= 0 ? requesterPing
             : (identity.local() ? live.latency() : -1);
-        StatusTemplate.Context context = new StatusTemplate.Context(identity.name(), ping);
+        StatusTemplate.Context context = new StatusTemplate.Context(identity.name(), ping,
+            config.name(), config.commandPrefix());
         java.util.Optional<StatusCommands.Answer> answer =
             StatusCommands.answer(canonical, live, settings, context);
         if (answer.isEmpty() && !word.equals(canonical)) {
@@ -559,7 +689,8 @@ public final class AssistantBrain {
         if (template == null || template.isBlank()) return Decision.NONE;
         ResponseTemplate.Context context = new ResponseTemplate.Context(
             sender == null ? "" : sender, "", "", memory, now,
-            stats == null ? ServerStats.OFFLINE : stats);
+            stats == null ? ServerStats.OFFLINE : stats,
+            config.name(), config.commandPrefix());
         String text = clamp(ResponseTemplate.expand(template, context), config.maxReplyLength());
         if (text.isBlank()) return Decision.NONE;
         return reply(config.memoryReplyMode(), text, false);
@@ -583,10 +714,11 @@ public final class AssistantBrain {
     /**
      * How many command rows one help page holds.
      *
-     * <p>Four, not eight: a row with its description, aliases and level wraps to two lines in a
-     * narrow chat window, and a page has to stay inside the delivery cap or the tail is cut off.
+     * <p>Six, not eight: a row with its description and aliases can still wrap to two lines in a
+     * narrow chat window, and a page has to stay inside the delivery cap or the tail is cut off. The
+     * level is no longer repeated per row, which is what made six fit where four did.
      */
-    public static final int HELP_PAGE_SIZE = 4;
+    public static final int HELP_PAGE_SIZE = 6;
 
     /** The page number in {@code rest} ({@code "2"} or {@code "page 2"}), clamped to 1 or more. */
     static int parsePage(String rest) {
@@ -637,7 +769,11 @@ public final class AssistantBrain {
             if (!command.aliases().isEmpty()) {
                 value.append(" (").append(String.join(", ", command.aliases())).append(')');
             }
-            value.append(" - ").append(levelLabel(level));
+            // The permission is only worth a column when it is not the default. Repeating
+            // "- Everyone" on every row pushed the description off the line for no information.
+            if (level != null && level != PermissionLevel.EVERYONE) {
+                value.append(" [").append(levelLabel(level)).append(']');
+            }
             rows.add(new ReplyFormat.Field(cfg.commandPrefix() + command.name(), value.toString()));
         }
 
@@ -823,6 +959,101 @@ public final class AssistantBrain {
     }
 
     /**
+     * {@code !triggers}: the rules that are armed right now, as one page of rows.
+     *
+     * <p>This is the answer to "what can I type?", which {@code !help} cannot give: help lists the
+     * commands the dispatcher knows, while this lists the keyword rules that will actually fire. A
+     * rule the speaker could never use is hidden — a rule pinned to another player, or one whose
+     * reply is a state-changing command only the local player may run — so the list never advertises
+     * something that would be silently ignored.
+     *
+     * @param rest the page number, or a word to filter by
+     */
+    private Decision commandTriggers(SenderIdentity identity, AssistantConfig config, String rest) {
+        java.util.List<TriggerRule> armed = new java.util.ArrayList<>();
+        for (TriggerRule rule : triggerSet.rules()) {
+            if (!visibleTo(rule, identity)) continue;
+            armed.add(rule);
+        }
+        if (armed.isEmpty()) {
+            return reply(config.memoryReplyMode(),
+                "No triggers are active. Add one in the assistant's Trigger screen.", false);
+        }
+
+        String filter = filterWord(rest);
+        if (!filter.isEmpty()) {
+            armed.removeIf(rule -> !rule.pattern().toLowerCase(Locale.ROOT)
+                .contains(filter.toLowerCase(Locale.ROOT)));
+            if (armed.isEmpty()) {
+                return reply(config.memoryReplyMode(),
+                    "No trigger matches '" + filter + "'.", false);
+            }
+        }
+
+        int page = parsePage(rest);
+        int pages = Math.max(1, (armed.size() + HELP_PAGE_SIZE - 1) / HELP_PAGE_SIZE);
+        int wanted = Math.min(page, pages);
+        int from = (wanted - 1) * HELP_PAGE_SIZE;
+        int to = Math.min(armed.size(), from + HELP_PAGE_SIZE);
+
+        java.util.List<ReplyFormat.Field> rows = new java.util.ArrayList<>();
+        for (int i = from; i < to; i++) {
+            TriggerRule rule = armed.get(i);
+            rows.add(new ReplyFormat.Field(triggerLabel(rule), triggerValue(rule)));
+        }
+        String footer = armed.size() + (armed.size() == 1 ? " trigger" : " triggers")
+            + " - page " + wanted + "/" + pages;
+        if (pages > 1) footer += " - " + config.commandPrefix() + "triggers " + (wanted + 1);
+        return embedReply(config.memoryReplyMode(),
+            new ReplyFormat.Embed("Active triggers", rows, footer, ReplyFormat.Style.BOX), false);
+    }
+
+    /**
+     * True when {@code rule} is worth showing to this speaker.
+     *
+     * <p>A rule pinned to someone else is not their business, and a rule whose reply is a command
+     * only the local player may run would be a false promise in the list, so both are hidden.
+     */
+    private static boolean visibleTo(TriggerRule rule, SenderIdentity identity) {
+        if (rule == null || !rule.enabled() || rule.pattern().isBlank()) return false;
+        boolean local = identity != null && identity.local();
+        if (!rule.allowsCommandFrom(local)) return false;
+        return rule.sender().isBlank() || rule.senderAllowed(identity == null ? "" : identity.name());
+    }
+
+    /** The left column: the word to type, with the delivery mode when it is not plain chat. */
+    private static String triggerLabel(TriggerRule rule) {
+        String label = rule.pattern();
+        return switch (rule.mode()) {
+            case CHAT -> label;
+            case NOTIFY -> label + " [local]";
+            case PRIVATE -> label + " [" + rule.whisperCommand() + "]";
+            case SILENT -> label + " [silent]";
+        };
+    }
+
+    /** The right column: what the trigger does, without repeating its own reply text. */
+    private static String triggerValue(TriggerRule rule) {
+        if (rule.isCommandReply()) return "runs /" + rule.commandVerb();
+        String text = rule.reply() == null ? "" : rule.reply().strip();
+        if (text.isEmpty()) return "no reply";
+        return clampStatic(text, 60);
+    }
+
+    /** A page argument's word, when it is not a page number. */
+    private static String filterWord(String rest) {
+        if (rest == null || rest.isBlank()) return "";
+        String trimmed = rest.strip();
+        if (trimmed.matches("(?i)page\\s*\\d+") || trimmed.matches("\\d+")) return "";
+        return trimmed;
+    }
+
+    private static String clampStatic(String text, int max) {
+        if (text.length() <= max) return text;
+        return text.substring(0, Math.max(0, max - 3)) + "...";
+    }
+
+    /**
      * {@code !macros}: the shortcuts the local player can type, as one row per macro.
      *
      * <p>Only enabled, valid macros are listed, and a disabled or broken one is simply absent rather
@@ -949,6 +1180,30 @@ public final class AssistantBrain {
             false, null, kind + "|" + who + "|" + reason);
     }
 
+    /**
+     * {@code !summary [note]}: send a chat summary report to the configured webhook.
+     *
+     * <p>Encoded through the same {@code kind|who|note} channel as a report, with a distinct kind,
+     * because the delivery, permission gate and failure notice are all already handled there. The
+     * module decides whether a webhook is configured; this layer only checks that the request makes
+     * sense on its own.
+     */
+    private Decision commandSummary(String sender, String rest, AssistantConfig config) {
+        String note = rest == null ? "" : rest.strip();
+        String who = sender == null || sender.isBlank() ? "someone" : sender;
+        String text = clamp("Sending a chat summary report.", config.maxReplyLength());
+        return new Decision(deliveryFor(config.memoryReplyMode()), text, null, false, false, true,
+            false, null, "summary|" + who + "|" + note);
+    }
+
+    /**
+     * {@code !modcall <reason>}: ask the caller to privately message the configured moderator.
+     *
+     * <p>The target and the enable switch are settings on the module, so they are not visible here.
+     * This method therefore only validates what it can see - that a reason was given and that it
+     * contains readable text - and hands the payload on. The module refuses when no target is
+     * configured, which is the one check that needs its settings.
+     */
     /** A reply carried as a block, so the caller can render it one line per field. */
     private Decision embedReply(TriggerRule.ReplyMode mode, ReplyFormat.Embed embed,
                                 boolean remember) {
@@ -962,6 +1217,7 @@ public final class AssistantBrain {
         return switch (mode == null ? TriggerRule.ReplyMode.NOTIFY : mode) {
             case CHAT -> Delivery.CHAT;
             case NOTIFY -> Delivery.NOTIFY;
+            case PRIVATE -> Delivery.PRIVATE;
             case SILENT -> Delivery.SILENT;
         };
     }

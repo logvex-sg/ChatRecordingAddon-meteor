@@ -3,6 +3,7 @@ package com.logvex.addon.chatlog.modules;
 import com.logvex.addon.framework.systems.modules.AddonModule;
 import com.logvex.addon.LogClient;
 import com.logvex.addon.chatlog.core.ChatEntry;
+import com.logvex.addon.chatlog.core.AlertThrottle;
 import com.logvex.addon.chatlog.core.MentionScanner;
 import com.logvex.addon.chatlog.mc.LogService;
 import meteordevelopment.meteorclient.events.world.TickEvent;
@@ -12,6 +13,7 @@ import com.logvex.addon.framework.gui.widgets.containers.WVerticalList;
 import com.logvex.addon.framework.gui.widgets.pressable.WButton;
 import meteordevelopment.orbit.EventHandler;
 import meteordevelopment.meteorclient.settings.BoolSetting;
+import meteordevelopment.meteorclient.settings.IntSetting;
 import meteordevelopment.meteorclient.settings.Setting;
 import meteordevelopment.meteorclient.settings.SettingGroup;
 import meteordevelopment.meteorclient.settings.StringListSetting;
@@ -57,6 +59,28 @@ public class MentionAlertsModule extends AddonModule {
         .build()
     );
 
+    private final Setting<Integer> cooldownSeconds = sgGeneral.add(new IntSetting.Builder()
+        .name("cooldown-seconds")
+        .description("Shortest gap between two alerts for the same name. Mentions inside the gap "
+            + "are counted and reported with the next alert instead of printing a line each.")
+        .defaultValue(2)
+        .range(0, 3600)
+        .sliderRange(0, 60)
+        .onChanged(ignored -> rebuildThrottle())
+        .build()
+    );
+
+    private final Setting<Integer> burstLimit = sgGeneral.add(new IntSetting.Builder()
+        .name("burst-limit")
+        .description("Most alerts allowed in ten seconds, across every watched name. Keeps a busy "
+            + "server from flooding chat even when many different names are hit.")
+        .defaultValue(6)
+        .min(1)
+        .sliderRange(1, 50)
+        .onChanged(ignored -> rebuildThrottle())
+        .build()
+    );
+
     private final Setting<Boolean> sound = sgOutput.add(new BoolSetting.Builder()
         .name("sound")
         .description("Play a note when a watched name is mentioned.")
@@ -89,6 +113,8 @@ public class MentionAlertsModule extends AddonModule {
 
     private long lastSeenTimestamp;
     private long totalMentions;
+    private long suppressedMentions;
+    private AlertThrottle throttle = AlertThrottle.defaults();
 
     public MentionAlertsModule() {
         super(LogClient.CATEGORY, "mention-alerts",
@@ -99,12 +125,17 @@ public class MentionAlertsModule extends AddonModule {
     public void onActivate() {
         lastSeenTimestamp = System.currentTimeMillis();
         totalMentions = 0;
+        suppressedMentions = 0;
+        throttle = newThrottle();
     }
 
     @EventHandler
     private void onTick(TickEvent.Post event) {
         List<String> watched = watchedNames();
         if (watched.isEmpty()) return;
+        // Drop throttle state for names the user removed, so editing the list does not leave keys
+        // that can never fire again.
+        throttle.retain(watched);
 
         List<ChatEntry> recent = service.recent(50);
         long newest = lastSeenTimestamp;
@@ -123,7 +154,33 @@ public class MentionAlertsModule extends AddonModule {
         if (hits.isEmpty()) return;
 
         totalMentions++;
-        String names = String.join(", ", hits);
+
+        // A name used constantly, or a server full of different names, would otherwise print a line
+        // and play a sound for every single message. The throttle groups a burst into one alert.
+        //
+        // Each name is admitted on its own. Using the joined list as one key would give a message
+        // that names two people a third key of its own, so the cooldown would never match the key
+        // recorded for either name alone and the per-name limit would do nothing.
+        long now = System.currentTimeMillis();
+        java.util.List<String> allowed = new java.util.ArrayList<>(hits.size());
+        long folded = 0;
+        boolean heldBack = false;
+        for (String hit : hits) {
+            if (throttle.admit(hit, now) == AlertThrottle.Verdict.FIRE) {
+                allowed.add(hit);
+                folded += throttle.takeFolded(hit);
+            } else {
+                heldBack = true;
+            }
+        }
+        // Counted per entry, not per name, so the widget's "mentions" and "held back" figures are
+        // in the same unit and cannot read as more held back than were ever seen.
+        if (heldBack) suppressedMentions++;
+        if (allowed.isEmpty()) return;
+
+        String names = String.join(", ", allowed);
+        if (folded > 0) names = names + " (+" + folded + " more)";
+
         String detail = entry.sender().isBlank() ? entry.content() : entry.sender() + ": " + entry.content();
         service.alerts().record(com.logvex.addon.chatlog.core.AlertLog.Kind.KEYWORD, "mention:" + names, detail);
 
@@ -134,8 +191,22 @@ public class MentionAlertsModule extends AddonModule {
         if (sound.get()) playAlert();
         if (chatFeedback.get()) info("Mentioned (%s): %s", names, detail);
         if (webhook.get() && service.hasRelay()) {
-            service.notifyMention(service.relayUrl(), service.relayUsername(), hits, entry);
+            service.notifyMention(service.relayUrl(), service.relayUsername(), allowed, entry);
         }
+    }
+
+    private AlertThrottle newThrottle() {
+        return new AlertThrottle(cooldownSeconds.get() * 1_000L, burstLimit.get(), 10_000L);
+    }
+
+    /** Re-reads the throttle settings; called when one of them changes. */
+    private void rebuildThrottle() {
+        throttle = newThrottle();
+    }
+
+    /** How many mentions were folded into a later alert instead of printing their own line. */
+    public long suppressedMentions() {
+        return suppressedMentions;
     }
 
     private boolean isSelf(String sender) {
@@ -178,6 +249,8 @@ public class MentionAlertsModule extends AddonModule {
         WVerticalList list = theme.verticalList();
         list.add(theme.label("Watching: " + (watchedNames().isEmpty()
             ? "no names yet" : String.join(", ", watchedNames())))).expandX().widget();
+        list.add(theme.label(totalMentions + " mention" + (totalMentions == 1 ? "" : "s")
+            + ", " + suppressedMentions + " held back by the throttle")).expandX().widget();
         WButton open = list.add(theme.button("Open Notifications")).expandX().widget();
         open.action = () -> {
             var notifyModule = meteordevelopment.meteorclient.systems.modules.Modules.get()
