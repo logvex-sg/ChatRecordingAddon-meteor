@@ -96,10 +96,15 @@ public final class ChatFilterService {
         return true;
     }
 
-    @EventHandler
+    /**
+     * Cancels a message the rules hide.
+     *
+     * <p>{@link ReceiveMessageEvent} is {@code Cancellable}, so cancelling here is the whole
+     * suppression path: a cancelled event never reaches the chat HUD or the recorder. This handler
+     * runs at a higher priority than {@link ChatRecorder} so a hidden line is never recorded either.
+     */
+    @EventHandler(priority = meteordevelopment.orbit.EventPriority.HIGHEST)
     private void onReceiveMessage(ReceiveMessageEvent event) {
-        // The mixin calls shouldHide directly (it needs the answer synchronously); this handler is
-        // kept so the service is subscribed even if the mixin is unavailable, and so the bus shows
-        // the dependency. It deliberately does not cancel anything.
+        if (shouldHide(event)) event.cancel();
     }
 }

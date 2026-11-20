@@ -12,8 +12,8 @@ and is detected at runtime rather than compiled against.
 sound and optional webhook), `player-activity` (per-player activity tracking) and
 `session-stats` (session statistics), with matching HUD elements.
 
-**Chat intelligence** — `chat-filter` (ordered hide/allow rules applied in the chat mixin, so a
-filtered message never reaches chat, the recorder or the log), `chat-digest` (on-demand and timed
+**Chat intelligence** — `chat-filter` (ordered hide/allow rules applied on the incoming message
+event, so a filtered message never reaches chat, the recorder or the log), `chat-digest` (on-demand and timed
 summaries of chat activity), `session-timeline` (a bounded timeline of joins, leaves, deaths and
 keyword hits), `webhook-monitor` (delivery health, queue depth and a bounded delivery history),
 `webhook-relay` (one shared webhook and a consistent Discord **embed** look, with cards for keyword
@@ -21,8 +21,9 @@ hits, reports, digests, session ends, renames, deaths, announcements, mentions, 
 player profiles),
 `player-notes` (your own notes about players, shown next to their observed activity),
 `player-identity` (observed account name changes and a watchlist), `mention-alerts` (alerts when
-your name or a watched name is used in chat) and `session-history` (a
-browsable history of past recording sessions).
+your name or a watched name is used in chat), `chat-timestamps` (a clock time in front of every
+chat line) and `repeat-collapse` (repeated identical lines folded into one), plus `session-history`
+(a browsable history of past recording sessions).
 
 **Schematic Dropper** — imports a material report or a schematic, acquires missing materials in
 Creative mode, drops them one *server-confirmed* transfer at a time, and can place a schematic
@@ -892,7 +893,9 @@ pluralisation.
 
 | Module | What it does |
 | --- | --- |
-| `chat-filter` | Ordered hide/allow rules. The first matching rule wins, so a specific `ALLOW` can punch a hole in a broad `HIDE`. A matched message is cancelled in the chat mixin, so it is removed before it reaches the chat HUD, the recorder or the log file. |
+| `chat-filter` | Ordered hide/allow rules. The first matching rule wins, so a specific `ALLOW` can punch a hole in a broad `HIDE`. A matched message is cancelled on the incoming message event at the highest priority, so it is removed before it reaches the chat HUD, the recorder or the log file. |
+| `chat-timestamps` | Puts a clock time in front of every incoming chat line (`HH:mm`, `HH:mm:ss` or 12-hour), optionally dimmed. Only the displayed text changes: the log keeps its own timestamp field, so nothing is stored twice. |
+| `repeat-collapse` | Folds a run of identical consecutive chat lines into the first one plus a "(N more of the same line)" note. The window and whether your own messages are exempt are configurable. Every line is still written to the log, because the log is evidence. |
 | `chat-digest` | Summarises the last N messages: totals per message type, unique players, joins/leaves/deaths and the most active players. Run it on demand (`!log digest`) or on a timer. Optionally forwards each digest to the webhook. |
 | `session-timeline` | A bounded timeline of milestones the client can actually observe: session start/end, joins, leaves, deaths and keyword hits. Browsable in a GUI (`!log timeline`). |
 | `session-stats` | Live session counters, and a short **session summary printed when you leave a world** (messages, unique players, duration, rate, joins/leaves, deaths, keyword alerts and the most active players). |

@@ -77,6 +77,8 @@ public class LogClient extends MeteorAddon {
         Modules.get().add(new com.logvex.addon.chatlog.modules.SessionHistoryModule());
         Modules.get().add(new com.logvex.addon.chatlog.modules.WebhookRelayModule());
         Modules.get().add(new com.logvex.addon.chatlog.modules.MentionAlertsModule());
+        Modules.get().add(new com.logvex.addon.chatlog.modules.ChatTimestampsModule());
+        Modules.get().add(new com.logvex.addon.chatlog.modules.RepeatCollapseModule());
 
         // Automation: Minecraft-facing shells over the Minecraft-free controllers in
         // com.logvex.addon.automation.core. Each is independent and cleans up on deactivate.

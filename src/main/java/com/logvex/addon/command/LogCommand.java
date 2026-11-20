@@ -19,6 +19,9 @@ import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.systems.modules.Modules;
 import net.minecraft.command.CommandSource;
 
+import com.logvex.addon.assistant.core.ReplyFormat.Field;
+
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
@@ -620,11 +623,13 @@ public class LogCommand extends Command {
             warning("No Log Client modules are registered.");
             return;
         }
-        info("%d Log Client module%s:", modules.size(), modules.size() == 1 ? "" : "s");
+        List<Field> rows = new ArrayList<>(modules.size());
         for (Module module : modules) {
-            info("  %s %s - %s", module.isActive() ? "(highlight)[on](default)" : "(highlight)[off](default)",
-                module.title, module.description);
+            rows.add(new Field(module.isActive() ? "[on] " + module.title : "[off] " + module.title,
+                Messages.truncate(module.description, 70)));
         }
+        CommandOutput.sendList(this, "Log Client modules (" + modules.size() + ")", rows,
+            "enabled " + modules.stream().filter(Module::isActive).count() + " of " + modules.size());
     }
 
     private void stats() {
@@ -667,10 +672,12 @@ public class LogCommand extends Command {
             info("No notifications recorded.");
             return;
         }
-        info("Most recent %d notification%s:", recent.size(), recent.size() == 1 ? "" : "s");
+        List<Field> rows = new ArrayList<>(recent.size());
         for (Notification notification : recent) {
-            info("  [%s] %s", notification.priority().name().toLowerCase(Locale.ROOT), notification.line());
+            rows.add(new Field(notification.priority().name().toLowerCase(Locale.ROOT),
+                Messages.truncate(notification.line(), 80)));
         }
+        CommandOutput.sendList(this, "Recent notifications (" + recent.size() + ")", rows, "");
     }
 
     private void alerts(int count) {
@@ -680,15 +687,15 @@ public class LogCommand extends Command {
             info("No alerts recorded yet.");
             return;
         }
-        info("Most recent %d alert%s:", recent.size(), recent.size() == 1 ? "" : "s");
+        List<Field> rows = new ArrayList<>(recent.size());
         for (var alert : recent) {
-            info("  [%s] %s: %s", alert.kind().id(), alert.title(),
-                Messages.truncate(alert.detail(), 90));
+            rows.add(new Field(alert.kind().id() + " " + alert.title(),
+                Messages.truncate(alert.detail(), 70)));
         }
-        info("Totals: %d keyword, %d webhook, %d error.",
-            log.count(com.logvex.addon.chatlog.core.AlertLog.Kind.KEYWORD),
-            log.count(com.logvex.addon.chatlog.core.AlertLog.Kind.WEBHOOK),
-            log.count(com.logvex.addon.chatlog.core.AlertLog.Kind.ERROR));
+        CommandOutput.sendList(this, "Recent alerts (" + recent.size() + ")", rows,
+            "totals: " + log.count(com.logvex.addon.chatlog.core.AlertLog.Kind.KEYWORD) + " keyword, "
+                + log.count(com.logvex.addon.chatlog.core.AlertLog.Kind.WEBHOOK) + " webhook, "
+                + log.count(com.logvex.addon.chatlog.core.AlertLog.Kind.ERROR) + " error");
     }
 
     private void playtime(String filter) {
