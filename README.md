@@ -1643,6 +1643,9 @@ archive with in-memory doubles (no Minecraft runtime required):
   throwing neither stops recording nor silences the others.
 - `ModuleAuditTest` — duplicate detection used by both the startup guard and `!log modules check`:
   counts every claimant, reports all clashes in a stable order, and ignores blank names.
+- `RowsTest` — the list-cap rule behind every truncated answer: a list that fits reports nothing
+  remaining, exactly-at-limit is not truncated, one over reports exactly one, and a non-positive
+  limit shows nothing while still counting every row.
 
 ## Troubleshooting
 

@@ -9,6 +9,7 @@ import com.logvex.addon.chatlog.core.ReportFormatting;
 import com.logvex.addon.chatlog.core.StatsSnapshot;
 import com.logvex.addon.chatlog.modules.ChatLoggerModule;
 import com.logvex.addon.common.Messages;
+import com.logvex.addon.common.Rows;
 import com.logvex.addon.notify.NotificationModule;
 import com.logvex.addon.notify.core.Notification;
 import com.logvex.addon.schematicdropper.SchematicDropperModule;
@@ -568,6 +569,18 @@ public class LogCommand extends Command {
         CommandOutput.send(this, title, fields, footer);
     }
 
+    /** A block of records, allowed the larger line budget so the list is not cut short. */
+    private void embedLong(String title,
+                           java.util.List<com.logvex.addon.assistant.core.ReplyFormat.Field> fields) {
+        CommandOutput.sendLong(this, title, fields, "");
+    }
+
+    private void embedLong(String title,
+                           java.util.List<com.logvex.addon.assistant.core.ReplyFormat.Field> fields,
+                           String footer) {
+        CommandOutput.sendLong(this, title, fields, footer);
+    }
+
     private void help() {
         java.util.List<com.logvex.addon.assistant.core.ReplyFormat.Field> fields = new java.util.ArrayList<>();
         for (com.logvex.addon.common.CommandCatalog.GroupSummary row
@@ -773,25 +786,25 @@ public class LogCommand extends Command {
             return;
         }
         var queue = bot.controller().queue();
-        info("Automation: %s", bot.statusLine());
+        List<Field> fields = new ArrayList<>();
+        fields.add(new Field("Automation", bot.statusLine()));
         if (queue.isEmpty()) {
-            info("The task queue is empty.");
+            fields.add(new Field("Queue", "empty"));
         } else {
-            info("%d queued task%s:", queue.size(), queue.size() == 1 ? "" : "s");
-            int shown = 0;
-            for (BotTask task : queue.tasks()) {
-                if (shown++ >= 20) {
-                    info("  ... and %d more.", queue.size() - 20);
-                    break;
-                }
-                info("  #%d %s %s (%d/%d) %s", task.id(), task.type(),
-                    task.label().isBlank() ? task.itemId() : task.label(),
-                    task.progress(), task.required(), task.state());
+            Rows.Capped<BotTask> capped = Rows.cap(queue.tasks(), 20);
+            for (BotTask task : capped.shown()) {
+                fields.add(new Field("#" + task.id(),
+                    task.type() + " "
+                        + (task.label().isBlank() ? task.itemId() : task.label())
+                        + " (" + task.progress() + "/" + task.required() + ") " + task.state()));
             }
+            if (capped.truncated()) fields.add(new Field("Queue", Rows.remainderNote(capped)));
         }
         var history = bot.controller().history();
-        info("History: %d recorded, %d succeeded, %d failed",
-            history.size(), history.successCount(), history.failureCount());
+        fields.add(new Field("History", Messages.number(history.size()) + " total, "
+            + Messages.number(history.successCount()) + " ok, "
+            + Messages.number(history.failureCount()) + " failed"));
+        embedLong("Automation tasks", fields);
     }
 
     private void botAction(String action) {
@@ -1013,20 +1026,23 @@ public class LogCommand extends Command {
             info("No world is loaded yet. Join a world to start recording discoveries.");
             return;
         }
-        info("World: %s", profile.label());
-        info("Places: %d, biomes: %d, resource types: %d, chunks: %d",
-            profile.locations().size(), profile.biomes().size(),
-            profile.resources().size(), profile.chunks().size());
+        List<Field> fields = new ArrayList<>();
+        fields.add(new Field("Name", profile.label()));
+        fields.add(new Field("Places", Messages.number(profile.locations().size())));
+        fields.add(new Field("Biomes", Messages.number(profile.biomes().size())));
+        fields.add(new Field("Resources", Messages.number(profile.resources().size())));
+        fields.add(new Field("Chunks", Messages.number(profile.chunks().size())));
         var recent = profile.discoveries().recent(5);
         if (recent.isEmpty()) {
-            info("No discoveries recorded yet.");
+            fields.add(new Field("Discoveries", "none yet"));
         } else {
-            info("Recent discoveries:");
             for (var event : recent) {
-                info("  %s %s at %s", event.kind(), event.label(),
-                    com.logvex.addon.world.core.WorldFormat.coords(event.x(), event.y(), event.z()));
+                fields.add(new Field(String.valueOf(event.kind()),
+                    event.label() + " at " + com.logvex.addon.world.core.WorldFormat.coords(
+                        event.x(), event.y(), event.z())));
             }
         }
+        embedLong("World", fields);
     }
 
     private void openWorldMap() {
@@ -1050,15 +1066,12 @@ public class LogCommand extends Command {
             return;
         }
         info("Found %d place%s:", places.size(), places.size() == 1 ? "" : "s");
-        int shown = 0;
-        for (var point : places) {
-            if (shown++ >= 20) {
-                info("  ... and %d more.", places.size() - 20);
-                break;
-            }
+        var capped = Rows.cap(places, 20);
+        for (var point : capped.shown()) {
             info("  %s (%s) %s", point.name().isBlank() ? "(unnamed)" : point.name(),
                 point.category(), com.logvex.addon.world.core.WorldFormat.coords(point.x(), point.y(), point.z()));
         }
+        if (capped.truncated()) info("  ... and %d more.", capped.remaining());
     }
 
     private void worldNearest(String categoryRaw) {
@@ -1301,14 +1314,16 @@ public class LogCommand extends Command {
             info("No player renames observed yet.");
             return;
         }
-        info("Observed renames: %d", renames.size());
         long now = System.currentTimeMillis();
-        int shown = Math.min(renames.size(), 20);
-        for (int i = 0; i < shown; i++) {
-            var rename = renames.get(i);
-            info("  %s \u2192 %s (%s)", rename.from(), rename.to(), Messages.ago(rename.atMs(), now));
+        var capped = Rows.cap(renames, 20);
+        List<Field> fields = new ArrayList<>();
+        for (var rename : capped.shown()) {
+            fields.add(new Field(rename.from(), rename.to() + " (" + Messages.ago(rename.atMs(), now) + ")"));
         }
-        if (renames.size() > shown) info("  ... and %d more.", renames.size() - shown);
+        String footer = capped.truncated()
+            ? Rows.remainderNote(capped)
+            : Messages.plural(renames.size(), "rename") + " observed";
+        embedLong("Player renames", fields, footer);
     }
 
     private void watch(String player, boolean add) {
@@ -1342,19 +1357,19 @@ public class LogCommand extends Command {
             info("No past sessions recorded yet.");
             return;
         }
-        info("Sessions kept: %d, %s across %s.", history.size(),
-            Messages.plural(history.totalMessages(), "message"),
-            Messages.duration(history.totalDurationMs(System.currentTimeMillis())));
-        var records = history.search("");
-        int shown = Math.min(records.size(), 15);
-        for (int i = 0; i < shown; i++) {
-            var record = records.get(i);
-            info("  %s %s - %s, %s, %d player%s", Messages.dateTime(record.startedAt()),
-                record.server(), Messages.duration(record.durationMs(System.currentTimeMillis())),
-                Messages.plural(record.messages(), "message"), record.uniquePlayers(),
-                record.uniquePlayers() == 1 ? "" : "s");
+        var capped = Rows.cap(history.search(""), 15);
+        long now = System.currentTimeMillis();
+        List<Field> fields = new ArrayList<>();
+        for (var record : capped.shown()) {
+            fields.add(new Field(Messages.dateTime(record.startedAt()),
+                record.server() + " - " + Messages.duration(record.durationMs(now))
+                    + ", " + Messages.plural(record.messages(), "message")
+                    + ", " + Messages.plural(record.uniquePlayers(), "player")));
         }
-        if (records.size() > shown) info("  ... and %d more.", records.size() - shown);
+        String footer = Messages.plural(history.size(), "session") + " kept, "
+            + Messages.plural(history.totalMessages(), "message");
+        if (capped.truncated()) footer = Rows.remainderNote(capped) + ", " + footer;
+        embedLong("Past sessions", fields, footer);
     }
 
     // ------------------------------------------------------------------ companion

@@ -56,6 +56,17 @@ final class CommandOutput {
         send(command, title, fields, footer, ReplyFormat.Style.LIST, MAX_LIST_LINES);
     }
 
+    /**
+     * Sends {@code fields} as a block in the user's style, but with the list line budget.
+     *
+     * <p>For answers that are a genuine list of records — queued tasks, past sessions, observed
+     * renames. The default cap exists to stop a one-line answer turning into chat spam; here the
+     * rows are the answer, so cutting them off at a dozen lines would hide most of it.
+     */
+    static void sendLong(Command command, String title, List<Field> fields, String footer) {
+        send(command, title, fields, footer, null, MAX_LIST_LINES);
+    }
+
     private static void send(Command command, String title, List<Field> fields, String footer,
                              ReplyFormat.Style preferred) {
         send(command, title, fields, footer, preferred, MAX_LINES);
