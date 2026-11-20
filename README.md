@@ -1006,6 +1006,15 @@ shared webhook, and it is recorded in the alert log like any other noteworthy ev
 - **include-own-name** — also watch your own player name (on by default).
 - **others-only** — ignore lines you sent yourself (on by default).
 - **sound**, **notification**, **chat-feedback**, **webhook** — the output channels.
+- **cooldown-seconds** — shortest gap between two alerts for the same name (2 by default). Mentions
+  inside the gap are counted, not printed.
+- **burst-limit** — most alerts allowed in ten seconds across every name (6 by default).
+
+A watched name that appears in every message used to produce a chat line and a sound per message.
+Alerts are now throttled per name and capped per burst: one alert carries the count of what it
+absorbed, as `Steve (+4 more)`. Set **cooldown-seconds** to `0` to turn the per-name throttle off.
+`keyword-alerts` has the same two settings, because a rule that matches a common word floods the same
+way.
 
 ### Chat filter rules
 
