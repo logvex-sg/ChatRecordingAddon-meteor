@@ -59,7 +59,7 @@ public class AntiAfkModule extends AutomationModule {
     private int releaseKeyAt = -1;
 
     public AntiAfkModule() {
-        super("anti-afk", "Performs small actions so you are not kicked for idling.");
+        super("log-anti-afk", "Performs small actions so you are not kicked for idling.");
     }
 
     @Override

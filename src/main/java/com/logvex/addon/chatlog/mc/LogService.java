@@ -363,7 +363,9 @@ public final class LogService {
     }
 
     public void addListener(LiveListener listener) {
-        if (listener != null) listeners.add(listener);
+        // Registration is idempotent: a module activated twice without a deactivation in between
+        // would otherwise be called twice per entry and announce every highlight twice.
+        if (listener != null && !listeners.contains(listener)) listeners.add(listener);
     }
 
     public void removeListener(LiveListener listener) {
@@ -397,6 +399,21 @@ public final class LogService {
     public boolean notifyDigest(String url, String username, ChatDigest.Summary summary, WebhookQueue.Listener listener) {
         if (url == null || url.isBlank() || summary == null || summary.isEmpty()) return false;
         String payload = WebhookPayload.digest(username, summary, serverName, embedStyle);
+        return webhook.enqueue(url, payload, listener);
+    }
+
+    /**
+     * Sends a chat-summary report, attributed to whoever asked for it.
+     *
+     * <p>Returns false when there is nothing to send, which the caller reports rather than
+     * pretending a card went out.
+     */
+    public boolean notifySummaryReport(String url, String username, ChatDigest.Summary summary,
+                                       String requestedBy, String note,
+                                       WebhookQueue.Listener listener) {
+        if (url == null || url.isBlank() || summary == null || summary.isEmpty()) return false;
+        String payload = WebhookPayload.summaryReport(username, summary, requestedBy, note,
+            serverName, embedStyle);
         return webhook.enqueue(url, payload, listener);
     }
 

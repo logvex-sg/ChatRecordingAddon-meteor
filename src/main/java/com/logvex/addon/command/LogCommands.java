@@ -45,6 +45,11 @@ final class LogCommands {
         return Modules.get().getGroup(LogClient.CATEGORY);
     }
 
+    /** The live webhook relay, or null when it is not registered. */
+    static com.logvex.addon.chatlog.modules.WebhookRelayModule relay() {
+        return Modules.get().get(com.logvex.addon.chatlog.modules.WebhookRelayModule.class);
+    }
+
     /** The live module registry, for commands that resolve a module by type. */
     static Modules modules() {
         return Modules.get();

@@ -119,6 +119,34 @@ class AlertThrottleTest {
     }
 
     @Test
+    @DisplayName("pruning every tick does not reset the burst cap")
+    void retainDoesNotResetBurstCap() {
+        // The modules call retain() on every tick with the same list. If that cleared the burst
+        // window the cap would never apply, and a flood would get through.
+        AlertThrottle throttle = new AlertThrottle(0, 3, 10_000);
+        List<String> watch = List.of("a", "b", "c", "d");
+        int fired = 0;
+        for (int i = 0; i < 20; i++) {
+            throttle.retain(watch);
+            if (throttle.admit("name" + i, 0) == AlertThrottle.Verdict.FIRE) fired++;
+        }
+        assertEquals(3, fired, "the burst cap must hold across ticks");
+    }
+
+    @Test
+    @DisplayName("a removed name loses its cooldown, a kept one keeps it")
+    void retainPrunesOnlyRemovedNames() {
+        AlertThrottle throttle = new AlertThrottle(2_000, 6, 10_000);
+        assertEquals(AlertThrottle.Verdict.FIRE, throttle.admit("Steve", 0));
+        assertEquals(AlertThrottle.Verdict.FIRE, throttle.admit("Alex", 0));
+        throttle.retain(List.of("Steve"));
+        assertEquals(AlertThrottle.Verdict.FOLD, throttle.admit("Steve", 10),
+            "a name still watched keeps its cooldown");
+        assertEquals(AlertThrottle.Verdict.FIRE, throttle.admit("Alex", 10),
+            "a removed name must not carry its old cooldown");
+    }
+
+    @Test
     @DisplayName("reset clears everything")
     void resetClears() {
         AlertThrottle throttle = new AlertThrottle(2_000, 6, 10_000);

@@ -746,12 +746,18 @@ so it gets the tick rate rather than the server's name. The table is matched on 
 the stopwords a bag-of-words model discards, because those words are exactly what separates
 `how are you` from `what are you`.
 
-Anything the table does not claim goes to a naive-Bayes classifier over 2048 hashed buckets. The
+Anything the table does not claim goes to a naive-Bayes classifier over 8192 hashed buckets. The
 classifier is a fallback, not the primary path. Measured on 63 ordinary chat lines, the classifier
-alone picked the correct intent for 47 of them; on the other 16 it answered wrongly or not at all —
+alone picked the correct intent for 49 of them; on the other 14 it answered wrongly or not at all —
 `is it night` came back as a farewell, `what are you` as the prefix question, `are you a bot` as an
 insult. With the table in front, all 63 get an on-topic reply. A message neither stage understands
 gets no reply at all rather than a guess, and the confidence threshold decides that cutoff.
+
+The bucket count is not arbitrary. A hash table is finite, so an unrelated word can land in a slot
+another intent already counted. At 2048 buckets `night` shared a slot with a game-help feature that
+does not exist, and that intent answered `is it night` with high confidence while naming nothing in
+the sentence. Widening the table to 8192 keeps a word and its bigrams in distinct slots; the cost is
+a constant 32 x 8192 doubles, about 2 MB, allocated once.
 
 ### Settings
 
@@ -843,20 +849,28 @@ and releases any input it pressed when it is disabled.
 
 | Module | What it does |
 | --- | --- |
-| `auto-eat` | Eats from the hotbar when hunger drops to a threshold, preferring the held food with the highest nutrition. Only selects a slot and uses the item; it never creates food. |
-| `auto-tool` | Swaps to the best hotbar tool for the block being mined (suitability, then speed), optionally swapping back afterwards. It only changes the selected slot. |
-| `auto-replenish` | Keeps the items you list stocked on the hotbar by moving a stack into place with a normal slot swap. It never invents items and never takes a stack another requested slot needs. |
+| `log-eat` | Eats from the hotbar when hunger drops to a threshold, preferring the held food with the highest nutrition. Only selects a slot and uses the item; it never creates food. |
+| `log-tool` | Swaps to the best hotbar tool for the block being mined (suitability, then speed), optionally swapping back afterwards. It only changes the selected slot. |
+| `log-replenish` | Keeps the items you list stocked on the hotbar by moving a stack into place with a normal slot swap. It never invents items and never takes a stack another requested slot needs. |
 | `auto-sprint` | Holds sprint on while you move forward, optionally only above a food threshold. |
-| `safe-walk` | Releases the forward key at the edge of a drop, exactly as a cautious player would. It only ever removes movement input. |
-| `anti-afk` | Performs small, genuine client actions on a randomised schedule (look, jump, sneak, swing, step, swap hand) so you are not kicked for idling. |
+| `log-safe-walk` | Releases the forward key at the edge of a drop, exactly as a cautious player would. It only ever removes movement input. |
+| `log-anti-afk` | Performs small, genuine client actions on a randomised schedule (look, jump, sneak, swing, step, swap hand) so you are not kicked for idling. |
 | `armor-guard` | Warns when a piece of armour is close to breaking. A missing piece is reported as unavailable, never as "0 % durability". |
-| `auto-log` | Disconnects when health, food, inventory space, a hostile mob or another player crosses a rule you enabled. Off by default; every rule is opt-in, and there is a grace period after joining. |
-| `auto-reconnect` | Reconnects to the last **multiplayer** server after a disconnect, using vanilla's own connection screen, with a bounded backoff and a retry cap. |
+| `log-panic` | Disconnects when health, food, inventory space, a hostile mob or another player crosses a rule you enabled. Off by default; every rule is opt-in, and there is a grace period after joining. |
+| `log-reconnect` | Reconnects to the last **multiplayer** server after a disconnect, using vanilla's own connection screen, with a bounded backoff and a retry cap. |
 | `server-monitor` | Prints a periodic status line (duration, game mode, latency, free slots) and a session summary on leave, using only what the client can observe. |
 | `auto-login` | Answers a server's `/login` prompt with the password stored for that server. Only sends in reply to a recognised prompt, never on join, so a password cannot be sent as public chat on a server without an auth plugin. Passwords live in a separate owner-only file, never in the Meteor config. |
 | `watchlist-alerts` | Raises a notification when a player on the chat log's watchlist joins or leaves. Only real transitions alert, so a server that announces a join twice does not produce two notices. |
 | `death-tracker` | Remembers where you died. `!deaths` lists them newest first, `!back` shows the most recent in your current dimension. Coordinates from another dimension are reported, never offered as a return target. |
 | `auto-creative` | Imports a material list (or takes typed entries), acquires the items in Creative mode and can hand the ordered list to the Schematic Dropper queue. See below. |
+
+The `log-` prefix on several modules is deliberate, not decoration. Meteor's registry is keyed by
+class but de-duplicated by name, so an addon module that reuses a Meteor name **deletes Meteor's
+module from its own registry**. Meteor's mixins then look that module up by class, get `null`, and
+crash: while this addon called its reconnect module `auto-reconnect`, Meteor's
+`DisconnectedScreenMixin` read `Modules.get().get(AutoReconnect.class).time` and threw on every
+disconnect. `ModuleNameTest` fails the build if any name here clashes with Meteor's or with another
+module of ours, and `LogClient` logs an error at startup if a duplicate name reaches the registry.
 
 ### Automatic Creative acquisition
 
@@ -1015,6 +1029,45 @@ Alerts are now throttled per name and capped per burst: one alert carries the co
 absorbed, as `Steve (+4 more)`. Set **cooldown-seconds** to `0` to turn the per-name throttle off.
 `keyword-alerts` has the same two settings, because a rule that matches a common word floods the same
 way.
+
+### Summary
+
+`!summary [note]` posts a chat summary to the webhook as a formatted embed: totals, joins, leaves,
+deaths, the most active players and the keyword highlights for the recent window, with your note and
+name attached. It is the shareable counterpart to `!log digest`, which only prints to your own chat.
+
+It is **local-only** for the same reason as `!modcall`: the card describes your archive, and a
+stranger in public chat could otherwise fill your Discord channel. Nothing is sent unless a webhook
+URL is configured, and the module reports a failure rather than claiming the card went out.
+
+### Modcall
+
+`!modcall <reason>` sends a private message to a moderator you configure, so a request reaches them
+directly instead of being lost in public chat. It sends two messages:
+
+```
+/msg <modcall-target> Report has been submitted: <reason>
+/msg <you> !report <reason>
+```
+
+The first goes to the moderator; the second is a receipt to the reporter, so they can see what went
+out. Both wordings are settings (`modcall-message`, `modcall-receipt`); leave the receipt blank to
+send only the moderator message.
+
+- **modcall-enabled** — off by default. Nothing is sent until you switch it on and set a target.
+- **modcall-target** — the moderator's exact in-game name.
+- **modcall-message**, **modcall-receipt** — the two wordings. Tokens: `{reason}`, `{reporter}`,
+  `{moderator}`, `{prefix}`.
+- **modcall-cooldown-seconds** — per-player gap, 60 s by default, so one person cannot fill an inbox.
+
+This command sends from your own account, so it is **local-only**: only you can trigger it. That
+check does not depend on the `permissions` setting, which is off by default — otherwise a stranger
+could type `!modcall` in public chat and have their words delivered to a moderator under your name.
+
+The reason is text from chat pasted into a server command, so it is sanitised before sending: every
+control character becomes a space (a newline would otherwise send a second command), runs of
+whitespace are collapsed, and the reason is capped at 180 characters. The moderator's exact name is
+validated too, so a typo fails loudly instead of messaging a stranger.
 
 ### Chat filter rules
 
@@ -1372,6 +1425,7 @@ The addon registers a `!log` command (alias `!la`). Run `!log help` for the list
 | `!log gui` | Opens the addon window (same as Right Shift). |
 | `!log status` | Chat logging state, automation state and notification counters, in a titled block. |
 | `!log modules` | Every Log Client module with its on/off state and description. |
+| `!log modules check` | Reports module names claimed by more than one module. A clash silently deletes the earlier module and later crashes the code that looks it up by class, so this is worth running after installing another addon. |
 | `!autologin [status\|gui\|on\|off\|servers\|clear\|clearall\|test]` | Manages the per-server login password. The password is set in the module's GUI; no command ever prints it. |
 | `!deaths [back\|clear]` | Lists remembered deaths newest first, shows the most recent one in your dimension, or clears the history. |
 | `!log stats` | Session statistics in a titled block: messages, rate, players, joins/leaves, deaths and keyword alerts, with the most active players in the footer. |
@@ -1396,6 +1450,7 @@ The addon registers a `!log` command (alias `!la`). Run `!log help` for the list
 | `!log schematic acquire` | Starts acquisition from the current schematic/material list. |
 | `!log schematic import <path>` | Imports a material list into the Schematic Dropper queue. |
 | `!log digest` | Prints a summary of recent chat activity. |
+| `!log summary [note]` | Posts the same summary to the webhook as a formatted embed, with the note attached and the caller named. Unlike `!log digest` this leaves the archive, so it is the shareable form. |
 | `!log search [terms]` | Searches the recorded archive and prints the newest matches as an aligned block. Plain words search the message text; `player:<name>` filters the sender, `type:<chat,system,join,leave,death>` filters the message kind, and `limit:<n>` (max 50) sets how many are shown. Quote a phrase to keep it together. An unknown `key:value` is searched for literally, so a colon in chat never blocks a search. With no terms it lists the newest messages. |
 | `!log timeline [filter]` | Recent session milestones, optionally filtered. |
 | `!log filter [stats]` | Chat filter rule count, default action and how many messages were hidden. |
@@ -1493,8 +1548,8 @@ archive with in-memory doubles (no Minecraft runtime required):
   reported as success), a rejected give failing after the retry budget, an unknown id, missing
   creative mode, a full inventory waiting rather than failing, progress and ordering.
 - `AutomationControllersTest` — every automation controller: eat thresholds/nutrition/cooldown, tool
-  scoring and swap-back, sprint gating, safe-walk edge rules, armour classification and urgency,
-  the anti-AFK schedule and action set, hotbar replenish planning, and the auto-log rules and grace
+  scoring and swap-back, sprint gating, log-safe-walk edge rules, armour classification and urgency,
+  the log-anti-afk schedule and action set, hotbar replenish planning, and the log-panic rules and grace
   period.
 - `AutoCreativeImportTest` — the whole import path: the supplied 367-entry list becomes 367 ordered
   acquisition requests, the table report excludes raw resources, and `parseItems` tolerates
@@ -1561,12 +1616,33 @@ archive with in-memory doubles (no Minecraft runtime required):
   reported as FAILED with a message instead of a thrown exception.
 - `AiCoreTest` — the local model: tokenisation, intent classification, the bigram model's
   teach/generate path, the naive-Bayes classifier, confidence gating and JSON round-trip.
+- `AiRoutingTest` — the router and the classifier measured against each other on the same lines, so
+  the claim that the table is the primary path is checked rather than asserted. Includes a
+  regression for the hash-collision bug: an intent must not gain evidence from a word it was never
+  trained on.
+- `ModCallTest` — the two messages a modcall sends, their order, and that a reason containing a
+  newline cannot become a second command.
+- `SummaryEmbedTest` — the requested-summary card: title and accent, the requested-by and note
+  fields, the counts, and that the note is neutralised so it cannot ping a role or break the
+  markdown.
 - `UnsignedChatAndRoutingTest` — the two behaviours that decide whether the assistant answers at
   all: unsigned and plugin-rewritten chat (`<Steve> hi`, `Steve: hi`, `[MVP+] Steve: hi`) classifies
   as public chat while clock readings and `Server:` tags stay system, and the keyword router picks
   the on-topic intent ahead of the classifier. It also pins the measurement that justifies the
   router — the classifier alone agrees on fewer lines than the router routes — so the claim cannot
   go stale.
+- `ModuleNameTest` — every module's registered name is unique and none is a name Meteor ships. Meteor
+  de-duplicates by name, so a clash silently deletes Meteor's module and crashes the code that looks
+  it up by class; this test is the regression for the `auto-reconnect` crash on disconnect. It reads
+  the sources because Meteor's registry only exists inside a running game.
+- `HighlightAnnouncerTest` — a highlighted message is announced once, a repeat delivery on a later
+  tick is ignored, a genuinely new message still announces, memory stays bounded, and the monitor no
+  longer polls the recent buffer on a tick (the cause of the same line being logged 20 times a second).
+- `LogServiceListenerTest` — live-listener registration is idempotent (activating a module twice
+  cannot double-announce), distinct listeners all fire, a removed listener is silent, and one listener
+  throwing neither stops recording nor silences the others.
+- `ModuleAuditTest` — duplicate detection used by both the startup guard and `!log modules check`:
+  counts every claimant, reports all clashes in a stable order, and ignores blank names.
 
 ## Troubleshooting
 
@@ -1630,7 +1706,7 @@ archive with in-memory doubles (no Minecraft runtime required):
   the importer, the readers, the checkpoint store, the filter rules, the digest, the timeline, the
   notes store, the activity histogram, the automation controllers and the log importer are covered by
   unit tests that use fakes and the real 1.21.1 registries.
-- `auto-reconnect` only reconnects to a server the client already has a saved entry for, and does
+- `log-reconnect` only reconnects to a server the client already has a saved entry for, and does
   nothing for a single-player world (which cannot be resumed through the connection screen). It uses
   the same path the multiplayer list uses, so the server sees an ordinary client.
 - `server-monitor` reports only what the client can observe (duration, game mode, latency from the

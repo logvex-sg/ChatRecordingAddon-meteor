@@ -85,6 +85,8 @@ public final class CommandCatalog {
             "Open the Log Client window."),
         new Entry(Group.CORE, "log modules",
             "List every Log Client module and whether it is on."),
+        new Entry(Group.CORE, "log modules check",
+            "Report module names claimed twice, which silently deletes a module and crashes lookups."),
         new Entry(Group.CORE, "log stats",
             "This session's message, player and keyword figures."),
         new Entry(Group.CORE, "prefix [command]",

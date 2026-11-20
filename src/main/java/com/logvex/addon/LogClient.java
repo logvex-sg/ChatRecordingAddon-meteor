@@ -11,13 +11,18 @@ import com.logvex.addon.chatlog.modules.PlayerActivityModule;
 import com.logvex.addon.chatlog.modules.SessionStatsModule;
 import com.mojang.logging.LogUtils;
 import com.logvex.addon.framework.LogClientContext;
+import com.logvex.addon.framework.ModuleAudit;
 import com.logvex.addon.framework.systems.hud.Hud;
 import com.logvex.addon.framework.systems.hud.HudGroup;
 import meteordevelopment.meteorclient.addons.GithubRepo;
 import meteordevelopment.meteorclient.addons.MeteorAddon;
 import meteordevelopment.meteorclient.systems.modules.Category;
+import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.systems.modules.Modules;
 import org.slf4j.Logger;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Entry point for Log Client, a Meteor Client addon.
@@ -142,10 +147,34 @@ public class LogClient extends MeteorAddon {
         // the recorded logs, identities, bot memory and config instead of starting empty.
         LogClientContext.migrateLegacyDataFolder();
 
+        checkModuleNames();
+
         // Restore the saved configuration only after every module and HUD element exists.
         com.logvex.addon.framework.systems.config.ConfigManager.get().load();
 
         Runtime.getRuntime().addShutdownHook(new Thread(LogClient::shutdown, "log-client-shutdown"));
+    }
+
+    /**
+     * Reports every module whose name is claimed by more than one module.
+     *
+     * <p>Meteor's registry is keyed by class but de-duplicated by name: {@code Modules.add} drops any
+     * existing module that shares the new one's name. An addon that reuses a Meteor name therefore
+     * deletes Meteor's module, and Meteor's own code — which looks modules up by class — then reads
+     * null. That is not a cosmetic clash: {@code DisconnectedScreenMixin} initialises a field from
+     * {@code Modules.get().get(AutoReconnect.class).time}, so losing Meteor's {@code AutoReconnect}
+     * crashed the client on every disconnect. Names are checked after registration because Meteor
+     * builds its own modules before any addon's {@code onInitialize} runs.
+     */
+    private static void checkModuleNames() {
+        List<String> names = new ArrayList<>();
+        for (Module module : Modules.get().getAll()) names.add(module.name);
+
+        for (ModuleAudit.Clash clash : ModuleAudit.clashes(names)) {
+            LOG.error("Module name '{}' is claimed by {} modules. Meteor de-duplicates by name, so"
+                + " one of them was discarded — rename ours to avoid breaking the other addon.",
+                clash.name(), clash.count());
+        }
     }
 
     /**

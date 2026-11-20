@@ -195,7 +195,13 @@ public final class NaiveBayesClassifier {
             scores[c] = Math.exp((scores[c] - max) / TEMPERATURE);
             sum += scores[c];
         }
-        double confidence = sum > 0 ? scores[best] / sum : 0;
+        // The exponentials are normalised in place, so the distribution is a real probability
+        // vector and a caller reading one class's value gets its share. It used to hold the raw
+        // exponentials, which summed to more than one.
+        if (sum > 0) {
+            for (int c = 0; c < classCount; c++) scores[c] /= sum;
+        }
+        double confidence = sum > 0 ? scores[best] : 0;
         return new Result(best, confidence, scores);
     }
 

@@ -1,5 +1,6 @@
 package com.logvex.addon.command;
 
+import com.logvex.addon.LogClient;
 import com.logvex.addon.bot.BotModule;
 import com.logvex.addon.bot.core.BotMemory;
 import com.logvex.addon.bot.core.BotTask;
@@ -66,10 +67,16 @@ public class LogCommand extends Command {
             return SINGLE_SUCCESS;
         }));
 
-        builder.then(literal("modules").executes(context -> {
-            modules();
-            return SINGLE_SUCCESS;
-        }));
+        builder.then(literal("modules")
+            .executes(context -> {
+                modules();
+                return SINGLE_SUCCESS;
+            })
+            .then(literal("check").executes(context -> {
+                modulesCheck();
+                return SINGLE_SUCCESS;
+            }))
+        );
 
         builder.then(literal("stats").executes(context -> {
             stats();
@@ -307,6 +314,17 @@ public class LogCommand extends Command {
             digest();
             return SINGLE_SUCCESS;
         }));
+
+        builder.then(literal("summary")
+            .executes(context -> {
+                sendSummary("");
+                return SINGLE_SUCCESS;
+            })
+            .then(argument("note", StringArgumentType.greedyString()).executes(context -> {
+                sendSummary(StringArgumentType.getString(context, "note"));
+                return SINGLE_SUCCESS;
+            }))
+        );
 
         builder.then(literal("search")
             .executes(context -> {
@@ -630,6 +648,33 @@ public class LogCommand extends Command {
         }
         CommandOutput.sendList(this, "Log Client modules (" + modules.size() + ")", rows,
             "enabled " + modules.stream().filter(Module::isActive).count() + " of " + modules.size());
+    }
+
+    /**
+     * Reports module names that more than one module claims.
+     *
+     * <p>A clash is silent at runtime — Meteor simply drops the earlier module — and only shows up
+     * later as a crash in whatever looked that module up. This command makes it visible on demand,
+     * which matters after adding or renaming a module or installing another addon.
+     */
+    private void modulesCheck() {
+        java.util.Collection<Module> all = Modules.get().getAll();
+        List<String> names = new ArrayList<>(all.size());
+        for (Module module : all) names.add(module.name);
+
+        List<Field> fields = new ArrayList<>();
+        fields.add(new Field("Registered", Messages.number(all.size()) + " modules"));
+        fields.add(new Field("Ours", Messages.number(LogCommands.addonModules().size())
+            + " in the " + LogClient.CATEGORY.name + " category"));
+        for (com.logvex.addon.framework.ModuleAudit.Clash clash
+            : com.logvex.addon.framework.ModuleAudit.clashes(names)) {
+            fields.add(new Field(clash.name(), "claimed " + clash.count() + " times"));
+        }
+        if (fields.size() == 2) {
+            fields.add(new Field("Clashes", "none"));
+        }
+        embed("Module name check", fields,
+            "a clash deletes the earlier module");
     }
 
     private void stats() {
@@ -1080,6 +1125,27 @@ public class LogCommand extends Command {
             module.service().intelligence().exportMap());
         if (ok) info("Exported the world database to %s.", file.getFileName());
         else error("Could not write the export file.");
+    }
+
+    /**
+     * Sends the chat summary to the configured webhook as a report card.
+     *
+     * <p>Separate from {@code digest}, which prints locally and only forwards when the module is
+     * set to. This one always goes to the webhook and records who asked, because its purpose is to
+     * hand a summary to somebody else.
+     */
+    private void sendSummary(String note) {
+        com.logvex.addon.chatlog.modules.WebhookRelayModule relay = LogCommands.relay();
+        if (relay == null) {
+            error("The webhook relay module is not available.");
+            return;
+        }
+        if (!relay.configured()) {
+            warning("Set a webhook URL on the webhook-relay module first.");
+            return;
+        }
+        String who = mc.player == null ? "" : mc.player.getGameProfile().getName();
+        relay.sendSummary(who, note);
     }
 
     private void digest() {

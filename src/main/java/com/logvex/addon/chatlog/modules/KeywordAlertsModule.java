@@ -160,6 +160,10 @@ public class KeywordAlertsModule extends AddonModule {
     }
 
     private void evaluateRecent() {
+        // Drop throttle state for rules the user removed, so editing the list does not leave keys
+        // that can never fire again.
+        throttle.retain(parsed.stream().map(KeywordRule::pattern).toList());
+
         List<ChatEntry> recent = service.recent(50);
         long newest = lastSeenTimestamp;
         for (int i = recent.size() - 1; i >= 0; i--) {
@@ -173,6 +177,8 @@ public class KeywordAlertsModule extends AddonModule {
                 // throttle folds a burst into one alert plus a count.
                 AlertThrottle.Verdict verdict = throttle.admit(rule.pattern(), System.currentTimeMillis());
                 if (verdict != AlertThrottle.Verdict.FIRE) {
+                    // Counted per matching rule, which is the same unit as the alert count, so the
+                    // two figures cannot disagree.
                     suppressedMatches++;
                     continue;
                 }

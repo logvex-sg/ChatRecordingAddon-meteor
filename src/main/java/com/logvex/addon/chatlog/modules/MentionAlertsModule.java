@@ -133,6 +133,9 @@ public class MentionAlertsModule extends AddonModule {
     private void onTick(TickEvent.Post event) {
         List<String> watched = watchedNames();
         if (watched.isEmpty()) return;
+        // Drop throttle state for names the user removed, so editing the list does not leave keys
+        // that can never fire again.
+        throttle.retain(watched);
 
         List<ChatEntry> recent = service.recent(50);
         long newest = lastSeenTimestamp;
@@ -151,17 +154,31 @@ public class MentionAlertsModule extends AddonModule {
         if (hits.isEmpty()) return;
 
         totalMentions++;
-        String names = String.join(", ", hits);
 
         // A name used constantly, or a server full of different names, would otherwise print a line
         // and play a sound for every single message. The throttle groups a burst into one alert.
+        //
+        // Each name is admitted on its own. Using the joined list as one key would give a message
+        // that names two people a third key of its own, so the cooldown would never match the key
+        // recorded for either name alone and the per-name limit would do nothing.
         long now = System.currentTimeMillis();
-        AlertThrottle.Verdict verdict = throttle.admit(names, now);
-        if (verdict != AlertThrottle.Verdict.FIRE) {
-            suppressedMentions++;
-            return;
+        java.util.List<String> allowed = new java.util.ArrayList<>(hits.size());
+        long folded = 0;
+        boolean heldBack = false;
+        for (String hit : hits) {
+            if (throttle.admit(hit, now) == AlertThrottle.Verdict.FIRE) {
+                allowed.add(hit);
+                folded += throttle.takeFolded(hit);
+            } else {
+                heldBack = true;
+            }
         }
-        long folded = throttle.takeFolded(names);
+        // Counted per entry, not per name, so the widget's "mentions" and "held back" figures are
+        // in the same unit and cannot read as more held back than were ever seen.
+        if (heldBack) suppressedMentions++;
+        if (allowed.isEmpty()) return;
+
+        String names = String.join(", ", allowed);
         if (folded > 0) names = names + " (+" + folded + " more)";
 
         String detail = entry.sender().isBlank() ? entry.content() : entry.sender() + ": " + entry.content();
@@ -174,7 +191,7 @@ public class MentionAlertsModule extends AddonModule {
         if (sound.get()) playAlert();
         if (chatFeedback.get()) info("Mentioned (%s): %s", names, detail);
         if (webhook.get() && service.hasRelay()) {
-            service.notifyMention(service.relayUrl(), service.relayUsername(), hits, entry);
+            service.notifyMention(service.relayUrl(), service.relayUsername(), allowed, entry);
         }
     }
 

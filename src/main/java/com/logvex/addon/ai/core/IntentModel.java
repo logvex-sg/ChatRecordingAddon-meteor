@@ -1,10 +1,12 @@
 package com.logvex.addon.ai.core;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * The whole local model: an intent classifier plus a small text generator, trained from a built-in
@@ -58,14 +60,37 @@ public final class IntentModel {
      */
     private final List<Route> router;
 
+    /**
+     * Repairs one-letter slips against the words this model was actually trained on.
+     *
+     * <p>Built from the corpus rather than a dictionary, so it can only ever suggest a word the
+     * classifier has evidence for. Rebuilt whenever a new example is taught.
+     */
+    private volatile TypoCorrector corrector;
+
     public IntentModel() {
-        // 2048 buckets, not 512: at 512 a common word such as "where" collides with a feature of an
-        // unrelated intent and the line is classified as that intent with high confidence. Verified
-        // against "where am i", which read as a greeting at 512 and reads correctly at 2048. The
-        // cost is 32 x 2048 doubles, about 0.5 MB, which is constant and paid once.
-        this.classifier = new NaiveBayesClassifier(2048, MAX_INTENTS);
+        // 8192 buckets, not 2048: at 2048 a word and an unrelated bigram still shared a slot often
+        // enough to matter — "night" was counted for the game-help class, which contains no such
+        // word, and that class then answered "is it night". The corpus holds well over a thousand
+        // distinct words and bigrams, so 8192 leaves several buckets per feature. The cost is
+        // 32 x 8192 doubles, about 2 MB, constant and paid once at load.
+        this.classifier = new NaiveBayesClassifier(8192, MAX_INTENTS);
         trainBuiltins();
         this.router = buildRouter();
+        rebuildCorrector();
+    }
+
+    /** Rebuilds the typo vocabulary from every trained example. */
+    private void rebuildCorrector() {
+        Set<String> words = new HashSet<>();
+        for (Intent intent : intents.values()) words.addAll(TypoCorrector.wordsOf(intent.examples()));
+        for (List<String> examples : taught.values()) words.addAll(TypoCorrector.wordsOf(examples));
+        this.corrector = new TypoCorrector(words);
+    }
+
+    /** The typo corrector, exposed so a test can assert it against the trained corpus. */
+    public TypoCorrector corrector() {
+        return corrector;
     }
 
     public double threshold() {
@@ -103,11 +128,88 @@ public final class IntentModel {
      */
     public Intent classify(String text) {
         Intent routed = route(text);
+        if (routed == null) {
+            // Route the repaired text too. "were am i" misses the "where am i" rule because the
+            // typo is a different token, and the classifier alone then picks the wrong class.
+            String repaired = correct(text);
+            if (!repaired.equals(text)) routed = route(repaired);
+        }
         if (routed != null) return routed;
-        NaiveBayesClassifier.Result result = classifier.classifyWithConfidence(text);
+        // Repair one-letter slips before classifying. A misspelt word is a feature the classifier
+        // has never seen, so "helo" scores zero everywhere and the line goes unanswered even though
+        // the meaning was plain. The router above runs on the raw tokens, because its rules are
+        // short and its own matching is already tolerant.
+        NaiveBayesClassifier.Result result = classifier.classifyWithConfidence(correct(text));
+        if (!result.known() || result.confidence() < threshold) {
+            // Still not confident: the correction may have been a coin flip between two real words
+            // ("helo" is one edit from both "hello" and "help"). Try each reading and keep the one
+            // the classifier is surest about, which is the reading that fits the rest of the line.
+            NaiveBayesClassifier.Result best = resolveAmbiguous(text);
+            if (best != null) result = best;
+        }
         if (!result.known() || result.confidence() < threshold) return null;
         String name = classifier.className(result.index());
         return name == null ? null : intents.get(name);
+    }
+
+    /**
+     * Classifies each reading of an ambiguous typo and returns the most confident one.
+     *
+     * <p>Returns null when there is nothing ambiguous to try. Bounded to a handful of variants so a
+     * pathological line cannot cause work proportional to the vocabulary.
+     */
+    private NaiveBayesClassifier.Result resolveAmbiguous(String text) {
+        TypoCorrector current = corrector;
+        if (current == null) return null;
+        List<String> variants = readings(text, current);
+        if (variants.isEmpty()) return null;
+        NaiveBayesClassifier.Result best = null;
+        for (String variant : variants) {
+            NaiveBayesClassifier.Result attempt = classifier.classifyWithConfidence(variant);
+            if (!attempt.known()) continue;
+            if (best == null || attempt.confidence() > best.confidence()) best = attempt;
+        }
+        return best == null ? null : best;
+    }
+
+    /** One variant per ambiguous word, with that word replaced by each of its candidates. */
+    private static List<String> readings(String text, TypoCorrector corrector) {
+        List<String> out = new ArrayList<>(2);
+        List<String> words = TextTokenizer.rawTokens(text);
+        for (String word : words) {
+            List<String> candidates = corrector.candidates(word);
+            if (candidates.isEmpty()) continue;
+            for (String candidate : candidates) {
+                out.add(replaceWord(text, word, candidate));
+                if (out.size() >= 4) return out;
+            }
+        }
+        return out;
+    }
+
+    /** Replaces whole-word occurrences of {@code from} with {@code to}, case-insensitively. */
+    private static String replaceWord(String text, String from, String to) {
+        StringBuilder out = new StringBuilder(text.length());
+        int i = 0;
+        while (i < text.length()) {
+            char c = text.charAt(i);
+            if (!Character.isLetterOrDigit(c)) {
+                out.append(c);
+                i++;
+                continue;
+            }
+            int start = i;
+            while (i < text.length() && Character.isLetterOrDigit(text.charAt(i))) i++;
+            String word = text.substring(start, i);
+            out.append(word.equalsIgnoreCase(from) ? to : word);
+        }
+        return out.toString();
+    }
+
+    /** The text with unknown one-letter-away words repaired, or the input when nothing is unclear. */
+    public String correct(String text) {
+        TypoCorrector current = corrector;
+        return current == null ? text : current.correct(text);
     }
 
     /**
@@ -168,6 +270,15 @@ public final class IntentModel {
     private static List<Route> buildRouter() {
         return List.of(
             route("prefix", "prefix"),
+            // Before the "how do i" help rule below, which would otherwise swallow every how-to.
+            route("gamehelp", "claim", "land"),
+            route("gamehelp", "beacon"),
+            route("gamehelp", "village"),
+            route("gamehelp", "diamond"),
+            route("gamehelp", "craft"),
+            route("gamehelp", "enchant"),
+            route("gamehelp", "best", "sword"),
+            route("gamehelp", "best", "tool"),
             route("help", "how", "use"),
             route("help", "how", "work"),
             route("help", "what", "can", "you", "do"),
@@ -184,13 +295,36 @@ public final class IntentModel {
             route("status", "you", "there"),
             route("status", "whats", "up"),
             route("status", "you", "good"),
-            // Position.
+            route("status", "how", "r", "u"),
+            route("status", "how", "u", "doin"),
+            // Position. Before the gamehelp rules: "wheres the base" is a position question, and
+            // the village rule below would otherwise claim it because both are places.
             route("position", "where", "am", "i"),
+            route("position", "wheres", "base"),
+            route("position", "where", "base"),
             route("position", "coords"),
             route("position", "biome"),
+            // Player count and who is around. Added because the classifier answered "how many
+            // players" with the tick rate and "whos online" with its own identity: with no
+            // examples for this topic it picked whichever class shared the most words.
+            route("players", "how", "many", "player"),
+            route("players", "player", "count"),
+            route("players", "how", "many", "ppl"),
+            route("players", "how", "many", "people"),
+            route("players", "who", "online"),
+            route("players", "whos", "online"),
+            route("players", "whose", "online"),
+            route("players", "whos", "on"),
+            route("players", "anyone", "online"),
+            route("players", "anybody", "online"),
+            route("players", "online", "now"),
+            route("players", "who", "here"),
             // Tick rate before serverinfo: "is the server lagging" names the server but asks about lag.
             route("tickrate", "server", "lag"),
             route("tickrate", "tps"),
+            // "tickrate" is one word, so the two-token rule below never matched it. Both spellings
+            // are in common use and only the spaced one was covered.
+            route("tickrate", "tickrate"),
             route("tickrate", "tick", "rate"),
             route("tickrate", "lag"),
             route("latency", "ping"),
@@ -207,6 +341,8 @@ public final class IntentModel {
             route("weather", "day", "time"),
             route("time", "time"),
             route("time", "clock"),
+            route("time", "date"),
+            route("time", "today"),
             route("joke", "joke"),
             route("joke", "funny"),
             route("joke", "laugh"),
@@ -308,6 +444,7 @@ public final class IntentModel {
             generator.train(example);
             exampleCounts.put(intentName, 1);
             taught.computeIfAbsent(intentName, key -> new ArrayList<>()).add(example);
+            rebuildCorrector();
             return true;
         }
         int count = exampleCounts.getOrDefault(intentName, existing.examples().size());
@@ -316,6 +453,7 @@ public final class IntentModel {
         generator.train(example);
         exampleCounts.put(intentName, count + 1);
         taught.computeIfAbsent(intentName, key -> new ArrayList<>()).add(example);
+        rebuildCorrector();
         return true;
     }
 
@@ -446,6 +584,28 @@ public final class IntentModel {
                 "which biome is this", "what biome"),
             List.of("You are at {coords} in {biome}.", "{coords}, {biome}, facing {facing}.",
                 "Coordinates {coords}.")));
+        // Game questions the corpus had no topic for. Without these the classifier answered
+        // "how do i claim land" with nothing at all, because no class shared its words.
+        //
+        // The examples deliberately omit the question scaffolding ("how do i", "where is the",
+        // "what is the best"). Those words appear in most other intents, so including them made
+        // this class claim "how are you" and "where even am i" — a broad class that swallows its
+        // neighbours is worse than the gap it fills. Only the domain nouns are listed.
+        train(new Intent("gamehelp",
+            List.of("claim land", "beacon recipe", "village nearby", "best sword",
+                "best pickaxe", "get diamonds", "make a farm", "enchant a sword"),
+            List.of("I cannot play the game for you, {player}, but ask {prefix}help for what I can do.",
+                "That is a game question I have no data on. I only know this client's chat and stats.",
+                "I have no recipe data. Try the wiki, or ask me for coords, ping or players.")));
+        // Domain nouns only, for the same reason as gamehelp: "who are you" and "how are you"
+        // both contain who/how/are/you, so examples built from those words made this class
+        // answer the identity and status questions. The router covers the phrasings.
+        train(new Intent("players",
+            List.of("player count", "players online", "how many players", "how many ppl",
+                "how many people online", "players in the tab", "tab list", "online players",
+                "population", "server population"),
+            List.of("There are {players} players online.", "{players} online right now.",
+                "{players} players in the tab list.")));
         train(new Intent("memory",
             List.of("what do you remember", "what do you know", "your memory",
                 "list facts", "what facts", "remember anything", "tell me what you know"),

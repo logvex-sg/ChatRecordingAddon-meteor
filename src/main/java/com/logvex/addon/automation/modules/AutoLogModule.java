@@ -123,7 +123,7 @@ public class AutoLogModule extends AutomationModule {
     private long lastTriggeredAt;
 
     public AutoLogModule() {
-        super("auto-log", "Disconnects you when your health, food or surroundings become dangerous.");
+        super("log-panic", "Disconnects you when your health, food or surroundings become dangerous.");
     }
 
     @Override

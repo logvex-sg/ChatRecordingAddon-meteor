@@ -45,10 +45,23 @@ public record Notification(
         };
     }
 
+    /**
+     * Title and message as one readable string.
+     *
+     * <p>The title is separated from the message rather than run into it, so a notification reads as
+     * {@code Auto Reconnect: gave up after 5 attempts} instead of {@code Auto Reconnect Gave up
+     * after 5 attempts} — without the colon the two halves blur into one unpunctuated sentence, and
+     * the title no longer looks like the label it is.
+     */
+    public String body() {
+        if (title.isEmpty()) return message;
+        return message.isEmpty() ? title : title + ": " + message;
+    }
+
     /** A single-line rendering used by chat and the HUD, with a human-readable clock time. */
     public String line() {
-        String body = title.isEmpty() ? message : (message.isEmpty() ? title : title + " " + message);
-        return Messages.clock(timestamp) + " " + body;
+        String body = body();
+        return body.isEmpty() ? Messages.clock(timestamp) : Messages.clock(timestamp) + " " + body;
     }
 
     /** True when the notification matches a case-insensitive keyword across its visible fields. */

@@ -55,7 +55,7 @@ public class AutoToolModule extends AutomationModule {
     private int slotBeforeSwap = -1;
 
     public AutoToolModule() {
-        super("auto-tool", "Swaps to the best tool for the block you are mining.");
+        super("log-tool", "Swaps to the best tool for the block you are mining.");
     }
 
     @Override

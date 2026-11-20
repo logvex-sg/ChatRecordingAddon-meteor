@@ -48,31 +48,39 @@ public final class AssistantBrain {
      */
     public record Decision(Delivery delivery, String text, TriggerRule rule,
                            boolean sound, boolean remember, boolean command, boolean denied,
-                           ReplyFormat.Embed embed, String report, String statusCard) {
+                           ReplyFormat.Embed embed, String report, String statusCard,
+                           String modCall) {
         public static final Decision NONE =
-            new Decision(Delivery.NONE, "", null, false, false, false, false, null, null, null);
+            new Decision(Delivery.NONE, "", null, false, false, false, false, null, null, null, null);
+
+        public Decision(Delivery delivery, String text, TriggerRule rule,
+                        boolean sound, boolean remember, boolean command, boolean denied,
+                        ReplyFormat.Embed embed, String report, String statusCard) {
+            this(delivery, text, rule, sound, remember, command, denied, embed, report, statusCard,
+                null);
+        }
 
         public Decision(Delivery delivery, String text, TriggerRule rule,
                         boolean sound, boolean remember, boolean command, boolean denied,
                         ReplyFormat.Embed embed, String report) {
-            this(delivery, text, rule, sound, remember, command, denied, embed, report, null);
+            this(delivery, text, rule, sound, remember, command, denied, embed, report, null, null);
         }
 
         public Decision(Delivery delivery, String text, TriggerRule rule,
                         boolean sound, boolean remember, boolean command, boolean denied,
                         ReplyFormat.Embed embed) {
-            this(delivery, text, rule, sound, remember, command, denied, embed, null, null);
+            this(delivery, text, rule, sound, remember, command, denied, embed, null, null, null);
         }
 
         public Decision(Delivery delivery, String text, TriggerRule rule,
                         boolean sound, boolean remember, boolean command, boolean denied) {
-            this(delivery, text, rule, sound, remember, command, denied, null, null, null);
+            this(delivery, text, rule, sound, remember, command, denied, null, null, null, null);
         }
 
         /** The original six-field form, for every decision that was not a refusal. */
         public Decision(Delivery delivery, String text, TriggerRule rule,
                         boolean sound, boolean remember, boolean command) {
-            this(delivery, text, rule, sound, remember, command, false, null, null, null);
+            this(delivery, text, rule, sound, remember, command, false, null, null, null, null);
         }
 
         /**
@@ -96,6 +104,22 @@ public final class AssistantBrain {
          */
         public boolean hasReport() {
             return report != null && !report.isBlank();
+        }
+
+        /**
+         * True when this decision also asks the caller to send a private message.
+         *
+         * <p>The payload travels with the decision for the same reason a report does: the brain
+         * decides and authorises, the module owns the settings and the network.
+         */
+        public boolean hasModCall() {
+            return modCall != null && !modCall.isBlank();
+        }
+
+        /** A decision that carries a private message for the caller to send. */
+        public static Decision modCall(Delivery delivery, String text, String modCall) {
+            return new Decision(delivery, text, null, false, false, true, false, null, null, null,
+                modCall);
         }
 
         public boolean acts() {
@@ -595,6 +619,8 @@ public final class AssistantBrain {
             case "macros" -> commandMacros(config);
             case "macrohelp" -> commandMacroHelp(rest, config);
             case "mod", "report" -> commandReport(sender, canonical, rest, config);
+            case "modcall" -> commandModCall(sender, rest, config);
+            case "summary" -> commandSummary(sender, rest, config);
             case "who" -> commandWho(config, stats);
             case "stats" -> commandStats(config, stats);
             default -> statusCommand(identity, canonical, word, config, stats, statusSettings,
@@ -1061,6 +1087,47 @@ public final class AssistantBrain {
         String text = clamp(confirmation, config.maxReplyLength());
         return new Decision(deliveryFor(config.memoryReplyMode()), text, null, false, false, true,
             false, null, kind + "|" + who + "|" + reason);
+    }
+
+    /**
+     * {@code !summary [note]}: send a chat summary report to the configured webhook.
+     *
+     * <p>Encoded through the same {@code kind|who|note} channel as a report, with a distinct kind,
+     * because the delivery, permission gate and failure notice are all already handled there. The
+     * module decides whether a webhook is configured; this layer only checks that the request makes
+     * sense on its own.
+     */
+    private Decision commandSummary(String sender, String rest, AssistantConfig config) {
+        String note = rest == null ? "" : rest.strip();
+        String who = sender == null || sender.isBlank() ? "someone" : sender;
+        String text = clamp("Sending a chat summary report.", config.maxReplyLength());
+        return new Decision(deliveryFor(config.memoryReplyMode()), text, null, false, false, true,
+            false, null, "summary|" + who + "|" + note);
+    }
+
+    /**
+     * {@code !modcall <reason>}: ask the caller to privately message the configured moderator.
+     *
+     * <p>The target and the enable switch are settings on the module, so they are not visible here.
+     * This method therefore only validates what it can see - that a reason was given and that it
+     * contains readable text - and hands the payload on. The module refuses when no target is
+     * configured, which is the one check that needs its settings.
+     */
+    private Decision commandModCall(String sender, String rest, AssistantConfig config) {
+        String said = rest == null ? "" : rest.strip();
+        if (said.isEmpty()) {
+            return reply(config.memoryReplyMode(), ModCall.Problem.NO_REASON.message(
+                config.commandPrefix()), false);
+        }
+        if (ModCall.sanitise(said).isEmpty()) {
+            return reply(config.memoryReplyMode(), ModCall.Problem.EMPTY_REASON.message(
+                config.commandPrefix()), false);
+        }
+        // Only the reason travels: the module already knows who spoke, and it sanitises again
+        // against the real target, so a setting changed between here and the send cannot produce an
+        // unsanitised command.
+        return Decision.modCall(deliveryFor(config.memoryReplyMode()),
+            "Calling a moderator for you.", said);
     }
 
     /** A reply carried as a block, so the caller can render it one line per field. */

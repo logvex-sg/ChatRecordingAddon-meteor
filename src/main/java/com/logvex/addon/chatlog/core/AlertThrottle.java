@@ -107,7 +107,14 @@ public final class AlertThrottle {
         burst.clear();
     }
 
-    /** Drops state for keys that are no longer watched. */
+    /**
+     * Drops state for keys that are no longer watched.
+     *
+     * <p>Only the per-key tables are pruned, and only when something was actually removed. The
+     * burst window is left alone: it records how many alerts went out in total, and clearing it
+     * would reset the cap on every call. Callers prune on every tick, so clearing here would mean
+     * the cap never applied at all.
+     */
     public void retain(java.util.Collection<String> keys) {
         if (keys == null) {
             reset();

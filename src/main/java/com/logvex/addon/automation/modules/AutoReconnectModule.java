@@ -68,7 +68,7 @@ public class AutoReconnectModule extends AutomationModule {
     private boolean waitingToReconnect;
 
     public AutoReconnectModule() {
-        super("auto-reconnect", "Reconnects to the last multiplayer server after a disconnect.");
+        super("log-reconnect", "Reconnects to the last multiplayer server after a disconnect.");
     }
 
     @Override

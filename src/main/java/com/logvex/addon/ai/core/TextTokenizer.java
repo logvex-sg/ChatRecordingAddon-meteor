@@ -57,6 +57,11 @@ public final class TextTokenizer {
         return out;
     }
 
+    /** True when {@code word} is one the tokenizer discards as carrying no intent. */
+    public static boolean isStopword(String word) {
+        return word != null && STOPWORDS.contains(word.toLowerCase(Locale.ROOT));
+    }
+
     /** Content tokens: stopwords removed, then lightly stemmed. */
     public static List<String> tokens(String text) {
         List<String> raw = rawTokens(text);
