@@ -374,16 +374,32 @@ single line each, so the whole feature set is editable from the settings list, t
 `!ai triggers` command or the Assistant Manager GUI:
 
 ```
-pattern;sender=;reply=;mode=private;cooldown=1000;limit=0;sound=false;remember=false;enabled=true;aliases=;pool=
+pattern;sender=;reply=;mode=private;cooldown=3000;limit=0;sound=false;remember=false;enabled=true;aliases=;pool=;whisper=msg;embed=false
 ```
 
-A fresh install ships **27 preconfigured rules**, all enabled, all at the 1000 ms cooldown, all
-matched on whole words, and all answered **privately to whoever asked**. Greetings, thanks,
-farewells, `gg`/`wp`, small talk, the live-figure questions (`where am i`, `what is my ping`,
-`what is the tps`, `what time is it`) and the command-shaped set (`!tps`, `!status`, `!health`,
-`!inventory`, `!world`, `!client`, `!ram`, `!session`) answer out of the box — no setup step. The
-table is deliberately free of nested patterns: no rule's pattern is a substring of another's, so
-first-match-wins never has to break a tie. `!ai triggers restore` puts the same table back.
+A fresh install ships **82 preconfigured rules** with 76 extra aliases, all enabled, all at the
+3000 ms cooldown, all matched on whole words, and all answered **privately to whoever asked**.
+That is 158 phrases answering out of the box — no setup step. They cover greetings, thanks,
+farewells, `gg`/`wp`, small talk, the server-figure questions (`what is the tps`, `what is my ping`,
+`is the server lagging`, `how many players`), the player-figure questions (`where am i`,
+`what is my health`, `what is my armour`, `what is my gamemode`) and the command-shaped set
+(`!tps`, `!status`, `!memory`, `!world`, `!time`, `!health`, `!ping`, `!fps`, `!ram`, `!session`,
+`!players`, `!help`). `!ai triggers restore` puts the same table back.
+
+Every shipped phrase is **reachable**: no rule's phrase can be answered by an earlier rule, so
+first-match-wins never has to break a tie and the reply never depends on list order. Two tests
+enforce this (`earlierRulesDoNotSwallowLaterOnes`, `everyShippedRuleMatchesItsOwnPattern`), which
+is why near-duplicate phrasings are stored as aliases of one rule rather than as two rules.
+
+The cooldown is **per player**. A rule paces each speaker separately, so a busy chat cannot use up
+the rule for everyone else: when three players ask `!tps` at once, all three get an answer. The
+global rate limit still caps the total.
+
+A reply may name a **private figure** — coordinates, gear, health, the assistant's own memory — but
+only when the asker is the local player. A stranger who types a trigger whose reply would expose
+one of those gets a refusal instead of the answer, so a trigger can never be used to read the
+operator's position or stats. Coarse world facts (`{biome}`, `{dimension}`) stay public, matching
+`!world`.
 
 A trigger only ever fires on chat. A line that starts with the command prefix is a command, so a
 bare `hello` rule answers chat but never swallows `!hello`.
@@ -404,8 +420,33 @@ bare `hello` rule answers chat but never swallows `!hello`.
 | `enabled` | Turn the rule off without deleting it. |
 | `aliases` | Extra phrases that fire the same rule, comma separated, e.g. `latency,ms`. |
 | `pool` | No longer used. Kept so a rule written by an older build still loads. |
+| `embed` | `true` sends the reply as an aligned block instead of one line. See below. |
 
-**A reply is one literal line, and it always says the same thing.** Two earlier behaviours are gone
+#### Block replies (`embed=true`)
+
+A reply with several figures reads better as a block than as one long sentence, so a rule can opt
+into one. The reply is written as comma-separated `Label value` clauses and each clause becomes an
+aligned row:
+
+```
+!tps;reply=TPS {tps}, MSPT {mspt} ms, Status {verdict};embed=true
+```
+
+```
+┌─ !tps ───────────────────────────────┐
+│ TPS    19.8                          │
+│ MSPT   50.5 ms                       │
+│ Status good                          │
+└──────────────────────────────────────┘
+```
+
+Minecraft chat cannot carry a newline inside one message, so the block is sent as consecutive
+lines (up to 12). `!tps`, `!status`, `!memory`, `!world`, `!time` and `!health` ship this way. The
+one-line form is still built and used wherever only one line fits, so an embed rule never loses a
+figure. The module's **reply-format** setting (`auto`, `box`, `compact`, `plain`, `list`) overrides
+the layout globally; `auto` keeps each reply's own.
+
+**A reply is one literal answer, and it always says the same thing.** Two earlier behaviours are gone
 because they made output look broken:
 
 - **`|` in a reply no longer means "pick one at random".** It never looked like a random-choice
@@ -414,11 +455,6 @@ because they made output look broken:
   A rule stored by an older build still renders its first alternative, so no stored rule prints a
   raw pipe.
 - **No sentence is appended from `pool`.** A reply is exactly what you wrote.
-
-The first rule that matches wins, so a specific rule can be placed above a broad one. A global
-rate limit (default 20 replies per minute) caps how often the assistant can answer in total, and a
-rule's cooldown and session limit cap it per rule — the assistant cannot flood chat even if a
-keyword appears in every message.
 
 The first rule that matches wins, so a specific rule can be placed above a broad one. A global
 rate limit (default 20 replies per minute) caps how often the assistant can answer in total, and a
@@ -1367,12 +1403,12 @@ All responses are JSON. Authenticate with the token unless noted.
 | GET | `/api/v1/modules` | Every module with its state. |
 | POST | `/api/v1/modules/{name}` | Toggles a module: `{"active":true}`. |
 | GET | `/api/v1/chat` | The recent chat. |
-| POST | `/api/v1/chat` | Sends a chat line or a `/command`: `{"message":"hello"}`. |
+| POST | `/api/v1/chat` | Sends a chat line: `{"message":"hello"}`. A line starting with `/` is treated as a command. |
 | GET | `/api/v1/players` | The observed players. |
 | GET | `/api/v1/storage` | The segment count, compressed size and oldest/newest timestamps. |
 | GET | `/api/v1/queries` | The names the query endpoint accepts. |
 | GET | `/api/v1/query/{name}` | `messages`, `players` or `stats`, with `q`, `player` and `limit` filters. |
-| POST | `/api/v1/command` | Runs a client command: `{"command":"log status"}`. |
+| POST | `/api/v1/command` | Runs a line as if typed: `{"command":"/tpa Steve"}`. It goes through the same send event the game posts for typed input, so a macro such as `!tpa <player>` expands and an addon command such as `!log status` runs. |
 | POST | `/api/v1/notify` | Shows a chat line and a notification: `{"message":"..."}`. |
 
 The server answers with a plain message and the right status code when something is wrong — a
@@ -1727,6 +1763,10 @@ archive with in-memory doubles (no Minecraft runtime required):
 - `CompanionServerTest` — the real socket: a published event reaches a connected client, the stream
   replays events a client missed on reconnect, a POST body reaches the API, and the server binds a
   real port, serves the app and stops cleanly.
+- `CompanionDispatchTest` — the send path a command takes from the app: the line reaches a real
+  `SendMessageEvent` listener, a listener that claims it stops the line being sent twice, a macro
+  shortcut such as `!tpa Steve` expands rather than being sent verbatim, an empty line is never
+  posted, and a missing bus still yields the line instead of silently dropping it.
 - `CompanionCoreTest` — the event bus (ordered delivery, a bounded ring, backlog replay, a throwing
   subscriber isolated and dropped, monotonic ids, publish never blocking on a subscriber), the rate
   limiter (burst then throttle, per-client buckets, pruning), the client-thread seam (inline,

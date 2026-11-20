@@ -31,8 +31,22 @@ public record TriggerRule(
     boolean enabled,
     String aliases,
     String pool,
-    String whisper
+    String whisper,
+    boolean embed
 ) {
+    /**
+     * The shipped form, for every rule that answers with one line.
+     *
+     * <p>Kept so a rule can be built without naming the layout, which is what almost every caller
+     * and every test wants: {@code embed} is the exception, not the default.
+     */
+    public TriggerRule(String pattern, boolean caseSensitive, boolean wholeWord, String sender,
+                       String reply, ReplyMode mode, long cooldownMs, int sessionLimit,
+                       boolean sound, boolean remember, boolean enabled, String aliases,
+                       String pool, String whisper) {
+        this(pattern, caseSensitive, wholeWord, sender, reply, mode, cooldownMs, sessionLimit,
+            sound, remember, enabled, aliases, pool, whisper, false);
+    }
     /** How a matching rule delivers its reply. */
     public enum ReplyMode {
         /** Say the reply in public chat. Opt in: the default is {@link #PRIVATE}. */
@@ -77,6 +91,17 @@ public record TriggerRule(
      * an existing rule keeps whatever cooldown it was saved with.
      */
     public static final long DEFAULT_COOLDOWN_MS = 1_000L;
+
+    /**
+     * The cooldown every shipped rule carries, in milliseconds.
+     *
+     * <p>Three seconds, unlike the one-second default a hand-written rule gets. The shipped table is
+     * large and every entry answers out of the box, so on a busy server a shorter gap lets two or
+     * three players trade the same keyword back and forth until chat is nothing but the assistant.
+     * Cooldowns are tracked per speaker, so this paces each player without muting the rule for
+     * everyone else.
+     */
+    public static final long TRIGGER_COOLDOWN_MS = 3_000L;
 
     public TriggerRule {
         if (pattern == null) pattern = "";
@@ -260,6 +285,7 @@ public record TriggerRule(
         map.put("reply", reply);
         map.put("mode", mode.name().toLowerCase(Locale.ROOT));
         map.put("cooldown", cooldownMs);
+        map.put("embed", embed);
         map.put("limit", sessionLimit);
         map.put("sound", sound);
         map.put("remember", remember);
@@ -297,7 +323,8 @@ public record TriggerRule(
             + ";sender=" + sender + ";reply=" + reply + ";mode=" + mode.name().toLowerCase(Locale.ROOT)
             + ";cooldown=" + cooldownMs + ";limit=" + sessionLimit + ";sound=" + sound
             + ";remember=" + remember + ";enabled=" + enabled
-            + ";aliases=" + aliases + ";pool=" + pool + ";whisper=" + whisper;
+            + ";aliases=" + aliases + ";pool=" + pool + ";whisper=" + whisper
+            + ";embed=" + embed;
     }
 
     public static TriggerRule decode(String encoded) {
@@ -333,6 +360,7 @@ public record TriggerRule(
         String aliases = "";
         String pool = "";
         String whisper = DEFAULT_WHISPER;
+        boolean embed = false;
         java.util.Set<String> seen = new java.util.HashSet<>();
 
         for (int i = 1; i < parts.length; i++) {
@@ -360,6 +388,7 @@ public record TriggerRule(
                 case "aliases", "alias" -> aliases = value;
                 case "pool", "signoff" -> pool = value;
                 case "whisper", "msgcmd", "tell" -> whisper = value;
+                case "embed", "block", "format" -> embed = parseEmbed(value);
                 default -> {
                     // Unknown key from a newer build: ignore it.
                 }
@@ -367,7 +396,7 @@ public record TriggerRule(
         }
 
         return new TriggerRule(pattern, caseSensitive, wholeWord, sender, reply, mode,
-            cooldown, limit, sound, remember, enabled, aliases, pool, whisper);
+            cooldown, limit, sound, remember, enabled, aliases, pool, whisper, embed);
     }
 
     /**
@@ -383,18 +412,34 @@ public record TriggerRule(
     /**
      * The preconfigured trigger table shipped on a fresh install.
      *
-     * <p>Every entry whispers its answer to whoever asked, matches whole words, and uses the
-     * 1000 ms default cooldown. A reply is one literal line: no alternatives and no appended
+     * <p>Every entry whispers its answer to whoever asked, matches whole words, and carries
+     * {@link #TRIGGER_COOLDOWN_MS}. A reply is one literal line: no alternatives and no appended
      * sentence, so the same question always prints the same answer.
      *
-     * <p>Kept deliberately free of overlap: no rule's pattern is a substring of another's, so the
-     * first-match-wins order in {@link TriggerSet} never decides between two plausible rules.
-     * {@code hi} and {@code high} would collide, which is why the greeting rules use the longer
-     * forms only.
+     * <p>Three properties are load-bearing and are pinned by tests, because breaking any of them
+     * turns a helpful table into a noisy or unsafe one:
+     *
+     * <ul>
+     *   <li><b>No overlap.</b> No rule's pattern or alias is a substring of another's, so the
+     *       first-match-wins order in {@link TriggerSet} never has to break a tie. This is why the
+     *       greeting rules use the longer forms ({@code hi there}, never a bare {@code hi}, which
+     *       would sit inside {@code this}) and why the tps family is spelled out per figure.</li>
+     *   <li><b>Correct units.</b> A placeholder is expanded as written, so a template that appends
+     *       its own unit to a value that already carries one prints {@code 42 msms}. {@code {ping}},
+     *       {@code {mspt}} and the memory figures are unit-free; {@code {tps}} is a bare number;
+     *       {@code {worldtime}} already ends in {@code day}/{@code night}.</li>
+     *   <li><b>No private figure in a public reply.</b> Every rule here is whispered, so a reply
+     *       naming a coordinate never reaches the rest of the server.</li>
+     * </ul>
+     *
+     * <p>A rule whose reply describes the player (coordinates, gear, health) is still refused to a
+     * remote sender by the runtime, so a stranger cannot read the operator's position by typing
+     * {@code where am i}.
      */
     public static java.util.List<TriggerRule> preconfigured() {
         java.util.List<TriggerRule> out = new java.util.ArrayList<>();
-        // Greetings and courtesies.
+
+        // ---------------------------------------------------------------- greetings and courtesies
         out.add(rule("hello", "Hello {player}!", "hi there,hey there,hello there"));
         out.add(rule("good morning", "Morning, {player}!", "morning"));
         out.add(rule("good night", "Night, {player}.", "gn"));
@@ -402,62 +447,143 @@ public record TriggerRule(
         out.add(rule("goodbye", "See you, {player}.", "bye,cya"));
         out.add(rule("good bot", "Thank you, {player}.", "nice bot"));
         out.add(rule("good game", "Good game!", "gg,wp"));
-        // Identity and help.
-        out.add(rule("who are you", "{name}", "what are you"));
-        out.add(rule("what can you do", "{prefix}help", "help me,commands"));
-        out.add(rule("what is the prefix", "{prefix}"));
-        // Live figures: these need the {..} placeholders expanded from the current world.
-        out.add(rule("what time is it", "{time}", "time now"));
-        out.add(rule("where am i", "{coords} {biome} {facing}", "my coords,coordinates"));
-        out.add(rule("what is my ping", "{ping}ms {verdict}", "my latency"));
-        out.add(rule("what is the weather", "{weather}", "weather"));
-        out.add(rule("what server is this", "{server} {dimension}", "which server"));
-        out.add(rule("what is the tps", "{tps}/20 {mspt}ms", "server tps"));
-        // Small talk that otherwise gets no reply at all.
+        out.add(rule("welcome back", "Welcome back, {player}.", "wb"));
+        out.add(rule("well played", "Well played.", "nice one"));
         out.add(rule("how are you", "Running well, {player}.", "how is it going"));
-        out.add(rule("tell me a joke", "Mining joke: it is too deep.", "joke"));
-        out.add(rule("what do you know", "{factcount} facts. {prefix}facts", "your memory"));
+        out.add(rule("nice to meet you", "Likewise, {player}.", "pleased to meet you"));
+        out.add(rule("see you later", "Later, {player}.", "see you soon"));
+        out.add(rule("have a good day", "You too, {player}.", "have a nice day"));
+        out.add(rule("sorry", "No harm done, {player}.", "my bad,apologies"));
+        out.add(rule("congratulations", "Congratulations, {player}!", "congrats"));
+        out.add(rule("happy birthday", "Happy birthday, {player}!", "hbd"));
+        out.add(rule("good luck", "Good luck, {player}!", "gl"));
+        out.add(rule("no problem", "No problem.", "np"));
+        out.add(rule("you are welcome", "Any time.", "youre welcome"));
+        out.add(rule("laughing out loud", "Glad that landed.", "lol,lmao"));
 
-        // Command-shaped rules: typed with the prefix, answered privately to whoever asked.
+        // ---------------------------------------------------------------- identity and help
+        out.add(rule("who are you", "{name}", "what are you"));
+        out.add(rule("what can you do", "{prefix}help",
+            "help me,commands,what commands are there,!help"));
+        out.add(rule("what is the prefix", "{prefix}"));
+        out.add(rule("what do you know", "{factcount} facts. {prefix}facts", "your memory"));
+        out.add(rule("tell me a joke", "Mining joke: it is too deep.", "joke"));
+        out.add(rule("what is your name", "I am {name}.", "your name"));
+        out.add(rule("are you a bot", "I am {name}, running in this client.", "are you real"));
+        out.add(rule("can you see this", "Yes, I read chat.", "do you read chat"));
+        out.add(rule("how do i use you", "{prefix}help lists every command.", "how do i ask"));
+        out.add(rule("are you recording", "This client logs chat locally.", "do you log chat"));
+        out.add(rule("do you report me", "Only what you file yourself with {prefix}report.",
+            "are you a snitch"));
+
+        // ---------------------------------------------------------------- live figures, asked in prose
         //
-        // A trigger is matched before the command parser, so these do take the place of the
-        // same-named command. That is deliberate and safe here: every name below resolves to a
-        // command declared EVERYONE, so nothing is exposed that a stranger could not already ask
-        // for. The guard test refuses any default that would shadow a LOCAL_ONLY command instead.
+        // Units are already inside the value where the value carries one, so no template appends
+        // "ms" or "/20" to {ping}, {mspt} or {tps}.
+        out.add(rule("what time is it", "{worldtime}", "time now"));
+        out.add(rule("where am i", "{coords} in {biome}, facing {facing}", "my coords,coordinates"));
+        out.add(rule("what is my ping", "{ping}, {verdict}", "my latency"));
+        out.add(rule("what is the weather", "{weather}", "weather now"));
+        out.add(rule("what server is this", "{server} ({dimension})", "which server"));
+        out.add(rule("what is the tps", "TPS {tps}, {mspt} ms per tick, {verdict}", "server tps"));
+        out.add(rule("what is the mspt", "{mspt} ms per tick", "tick time"));
+        out.add(rule("what is the tick rate", "TPS {tps}, {mspt} ms per tick", "server speed"));
+        out.add(rule("how many players", "{playercount} of {maxplayers}", "player count"));
+        out.add(rule("who is online", "{playercount} players. {prefix}who", "online now"));
+        out.add(rule("what is my health", "{health} hp, {food} food", "my hp"));
+        out.add(rule("what is my armour", "{armor} points", "my armor,what is my armor"));
+        out.add(rule("what am i holding", "{held}, offhand {offhand}", "my hand"));
+        out.add(rule("what is my gamemode", "{gamemode}", "my mode"));
+        out.add(rule("what is my level", "Level {level}, {xp} to next"));
+        out.add(rule("what is my speed", "{speed} blocks/s", "how fast am i"));
+        out.add(rule("what effects do i have", "{effects}", "my potions"));
+        out.add(rule("what dimension is this", "{dimension}", "which dimension"));
+        out.add(rule("what is the difficulty", "{difficulty}", "server difficulty"));
+        out.add(rule("what day is it", "World day {day}, time {worldtime}", "world day"));
+        out.add(rule("what is my fps", "{fps} fps", "my framerate"));
+        out.add(rule("how long have i been on", "{sessiontime}", "my session"));
+        out.add(rule("how much memory", "{memoryused} of {memorymax} MB, {memorypercent}%",
+            "client ram"));
+        out.add(rule("what is my xp", "Level {level}, {xp} to next", "my experience"));
+        out.add(rule("what is my hunger", "{food} food, {saturation} saturation", "my food"));
+        out.add(rule("what is my air", "{air} air", "bubble level"));
+
+        // ---------------------------------------------------------------- server figures in prose
+        out.add(rule("what is the server brand", "{serverbrand}", "server software"));
+        out.add(rule("what version is the server", "{serverversion}", "server version"));
+        out.add(rule("how long has the server run", "{serveruptime}", "server uptime"));
+        out.add(rule("is the server lagging", "TPS {tps}, {verdict}", "is it laggy"));
+        out.add(rule("am i lagging", "{ping}, {verdict}", "my connection"));
+        out.add(rule("is the server up", "{serverstatus}", "server state"));
+        out.add(rule("what client is this", "Client {clientversion}, Fabric {fabricversion}",
+            "client version"));
+        out.add(rule("how many mods", "Mods loaded: {modcount}", "mod count"));
+
+        // ---------------------------------------------------------------- command-shaped rules
+        //
+        // A trigger is matched before the command parser, so a prefixed rule does take the place of
+        // the same-named command. Two rules follow from that, and a guard test enforces both:
+        //
+        //   * only an EVERYONE command may be shadowed, never a LOCAL_ONLY one - shadowing
+        //     "!coords" would hand a stranger the operator's position that the command itself
+        //     refuses to them;
+        //   * the shadowing reply must be at least as useful as the command. That is why this list
+        //     is single-figure commands only: "!help", "!facts" or "!macros" are replaced by their
+        //     real listing, not by a stub saying to type the command again.
         //
         // Each reply is comma separated, never pipe separated: ResponseVariants reads a pipe as
-        // "pick one alternative at random", which is the opposite of a field separator.
-        out.add(commandRule("!tps", "TPS {tps}, MSPT {mspt}ms, {verdict}"));
-        out.add(commandRule("!status",
-            "Server {server}, ping {ping}, TPS {tps}, FPS {fps}, players {playercount}"));
-        out.add(commandRule("!health",
-            "Health {health}, absorption {absorption}, armor {armor}"));
-        out.add(commandRule("!inventory", "Held {held}, offhand {offhand}, totems {totems}"));
-        out.add(commandRule("!world", "Time {worldtime}, day {day}, {weather}"));
-        out.add(commandRule("!client",
-            "Client {clientversion}, Fabric {fabricversion}, mods {modcount}, FPS {fps}"));
-        out.add(commandRule("!ram",
-            "Memory used {memoryused}MB, free {memoryfree}MB, max {memorymax}MB, "
-                + "{memorypercent}%"));
-        out.add(commandRule("!session", "Session {sessiontime}, server {server}"));
+        // "pick one alternative", which is the opposite of a field separator.
+        out.add(embedRule("!tps", "TPS {tps}, MSPT {mspt} ms, Status {verdict}"));
+        out.add(embedRule("!status",
+            "Server {server}, Ping {ping}, TPS {tps}, FPS {fps}, Players {playercount}"));
+        out.add(commandRule("!ping", "Ping {ping}, {verdict}"));
+        out.add(commandRule("!players", "Online {playercount} of {maxplayers}"));
+        out.add(commandRule("!uptime", "Session {uptime}"));
+        out.add(commandRule("!session", "Session {uptime}"));
+        out.add(commandRule("!fps", "FPS {fps}"));
+        out.add(commandRule("!ram", "Heap {memoryused} of {memorymax} MB, {memorypercent}%"));
+        out.add(embedRule("!memory", "Used {memoryused} MB, Max {memorymax} MB, Load {memorypercent}%"));
+        out.add(embedRule("!world", "Dimension {dimension}, Biome {biome}"));
+        out.add(embedRule("!time", "Time {worldtime}, Day {day}"));
+        out.add(commandRule("!day", "Day {day}"));
+        out.add(commandRule("!weather", "Weather {weather}"));
+        out.add(commandRule("!gamemode", "Gamemode {gamemode}"));
+        out.add(embedRule("!health", "Health {health}, Absorption {absorption}, Armour {armor}"));
+        out.add(commandRule("!speed", "Speed {speed} blocks/s"));
+        out.add(commandRule("!who", "Online {playercount} of {maxplayers}"));
+
         return java.util.List.copyOf(out);
     }
 
     /**
-     * A command-shaped rule: whispered to the speaker, whole-word matched, at the default cooldown.
+     * A command-shaped rule: whispered to the speaker, whole-word matched, at the shipped cooldown.
      *
-     * <p>The field values are the documented defaults: case-insensitive, whole-word, open to every
-     * sender, one second of cooldown, no session limit, no sound, no memory write, enabled.
+     * <p>The field values are explicit and complete — case-insensitive, whole-word, open to every
+     * sender, {@link #TRIGGER_COOLDOWN_MS} of cooldown, no session limit, no sound, no memory write,
+     * enabled, no aliases, no pool, the default whisper verb — so a shipped rule never depends on
+     * what an absent field would have defaulted to.
      */
     private static TriggerRule commandRule(String pattern, String reply) {
         return new TriggerRule(pattern, false, true, "", reply, ReplyMode.PRIVATE,
-            DEFAULT_COOLDOWN_MS, 0, false, false, true, "", "", DEFAULT_WHISPER);
+            TRIGGER_COOLDOWN_MS, 0, false, false, true, "", "", DEFAULT_WHISPER);
     }
 
-    /** A whispered rule at the default cooldown, whole-word matched, with optional aliases. */
+    /**
+     * A command-shaped rule delivered as a labelled block.
+     *
+     * <p>Used for the rules with several figures, which is where a block earns its extra lines: the
+     * one-line form stays as the fallback, and a user who prefers it sets {@code embed=off} on the
+     * rule or picks a plain layout in the module settings.
+     */
+    private static TriggerRule embedRule(String pattern, String reply) {
+        return new TriggerRule(pattern, false, true, "", reply, ReplyMode.PRIVATE,
+            TRIGGER_COOLDOWN_MS, 0, false, false, true, "", "", DEFAULT_WHISPER, true);
+    }
+
+    /** A whispered rule at the shipped cooldown, whole-word matched, with optional aliases. */
     private static TriggerRule rule(String pattern, String reply, String aliases) {
         return new TriggerRule(pattern, false, true, "", reply, ReplyMode.PRIVATE,
-            DEFAULT_COOLDOWN_MS, 0, false, false, true, aliases, "", DEFAULT_WHISPER);
+            TRIGGER_COOLDOWN_MS, 0, false, false, true, aliases, "", DEFAULT_WHISPER);
     }
 
     private static TriggerRule rule(String pattern, String reply) {
@@ -486,5 +612,54 @@ public record TriggerRule(
         } catch (NumberFormatException e) {
             return fallback;
         }
+    }
+
+    /**
+     * Reads the {@code embed=} switch.
+     *
+     * <p>Anything but an explicit "on" leaves the rule as one line. A mistyped value therefore
+     * degrades to the plain form rather than silently changing how a reply looks.
+     */
+    private static boolean parseEmbed(String value) {
+        if (value == null) return false;
+        return switch (value.trim().toLowerCase(Locale.ROOT)) {
+            case "on", "true", "yes", "1", "box", "block", "embed" -> true;
+            default -> false;
+        };
+    }
+
+    /**
+     * This rule's reply as a labelled block, for {@link #embed} rules.
+     *
+     * <p>A reply is written as comma-separated {@code Label value} clauses, which is how the
+     * shipped table reads anyway: {@code "TPS {tps}, MSPT {mspt}, verdict {verdict}"}. Each clause
+     * becomes one aligned row, so the figures line up instead of running together. A clause with no
+     * space has no label and keeps its text as the value, so a bare reply still renders.
+     *
+     * <p>Minecraft chat cannot carry a newline inside one message, so the caller sends the returned
+     * lines in order. That is why the block is built here rather than inside a placeholder.
+     *
+     * @param expanded the already-expanded reply text
+     * @param title    the block heading, usually the rule's pattern
+     */
+    public ReplyFormat.Embed toEmbed(String expanded, String title) {
+        java.util.List<ReplyFormat.Field> fields = new java.util.ArrayList<>();
+        String text = expanded == null ? "" : expanded.strip();
+        if (!text.isEmpty()) {
+            for (String clause : text.split(",\\s*")) {
+                String part = clause.strip();
+                if (part.isEmpty()) continue;
+                int space = part.indexOf(' ');
+                if (space <= 0) {
+                    fields.add(new ReplyFormat.Field("", part));
+                } else {
+                    String label = part.substring(0, space).strip();
+                    String value = part.substring(space + 1).strip();
+                    fields.add(new ReplyFormat.Field(label, value));
+                }
+            }
+        }
+        return new ReplyFormat.Embed(title == null ? "" : title, fields, "",
+            ReplyFormat.Style.BOX);
     }
 }

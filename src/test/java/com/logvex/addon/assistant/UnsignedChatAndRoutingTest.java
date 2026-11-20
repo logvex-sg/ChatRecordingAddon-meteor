@@ -77,13 +77,13 @@ class UnsignedChatAndRoutingTest {
     // ---------------------------------------------------------------- trigger table
 
     @Test
-    @DisplayName("a fresh install ships a usable trigger table, all at the one-second cooldown")
+    @DisplayName("a fresh install ships a usable trigger table, all at the shipped cooldown")
     void preconfiguredTableIsComplete() {
         List<TriggerRule> table = TriggerRule.preconfigured();
         assertTrue(table.size() >= 18, "expected a real table, got " + table.size() + " rules");
         for (TriggerRule rule : table) {
-            assertEquals(TriggerRule.DEFAULT_COOLDOWN_MS, rule.cooldownMs(),
-                "rule '" + rule.pattern() + "' must use the 1000 ms default");
+            assertEquals(TriggerRule.TRIGGER_COOLDOWN_MS, rule.cooldownMs(),
+                "rule '" + rule.pattern() + "' must use the 3000 ms shipped cooldown");
             assertTrue(rule.enabled(), "rule '" + rule.pattern() + "' must ship enabled");
             assertFalse(rule.reply().isBlank(), "rule '" + rule.pattern() + "' has no reply");
             assertTrue(rule.wholeWord(), "rule '" + rule.pattern() + "' must match whole words");

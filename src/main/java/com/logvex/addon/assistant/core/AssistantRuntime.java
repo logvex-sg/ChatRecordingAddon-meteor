@@ -218,9 +218,18 @@ public final class AssistantRuntime {
                 denied++;
                 return AssistantBrain.Decision.NONE;
             }
-            if (!cooldowns.tryFire(rule, now)) {
+            if (!cooldowns.tryFire(rule, sender.name(), now)) {
                 ignored++;
                 return AssistantBrain.Decision.NONE;
+            }
+            // A reply built from the operator's position, gear or memory describes this client, not
+            // the person who asked. A trigger is answered for whoever typed it, so without this
+            // check a stranger typing "where am i" would be handed the operator's coordinates - the
+            // command path already refuses exactly that, and the two paths must agree.
+            if (!sender.local() && Placeholders.mentionsPrivateFigure(rule.reply())) {
+                denied++;
+                return AssistantBrain.Decision.refusal(rule.mode(),
+                    "That answer describes the local player, so only they can ask for it.");
             }
             if (!allowGlobalReply(cfg, now)) {
                 rateLimited++;

@@ -152,7 +152,8 @@ public class AssistantScreen extends WindowScreen {
             module.replaceRule(index, new TriggerRule(current.pattern(), current.caseSensitive(),
                 current.wholeWord(), current.sender(), current.reply(), current.mode(),
                 current.cooldownMs(), current.sessionLimit(), current.sound(), current.remember(),
-                !current.enabled()).encode());
+                !current.enabled(), current.aliases(), current.pool(), current.whisperCommand(),
+                current.embed()).encode());
             taskAfterRender = this::render;
         };
 

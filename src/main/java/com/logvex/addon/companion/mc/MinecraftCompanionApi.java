@@ -12,6 +12,7 @@ import com.logvex.addon.chatlog.core.StatsSnapshot;
 import com.logvex.addon.chatlog.mc.LogService;
 import com.logvex.addon.chatlog.mc.LogStorageService;
 import com.logvex.addon.companion.core.CompanionApi;
+import com.logvex.addon.companion.core.CompanionDispatch;
 import com.logvex.addon.companion.core.CompanionSnapshot;
 import com.logvex.addon.framework.LogClientContext;
 import meteordevelopment.meteorclient.systems.modules.Module;
@@ -249,6 +250,7 @@ public final class MinecraftCompanionApi implements CompanionApi {
         out.add("bot-control");
         out.add("task-queue");
         out.add("chat");
+        out.add("command");
         out.add("modules");
         out.add("events");
         out.add("storage");
@@ -367,11 +369,11 @@ public final class MinecraftCompanionApi implements CompanionApi {
         if (mc == null || mc.player == null || mc.getNetworkHandler() == null) {
             return ActionResult.fail("You are not in a world.");
         }
-        if (text.startsWith("/")) {
-            mc.getNetworkHandler().sendChatCommand(text.substring(1));
-        } else {
-            mc.getNetworkHandler().sendChatMessage(text);
-        }
+        if (text.startsWith("/")) return sendCommand(text);
+        // Meteor's own hook on sendChatMessage posts SendMessageEvent, so the line must go in through
+        // this method and not through a manual post: posting here as well would offer every line to
+        // the listeners twice, and a macro would then run twice.
+        mc.getNetworkHandler().sendChatMessage(text);
         return ActionResult.ok("Sent.");
     }
 
@@ -379,12 +381,18 @@ public final class MinecraftCompanionApi implements CompanionApi {
     public ActionResult sendCommand(String command) {
         String text = command == null ? "" : command.trim();
         if (text.isEmpty()) return ActionResult.fail("The command was empty.");
-        if (text.startsWith("/")) text = text.substring(1);
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc == null || mc.getNetworkHandler() == null) {
             return ActionResult.fail("You are not in a world.");
         }
-        mc.getNetworkHandler().sendChatCommand(text);
+        // Nothing hooks sendChatCommand, so the event is posted here to give a macro or an addon
+        // command the same chance it gets when the player types the line. A listener that claims it
+        // has already sent its own command.
+        CompanionDispatch.Outcome outcome = CompanionDispatch.command(LogClientContext.EVENT_BUS, text);
+        if (outcome.handled()) return ActionResult.ok("Handled by a macro or command.");
+        String out = outcome.text();
+        if (out.startsWith("/")) out = out.substring(1);
+        mc.getNetworkHandler().sendChatCommand(out);
         return ActionResult.ok("Command sent.");
     }
 

@@ -483,7 +483,11 @@ public final class AssistantBrain {
             memory.recordConversation(sender, content, text, now);
             memory.incrementCounter("replies", 1);
         }
-        return new Decision(delivery, text, rule, rule.sound(), remember, false);
+        // An embed rule delivers the same figures as a labelled block, so the values line up instead
+        // of running together in one sentence. The one-line text stays as the fallback for a caller
+        // that can only show a single line, and as what memory records.
+        ReplyFormat.Embed embed = rule.embed() ? rule.toEmbed(text, rule.pattern()) : null;
+        return new Decision(delivery, text, rule, rule.sound(), remember, false, false, embed);
     }
 
     // ------------------------------------------------------------------ memory commands

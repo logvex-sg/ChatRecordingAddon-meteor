@@ -130,10 +130,13 @@ class CommandDefaultsTest {
     }
 
     @Test
-    @DisplayName("every default trigger carries the one-second cooldown")
-    void defaultsUseTheShortCooldown() {
+    @DisplayName("every default trigger carries the shipped three-second cooldown")
+    void defaultsUseTheShippedCooldown() {
+        // The shipped table is long and every entry answers out of the box, so it paces itself
+        // harder than a hand-written rule does. A rule the user adds still gets the one-second
+        // default; only the preconfigured entries carry the longer gap.
         for (TriggerRule rule : TriggerRule.defaults()) {
-            assertEquals(TriggerRule.DEFAULT_COOLDOWN_MS, rule.cooldownMs(),
+            assertEquals(TriggerRule.TRIGGER_COOLDOWN_MS, rule.cooldownMs(),
                 "default rule '" + rule.pattern() + "' has the wrong cooldown");
         }
     }

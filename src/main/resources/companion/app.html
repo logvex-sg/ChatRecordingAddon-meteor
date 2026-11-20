@@ -526,6 +526,26 @@ function renderBot() {
     ])
   ]));
 
+  // A command box, separate from chat, because the two take different paths: a command is posted
+  // through the event the game uses for typed input, so a macro such as "!tpa <player>" expands and
+  // an addon command runs, instead of being sent to the server as literal text.
+  const command = el("input", { placeholder: "/tpa Steve" });
+  const submit = async () => {
+    const value = command.value.trim();
+    if (!value) { toast("The command is empty.", "bad"); return; }
+    const result = await apiCall(node, "/api/v1/command", { method: "POST", body: { command: value } });
+    toastResult(result, "Command sent.");
+    if (result.ok) command.value = "";
+  };
+  command.addEventListener("keydown", event => { if (event.key === "Enter") submit(); });
+  view.appendChild(card("Run a command", [
+    el("label", { text: "Sent as if you typed it, so macros and addon commands work." }),
+    command,
+    el("div", { class: "row", style: "margin-top:10px" }, [
+      button("Run", submit, "btn primary")
+    ])
+  ]));
+
   if (bot.recentEvents && bot.recentEvents.length > 0) {
     view.appendChild(card("Recent bot events", [
       el("div", { class: "log" }, bot.recentEvents.slice(0, 40).map(line =>
