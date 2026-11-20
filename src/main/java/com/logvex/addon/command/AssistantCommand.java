@@ -240,19 +240,28 @@ public class AssistantCommand extends Command {
     }
 
     private void help() {
-        info("Assistant commands:");
-        info("  (highlight)" + pfx() + "ai status(default) - assistant state and memory summary.");
-        info("  (highlight)" + pfx() + "ai gui(default) - open the assistant manager.");
-        info("  (highlight)" + pfx() + "ai triggers [list|add <pattern> <reply>|remove <n>|restore](default).");
-        info("  (highlight)" + pfx() + "ai facts(default) - list remembered facts.");
-        info("  (highlight)" + pfx() + "ai remember <key> <value>(default) - store a fact.");
-        info("  (highlight)" + pfx() + "ai forget <key>(default) - remove a fact.");
-        info("  (highlight)" + pfx() + "ai test <message>(default) - see what the assistant would do.");
-        info("  (highlight)" + pfx() + "ai history(default) - recent remembered exchanges.");
-        info("  (highlight)" + pfx() + "ai model [status|ask <text>|teach <intent> <example>|save](default).");
-        info("  (highlight)" + pfx() + "ai placeholders [section](default) - the reply placeholders, one section at a time.");
-        info("  (highlight)" + pfx() + "ai perms [list|gui|set|allow|deny|admin|reset](default) - who may run each command.");
-        info("  (highlight)" + pfx() + "ai clear(default) - clear all memory.");
+        List<com.logvex.addon.assistant.core.ReplyFormat.Field> fields = new java.util.ArrayList<>();
+        addHelp(fields, "status", "assistant state and memory summary.");
+        addHelp(fields, "gui", "open the assistant manager.");
+        addHelp(fields, "triggers [list|add <pattern> <reply>|remove <n>|restore]",
+            "keyword triggers and their replies.");
+        addHelp(fields, "facts", "list remembered facts.");
+        addHelp(fields, "remember <key> <value>", "store a fact.");
+        addHelp(fields, "forget <key>", "remove a fact.");
+        addHelp(fields, "test <message>", "see what the assistant would do.");
+        addHelp(fields, "history", "recent remembered exchanges.");
+        addHelp(fields, "model [status|ask <text>|teach <intent> <example>|save]",
+            "the local intent model.");
+        addHelp(fields, "placeholders [section]", "the reply placeholders, one section at a time.");
+        addHelp(fields, "perms [list|gui|set|allow|deny|admin|reset]", "who may run each command.");
+        addHelp(fields, "clear", "clear all memory.");
+        CommandOutput.sendList(this, "Assistant commands", fields, "");
+    }
+
+    private void addHelp(List<com.logvex.addon.assistant.core.ReplyFormat.Field> fields,
+                         String usage, String description) {
+        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field(
+            pfx() + "ai " + usage, description));
     }
 
     /**
@@ -325,16 +334,14 @@ public class AssistantCommand extends Command {
             return;
         }
         com.logvex.addon.assistant.core.PermissionSet set = module.permissions();
-        info("Permissions: %s", set.enabled() ? "on" : "off (every command open)");
-        if (!set.enabled()) {
-            info("  Turn them on in the module settings, or with .ai perms gui.");
-        }
-        info("  Unlisted commands: %s",
+        List<com.logvex.addon.assistant.core.ReplyFormat.Field> fields = new java.util.ArrayList<>();
+        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("State",
+            set.enabled() ? "on" : "off (every command open)"));
+        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Unlisted commands",
             set.defaultPolicy() == com.logvex.addon.assistant.core.PermissionSet.DefaultPolicy.CLOSED
-                ? "local-only" : "open");
-        info("  Administrators: %s", set.administrators().isEmpty()
-            ? "none" : String.join(", ", set.administrators()));
-        info("Commands:");
+                ? "local-only" : "open"));
+        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Administrators",
+            set.administrators().isEmpty() ? "none" : String.join(", ", set.administrators())));
 
         for (com.logvex.addon.assistant.core.CommandCatalog.Command command
             : com.logvex.addon.assistant.core.CommandCatalog.all()) {
@@ -342,8 +349,11 @@ public class AssistantCommand extends Command {
             var rule = set.rule(command.name()).orElse(null);
             String users = rule == null || rule.users().isEmpty()
                 ? "" : " [" + String.join(", ", rule.users()) + "]";
-            info("  (highlight)%s(default) - %s%s", command.name(), level.id(), users);
+            fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field(
+                command.name(), level.id() + users));
         }
+        CommandOutput.sendList(this, "Assistant permissions", fields,
+            set.enabled() ? "" : "turn them on with " + pfx() + "ai perms gui");
     }
 
     private void setPermission(String command, String level) {
@@ -451,16 +461,23 @@ public class AssistantCommand extends Command {
     private void modelStatus() {
         AssistantModule module = assistant();
         com.logvex.addon.ai.core.AiEngine engine = module.aiEngine();
-        info("Local AI: %s, %d%% confidence, %s intents",
-            engine.enabled() ? "on" : "off",
-            Math.round(engine.threshold() * 100),
-            Messages.number(engine.model().intentCount()));
-        info("  Classified %s, understood %s (%s%%), cache hits %s",
-            Messages.number(engine.classified()),
-            Messages.number(engine.understood()),
-            Messages.number(Math.round(engine.understandingRate() * 100)),
-            Messages.number(engine.cacheHits()));
-        info("  Intents: %s", String.join(", ", engine.model().intentNames()));
+        List<com.logvex.addon.assistant.core.ReplyFormat.Field> fields = new java.util.ArrayList<>();
+        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Model",
+            engine.enabled() ? "on" : "off"));
+        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Confidence",
+            Math.round(engine.threshold() * 100) + "%"));
+        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Intent count",
+            Messages.plural(engine.model().intentCount(), "intent")));
+        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Classified",
+            Messages.number(engine.classified()) + " lines"));
+        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Understood",
+            Messages.number(engine.understood()) + " ("
+                + Math.round(engine.understandingRate() * 100) + "%)"));
+        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Cache hits",
+            Messages.number(engine.cacheHits())));
+        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Intents",
+            String.join(", ", engine.model().intentNames())));
+        CommandOutput.sendLong(this, "Local AI model", fields, "");
     }
 
     private void modelAsk(String message) {
@@ -501,18 +518,29 @@ public class AssistantCommand extends Command {
             return;
         }
         AssistantMemory memory = module.memory();
-        info("%s: %s", module.config().name(), module.isActive() ? "on" : "off");
-        info("  Triggers: %d, facts: %d, players known: %d",
-            module.triggers().rules().size(), memory.facts().size(), memory.knownPlayers().size());
-        info("  Handled %s, ignored %s, rate limited %s, refused %s",
-            Messages.number(module.runtime().handled()),
-            Messages.number(module.runtime().ignored()),
-            Messages.number(module.runtime().rateLimited()),
-            Messages.number(module.runtime().denied()));
-        info("  Chat: %s lines from %s players this session",
-            Messages.number(module.activity().seen()),
-            Messages.number(module.activity().activePlayers()));
-        info("  Permissions: %s", module.permissionsEnabled() ? "on" : "off");
+        List<com.logvex.addon.assistant.core.ReplyFormat.Field> fields = new java.util.ArrayList<>();
+        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Assistant",
+            module.isActive() ? "on" : "off"));
+        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Triggers",
+            Messages.number(module.triggers().rules().size())));
+        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Facts",
+            Messages.number(memory.facts().size())));
+        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Players known",
+            Messages.number(memory.knownPlayers().size())));
+        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Handled",
+            Messages.number(module.runtime().handled())));
+        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Ignored",
+            Messages.number(module.runtime().ignored())));
+        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Rate limited",
+            Messages.number(module.runtime().rateLimited())));
+        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Refused",
+            Messages.number(module.runtime().denied())));
+        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Chat seen",
+            Messages.number(module.activity().seen()) + " lines from "
+                + Messages.number(module.activity().activePlayers()) + " players"));
+        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Permissions",
+            module.permissionsEnabled() ? "on" : "off"));
+        CommandOutput.send(this, module.config().name(), fields, "");
     }
 
     private void triggers() {
@@ -526,13 +554,15 @@ public class AssistantCommand extends Command {
             warning("No triggers configured.");
             return;
         }
-        info("%s:", Messages.plural(rules.size(), "trigger"));
+        List<com.logvex.addon.assistant.core.ReplyFormat.Field> fields = new java.util.ArrayList<>();
         for (int i = 0; i < rules.size(); i++) {
             TriggerRule rule = rules.get(i);
-            info("  %d. %s -> %s (%s)", i + 1, rule.pattern(),
-                rule.reply().isBlank() ? "(no reply)" : rule.reply(),
-                rule.mode().name().toLowerCase(java.util.Locale.ROOT));
+            fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field(
+                (i + 1) + ". " + rule.pattern(),
+                (rule.reply().isBlank() ? "(no reply)" : rule.reply())
+                    + " (" + rule.mode().name().toLowerCase(java.util.Locale.ROOT) + ")"));
         }
+        CommandOutput.sendLong(this, Messages.plural(rules.size(), "trigger"), fields, "");
     }
 
     private void addTrigger(String pattern, String reply) {
@@ -576,10 +606,12 @@ public class AssistantCommand extends Command {
             warning("No facts stored.");
             return;
         }
-        info("%s:", Messages.plural(facts.size(), "fact"));
+        List<com.logvex.addon.assistant.core.ReplyFormat.Field> fields = new java.util.ArrayList<>();
         for (AssistantMemory.Fact fact : facts) {
-            info("  %s = %s", fact.key(), Messages.truncate(fact.value(), 60));
+            fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field(
+                fact.key(), Messages.truncate(fact.value(), 60)));
         }
+        CommandOutput.sendLong(this, Messages.plural(facts.size(), "fact"), fields, "");
     }
 
     private void remember(String key, String value) {
@@ -635,12 +667,14 @@ public class AssistantCommand extends Command {
             warning("Nothing remembered yet.");
             return;
         }
-        info("Recent exchanges:");
+        List<com.logvex.addon.assistant.core.ReplyFormat.Field> fields = new java.util.ArrayList<>();
         for (AssistantMemory.ConversationEntry entry : history) {
-            info("  %s %s: %s -> %s", Messages.clock(entry.timestamp()),
-                Messages.player(entry.player()), Messages.truncate(entry.question(), 40),
-                Messages.truncate(entry.answer(), 40));
+            fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field(
+                Messages.clock(entry.timestamp()) + " " + Messages.player(entry.player()),
+                Messages.truncate(entry.question(), 40) + " -> "
+                    + Messages.truncate(entry.answer(), 40)));
         }
+        CommandOutput.sendLong(this, "Recent exchanges", fields, "");
     }
 
     private static AssistantModule assistant() {

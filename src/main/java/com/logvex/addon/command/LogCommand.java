@@ -316,6 +316,11 @@ public class LogCommand extends Command {
             return SINGLE_SUCCESS;
         }));
 
+        builder.then(literal("overview").executes(context -> {
+            overview();
+            return SINGLE_SUCCESS;
+        }));
+
         builder.then(literal("summary")
             .executes(context -> {
                 sendSummary("");
@@ -766,17 +771,18 @@ public class LogCommand extends Command {
         }
         long now = System.currentTimeMillis();
         int shown = Math.min(list.size(), 20);
-        info("%d player session%s%s:", list.size(), list.size() == 1 ? "" : "s",
-            filter.isBlank() ? "" : " matching '" + filter + "'");
+        List<Field> rows = new ArrayList<>(shown);
         for (int i = 0; i < shown; i++) {
             var session = list.get(i);
             String duration = session.hasMeasuredTime()
                 ? ReportFormatting.duration(session.onlineMs(now))
                 : "unknown";
-            info("  %s - %s across %d session%s%s", session.name(), duration, session.sessions(),
-                session.sessions() == 1 ? "" : "s", session.online() ? " (online)" : "");
+            rows.add(new Field(session.name() + (session.online() ? " (online)" : ""),
+                duration + " across " + Messages.plural(session.sessions(), "session", "sessions")));
         }
-        if (list.size() > shown) info("  ... and %d more.", list.size() - shown);
+        String footer = list.size() > shown ? "and " + (list.size() - shown) + " more" : "";
+        CommandOutput.sendLong(this, Messages.plural(list.size(), "player session", "player sessions")
+            + (filter.isBlank() ? "" : " matching '" + filter + "'"), rows, footer);
     }
 
     private void tasks() {
@@ -859,10 +865,12 @@ public class LogCommand extends Command {
             info("No waypoints recorded. Stand somewhere and use (highlight)" + pfx() + "log waypoints add <name>(default).");
             return;
         }
-        info("%d waypoint%s:", waypoints.size(), waypoints.size() == 1 ? "" : "s");
+        List<Field> rows = new ArrayList<>(waypoints.size());
         for (BotMemory.Waypoint waypoint : waypoints) {
-            info("  %s - %s", waypoint.name(), waypoint.describe());
+            rows.add(new Field(waypoint.name(), waypoint.describe()));
         }
+        CommandOutput.sendLong(this, Messages.plural(waypoints.size(), "waypoint", "waypoints"), rows,
+            "");
     }
 
     private void addWaypoint(String name) {
@@ -1065,13 +1073,15 @@ public class LogCommand extends Command {
             info(query.isBlank() ? "No places recorded yet." : "No places match \"" + query + "\".");
             return;
         }
-        info("Found %d place%s:", places.size(), places.size() == 1 ? "" : "s");
         var capped = Rows.cap(places, 20);
+        List<Field> rows = new ArrayList<>(capped.shown().size());
         for (var point : capped.shown()) {
-            info("  %s (%s) %s", point.name().isBlank() ? "(unnamed)" : point.name(),
-                point.category(), com.logvex.addon.world.core.WorldFormat.coords(point.x(), point.y(), point.z()));
+            rows.add(new Field(point.name().isBlank() ? "(unnamed)" : point.name(),
+                point.category() + " "
+                    + com.logvex.addon.world.core.WorldFormat.coords(point.x(), point.y(), point.z())));
         }
-        if (capped.truncated()) info("  ... and %d more.", capped.remaining());
+        CommandOutput.sendLong(this, Messages.plural(places.size(), "place", "places"), rows,
+            capped.truncated() ? "and " + capped.remaining() + " more" : "");
     }
 
     private void worldNearest(String categoryRaw) {
@@ -1096,15 +1106,16 @@ public class LogCommand extends Command {
             info("No known places nearby.");
             return;
         }
-        info("Nearest known places:");
+        List<Field> rows = new ArrayList<>(points.size());
         for (var point : points) {
             double dx = point.x() - mc.player.getX();
             double dy = point.y() - mc.player.getY();
             double dz = point.z() - mc.player.getZ();
             double distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-            info("  %s - %s", point.name().isBlank() ? point.category().toString() : point.name(),
-                com.logvex.addon.world.core.WorldFormat.distance(distance));
+            rows.add(new Field(point.name().isBlank() ? point.category().toString() : point.name(),
+                com.logvex.addon.world.core.WorldFormat.distance(distance)));
         }
+        CommandOutput.sendLong(this, "Nearest known places", rows, "");
     }
 
     private void worldMark(String name) {
@@ -1138,6 +1149,82 @@ public class LogCommand extends Command {
             module.service().intelligence().exportMap());
         if (ok) info("Exported the world database to %s.", file.getFileName());
         else error("Could not write the export file.");
+    }
+
+    /**
+     * Prints one card summarising every subsystem at once.
+     *
+     * <p>The figures each had a home already — session statistics, the player index, the alert log,
+     * the world database, the automation status — but no command showed them together, so "what has
+     * happened this session?" meant running five commands and remembering the answers. This card is
+     * built from the same readers those commands use, so it cannot drift from them.
+     *
+     * <p>Nothing is sent anywhere: unlike {@code log summary}, which pushes a report to a Discord
+     * webhook, this prints in chat and needs no configuration.
+     */
+    private void overview() {
+        ChatLoggerModule logger = LogCommands.logger();
+        if (logger == null) {
+            error("The chat logger module is not available.");
+            return;
+        }
+
+        StatsSnapshot snapshot = logger.service().snapshot();
+        String session = snapshot.durationMs() > 0
+            ? ReportFormatting.duration(snapshot.durationMs()) + ", "
+                + Messages.plural(snapshot.totalMessages(), "message")
+            : "";
+        String rate = snapshot.messagesPerMinute() > 0
+            ? Messages.decimal(snapshot.messagesPerMinute(), 1) + " messages / min"
+            : "";
+
+        var sessions = com.logvex.addon.chatlog.mc.LogService.get().sessions().search("");
+        int online = 0;
+        for (var player : sessions) if (player.online()) online++;
+        String onlineText = online > 0 ? online + " online now" : "";
+        String seenText = snapshot.uniquePlayers() > 0
+            ? Messages.plural(snapshot.uniquePlayers(), "player") + " seen"
+            : "";
+
+        var alerts = com.logvex.addon.chatlog.mc.LogService.get().alerts();
+        String keyword = alerts.count(com.logvex.addon.chatlog.core.AlertLog.Kind.KEYWORD) > 0
+            ? alerts.count(com.logvex.addon.chatlog.core.AlertLog.Kind.KEYWORD) + " keyword"
+            : "";
+        String other = com.logvex.addon.chatlog.core.SummaryCard.join(", ",
+            alerts.count(com.logvex.addon.chatlog.core.AlertLog.Kind.WEBHOOK) > 0
+                ? alerts.count(com.logvex.addon.chatlog.core.AlertLog.Kind.WEBHOOK) + " webhook" : "",
+            alerts.count(com.logvex.addon.chatlog.core.AlertLog.Kind.ERROR) > 0
+                ? alerts.count(com.logvex.addon.chatlog.core.AlertLog.Kind.ERROR) + " error" : "");
+
+        String places = "";
+        var world = LogCommands.world();
+        if (world != null) {
+            int known = world.service().intelligence().search("", null, null).size();
+            if (known > 0) places = Messages.plural(known, "place") + " recorded";
+        }
+
+        BotModule bot = LogCommands.bot();
+        String automation = bot != null ? bot.statusLine() : "";
+        var companion = LogCommands.modules()
+            .get(com.logvex.addon.companion.mc.CompanionModule.class);
+        String companionText = companion == null ? ""
+            : companion.isRunning() ? "listening on port " + companion.boundPort() : "off";
+
+        var inputs = new com.logvex.addon.chatlog.core.SummaryCard.Inputs(
+            session, rate, logger.storageSummary(), onlineText, seenText,
+            keyword, other, places, automation, companionText);
+        var sections = com.logvex.addon.chatlog.core.SummaryCard.sections(inputs);
+        if (sections.isEmpty()) {
+            info("Nothing recorded yet. Join a world and the card will fill in.");
+            return;
+        }
+
+        List<Field> fields = new ArrayList<>();
+        for (var pair : com.logvex.addon.chatlog.core.SummaryCard.fields(sections)) {
+            fields.add(new Field(pair.label(), pair.value()));
+        }
+        embed("Log Client overview", fields,
+            com.logvex.addon.framework.LogClientContext.VERSION);
     }
 
     /**
@@ -1221,13 +1308,14 @@ public class LogCommand extends Command {
             info(filter.isBlank() ? "No session milestones yet." : "No milestones match that filter.");
             return;
         }
-        info("Session milestones: %d", events.size());
         int shown = Math.min(events.size(), 15);
+        List<Field> rows = new ArrayList<>(shown);
         for (int i = 0; i < shown; i++) {
             var event = events.get(i);
-            info("  %s - %s", com.logvex.addon.common.Messages.clock(event.timestamp()), event.line());
+            rows.add(new Field(com.logvex.addon.common.Messages.clock(event.timestamp()), event.line()));
         }
-        if (events.size() > shown) info("  ... and %d more.", events.size() - shown);
+        CommandOutput.sendLong(this, Messages.plural(events.size(), "session milestone", "session milestones"),
+            rows, events.size() > shown ? "and " + (events.size() - shown) + " more" : "");
     }
 
     private void filterStatus() {
@@ -1258,13 +1346,14 @@ public class LogCommand extends Command {
             info(filter.isBlank() ? "No player notes saved." : "No notes match that filter.");
             return;
         }
-        info("Player notes: %d", notes.size());
         int shown = Math.min(notes.size(), 15);
+        List<Field> rows = new ArrayList<>(shown);
         for (int i = 0; i < shown; i++) {
             var note = notes.get(i);
-            info("  %s: %s", note.player(), com.logvex.addon.common.Messages.truncate(note.text(), 80));
+            rows.add(new Field(note.player(), com.logvex.addon.common.Messages.truncate(note.text(), 80)));
         }
-        if (notes.size() > shown) info("  ... and %d more.", notes.size() - shown);
+        CommandOutput.sendLong(this, Messages.plural(notes.size(), "player note", "player notes"), rows,
+            notes.size() > shown ? "and " + (notes.size() - shown) + " more" : "");
     }
 
     private void notesAdd(String player, String text) {
@@ -1293,19 +1382,19 @@ public class LogCommand extends Command {
                 : "No observed accounts match that name.");
             return;
         }
-        info("Observed accounts: %d%s", list.size(),
-            filter.isBlank() ? "" : " matching '" + filter + "'");
         int shown = Math.min(list.size(), 20);
         long now = System.currentTimeMillis();
+        List<Field> rows = new ArrayList<>(shown);
         for (int i = 0; i < shown; i++) {
             var identity = list.get(i);
             String previous = identity.previousName();
-            info("  %s%s - %d name%s, last seen %s", identity.currentName(),
-                previous.isEmpty() ? "" : " (was " + previous + ")",
-                identity.nameCount(), identity.nameCount() == 1 ? "" : "s",
-                Messages.ago(identity.lastSeen(), now));
+            rows.add(new Field(identity.currentName() + (previous.isEmpty() ? "" : " (was " + previous + ")"),
+                Messages.plural(identity.nameCount(), "name", "names") + ", last seen "
+                    + Messages.ago(identity.lastSeen(), now)));
         }
-        if (list.size() > shown) info("  ... and %d more.", list.size() - shown);
+        CommandOutput.sendLong(this, Messages.plural(list.size(), "observed account", "observed accounts")
+            + (filter.isBlank() ? "" : " matching '" + filter + "'"), rows,
+            list.size() > shown ? "and " + (list.size() - shown) + " more" : "");
     }
 
     private void renames() {

@@ -89,6 +89,8 @@ public final class CommandCatalog {
             "Report module names claimed twice, which silently deletes a module and crashes lookups."),
         new Entry(Group.CORE, "log stats",
             "This session's message, player and keyword figures."),
+        new Entry(Group.CORE, "log overview",
+            "One card with session, players, alerts, world and automation together."),
         new Entry(Group.CORE, "prefix [command]",
             "Copy every command prefix to the clipboard, or just one."),
         new Entry(Group.CORE, "chat <online|seen|top|recent|me>",
