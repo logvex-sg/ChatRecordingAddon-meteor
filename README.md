@@ -374,15 +374,16 @@ single line each, so the whole feature set is editable from the settings list, t
 `!ai triggers` command or the Assistant Manager GUI:
 
 ```
-pattern;sender=;reply=;mode=chat|notify|silent;cooldown=1000;limit=0;sound=false;remember=false;enabled=true;aliases=;pool=
+pattern;sender=;reply=;mode=private;cooldown=1000;limit=0;sound=false;remember=false;enabled=true;aliases=;pool=
 ```
 
-A fresh install ships **19 preconfigured rules**, all enabled, all at the 1000 ms cooldown, and all
-matched on whole words. Greetings, thanks, farewells, `gg`/`wp`, small talk, and the live-figure
-questions (`where am i`, `what is my ping`, `what is the tps`, `what time is it`) answer out of the
-box — no setup step. The table is deliberately free of nested patterns: no rule's pattern is a
-substring of another's, so first-match-wins never has to break a tie. `!ai triggers restore` puts
-the same table back.
+A fresh install ships **27 preconfigured rules**, all enabled, all at the 1000 ms cooldown, all
+matched on whole words, and all answered **privately to whoever asked**. Greetings, thanks,
+farewells, `gg`/`wp`, small talk, the live-figure questions (`where am i`, `what is my ping`,
+`what is the tps`, `what time is it`) and the command-shaped set (`!tps`, `!status`, `!health`,
+`!inventory`, `!world`, `!client`, `!ram`, `!session`) answer out of the box — no setup step. The
+table is deliberately free of nested patterns: no rule's pattern is a substring of another's, so
+first-match-wins never has to break a tie. `!ai triggers restore` puts the same table back.
 
 A trigger only ever fires on chat. A line that starts with the command prefix is a command, so a
 bare `hello` rule answers chat but never swallows `!hello`.
@@ -393,16 +394,31 @@ bare `hello` rule answers chat but never swallows `!hello`.
 | `case` | Match case-sensitively (`false` by default). |
 | `whole` | Only match whole words, so `cat` does not fire inside `concatenate`. |
 | `sender` | Only fire for this player. Blank matches anyone. |
-| `reply` | What to say. Supports the full placeholder set below, e.g. `{player}`, `{tps}`, `{ping}`, `{biome}`, `{fact:key}`. |
-| `mode` | `chat` says it publicly, `notify` raises a local notification only, `silent` records the match without speaking. |
+| `reply` | What to send. One literal line: supports the full placeholder set below, e.g. `{player}`, `{tps}`, `{ping}`, `{biome}`, `{fact:key}`. |
+| `mode` | `private` whispers the reply to whoever asked — **the default**. `chat` says it publicly, `notify` raises a local notification only, `silent` records the match without speaking. |
+| `whisper` | The private-message verb for `mode=private`: `msg` (default), `tell`, `w` or `whisper`. A wrong verb is silently rejected by the server, so set this to whatever your server uses. |
 | `cooldown` | Minimum milliseconds between two fires of the same rule. |
 | `limit` | Maximum fires per session; `0` is unlimited. |
 | `sound` | Play a chime when the rule fires. |
 | `remember` | Write the exchange to memory. |
 | `enabled` | Turn the rule off without deleting it. |
 | `aliases` | Extra phrases that fire the same rule, comma separated, e.g. `latency,ms`. |
-| `pool` | A closing phrase chosen at random and appended, e.g. `Have fun!\|Good luck!`. |
-| `reply` variants | `reply` may hold alternatives separated by `\|`; one is chosen at random. |
+| `pool` | No longer used. Kept so a rule written by an older build still loads. |
+
+**A reply is one literal line, and it always says the same thing.** Two earlier behaviours are gone
+because they made output look broken:
+
+- **`|` in a reply no longer means "pick one at random".** It never looked like a random-choice
+  marker to a reader — it looks like a field separator, so `TPS {tps} | MSPT {mspt}` appeared to be
+  one line of two fields and then printed *one of them at random*. Use a comma to join fields.
+  A rule stored by an older build still renders its first alternative, so no stored rule prints a
+  raw pipe.
+- **No sentence is appended from `pool`.** A reply is exactly what you wrote.
+
+The first rule that matches wins, so a specific rule can be placed above a broad one. A global
+rate limit (default 20 replies per minute) caps how often the assistant can answer in total, and a
+rule's cooldown and session limit cap it per rule — the assistant cannot flood chat even if a
+keyword appears in every message.
 
 The first rule that matches wins, so a specific rule can be placed above a broad one. A global
 rate limit (default 20 replies per minute) caps how often the assistant can answer in total, and a

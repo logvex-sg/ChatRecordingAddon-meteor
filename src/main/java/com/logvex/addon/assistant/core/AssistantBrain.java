@@ -1021,13 +1021,13 @@ public final class AssistantBrain {
         return rule.sender().isBlank() || rule.senderAllowed(identity == null ? "" : identity.name());
     }
 
-    /** The left column: the word to type, with the delivery mode when it is not plain chat. */
+    /** The left column: the word to type, annotated when it is not the default whisper. */
     private static String triggerLabel(TriggerRule rule) {
         String label = rule.pattern();
         return switch (rule.mode()) {
-            case CHAT -> label;
+            case PRIVATE -> label;
+            case CHAT -> label + " [chat]";
             case NOTIFY -> label + " [local]";
-            case PRIVATE -> label + " [" + rule.whisperCommand() + "]";
             case SILENT -> label + " [silent]";
         };
     }

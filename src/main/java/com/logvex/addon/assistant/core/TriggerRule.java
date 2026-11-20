@@ -35,15 +35,15 @@ public record TriggerRule(
 ) {
     /** How a matching rule delivers its reply. */
     public enum ReplyMode {
-        /** Say the reply in public chat. */
+        /** Say the reply in public chat. Opt in: the default is {@link #PRIVATE}. */
         CHAT,
         /** Only raise a local notification, never speak. */
         NOTIFY,
         /**
          * Whisper the reply to the speaker with the server's private-message command.
          *
-         * <p>This is the mode for a command-shaped trigger such as {@code !tps}: the whole point is
-         * that only the asker sees the answer, so the reply goes out as {@code /msg <player> ...}
+         * <p>This is the default, and the mode for a command-shaped trigger such as {@code !tps}:
+         * only the asker sees the answer, so the reply goes out as {@code /msg <player> ...}
          * rather than into public chat. The command name is configurable ({@code whisper=}) because
          * the private-message verb differs between servers — {@code /msg}, {@code /tell},
          * {@code /w}, {@code /whisper} — and a wrong one is silently rejected by the server.
@@ -82,7 +82,7 @@ public record TriggerRule(
         if (pattern == null) pattern = "";
         if (sender == null) sender = "";
         if (reply == null) reply = "";
-        if (mode == null) mode = ReplyMode.CHAT;
+        if (mode == null) mode = ReplyMode.PRIVATE;
         if (cooldownMs < 0) cooldownMs = 0;
         if (sessionLimit < 0) sessionLimit = 0;
         if (aliases == null) aliases = "";
@@ -196,7 +196,7 @@ public record TriggerRule(
 
     /** A rule that answers {@code pattern} with {@code reply} in chat. */
     public static TriggerRule of(String pattern, String reply) {
-        return new TriggerRule(pattern, false, false, "", reply, ReplyMode.CHAT,
+        return new TriggerRule(pattern, false, false, "", reply, ReplyMode.PRIVATE,
             DEFAULT_COOLDOWN_MS, 0, false, false, true);
     }
 
@@ -228,13 +228,17 @@ public record TriggerRule(
     }
 
     /**
-     * The reply to send, with one variant chosen and the pool appended.
+     * The reply to send, exactly as configured.
      *
-     * @param random the randomness source, or null for the shared one
+     * <p>{@code reply} is a literal line and no pool sentence is appended, so a rule always answers
+     * the same way. A pipe left in a reply by an older build is not a random choice: its first
+     * alternative is used, so a migrated rule renders a clean line instead of printing the pipe.
+     * {@code pool} is retained only so a stored rule still round-trips; nothing reads it.
+     *
+     * @param random unused, kept so existing call sites and tests do not change
      */
     public String chosenReply(java.util.Random random) {
-        return ResponseVariants.withPool(
-            ResponseVariants.pick(reply, random), pool, random);
+        return ResponseVariants.first(reply);
     }
 
     /** The effective cooldown: never negative. */
@@ -276,7 +280,7 @@ public record TriggerRule(
             bool(map.get("whole"), false),
             str(map.get("sender")),
             str(map.get("reply")),
-            ReplyMode.parse(str(map.get("mode")), ReplyMode.CHAT),
+            ReplyMode.parse(str(map.get("mode")), ReplyMode.PRIVATE),
             num(map.get("cooldown"), DEFAULT_COOLDOWN_MS),
             (int) num(map.get("limit"), 0),
             bool(map.get("sound"), false),
@@ -320,7 +324,7 @@ public record TriggerRule(
         boolean wholeWord = false;
         String sender = "";
         String reply = "";
-        ReplyMode mode = ReplyMode.CHAT;
+        ReplyMode mode = ReplyMode.PRIVATE;
         long cooldown = DEFAULT_COOLDOWN_MS;
         int limit = 0;
         boolean sound = false;
@@ -347,7 +351,7 @@ public record TriggerRule(
                 case "whole" -> wholeWord = Boolean.parseBoolean(value);
                 case "sender" -> sender = value;
                 case "reply" -> reply = value;
-                case "mode" -> mode = ReplyMode.parse(value, ReplyMode.CHAT);
+                case "mode" -> mode = ReplyMode.parse(value, ReplyMode.PRIVATE);
                 case "cooldown" -> cooldown = parseLong(value, DEFAULT_COOLDOWN_MS);
                 case "limit" -> limit = (int) parseLong(value, 0);
                 case "sound" -> sound = Boolean.parseBoolean(value);
@@ -379,9 +383,9 @@ public record TriggerRule(
     /**
      * The preconfigured trigger table shipped on a fresh install.
      *
-     * <p>Every entry uses the 1000 ms default cooldown, matches whole words so {@code hi} does not
-     * fire inside {@code this}, and speaks in chat. The point is that a new install answers common
-     * chat out of the box instead of shipping one example rule the user has to discover.
+     * <p>Every entry whispers its answer to whoever asked, matches whole words, and uses the
+     * 1000 ms default cooldown. A reply is one literal line: no alternatives and no appended
+     * sentence, so the same question always prints the same answer.
      *
      * <p>Kept deliberately free of overlap: no rule's pattern is a substring of another's, so the
      * first-match-wins order in {@link TriggerSet} never decides between two plausible rules.
@@ -399,64 +403,61 @@ public record TriggerRule(
         out.add(rule("good bot", "Thank you, {player}.", "nice bot"));
         out.add(rule("good game", "Good game!", "gg,wp"));
         // Identity and help.
-        out.add(rule("who are you", "I am {name}, a local assistant in the client.", "what are you"));
-        out.add(rule("what can you do", "I remember facts and answer keywords. Try {prefix}help.",
-            "help me,commands"));
-        out.add(rule("what is the prefix", "The prefix is {prefix}."));
+        out.add(rule("who are you", "{name}", "what are you"));
+        out.add(rule("what can you do", "{prefix}help", "help me,commands"));
+        out.add(rule("what is the prefix", "{prefix}"));
         // Live figures: these need the {..} placeholders expanded from the current world.
-        out.add(rule("what time is it", "It is {time}.", "time now"));
-        out.add(rule("where am i", "{coords}, {biome}, facing {facing}.", "my coords,coordinates"));
-        out.add(rule("what is my ping", "{ping} ms, {verdict}.", "my latency"));
-        out.add(rule("what is the weather", "The sky says {weather}.", "weather"));
-        out.add(rule("what server is this", "{server} - {dimension}.", "which server"));
-        out.add(rule("what is the tps", "{tps}/20, {mspt} ms per tick.", "server tps"));
+        out.add(rule("what time is it", "{time}", "time now"));
+        out.add(rule("where am i", "{coords} {biome} {facing}", "my coords,coordinates"));
+        out.add(rule("what is my ping", "{ping}ms {verdict}", "my latency"));
+        out.add(rule("what is the weather", "{weather}", "weather"));
+        out.add(rule("what server is this", "{server} {dimension}", "which server"));
+        out.add(rule("what is the tps", "{tps}/20 {mspt}ms", "server tps"));
         // Small talk that otherwise gets no reply at all.
         out.add(rule("how are you", "Running well, {player}.", "how is it going"));
-        out.add(rule("tell me a joke", "I would tell a mining joke, but it is too deep.", "joke"));
-        out.add(rule("what do you know", "I know {factcount} facts. Ask {prefix}facts.",
-            "your memory"));
+        out.add(rule("tell me a joke", "Mining joke: it is too deep.", "joke"));
+        out.add(rule("what do you know", "{factcount} facts. {prefix}facts", "your memory"));
 
-        // Public command-shaped rules: typed with the prefix, answered in public chat.
+        // Command-shaped rules: typed with the prefix, answered privately to whoever asked.
         //
         // A trigger is matched before the command parser, so these do take the place of the
         // same-named command. That is deliberate and safe here: every name below resolves to a
         // command declared EVERYONE, so nothing is exposed that a stranger could not already ask
         // for. The guard test refuses any default that would shadow a LOCAL_ONLY command instead.
-        out.add(publicRule("!tps",
-            "Current TPS: {tps} | MSPT: {mspt} | Status: {verdict}"));
-        out.add(publicRule("!status",
-            "Server: {server} | Ping: {ping} | TPS: {tps} | FPS: {fps} | Players: {playercount}"));
-        out.add(publicRule("!health",
-            "Health: {health} | Absorption: {absorption} | Armor: {armor}"));
-        out.add(publicRule("!inventory",
-            "Held: {held} | Offhand: {offhand} | Totems: {totems}"));
-        out.add(publicRule("!world",
-            "World time: {worldtime} | Day: {day} | Weather: {weather}"));
-        out.add(publicRule("!client",
-            "Client: {clientversion} | Fabric: {fabricversion} | Mods: {modcount} | FPS: {fps}"));
-        out.add(publicRule("!ram",
-            "Memory used: {memoryused} MB | Free: {memoryfree} MB | Max: {memorymax} MB"
-                + " | Usage: {memorypercent}%"));
-        out.add(publicRule("!session",
-            "Session duration: {sessiontime} | Connected server: {server}"));
+        //
+        // Each reply is comma separated, never pipe separated: ResponseVariants reads a pipe as
+        // "pick one alternative at random", which is the opposite of a field separator.
+        out.add(commandRule("!tps", "TPS {tps}, MSPT {mspt}ms, {verdict}"));
+        out.add(commandRule("!status",
+            "Server {server}, ping {ping}, TPS {tps}, FPS {fps}, players {playercount}"));
+        out.add(commandRule("!health",
+            "Health {health}, absorption {absorption}, armor {armor}"));
+        out.add(commandRule("!inventory", "Held {held}, offhand {offhand}, totems {totems}"));
+        out.add(commandRule("!world", "Time {worldtime}, day {day}, {weather}"));
+        out.add(commandRule("!client",
+            "Client {clientversion}, Fabric {fabricversion}, mods {modcount}, FPS {fps}"));
+        out.add(commandRule("!ram",
+            "Memory used {memoryused}MB, free {memoryfree}MB, max {memorymax}MB, "
+                + "{memorypercent}%"));
+        out.add(commandRule("!session", "Session {sessiontime}, server {server}"));
         return java.util.List.copyOf(out);
     }
 
     /**
-     * A public rule in the shipped configuration format.
+     * A command-shaped rule: whispered to the speaker, whole-word matched, at the default cooldown.
      *
      * <p>The field values are the documented defaults: case-insensitive, whole-word, open to every
      * sender, one second of cooldown, no session limit, no sound, no memory write, enabled.
      */
-    private static TriggerRule publicRule(String pattern, String reply) {
-        return new TriggerRule(pattern, false, true, "", reply, ReplyMode.CHAT,
+    private static TriggerRule commandRule(String pattern, String reply) {
+        return new TriggerRule(pattern, false, true, "", reply, ReplyMode.PRIVATE,
             DEFAULT_COOLDOWN_MS, 0, false, false, true, "", "", DEFAULT_WHISPER);
     }
 
-    /** A chat rule at the default cooldown, whole-word matched, with optional aliases. */
+    /** A whispered rule at the default cooldown, whole-word matched, with optional aliases. */
     private static TriggerRule rule(String pattern, String reply, String aliases) {
-        return new TriggerRule(pattern, false, true, "", reply, ReplyMode.CHAT,
-            DEFAULT_COOLDOWN_MS, 0, false, false, true, aliases, "");
+        return new TriggerRule(pattern, false, true, "", reply, ReplyMode.PRIVATE,
+            DEFAULT_COOLDOWN_MS, 0, false, false, true, aliases, "", DEFAULT_WHISPER);
     }
 
     private static TriggerRule rule(String pattern, String reply) {

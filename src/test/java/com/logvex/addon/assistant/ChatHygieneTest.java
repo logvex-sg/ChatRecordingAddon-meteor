@@ -112,14 +112,16 @@ class ChatHygieneTest {
     // ------------------------------------------------------------------ reply pools and aliases
 
     @Test
-    @DisplayName("a rule with several replies answers with one of them")
-    void ruleWithPoolAnswersFromThePool() {
+    @DisplayName("a pipe in a stored reply is not a random choice")
+    void ruleWithPipeAlwaysAnswersTheSameWay() {
+        // A pipe reads as a field separator, so a legacy "Hi|Hey|Yo" must resolve to one stable
+        // line rather than printing a different alternative on each reply.
         TriggerRule rule = new TriggerRule("hello", false, false, "", "Hi|Hey|Yo",
-            TriggerRule.ReplyMode.CHAT, 0L, 0, false, false, true);
+            TriggerRule.ReplyMode.PRIVATE, 0L, 0, false, false, true);
 
         for (int i = 0; i < 20; i++) {
-            String chosen = rule.chosenReply(null);
-            assertTrue(List.of("Hi", "Hey", "Yo").contains(chosen), "unexpected reply: " + chosen);
+            assertEquals("Hi", rule.chosenReply(null),
+                "the first alternative is used, and the same one every time");
         }
     }
 

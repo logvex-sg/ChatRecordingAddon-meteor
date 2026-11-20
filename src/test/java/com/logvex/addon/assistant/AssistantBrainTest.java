@@ -64,13 +64,13 @@ class AssistantBrainTest {
     }
 
     @Test
-    @DisplayName("a matching trigger produces a chat decision with an expanded reply")
+    @DisplayName("a matching trigger whispers its reply, with placeholders expanded")
     void triggerReplies() {
         AssistantRuntime runtime = runtime(TriggerRule.of("hello bot", "Hello {player}!"));
         AssistantBrain.Decision decision = runtime.handle("Notch", "hello bot", 1_000L);
 
         assertTrue(decision.acts());
-        assertEquals(AssistantBrain.Delivery.CHAT, decision.delivery());
+        assertEquals(AssistantBrain.Delivery.PRIVATE, decision.delivery());
         assertEquals("Hello Notch!", decision.text());
         assertNotNull(decision.rule());
     }

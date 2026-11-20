@@ -151,16 +151,16 @@ class PrivateReplyAndTriggerListTest {
     }
 
     @Test
-    @DisplayName("the shipped table answers command-shaped requests in public chat")
-    void shippedCommandRulesArePublic() {
+    @DisplayName("the shipped table whispers command-shaped requests to whoever asked")
+    void shippedCommandRulesArePrivate() {
         List<TriggerRule> commandShaped = new ArrayList<>();
         for (TriggerRule rule : TriggerRule.preconfigured()) {
             if (rule.pattern().startsWith("!")) commandShaped.add(rule);
         }
         assertFalse(commandShaped.isEmpty(), "expected some command-shaped rules");
         for (TriggerRule rule : commandShaped) {
-            assertEquals(TriggerRule.ReplyMode.CHAT, rule.mode(),
-                "'" + rule.pattern() + "' is public: everyone may ask and everyone may read it");
+            assertEquals(TriggerRule.ReplyMode.PRIVATE, rule.mode(),
+                "'" + rule.pattern() + "' whispers, so a busy chat does not see the answer");
             assertTrue(rule.wholeWord(), "'" + rule.pattern() + "' must match whole words");
             assertFalse(rule.reply().isBlank());
         }
