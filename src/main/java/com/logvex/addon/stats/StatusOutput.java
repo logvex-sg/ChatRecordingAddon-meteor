@@ -104,10 +104,27 @@ public record StatusOutput(
         return StatusTemplate.expand(template, stats, context);
     }
 
-    /** The stored form, {@code enabled|output|template|alias}, for a settings line. */
+    /**
+     * The stored form, {@code enabled|output|template[|alias=word]}, for a settings line.
+     *
+     * <p>The alias carries an explicit {@code alias=} marker because the template is free text and
+     * may itself contain {@code |}: the shipped {@code status} line joins three figures with that
+     * character. A bare trailing word could not be told apart from a template's last fragment.
+     */
     public String encode() {
         String base = (enabled ? "on" : "off") + "|" + output.id() + "|" + template;
-        return alias.isBlank() ? base : base + "|" + alias;
+        return alias.isBlank() ? base : base + "|alias=" + alias;
+    }
+
+    /** True when {@code segment} is a single word that could name a command. */
+    private static boolean looksLikeVerb(String segment) {
+        if (segment == null || segment.isBlank()) return false;
+        for (int i = 0; i < segment.length(); i++) {
+            char c = segment.charAt(i);
+            boolean ok = Character.isLetterOrDigit(c) || c == '_' || c == '-';
+            if (!ok) return false;
+        }
+        return true;
     }
 
     /**
@@ -120,19 +137,53 @@ public record StatusOutput(
     public static StatusOutput decode(String line, String command) {
         StatusOutput fallback = defaults(command);
         if (line == null || line.isBlank()) return fallback;
-        String[] parts = line.split("\\|", 4);
+        // Split only the two leading fields, then keep the remainder whole: a template may contain
+        // the separator itself, and splitting it four ways used to cut every multi-figure line and
+        // read the tail as a command alias, which renamed the command to garbage and killed it.
+        String rest = line;
+        int firstBar = rest.indexOf('|');
+        String head = firstBar < 0 ? rest : rest.substring(0, firstBar);
+        rest = firstBar < 0 ? "" : rest.substring(firstBar + 1);
+        int secondBar = rest.indexOf('|');
+        String mode = secondBar < 0 ? rest : rest.substring(0, secondBar);
+        rest = secondBar < 0 ? "" : rest.substring(secondBar + 1);
+
         boolean enabled = fallback.enabled();
-        if (parts.length > 0 && !parts[0].isBlank()) {
-            enabled = switch (parts[0].trim().toLowerCase(Locale.ROOT)) {
+        if (!head.isBlank()) {
+            enabled = switch (head.trim().toLowerCase(Locale.ROOT)) {
                 case "on", "true", "yes", "1", "enabled" -> true;
                 case "off", "false", "no", "0", "disabled" -> false;
                 default -> fallback.enabled();
             };
         }
-        Output output = parts.length > 1 ? Output.parse(parts[1], fallback.output()) : fallback.output();
-        String template = parts.length > 2 ? parts[2] : fallback.template();
+        Output output = secondBar < 0 && rest.isEmpty() && mode.isBlank()
+            ? fallback.output() : Output.parse(mode, fallback.output());
+
+        String template = rest;
+        String alias = "";
+
+        // The explicit marker is unambiguous, so it is read first.
+        int marker = rest.lastIndexOf("|alias=");
+        if (marker >= 0) {
+            String candidate = rest.substring(marker + "|alias=".length()).trim();
+            if (looksLikeVerb(candidate)) {
+                alias = candidate.toLowerCase(Locale.ROOT);
+                template = rest.substring(0, marker);
+            }
+        } else {
+            // A line written by an older version may end in a bare alias word. Accept it only when
+            // the tail is a single word, so a template that merely ends after a pipe keeps its text.
+            int lastBar = rest.lastIndexOf('|');
+            if (lastBar >= 0) {
+                String candidate = rest.substring(lastBar + 1).trim();
+                if (looksLikeVerb(candidate)) {
+                    alias = candidate.toLowerCase(Locale.ROOT);
+                    template = rest.substring(0, lastBar);
+                }
+            }
+        }
+        template = template.trim();
         if (template.isBlank()) template = fallback.template();
-        String alias = parts.length > 3 ? parts[3] : fallback.alias();
         // A rename that collides with a canonical command would shadow it, so it is dropped rather
         // than allowed to hijack another command's spelling.
         if (!alias.isBlank() && !alias.equals(command) && StatusCommand.find(alias).isPresent()) {

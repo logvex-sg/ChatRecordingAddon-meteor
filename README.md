@@ -498,6 +498,15 @@ command, in the same shape:
 name = on|off | local|chat|silent | optional template
 ```
 
+The status table uses the same shape, with one difference worth knowing: a status template is free
+text and **may contain `|`** — the shipped `status` line joins three figures that way. Only the two
+leading fields are read as fields, so a pipe inside the wording is kept. To rename a command, append
+`|alias=newword`; a bare trailing word is still accepted from older configurations, but only when it
+is a single word.
+
+Both tables accept `{prefix}` and `{name}`, which expand to the configured command prefix and the
+assistant's own name.
+
 - `on`/`off` switches the command off entirely.
 - `local` shows the answer in your own chat box, `chat` sends it to the server, `silent` answers
   nothing visible.
@@ -625,6 +634,10 @@ with placeholders in braces.
 
 A trailing `;` section carries extras: `; what it does`, `; off` to disable it, and
 `; aliases=!hub,!l` to give it more spellings.
+
+The shortcut is matched on the bare word, not the whole spelling, so changing the command prefix
+from `!` to `#` keeps every macro you already wrote reachable. Type the new prefix and the same
+shortcuts work; nothing has to be rewritten.
 
 When you type a shortcut the line is **cancelled** and the expanded command is sent instead, so the
 shortcut never reaches the server as chat. A macro that is misconfigured — no leading `/`, an

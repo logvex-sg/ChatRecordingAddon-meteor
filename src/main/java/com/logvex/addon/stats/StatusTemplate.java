@@ -42,11 +42,23 @@ public final class StatusTemplate {
      * must answer with <em>their</em> number, and attributing this client's latency to them would be
      * a fabricated measurement.
      */
-    public record Context(String requester, int requesterPing) {
-        public static final Context EMPTY = new Context("", -1);
+    public record Context(String requester, int requesterPing, String assistant, String prefix) {
+        public static final Context EMPTY = new Context("", -1, "", "");
 
         public Context {
             if (requester == null) requester = "";
+            if (assistant == null) assistant = "";
+            if (prefix == null) prefix = "";
+        }
+
+        /** A context that knows only the requester, as a caller with no config would have. */
+        public Context(String requester, int requesterPing) {
+            this(requester, requesterPing, "", "");
+        }
+
+        /** The same context carrying the assistant's identity, for {@code {name}} and {@code {prefix}}. */
+        public Context withIdentity(String assistant, String prefix) {
+            return new Context(requester, requesterPing, assistant, prefix);
         }
     }
 
@@ -119,6 +131,10 @@ public final class StatusTemplate {
             "The block or entity under your crosshair."));
         out.add(new Placeholder("player", "Steve", ServerStats.Origin.CLIENT,
             "The name of whoever asked."));
+        out.add(new Placeholder("name", "Assistant", ServerStats.Origin.CLIENT,
+            "The assistant's own name."));
+        out.add(new Placeholder("prefix", "!", ServerStats.Origin.CLIENT,
+            "The command prefix, so a template can name another command."));
         return List.copyOf(out);
     }
 
@@ -225,6 +241,8 @@ public final class StatusTemplate {
             case "effects" -> joinOrNa(s.player().effects(), ", ");
             case "target" -> s.player().targetLabel();
             case "player" -> ctx.requester().isBlank() ? UNAVAILABLE : ctx.requester();
+            case "name" -> ctx.assistant().isBlank() ? "the assistant" : ctx.assistant();
+            case "prefix" -> ctx.prefix().isBlank() ? "!" : ctx.prefix();
             default -> null;
         };
     }

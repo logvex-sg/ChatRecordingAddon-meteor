@@ -400,10 +400,10 @@ public record ChatMacro(
      */
     public static Optional<ChatMacro> find(List<ChatMacro> macros, String shortcut) {
         if (macros == null || shortcut == null || shortcut.isBlank()) return Optional.empty();
-        String wanted = shortcut.strip();
+        String wanted = MacroSet.bare(shortcut);
         for (ChatMacro macro : macros) {
             for (String trigger : macro.triggers()) {
-                if (trigger.equalsIgnoreCase(wanted)) return Optional.of(macro);
+                if (MacroSet.bare(trigger).equals(wanted)) return Optional.of(macro);
             }
         }
         return Optional.empty();

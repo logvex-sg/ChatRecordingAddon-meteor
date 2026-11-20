@@ -617,7 +617,8 @@ public final class AssistantBrain {
         // is the only source, and the caller passes it in. A negative value means "not known".
         int ping = requesterPing >= 0 ? requesterPing
             : (identity.local() ? live.latency() : -1);
-        StatusTemplate.Context context = new StatusTemplate.Context(identity.name(), ping);
+        StatusTemplate.Context context = new StatusTemplate.Context(identity.name(), ping,
+            config.name(), config.commandPrefix());
         java.util.Optional<StatusCommands.Answer> answer =
             StatusCommands.answer(canonical, live, settings, context);
         if (answer.isEmpty() && !word.equals(canonical)) {
