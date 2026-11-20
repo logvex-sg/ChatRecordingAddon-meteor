@@ -4,6 +4,7 @@ import com.logvex.addon.framework.systems.modules.AddonModule;
 import com.logvex.addon.LogClient;
 import com.logvex.addon.chatlog.core.ChatDigest;
 import com.logvex.addon.chatlog.core.EmbedAccent;
+import com.logvex.addon.chatlog.core.ReportLog;
 import com.logvex.addon.chatlog.core.SessionRecord;
 import com.logvex.addon.chatlog.core.WebhookEmbeds;
 import com.logvex.addon.chatlog.gui.EmbedPreviewScreen;
@@ -17,11 +18,14 @@ import com.logvex.addon.framework.gui.widgets.containers.WHorizontalList;
 import com.logvex.addon.framework.gui.widgets.containers.WVerticalList;
 import com.logvex.addon.framework.gui.widgets.pressable.WButton;
 import meteordevelopment.orbit.EventHandler;
+import java.util.List;
+
 import meteordevelopment.meteorclient.settings.BoolSetting;
 import meteordevelopment.meteorclient.settings.EnumSetting;
 import meteordevelopment.meteorclient.settings.IntSetting;
 import meteordevelopment.meteorclient.settings.Setting;
 import meteordevelopment.meteorclient.settings.SettingGroup;
+import meteordevelopment.meteorclient.settings.StringListSetting;
 import meteordevelopment.meteorclient.settings.StringSetting;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.systems.modules.Modules;
@@ -46,6 +50,7 @@ public class WebhookRelayModule extends AddonModule {
     private final SettingGroup sgAppearance = settings.createGroup("Appearance");
     private final SettingGroup sgEvents = settings.createGroup("Events");
     private final SettingGroup sgDigest = settings.createGroup("Digest");
+    private final SettingGroup sgReports = settings.createGroup("Report log");
 
     private final Setting<String> webhookUrl = sgTarget.add(new StringSetting.Builder()
         .name("webhook-url")
@@ -224,6 +229,10 @@ public class WebhookRelayModule extends AddonModule {
         identities.addListener(renameListener);
         service.addListener(presenceListener);
         lastDigestAt = System.currentTimeMillis();
+        // Apply the cap before loading so a config value loaded after construction, or a changed
+        // setting, is honoured on the first activate rather than only when it changes.
+        reportLog.setCapacity(reportLogSize.get());
+        if (reportLogPersist.get()) reportLog.loadAll(reportLogStored.get());
     }
 
     @Override
@@ -267,6 +276,49 @@ public class WebhookRelayModule extends AddonModule {
         return !url().isBlank();
     }
 
+    // ---------------------------------------------------------------- report log
+
+    /** Every report this client filed, so a repeat report or a failed one is still visible. */
+    private final ReportLog reportLog = new ReportLog();
+
+    private final Setting<Integer> reportLogSize = sgReports.add(new IntSetting.Builder()
+        .name("report-log-size")
+        .description("How many filed reports to remember. The oldest is dropped past this many.")
+        .defaultValue(ReportLog.DEFAULT_CAPACITY)
+        .min(10)
+        .sliderRange(10, 1000)
+        .onChanged(reportLog::setCapacity)
+        .build()
+    );
+
+    private final Setting<Boolean> reportLogPersist = sgReports.add(new BoolSetting.Builder()
+        .name("persist-report-log")
+        .description("Keep the report log across restarts.")
+        .defaultValue(true)
+        .build()
+    );
+
+    private final Setting<List<String>> reportLogStored = sgReports.add(new StringListSetting.Builder()
+        .name("reports")
+        .description("Saved reports, managed by the module. Editing this by hand is not recommended.")
+        .defaultValue(List.of())
+        .visible(reportLogPersist::get)
+        .build()
+    );
+
+    /** The log of reports this client filed. */
+    public ReportLog reportLog() {
+        return reportLog;
+    }
+
+    /** Records a filed report, then persists the log when it is set to persist. */
+    private void recordReport(String reporter, String reason, String kind, boolean delivered,
+                              String note) {
+        reportLog.add(new ReportLog.Record(System.currentTimeMillis(), reporter, reason, kind,
+            delivered, note));
+        if (reportLogPersist.get()) reportLogStored.set(reportLog.encodeAll());
+    }
+
     /** True when reports may be posted through this webhook. */
     public boolean reportsAllowed() {
         return allowReports.get() && configured() && enabled.get();
@@ -300,12 +352,25 @@ public class WebhookRelayModule extends AddonModule {
         return service.notifyStatus(adminUrl(), username(), stats, listener);
     }
 
-    /** Posts a report card, pinging the configured moderator role. */
+    /**
+     * Posts a report card, pinging the configured moderator role.
+     *
+     * <p>Every attempt is written to the report log, including one that could not be posted: a
+     * report the user believes was filed but was not is the case most worth keeping.
+     */
     public boolean sendReport(String reporter, String reason, String kind,
                               com.logvex.addon.chatlog.core.WebhookQueue.Listener listener) {
-        if (!reportsAllowed()) return false;
-        return service.notifyReport(url(), username(), reporter, reason, moderatorRole(), kind,
-            listener);
+        if (!reportsAllowed()) {
+            recordReport(reporter, reason, kind, false, "reports not allowed");
+            return false;
+        }
+        boolean queued = service.notifyReport(url(), username(), reporter, reason, moderatorRole(),
+            kind, (success, message) -> {
+                if (listener != null) listener.onResult(success, message);
+            });
+        recordReport(reporter, reason, kind, queued,
+            queued ? "queued" : "could not be queued");
+        return queued;
     }
 
     // ------------------------------------------------------------------ events

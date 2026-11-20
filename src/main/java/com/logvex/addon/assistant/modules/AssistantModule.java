@@ -978,6 +978,12 @@ public class AssistantModule extends AutomationModule {
             ? MacroSet.decode(macroLines.get(), commandPrefix.get())
             : MacroSet.EMPTY;
         runtime.brain().setMacros(macros);
+        // A supplier, so !reports reads the relay's live log rather than a snapshot taken at
+        // rebuild time; the relay may be reloaded after this runs.
+        runtime.brain().setReportLogSource(() -> {
+            WebhookRelayModule relay = Modules.get().get(WebhookRelayModule.class);
+            return relay == null ? null : relay.reportLog();
+        });
     }
 
     /** The default macro table, as configuration lines. */

@@ -152,11 +152,23 @@ public final class AssistantBrain {
     private java.util.Map<String, String> greetingPools;
     private String goodGameReply = DEFAULT_GOOD_GAME_REPLY;
 
+    /** Refusal for a command that reads the operator's own data, said to a non-local speaker. */
+    private static final String NOT_LOCAL =
+        "That command reads my owner's own notes, so only they can use it.";
+
     /** The macro table, so {@code !macros} and {@code !macrohelp} can describe it. */
     private MacroSet macros = MacroSet.EMPTY;
 
     /** The live trigger table, so {@code !triggers} can list what is actually armed. */
     private TriggerSet triggerSet = TriggerSet.empty();
+
+    /**
+     * Where filed reports are recorded, or null when the webhook module is unavailable.
+     *
+     * <p>A supplier rather than the log itself: the log belongs to the relay module, which may be
+     * reloaded, and the brain must always read the live one.
+     */
+    private java.util.function.Supplier<com.logvex.addon.chatlog.core.ReportLog> reportLogSource;
 
     /**
      * Per-command configuration for the non-status prefix commands.
@@ -181,6 +193,17 @@ public final class AssistantBrain {
 
     public TriggerSet triggerSet() {
         return triggerSet;
+    }
+
+    /** Points the brain at the live report log, so {@code !reports} lists what was really filed. */
+    public void setReportLogSource(
+        java.util.function.Supplier<com.logvex.addon.chatlog.core.ReportLog> source) {
+        this.reportLogSource = source;
+    }
+
+    /** The live report log, or null when none is wired. */
+    private com.logvex.addon.chatlog.core.ReportLog reportLog() {
+        return reportLogSource == null ? null : reportLogSource.get();
     }
 
     /** Replaces the per-command table; null restores the shipped defaults. */
@@ -616,6 +639,16 @@ public final class AssistantBrain {
             case "triggers" -> commandTriggers(identity, config, rest);
             case "macrohelp" -> commandMacroHelp(rest, config);
             case "mod", "report" -> commandReport(sender, canonical, rest, config);
+            // Both read the operator's own private data - who they reported and what they
+            // remember about a player - so they are gated on the local speaker here rather than
+            // left to the permissions setting, which is off by default. Without this a stranger
+            // typing !reports in public chat would be shown the operator's report history.
+            case "reports" -> identity.local()
+                ? commandReports(rest, config)
+                : reply(config.memoryReplyMode(), NOT_LOCAL, false);
+            case "player" -> identity.local()
+                ? commandPlayer(rest, config, activity)
+                : reply(config.memoryReplyMode(), NOT_LOCAL, false);
             case "summary" -> commandSummary(sender, rest, config);
             case "who" -> commandWho(config, stats);
             case "stats" -> commandStats(config, stats);
@@ -1178,6 +1211,90 @@ public final class AssistantBrain {
         String text = clamp(confirmation, config.maxReplyLength());
         return new Decision(deliveryFor(config.memoryReplyMode()), text, null, false, false, true,
             false, null, kind + "|" + who + "|" + reason);
+    }
+
+    /**
+     * {@code !player <name>}: everything this client knows about one player, in one card.
+     *
+     * <p>The pieces already existed - remembered facts, conversation history, session activity,
+     * notes, renames - but each was only reachable through its own command, so answering "who is
+     * this person" meant four commands. This composes them and states which are absent rather than
+     * showing empty rows.
+     *
+     * <p>Only figures the client actually holds are shown. A player who has never spoken has no
+     * activity row at all, which is different from having zero messages.
+     */
+    private Decision commandPlayer(String rest, AssistantConfig config, ChatActivity activity) {
+        String name = rest == null ? "" : rest.strip();
+        if (name.isEmpty()) {
+            return reply(config.memoryReplyMode(),
+                "Usage: " + config.commandPrefix() + "player <name>", false);
+        }
+        java.util.List<ReplyFormat.Field> fields = new java.util.ArrayList<>();
+
+        java.util.List<AssistantMemory.Fact> facts = memory.playerFacts(name);
+        for (AssistantMemory.Fact fact : facts) {
+            fields.add(new ReplyFormat.Field(fact.key(), clamp(fact.value(), 60)));
+        }
+
+        if (activity != null) {
+            long messages = activity.messagesFrom(name);
+            if (messages > 0) {
+                fields.add(new ReplyFormat.Field("Messages", Long.toString(messages)));
+            }
+        }
+
+        long lines = memory.history(0).stream()
+            .filter(entry -> entry.player() != null && entry.player().equalsIgnoreCase(name))
+            .count();
+        if (lines > 0) {
+            fields.add(new ReplyFormat.Field("Asked me", lines + (lines == 1 ? " time" : " times")));
+        }
+
+        if (fields.isEmpty()) {
+            return reply(config.memoryReplyMode(),
+                "I know nothing about " + name + " yet. Nothing was remembered and they have not "
+                    + "spoken since I started watching.", false);
+        }
+        String footer = facts.size() + (facts.size() == 1 ? " fact" : " facts")
+            + " - " + config.commandPrefix() + "remember " + name + " <key> <value> to add more";
+        return embedReply(config.memoryReplyMode(),
+            new ReplyFormat.Embed(name, fields, footer, ReplyFormat.Style.BOX), false);
+    }
+
+    /**
+     * {@code !reports [filter]}: what this client has filed, newest first.
+     *
+     * <p>Reads the live log rather than a copy, and says plainly when the log is unavailable rather
+     * than answering "no reports" - those are different facts and only one of them is true.
+     */
+    private Decision commandReports(String rest, AssistantConfig config) {
+        com.logvex.addon.chatlog.core.ReportLog log = reportLog();
+        if (log == null) {
+            return reply(config.memoryReplyMode(),
+                "The report log is unavailable: the webhook relay module is not loaded.", false);
+        }
+        java.util.List<com.logvex.addon.chatlog.core.ReportLog.Record> found =
+            log.search(rest == null ? "" : rest);
+        if (found.isEmpty()) {
+            String what = rest == null || rest.isBlank() ? "" : " matching \"" + rest.strip() + "\"";
+            return reply(config.memoryReplyMode(), "No reports" + what + " in the log.", false);
+        }
+        java.util.List<ReplyFormat.Field> fields = new java.util.ArrayList<>();
+        int shown = 0;
+        for (com.logvex.addon.chatlog.core.ReportLog.Record record : found) {
+            if (shown == 8) break;
+            String label = record.delivered() ? record.kind() : record.kind() + " (failed)";
+            fields.add(new ReplyFormat.Field(
+                com.logvex.addon.chatlog.core.ReportFormatting.shortTime(record.atMs()) + " " + label,
+                record.reporter() + ": " + clamp(record.reason(), 60)));
+            shown++;
+        }
+        String footer = found.size() + (found.size() == 1 ? " report" : " reports")
+            + (log.failures() > 0 ? ", " + log.failures() + " failed" : "")
+            + (found.size() > shown ? ", showing " + shown : "");
+        return embedReply(config.memoryReplyMode(),
+            new ReplyFormat.Embed("Filed reports", fields, footer, ReplyFormat.Style.BOX), false);
     }
 
     /**

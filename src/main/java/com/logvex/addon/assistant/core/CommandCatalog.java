@@ -91,9 +91,12 @@ public final class CommandCatalog {
         out.add(new Command("report", List.of("alert"),
             "Send a report to the webhook and ping the moderator role.",
             PermissionLevel.EVERYONE, true));
-        // Local-only by default: this command makes the client send /msg from the local player's
-        // own account. Left open to everyone, a stranger could type it in public chat and have
-        // their words delivered to a moderator under someone else's name.
+        out.add(new Command("reports", List.of("reportlog", "filed"),
+            "List the reports this client has filed, newest first.",
+            PermissionLevel.LOCAL_ONLY, false));
+        out.add(new Command("player", List.of("dossier", "whois"),
+            "Everything this client knows about one player, in one card.",
+            PermissionLevel.LOCAL_ONLY, false));
         // Local-only: this posts a digest of the operator's own chat archive to the webhook. Left
         // open to everyone, a stranger in public chat could fill the operator's Discord channel.
         out.add(new Command("summary", List.of("digest"),

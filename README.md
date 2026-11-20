@@ -1114,6 +1114,43 @@ The reason is text from chat, so it is sanitised before it reaches the card: eve
 becomes a space (a newline would otherwise break the embed), runs of whitespace are collapsed, and
 the reason is capped at 180 characters.
 
+### Filed reports: `!reports`
+
+Every report your client files is recorded locally, so the log answers "did I already report that,
+and did it go through?" without scrolling Discord.
+
+```
+!reports               the newest reports, newest first
+!reports griefer       only reports whose reporter or reason mentions "griefer"
+```
+
+The log lives in **webhook-relay** under **Report log**:
+
+- **report-log-size** — how many reports to remember, 200 by default.
+- **persist-report-log** — keep the log across restarts.
+
+A report that failed to deliver **stays in the log, marked failed**, because a report you believe
+was filed but was not is exactly the case worth keeping. `!reports` says the log is unavailable when
+the relay module is not loaded, rather than claiming you have filed nothing — those are different
+facts.
+
+### One player, one card: `!player`
+
+`!player <name>` composes everything the client already knows about a player into a single card:
+
+```
+!player Steve
+```
+
+It gathers remembered facts, how many messages they have sent this session, and how often they have
+asked the assistant something. The pieces existed before, but each needed its own command; this
+answers "who is this person" in one go.
+
+Only figures the client actually holds are shown. A player who has never spoken has **no activity
+row at all**, which is not the same as having zero messages. A player the client knows nothing about
+gets a plain "I know nothing about them yet" rather than an empty card, since an empty card implies
+data that does not exist.
+
 ### FAQ entries: `!faq`
 
 `!faq` keeps up to **50** short key/answer notes in the assistant's memory and reads them back by
