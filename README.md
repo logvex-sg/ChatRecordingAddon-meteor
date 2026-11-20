@@ -455,6 +455,51 @@ never loses a figure. The module's **reply-format** setting (`auto`, `box`, `com
 Width is measured in columns, not characters, so a name in CJK or an emoji does not pull the right
 frame out of line.
 
+#### Meters and sections
+
+A share of something reads faster as a bar than as two numbers, so a reply can draw one with a bar
+placeholder:
+
+| Placeholder | Value |
+| --- | --- |
+| `{memorybar}` | Heap use out of the maximum, as a ten-cell bar. |
+| `{healthbar}` | Health out of the maximum. |
+| `{hungerbar}` | Food level out of 20. |
+| `{tpsbar}` | Tick rate out of 20. |
+
+```
+!memory;reply=Used {memoryused} MB, Max {memorymax} MB, Load {memorypercent}%, Bar {memorybar}
+```
+
+```
+┌─ !memory ─────────────────────────────────┐
+│ Used   512 MB                             │
+│ Max    4096 MB                            │
+│ Load   12%                                │
+│ Bar    █░░░░░░░░░                         │
+└───────────────────────────────────────────┘
+```
+
+A bar never lies about a figure it cannot read: an unmeasurable share draws an empty bar rather than
+a full one, and the number stays beside it so the bar is a hint and not the only reading.
+
+A long block can also be split into named groups. The built-in `!about` does this, and the renderer
+draws a section as a rule across the block:
+
+```
+┌─ Bot ─────────────────────────────────────┐
+│ ────────────── Memory ──────────────      │
+│ Facts          12                         │
+│ Players known  3                          │
+│ ──────────── This session ──────────      │
+│ Lines seen     84                         │
+│ Answered       11                         │
+│ Reply rate     13% ██░░░░░░░░░░           │
+│ ────────────── Controls ────────────      │
+│ Permissions    on                         │
+└───────────────────────────────────────────┘
+```
+
 **A reply is one literal answer, and it always says the same thing.** Two earlier behaviours are gone
 because they made output look broken:
 

@@ -241,6 +241,82 @@ class ReplyFormatTest {
         assertEquals(1, ReplyFormat.displayWidth("a"), "an ASCII letter is one column");
     }
 
+    @Test
+    @DisplayName("a wide title and a wide value still fit the frame")
+    void wideTextWrapsWithinTheFrame() {
+        // The first attempt at column-aware rendering padded rows correctly but still wrapped and
+        // measured the border by length(), so a CJK title produced a 39-column line inside a
+        // 30-column box. Wrapping and border fill must use the same column measure as padding.
+        ReplyFormat.Embed titled = new ReplyFormat.Embed(
+            "\u30c6\u30b9\u30c8\u30c6\u30b9\u30c8\u30c6\u30b9\u30c8",
+            List.of(new ReplyFormat.Field("A", "1")), "", ReplyFormat.Style.BOX);
+        for (String line : ReplyFormat.render(titled, 30)) {
+            assertEquals(30, ReplyFormat.displayWidth(line),
+                "the title rule must fit too: '" + line + "'");
+        }
+
+        ReplyFormat.Embed valued = new ReplyFormat.Embed("!x", List.of(new ReplyFormat.Field("T",
+            "\u4f60\u597d\u4e16\u754c\u4f60\u597d\u4e16\u754c\u4f60\u597d\u4e16\u754c")),
+            "", ReplyFormat.Style.BOX);
+        for (String line : ReplyFormat.render(valued, 24)) {
+            assertEquals(24, ReplyFormat.displayWidth(line),
+                "a wide value must wrap inside the frame: '" + line + "'");
+        }
+    }
+
+    @Test
+    @DisplayName("a meter bar is proportional and clamps out-of-range shares")
+    void meterBarIsProportional() {
+        assertEquals("\u2591\u2591\u2591\u2591\u2591\u2591", ReplyFormat.bar(0, 6));
+        assertEquals("\u2588\u2588\u2588\u2591\u2591\u2591", ReplyFormat.bar(0.5, 6));
+        assertEquals("\u2588\u2588\u2588\u2588\u2588\u2588", ReplyFormat.bar(1, 6));
+        // A share outside 0..1, or one that is not a number, must not draw a broken bar: a meter
+        // that overflows its own cells would push the frame out, and a NaN one would be empty.
+        assertEquals(6, ReplyFormat.bar(2.0, 6).length(), "an over-full share clamps to full");
+        assertEquals(6, ReplyFormat.bar(-1, 6).length(), "a negative share clamps to empty");
+        assertEquals(ReplyFormat.bar(0, 6), ReplyFormat.bar(Double.NaN, 6), "NaN draws empty");
+    }
+
+    @Test
+    @DisplayName("a meter field keeps the figure next to its bar")
+    void meterFieldKeepsTheFigure() {
+        ReplyFormat.Field f = ReplyFormat.Field.meter("Heap", "42%", 0.42);
+        assertEquals("Heap", f.label());
+        assertTrue(f.value().startsWith("42% "), "the number must survive: " + f.value());
+        assertTrue(f.value().contains("\u2588"), "and the bar must be drawn: " + f.value());
+    }
+
+    @Test
+    @DisplayName("a section rule spans the block and ignores the label column")
+    void sectionRuleSpansTheBlock() {
+        List<ReplyFormat.Field> fields = List.of(
+            ReplyFormat.Field.section("Memory"),
+            new ReplyFormat.Field("Facts", "3"));
+        List<String> lines = ReplyFormat.render(new ReplyFormat.Embed("!about", fields, "",
+            ReplyFormat.Style.BOX), 40);
+
+        String sectionRow = lines.get(1);
+        assertTrue(sectionRow.contains("Memory"), "the name is shown: '" + sectionRow + "'");
+        assertTrue(sectionRow.contains("\u2500\u2500\u2500"), "and a rule is drawn: '" + sectionRow + "'");
+        for (String line : lines) {
+            assertEquals(40, ReplyFormat.displayWidth(line), "every row keeps the width: '" + line + "'");
+        }
+    }
+
+    @Test
+    @DisplayName("a section rule also works in the list style")
+    void sectionRuleWorksInListStyle() {
+        List<ReplyFormat.Field> fields = List.of(
+            ReplyFormat.Field.section("Commands"),
+            new ReplyFormat.Field("!tps", "tick rate"));
+        List<String> lines = ReplyFormat.render(new ReplyFormat.Embed("Help", fields, "",
+            ReplyFormat.Style.LIST), 30);
+
+        assertTrue(lines.get(1).contains("Commands"), "section header rendered: " + lines);
+        assertTrue(lines.get(2).startsWith("!tps - "), "the row below is unaffected: " + lines);
+        assertFalse(lines.get(1).contains("\u0000"), "the marker must never reach the chat box");
+    }
+
     // ------------------------------------------------------------------ self-reply guard
 
     @Test

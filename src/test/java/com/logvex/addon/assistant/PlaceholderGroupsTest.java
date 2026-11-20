@@ -29,7 +29,7 @@ class PlaceholderGroupsTest {
     void sectionsPreserveOrder() {
         Map<String, List<String>> grouped = Placeholders.standard().byGroup();
         assertEquals(List.of("Player", "Time", "Calendar", "Server", "Assistant", "Performance",
-                "Client", "World", "Vitals", "Position", "Memory", "Inventory"),
+                "Client", "World", "Vitals", "Position", "Memory", "Meters", "Inventory"),
             List.copyOf(grouped.keySet()));
     }
 
@@ -39,6 +39,7 @@ class PlaceholderGroupsTest {
         Map<String, List<String>> grouped = Placeholders.standard().byGroup();
         assertEquals(List.of("player", "message"), grouped.get("Player"));
         assertEquals(List.of("time", "worldtime", "day", "daytime"), grouped.get("Time"));
+        assertEquals(List.of("memorybar", "healthbar", "hungerbar", "tpsbar"), grouped.get("Meters"));
         assertEquals(List.of("date", "timestamp", "weekday", "month", "year"),
             grouped.get("Calendar"));
         assertEquals(List.of("uptime", "fps", "clientversion", "fabricversion", "modcount",

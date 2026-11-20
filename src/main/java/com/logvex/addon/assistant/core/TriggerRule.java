@@ -610,7 +610,7 @@ public record TriggerRule(
         //
         // Each reply is comma separated, never pipe separated: ResponseVariants reads a pipe as
         // "pick one alternative", which is the opposite of a field separator.
-        out.add(embedRule("!tps", "TPS {tps}, MSPT {mspt} ms, Status {verdict}"));
+        out.add(embedRule("!tps", "TPS {tps} {tpsbar}, MSPT {mspt} ms, Status {verdict}"));
         out.add(embedRule("!status",
             "Server {server}, Ping {ping}, TPS {tps}, FPS {fps}, Players {playercount}"));
         out.add(commandRule("!ping", "Ping {ping}, {verdict}"));
@@ -619,13 +619,15 @@ public record TriggerRule(
         out.add(commandRule("!session", "Session {uptime}"));
         out.add(commandRule("!fps", "FPS {fps}"));
         out.add(commandRule("!ram", "Heap {memoryused} of {memorymax} MB, {memorypercent}%"));
-        out.add(embedRule("!memory", "Used {memoryused} MB, Max {memorymax} MB, Load {memorypercent}%"));
+        out.add(embedRule("!memory",
+            "Used {memoryused} MB, Max {memorymax} MB, Load {memorypercent}%, Bar {memorybar}"));
         out.add(embedRule("!world", "Dimension {dimension}, Biome {biome}"));
         out.add(embedRule("!time", "Time {worldtime}, Day {day}"));
         out.add(commandRule("!day", "Day {day}"));
         out.add(commandRule("!weather", "Weather {weather}"));
         out.add(commandRule("!gamemode", "Gamemode {gamemode}"));
-        out.add(embedRule("!health", "Health {health}, Absorption {absorption}, Armour {armor}"));
+        out.add(embedRule("!health",
+            "Health {health} {healthbar}, Absorption {absorption}, Armour {armor}"));
         out.add(commandRule("!speed", "Speed {speed} blocks/s"));
         out.add(commandRule("!who", "Online {playercount} of {maxplayers}"));
 

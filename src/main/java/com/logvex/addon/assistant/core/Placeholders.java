@@ -327,6 +327,23 @@ public final class Placeholders {
             long used = ctx.stats().usedMemoryMb();
             return String.format(Locale.ROOT, "%.0f", 100.0 * used / max);
         });
+        // A bar makes a share readable at a glance, which is the whole point of a block reply.
+        // A figure the client cannot measure yields an empty bar rather than a misleading full one.
+        grouped("Meters", "memorybar", ctx -> bar(ctx.stats().usedMemoryMb(),
+            ctx.stats().maxMemoryMb()));
+        grouped("Meters", "healthbar", ctx -> bar(ctx.stats().player().health(),
+            ctx.stats().player().maxHealth()));
+        grouped("Meters", "hungerbar", ctx -> bar(ctx.stats().player().food(), 20));
+        grouped("Meters", "tpsbar", ctx -> {
+            double tps = ctx.stats().tps5();
+            return tps < 0 ? ReplyFormat.bar(0, 10) : ReplyFormat.bar(tps / 20.0, 10);
+        });
+    }
+
+    /** A bar for {@code value} out of {@code max}, or an empty bar when {@code max} is unusable. */
+    private static String bar(double value, double max) {
+        if (max <= 0 || value < 0) return ReplyFormat.bar(0, 10);
+        return ReplyFormat.bar(value / max, 10);
     }
 
     /** Player figures, all read from the local player's own entity. */

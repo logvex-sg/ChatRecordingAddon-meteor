@@ -47,6 +47,41 @@ public final class ReplyFormat {
             if (label == null) label = "";
             if (value == null) value = "";
         }
+
+        /**
+         * A figure with a proportional bar, so a share is readable without doing the arithmetic.
+         *
+         * <p>{@code "Heap  Heap 42% ##########----------"} is a lot to read; a bar shows at a glance
+         * that 42% is not "nearly full". The number stays in the value because a bar alone cannot
+         * be read precisely.
+         */
+        public static Field meter(String label, String value, double fraction) {
+            return new Field(label, value + " " + bar(fraction, METER_CELLS));
+        }
+
+        /** A rule across the block with a name on it, to separate groups of figures. */
+        public static Field section(String name) {
+            return new Field("", SECTION + (name == null ? "" : name));
+        }
+    }
+
+    /** How many cells a meter draws. Short enough to sit inside a 48-column box with a label. */
+    private static final int METER_CELLS = 12;
+
+    /** Marks a field as a section rule rather than a figure. */
+    private static final String SECTION = "\u0000section:";
+
+    /**
+     * A proportional bar, {@code fraction} clamped to 0..1.
+     *
+     * <p>Uses a light and a dark block rather than colour: the chat box is drawn in one colour and a
+     * client may have colour codes disabled, so the bar has to read in plain text.
+     */
+    public static String bar(double fraction, int cells) {
+        int n = Math.max(1, cells);
+        double f = Double.isNaN(fraction) ? 0 : Math.min(1, Math.max(0, fraction));
+        int filled = (int) Math.round(f * n);
+        return "\u2588".repeat(filled) + "\u2591".repeat(n - filled);
     }
 
     /** A block ready to render. */
@@ -181,6 +216,13 @@ public final class ReplyFormat {
         // column one of those spaces is not used, so the value gets it.
         int room = Math.max(1, width - (labelWidth == 0 ? 4 : 5) - labelWidth);
         for (Field field : embed.fields()) {
+            if (field.value().startsWith(SECTION)) {
+                // A section is a rule across the block, so it ignores the label column entirely
+                // rather than starting inside it and looking like an indented figure.
+                lines.add(BAR + " " + rule(field.value().substring(SECTION.length()), width - 4)
+                    + " " + BAR);
+                continue;
+            }
             List<String> label = labelWidth == 0 ? List.of() : wrap(field.label(), labelWidth);
             List<String> value = wrap(field.value(), room);
             int rows = Math.max(label.size(), value.size());
@@ -203,17 +245,34 @@ public final class ReplyFormat {
         // Two corners and one leading rule take three columns; the label and fill take the rest.
         String text = label.isBlank() ? "" : " " + label + " ";
         int room = width - 3;
-        if (text.length() > room) {
+        if (displayWidth(text) > room) {
             text = " " + shorten(label, Math.max(1, room - 2)) + " ";
         }
-        int fill = Math.max(0, room - text.length());
+        int fill = Math.max(0, room - displayWidth(text));
         return left + HORIZONTAL + text + HORIZONTAL.repeat(fill) + right;
+    }
+
+    /** A filled rule with an optional name in the middle of the row. */
+    private static String rule(String name, int width) {
+        int room = Math.max(1, width);
+        String text = name == null || name.isBlank() ? "" : " " + name + " ";
+        int textWidth = displayWidth(text);
+        if (textWidth >= room) {
+            return HORIZONTAL.repeat(room);
+        }
+        int fill = room - textWidth;
+        int left = fill / 2;
+        return HORIZONTAL.repeat(left) + text + HORIZONTAL.repeat(fill - left);
     }
 
     private static List<String> renderList(Embed embed, int width) {
         List<String> lines = new ArrayList<>(embed.fields().size() + 2);
         if (!embed.title().isBlank()) lines.addAll(wrap(embed.title(), width));
         for (Field field : embed.fields()) {
+            if (field.value().startsWith(SECTION)) {
+                lines.addAll(wrap(rule(field.value().substring(SECTION.length()), width), width));
+                continue;
+            }
             String row = field.label().isBlank()
                 ? field.value()
                 : field.label() + " - " + field.value();
@@ -245,15 +304,38 @@ public final class ReplyFormat {
         }
         int limit = Math.max(1, width);
         String rest = text;
-        while (rest.length() > limit) {
-            int cut = rest.lastIndexOf(' ', limit);
-            if (cut <= 0) cut = limit;
-            out.add(rest.substring(0, cut));
-            rest = rest.substring(cut);
-            if (rest.startsWith(" ")) rest = rest.substring(1);
+        while (displayWidth(rest) > limit) {
+            int cut = breakAt(rest, limit);
+            out.add(rest.substring(0, cut).stripTrailing());
+            rest = rest.substring(cut).stripLeading();
         }
         out.add(rest);
         return List.copyOf(out);
+    }
+
+    /**
+     * The index to cut {@code text} at so the head occupies at most {@code limit} columns.
+     *
+     * <p>Prefers the last space inside the budget, so words are not split, and falls back to the
+     * budget itself when a single word is wider than the line. Cutting is by code point so a
+     * surrogate pair is never split, and by column so a wide glyph is never counted as one.
+     */
+    private static int breakAt(String text, int limit) {
+        int used = 0;
+        int lastSpace = -1;
+        int i = 0;
+        while (i < text.length()) {
+            int cp = text.codePointAt(i);
+            int w = codePointWidth(cp);
+            if (used + w > limit) {
+                // A space before the budget is the nicer cut; otherwise cut exactly here.
+                return lastSpace > 0 ? lastSpace : i;
+            }
+            if (cp == ' ') lastSpace = i;
+            used += w;
+            i += Character.charCount(cp);
+        }
+        return i;
     }
 
     private static String renderCompact(Embed embed, int width) {

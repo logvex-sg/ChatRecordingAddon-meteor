@@ -758,12 +758,19 @@ public final class AssistantBrain {
                                    PermissionSet perms) {
         ChatActivity seen = activity == null ? new ChatActivity() : activity;
         PermissionSet live = perms == null ? PermissionSet.permissive() : perms;
-        java.util.List<ReplyFormat.Field> fields = java.util.List.of(
-            new ReplyFormat.Field("Facts", String.valueOf(memory.facts().size())),
-            new ReplyFormat.Field("Players known", String.valueOf(memory.knownPlayers().size())),
-            new ReplyFormat.Field("Lines seen", String.valueOf(seen.seen())),
-            new ReplyFormat.Field("Answered", String.valueOf(seen.answered())),
-            new ReplyFormat.Field("Permissions", live.enabled() ? "on" : "off"));
+        java.util.List<ReplyFormat.Field> fields = new java.util.ArrayList<>();
+        fields.add(ReplyFormat.Field.section("Memory"));
+        fields.add(new ReplyFormat.Field("Facts", String.valueOf(memory.facts().size())));
+        fields.add(new ReplyFormat.Field("Players known", String.valueOf(memory.knownPlayers().size())));
+        fields.add(ReplyFormat.Field.section("This session"));
+        fields.add(new ReplyFormat.Field("Lines seen", String.valueOf(seen.seen())));
+        fields.add(new ReplyFormat.Field("Answered", String.valueOf(seen.answered())));
+        // A share of the lines it chose to answer reads faster as a bar than as two counts.
+        double share = seen.seen() <= 0 ? 0 : (double) seen.answered() / seen.seen();
+        fields.add(ReplyFormat.Field.meter("Reply rate",
+            Math.round(share * 100) + "%", share));
+        fields.add(ReplyFormat.Field.section("Controls"));
+        fields.add(new ReplyFormat.Field("Permissions", live.enabled() ? "on" : "off"));
         return embedReply(config.memoryReplyMode(),
             new ReplyFormat.Embed(config.name(), fields, "", ReplyFormat.Style.BOX), false);
     }
