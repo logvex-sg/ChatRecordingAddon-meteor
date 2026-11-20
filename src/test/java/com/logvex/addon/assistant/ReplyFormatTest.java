@@ -192,6 +192,55 @@ class ReplyFormatTest {
             ReplyFormat.Style.BOX), 40).size(), "only the opening and closing rules");
     }
 
+    @Test
+    @DisplayName("a capped block is closed, never cut mid-frame")
+    void cappedBlockKeepsItsClosingRule() {
+        // Cutting a rendered list at the line cap is the obvious implementation and it ends the
+        // message on a "|" row, which reads as a send that was truncated. Every size here is over
+        // the cap, so every one must still come back closed and within the budget.
+        for (int fields = 11; fields <= 30; fields += 19) {
+            List<ReplyFormat.Field> rows = new java.util.ArrayList<>();
+            for (int i = 1; i <= fields; i++) rows.add(new ReplyFormat.Field("F" + i, "v" + i));
+            List<String> lines = ReplyFormat.renderCapped(new ReplyFormat.Embed("!big", rows, "",
+                ReplyFormat.Style.BOX), 44, 12);
+
+            assertTrue(lines.size() <= 12, fields + " fields exceeded the cap: " + lines.size());
+            assertTrue(lines.get(lines.size() - 1).startsWith("\u2514"),
+                "a capped box must still end on its closing rule: '" + lines.get(lines.size() - 1) + "'");
+            assertTrue(lines.get(lines.size() - 1).contains("more"),
+                "the dropped rows must be reported: '" + lines.get(lines.size() - 1) + "'");
+        }
+    }
+
+    @Test
+    @DisplayName("a block under the cap is rendered untouched")
+    void cappedBlockBelowLimitIsUnchanged() {
+        ReplyFormat.Embed embed = new ReplyFormat.Embed("!small", List.of(
+            new ReplyFormat.Field("TPS", "19.94"), new ReplyFormat.Field("MSPT", "12.4 ms")),
+            "", ReplyFormat.Style.BOX);
+        assertEquals(ReplyFormat.render(embed, 44), ReplyFormat.renderCapped(embed, 44, 12),
+            "a block that already fits must not be re-rendered into a different shape");
+    }
+
+    @Test
+    @DisplayName("a wide character is measured as two columns so the frame stays square")
+    void wideCharactersDoNotBreakTheFrame() {
+        // A CJK name is drawn double width. Measuring length() pads the row two columns short, so
+        // the right-hand frame drifts left by two per wide character.
+        ReplyFormat.Embed embed = new ReplyFormat.Embed("!u", List.of(
+            new ReplyFormat.Field("Name", "\u30b9\u30c6\u30a3\u30fc\u30d6"),
+            new ReplyFormat.Field("Ok", "fine")), "", ReplyFormat.Style.BOX);
+
+        List<String> lines = ReplyFormat.render(embed, 32);
+
+        for (String line : lines) {
+            assertEquals(32, ReplyFormat.displayWidth(line),
+                "every row must occupy the same columns: '" + line + "'");
+        }
+        assertEquals(4, ReplyFormat.displayWidth("\u30b9\u30c6"), "two CJK glyphs are four columns");
+        assertEquals(1, ReplyFormat.displayWidth("a"), "an ASCII letter is one column");
+    }
+
     // ------------------------------------------------------------------ self-reply guard
 
     @Test

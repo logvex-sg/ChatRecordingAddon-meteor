@@ -3,7 +3,7 @@
   "id": "logclient",
   "version": "${version}",
   "name": "Log Client",
-  "description": "Log Client: a chat logging, monitoring and notification addon for Meteor Client. Records chat to compressed searchable logs, tracks player activity and session statistics, raises keyword alerts and mention alerts, and forwards reports to a Discord webhook as rich embeds. Also ships Schematic Dropper, an autonomous task bot, a local AI chat assistant, world intelligence, a companion web console and an update checker.",
+  "description": "Log Client: a chat logging, monitoring and notification addon for Meteor Client. Records chat to compressed searchable logs, tracks player activity and session statistics, raises keyword alerts and mention alerts, and forwards reports to a Discord webhook as rich embeds. Also ships Schematic Dropper, an autonomous task bot, a rule-and-memory chat assistant, world intelligence, a companion web console and an update checker.",
   "authors": [
     "logvex"
   ],

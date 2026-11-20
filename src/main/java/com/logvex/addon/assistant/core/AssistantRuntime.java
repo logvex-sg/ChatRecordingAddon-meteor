@@ -21,7 +21,6 @@ import java.util.Deque;
  *   <li>a duplicate of a line already answered inside the window is dropped;</li>
  *   <li>a configured trigger is tried, under its own cooldown;</li>
  *   <li>a command is parsed and authorised by {@link PermissionSet} <em>before</em> it runs;</li>
- *   <li>the local AI is asked, if it is enabled;</li>
  *   <li>the global per-minute budget gates whichever of the above produced a reply.</li>
  * </ol>
  */

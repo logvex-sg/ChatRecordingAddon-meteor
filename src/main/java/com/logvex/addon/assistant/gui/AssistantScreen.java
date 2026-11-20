@@ -23,8 +23,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * The assistant manager: triggers, macros, memory, the local AI and the live status commands,
- * one tab each.
+ * The assistant manager: triggers, macros, memory and status, one tab each.
  *
  * <p>Every control is wired to real {@link AssistantModule} methods, so the screen can never drift
  * from the module's behaviour. A rule is edited as its encoded string, which keeps the full feature

@@ -446,9 +446,14 @@ automatically, however many commas its reply has: prose in a border is harder to
 `embed=on` forces a block in either case, and `embed=off` keeps a multi-figure reply on one line.
 
 Minecraft chat cannot carry a newline inside one message, so the block is sent as consecutive
-lines (up to 12). The one-line form is still built and used wherever only one line fits, so a block
+lines (up to 12). A block too tall for that budget is not cut off mid-frame: it is re-rendered with
+fewer rows and its closing rule carries `+N more`, so a truncated answer still looks like a
+finished one. The one-line form is still built and used wherever only one line fits, so a block
 never loses a figure. The module's **reply-format** setting (`auto`, `box`, `compact`, `plain`,
 `list`) overrides the layout globally; `auto` keeps each reply's own.
+
+Width is measured in columns, not characters, so a name in CJK or an emoji does not pull the right
+frame out of line.
 
 **A reply is one literal answer, and it always says the same thing.** Two earlier behaviours are gone
 because they made output look broken:

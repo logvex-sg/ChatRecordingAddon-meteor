@@ -126,6 +126,19 @@ public final class AssistantBrain {
             return ReplyFormat.render(style == null ? embed : withStyle(embed, style), width);
         }
 
+        /**
+         * The lines to deliver, cut to {@code maxLines} without leaving a block open.
+         *
+         * <p>A caller that sends one message per line has to bound the count, and cutting the
+         * rendered list would end a box on a {@code │} row. This renders through
+         * {@link ReplyFormat#renderCapped} so the closing rule always survives.
+         */
+        public java.util.List<String> linesCapped(int width, ReplyFormat.Style style, int maxLines) {
+            if (embed == null) return lines(width, style);
+            return ReplyFormat.renderCapped(style == null ? embed : withStyle(embed, style),
+                width, maxLines);
+        }
+
         private static ReplyFormat.Embed withStyle(ReplyFormat.Embed embed, ReplyFormat.Style style) {
             return new ReplyFormat.Embed(embed.title(), embed.fields(), embed.footer(), style);
         }

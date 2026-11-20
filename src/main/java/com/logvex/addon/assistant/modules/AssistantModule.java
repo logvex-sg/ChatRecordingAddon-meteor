@@ -644,13 +644,9 @@ public class AssistantModule extends AutomationModule {
      * a long list must not turn into a wall of chat.
      */
     private void speakAll(AssistantBrain.Decision decision) {
-        java.util.List<String> lines = decision.lines(replyWidth.get(), replyFormat.get().style());
-        if (lines.isEmpty()) return;
-        int limit = Math.min(lines.size(), MAX_EMBED_LINES);
-        for (int i = 0; i < limit; i++) speak(lines.get(i));
-        if (lines.size() > limit) {
-            speak("(" + (lines.size() - limit) + " more lines; narrow the list with a command.)");
-        }
+        java.util.List<String> lines = decision.linesCapped(
+            replyWidth.get(), replyFormat.get().style(), MAX_EMBED_LINES);
+        for (String line : lines) speak(line);
     }
 
     /**
@@ -669,11 +665,9 @@ public class AssistantModule extends AutomationModule {
         }
         String verb = decision.rule() == null ? TriggerRule.DEFAULT_WHISPER
             : decision.rule().whisperCommand();
-        java.util.List<String> lines = decision.lines(replyWidth.get(), replyFormat.get().style());
-        int limit = Math.min(lines.size(), MAX_EMBED_LINES);
-        for (int i = 0; i < limit; i++) {
-            whisper(verb, sender, lines.get(i));
-        }
+        java.util.List<String> lines = decision.linesCapped(
+            replyWidth.get(), replyFormat.get().style(), MAX_EMBED_LINES);
+        for (String line : lines) whisper(verb, sender, line);
     }
 
     /** Sends one line as {@code /<verb> <player> <text>}. */

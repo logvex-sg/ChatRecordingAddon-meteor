@@ -110,6 +110,48 @@ public final class ReplyFormat {
         return renderCompact(embed, width <= 0 ? DEFAULT_WIDTH : width);
     }
 
+    /**
+     * Renders at most {@code maxLines} lines, keeping the block closed.
+     *
+     * <p>Cutting a rendered list with {@code subList} is the obvious approach and it is wrong: a box
+     * that is cut before its closing rule ends on a {@code │} row, which reads as a message that was
+     * truncated mid-send. So the cap is applied to the <em>fields</em> instead and the block is
+     * rendered again, which always produces a whole box. The rows that did not fit are reported in
+     * the footer rather than dropped silently.
+     *
+     * <p>For a non-box style there is no frame to protect, so the cap is applied to the rendered
+     * lines directly.
+     *
+     * @param maxLines the most lines the caller can send, at least one
+     */
+    public static List<String> renderCapped(Embed embed, int width, int maxLines) {
+        if (embed == null) return List.of();
+        if (maxLines <= 0) return List.of();
+        int limit = width <= 0 ? DEFAULT_WIDTH : width;
+        List<String> full = render(embed, limit);
+        if (full.size() <= maxLines) return full;
+        if (embed.style() != Style.BOX) return List.copyOf(full.subList(0, maxLines));
+
+        // Two frame lines are unavoidable, so the body gets whatever is left.
+        int body = Math.max(1, maxLines - 2);
+        List<Field> fields = embed.fields();
+        int keep = Math.min(fields.size(), body);
+        // Re-rendering can need more rows than the field count suggests, because a value may wrap.
+        // Shrinking until it fits keeps the box closed instead of guessing a row budget.
+        while (keep > 0) {
+            List<Field> subset = fields.subList(0, keep);
+            String footer = embed.footer();
+            if (keep < fields.size()) {
+                String omitted = "+" + (fields.size() - keep) + " more";
+                footer = footer == null || footer.isBlank() ? omitted : footer + " · " + omitted;
+            }
+            List<String> lines = render(new Embed(embed.title(), subset, footer, Style.BOX), limit);
+            if (lines.size() <= maxLines) return lines;
+            keep--;
+        }
+        return List.copyOf(full.subList(0, maxLines));
+    }
+
     private static List<String> renderBox(Embed embed, int width) {
         if (embed.fields().isEmpty() && embed.title().isBlank() && embed.footer().isBlank()) {
             return List.of();
@@ -117,7 +159,7 @@ public final class ReplyFormat {
         int labelWidth = 0;
         boolean anyLabel = false;
         for (Field field : embed.fields()) {
-            labelWidth = Math.max(labelWidth, field.label().length());
+            labelWidth = Math.max(labelWidth, displayWidth(field.label()));
             if (!field.label().isBlank()) anyLabel = true;
         }
         // With no labels at all there is no column to align to, so a value starts at the frame
@@ -241,15 +283,75 @@ public final class ReplyFormat {
     }
 
     private static String pad(String text, int width) {
-        if (text.length() >= width) return text;
-        return text + " ".repeat(width - text.length());
+        int visible = displayWidth(text);
+        if (visible >= width) return text;
+        return text + " ".repeat(width - visible);
+    }
+
+    /**
+     * Columns a string occupies, counting a wide character as two.
+     *
+     * <p>Chat is drawn with a fixed-width font where a CJK ideograph or an emoji is twice as wide as
+     * an ASCII letter, so measuring {@code length()} pads such a row two columns short and the right
+     * frame drifts left. Combining marks take no column at all.
+     */
+    public static int displayWidth(String text) {
+        if (text == null || text.isEmpty()) return 0;
+        int width = 0;
+        for (int i = 0; i < text.length(); ) {
+            int cp = text.codePointAt(i);
+            i += Character.charCount(cp);
+            width += codePointWidth(cp);
+        }
+        return width;
+    }
+
+    /** Columns one code point occupies: 0 for a combining mark, 2 for a wide character, else 1. */
+    private static int codePointWidth(int cp) {
+        if (cp == 0) return 0;
+        if (Character.getType(cp) == Character.NON_SPACING_MARK) return 0;
+        if (isWide(cp)) return 2;
+        return 1;
+    }
+
+    /**
+     * True for the code point ranges a terminal or Minecraft's font draws double width.
+     *
+     * <p>Deliberately a range test rather than a table: the exact east-asian-width database is large
+     * and changes between Unicode versions, while these ranges cover what actually appears in a
+     * player name or a chat line.
+     */
+    private static boolean isWide(int cp) {
+        return (cp >= 0x1100 && cp <= 0x115F)      // Hangul Jamo
+            || (cp >= 0x2E80 && cp <= 0xA4CF)      // CJK radicals .. Yi
+            || (cp >= 0xAC00 && cp <= 0xD7A3)      // Hangul syllables
+            || (cp >= 0xF900 && cp <= 0xFAFF)      // CJK compatibility ideographs
+            || (cp >= 0xFE30 && cp <= 0xFE6F)      // CJK compatibility forms
+            || (cp >= 0xFF00 && cp <= 0xFF60)      // Fullwidth forms
+            || (cp >= 0xFFE0 && cp <= 0xFFE6)
+            || (cp >= 0x1F300 && cp <= 0x1F64F)    // emoji
+            || (cp >= 0x1F900 && cp <= 0x1F9FF)
+            || (cp >= 0x20000 && cp <= 0x3FFFD);   // CJK extension B+
     }
 
     private static String shorten(String text, int width) {
         if (text == null) return "";
         if (width <= 0) return "";
-        if (text.length() <= width) return text;
+        if (displayWidth(text) <= width) return text;
         if (width == 1) return ELLIPSIS;
-        return text.substring(0, width - 1) + ELLIPSIS;
+        // Cut by code point and by column, so a surrogate pair is never split and a wide character
+        // is never counted as one column.
+        int budget = width - 1;
+        StringBuilder sb = new StringBuilder();
+        int used = 0;
+        for (int i = 0; i < text.length(); ) {
+            int cp = text.codePointAt(i);
+            int w = codePointWidth(cp);
+            if (used + w > budget) break;
+            sb.appendCodePoint(cp);
+            used += w;
+            i += Character.charCount(cp);
+        }
+        return sb + ELLIPSIS;
     }
 }
