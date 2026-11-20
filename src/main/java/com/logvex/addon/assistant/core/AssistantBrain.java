@@ -1196,14 +1196,6 @@ public final class AssistantBrain {
             false, null, "summary|" + who + "|" + note);
     }
 
-    /**
-     * {@code !modcall <reason>}: ask the caller to privately message the configured moderator.
-     *
-     * <p>The target and the enable switch are settings on the module, so they are not visible here.
-     * This method therefore only validates what it can see - that a reason was given and that it
-     * contains readable text - and hands the payload on. The module refuses when no target is
-     * configured, which is the one check that needs its settings.
-     */
     /** A reply carried as a block, so the caller can render it one line per field. */
     private Decision embedReply(TriggerRule.ReplyMode mode, ReplyFormat.Embed embed,
                                 boolean remember) {

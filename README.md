@@ -1056,39 +1056,63 @@ It is **local-only** for the same reason as `!modcall`: the card describes your 
 stranger in public chat could otherwise fill your Discord channel. Nothing is sent unless a webhook
 URL is configured, and the module reports a failure rather than claiming the card went out.
 
+### What the assistant can do: `!ai caps`
+
+`!ai caps` lists every ability the assistant has, each with a yes/no and the reason. Every row is
+derived from live state, so it never claims something it cannot do:
+
+| Ability | Decided by |
+|---|---|
+| Triggers | switched on, and at least one rule armed |
+| Memory | `memory-commands` |
+| Local model | `local-ai` |
+| Reports | webhook-relay configured with `allow-reports` |
+| Permissions | `permissions` |
+| Server figures | being connected (TPS and latency are measured, not reported) |
+| Player list | being in a world |
+| World position | being in a world |
+
+A disconnected client says it cannot see server figures instead of printing `n/a` for a figure it
+never had. The same applies to reports: with no channel configured, the row reads `no - no reports
+channel configured`, which is why `!modcall` refuses rather than silently doing nothing.
+
 ### Modcall
 
-`!modcall <reason>` sends a private message to a moderator you configure, so a request reaches them
-directly instead of being lost in public chat. It sends two messages:
+`!modcall <reason>` files a report **entirely on your own client**: it posts an embed card to the
+reports channel you configured in **webhook-relay**. No server command is sent and nothing is said
+in chat.
+
+That is a deliberate change from earlier builds, which sent a private message to one named
+moderator:
 
 ```
-/msg <modcall-target> Report has been submitted: <reason>
-/msg <you> !report <reason>
+/msg <moderator> Report has been submitted: <reason>   <- removed
+/msg <you> !report <reason>                            <- removed
 ```
 
-The first goes to the moderator; the second is a receipt to the reporter, so they can see what went
-out. Both wordings are settings (`modcall-message`, `modcall-receipt`); leave the receipt blank to
-send only the moderator message.
+Both lines had problems. `/report` is not a vanilla command, so on most servers it silently did
+nothing; and a `/msg` reaches exactly one player, who is often offline, and leaves no record. The
+current build posts to your own channel instead, so a report is written down even when no moderator
+is looking at that moment.
 
 `!modcall` is its own module (**modcall**), so it can be switched on and off on its own. Its
 settings are:
 
-- **target** — the moderator's exact in-game name. Nothing is sent until this is set; a call with no
-  target says so instead of failing silently.
-- **message**, **receipt** — the two wordings. Tokens: `{reason}`, `{reporter}`, `{moderator}`,
-  `{prefix}`.
-- **allow-remote** — off by default, so only you can trigger a call.
-- **feedback** — confirm locally when a call went out.
-- **cooldown-seconds** — per-player gap, 60 s by default, so one person cannot fill an inbox.
+- **kind** — label the card `mod` (a request for help) or `report` (an incident).
+- **allow-remote** — off by default, so only you can file a report through your client.
+- **feedback** — confirm locally when the report was queued.
+- **cooldown-seconds** — per-player gap, 60 s by default, so one person cannot flood the channel.
 
-This command sends from your own account, so it is **local-only**: only you can trigger it. That
-check does not depend on the `permissions` setting, which is off by default — otherwise a stranger
-could type `!modcall` in public chat and have their words delivered to a moderator under your name.
+Reports need the **webhook-relay** module configured with a URL and `allow-reports` on. When it is
+not, `!modcall` says so instead of failing silently, and `!ai caps` shows the reason.
 
-The reason is text from chat pasted into a server command, so it is sanitised before sending: every
-control character becomes a space (a newline would otherwise send a second command), runs of
-whitespace are collapsed, and the reason is capped at 180 characters. The moderator's exact name is
-validated too, so a typo fails loudly instead of messaging a stranger.
+This command posts to your own channel, so it is **local-only**: only you can trigger it. That check
+does not depend on the `permissions` setting, which is off by default — otherwise a stranger could
+type `!modcall` in public chat and have their words appear in your reports under your name.
+
+The reason is text from chat, so it is sanitised before it reaches the card: every control character
+becomes a space (a newline would otherwise break the embed), runs of whitespace are collapsed, and
+the reason is capped at 180 characters.
 
 ### FAQ entries: `!faq`
 
@@ -1683,7 +1707,8 @@ archive with in-memory doubles (no Minecraft runtime required):
   the claim that the table is the primary path is checked rather than asserted. Includes a
   regression for the hash-collision bug: an intent must not gain evidence from a word it was never
   trained on.
-- `ModCallTest` — the two messages a modcall sends, their order, and that a reason containing a
+- `ModCallTest` — that a modcall builds a client-side report, never a server command, and that a
+  reason containing a
   newline cannot become a second command.
 - `SummaryEmbedTest` — the requested-summary card: title and accent, the requested-by and note
   fields, the counts, and that the note is neutralised so it cannot ping a role or break the

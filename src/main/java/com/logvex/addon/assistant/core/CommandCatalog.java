@@ -100,7 +100,7 @@ public final class CommandCatalog {
             "Send a chat summary report to the webhook.",
             PermissionLevel.LOCAL_ONLY, true));
         out.add(new Command("modcall", List.of("callmod", "modhelp"),
-            "Privately message the configured moderator with what you need.",
+            "File a report to your own reports channel, client side.",
             PermissionLevel.LOCAL_ONLY, false));
         // The FAQ is its own module and answers its own line, so this entry documents it in help
         // rather than routing it through the assistant's command table.

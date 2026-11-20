@@ -163,15 +163,6 @@ public class AssistantModule extends AutomationModule {
             .build()
         );
 
-    private final Setting<Boolean> statusChatConfirmation = sgStatus.add(new BoolSetting.Builder()
-        .name("chat-confirmation")
-        .description("Say a status answer in chat only after you confirm it, so a misconfigured "
-            + "command cannot flood the server.")
-        .defaultValue(false)
-        .visible(statusEnabled::get)
-        .build()
-    );
-
     private final Setting<Boolean> statusWebhook = sgStatus.add(new BoolSetting.Builder()
         .name("status-webhook")
         .description("Post a status card to the webhook when you run !status locally. "
@@ -180,18 +171,6 @@ public class AssistantModule extends AutomationModule {
         .visible(statusEnabled::get)
         .build()
     );
-
-    private final Setting<Integer> statusRefreshSeconds = sgStatus.add(new IntSetting.Builder()
-        .name("refresh-seconds")
-        .description("How often the status preview refreshes, in seconds.")
-        .defaultValue(5)
-        .range(1, 60)
-        .sliderRange(1, 30)
-        .visible(statusEnabled::get)
-        .build()
-    );
-
-    // ------------------------------------------------------------------ modcall
 
     // ------------------------------------------------------------------ chat command macros
 
@@ -521,7 +500,6 @@ public class AssistantModule extends AutomationModule {
      */
     private MacroSet macros = MacroSet.EMPTY;
 
-    /** Last modcall per speaker, for the per-player cooldown. */
     /**
      * Set while this module is itself sending a line.
      *
@@ -1282,6 +1260,24 @@ public class AssistantModule extends AutomationModule {
     /** This session's chat activity, for {@code !activity} and the status tab. */
     public ChatActivity activity() {
         return runtime.activity();
+    }
+
+    /**
+     * What the assistant can and cannot do right now, derived from live state.
+     *
+     * <p>Read on demand rather than cached: the answer depends on the connection, the settings and
+     * whether a reports channel exists, all of which change without the module being rebuilt.
+     */
+    public com.logvex.addon.assistant.core.Capabilities capabilities() {
+        WebhookRelayModule relay = Modules.get().get(WebhookRelayModule.class);
+        boolean reports = relay != null && relay.reportsAllowed();
+        return com.logvex.addon.assistant.core.Capabilities.of(
+            McServerStats.snapshot(mc, System.currentTimeMillis(),
+                com.logvex.addon.LogClient.sessionStartMs()),
+            config(), reports, permissionsEnabled(),
+            (int) triggers().rules().stream()
+                .filter(com.logvex.addon.assistant.core.TriggerRule::enabled).count(),
+            memory().facts().size());
     }
 
     public boolean permissionsEnabled() {
