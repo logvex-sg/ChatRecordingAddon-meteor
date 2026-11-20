@@ -28,7 +28,8 @@ class PlaceholderGroupsTest {
     @DisplayName("sections appear in the order their placeholders were registered")
     void sectionsPreserveOrder() {
         Map<String, List<String>> grouped = Placeholders.standard().byGroup();
-        assertEquals(List.of("Player", "Time", "Server", "World", "Position", "Client", "Assistant"),
+        assertEquals(List.of("Player", "Time", "Calendar", "Server", "Assistant", "Performance",
+                "Client", "World", "Vitals", "Position", "Memory", "Inventory"),
             List.copyOf(grouped.keySet()));
     }
 
@@ -37,9 +38,13 @@ class PlaceholderGroupsTest {
     void sectionMembership() {
         Map<String, List<String>> grouped = Placeholders.standard().byGroup();
         assertEquals(List.of("player", "message"), grouped.get("Player"));
-        assertEquals(List.of("time", "date"), grouped.get("Time"));
-        assertEquals(List.of("fps"), grouped.get("Client"));
-        assertEquals(List.of("name", "prefix", "factcount"), grouped.get("Assistant"));
+        assertEquals(List.of("time", "worldtime", "day", "daytime"), grouped.get("Time"));
+        assertEquals(List.of("date", "timestamp", "weekday", "month", "year"),
+            grouped.get("Calendar"));
+        assertEquals(List.of("uptime", "fps", "clientversion", "fabricversion", "modcount",
+            "sessiontime"), grouped.get("Client"));
+        assertEquals(List.of("memory", "name", "prefix", "factcount"),
+            grouped.get("Assistant"));
         assertTrue(grouped.get("Position").containsAll(List.of("x", "y", "z", "coords")));
     }
 

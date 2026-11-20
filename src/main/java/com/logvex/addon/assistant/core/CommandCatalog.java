@@ -102,6 +102,14 @@ public final class CommandCatalog {
         out.add(new Command("modcall", List.of("callmod", "modhelp"),
             "Privately message the configured moderator with what you need.",
             PermissionLevel.LOCAL_ONLY, false));
+        // The FAQ is its own module and answers its own line, so this entry documents it in help
+        // rather than routing it through the assistant's command table.
+        out.add(new Command("faq", List.of("qanda"),
+            "Add, list, view, remove and count the assistant's stored FAQ entries.",
+            PermissionLevel.EVERYONE, false));
+        out.add(new Command("triggers", List.of("rules", "keywords"),
+            "List the trigger rules that are active, one page at a time.",
+            PermissionLevel.EVERYONE, false));
         return List.copyOf(out);
     }
 

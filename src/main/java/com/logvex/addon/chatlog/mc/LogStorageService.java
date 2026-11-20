@@ -16,8 +16,10 @@ import com.logvex.addon.chatlog.core.SessionHistoryStore;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 /**
@@ -28,17 +30,40 @@ import java.util.function.Consumer;
  * be read directly from the render thread; only the entry bodies require the worker.
  */
 public final class LogStorageService {
-    private final ExecutorService io = Executors.newSingleThreadExecutor(runnable -> {
-        Thread thread = new Thread(runnable, "logvex-chatlog-io");
-        thread.setDaemon(true);
-        return thread;
-    });
+    /**
+     * How many queued writes are tolerated before new ones are dropped.
+     *
+     * <p>An unbounded single-thread executor is a slow memory leak: every chat line submits a task,
+     * and a stalled disk (a sleeping laptop, a full volume, a network share) makes the queue grow
+     * without limit until the JVM runs out of memory. Dropping a write when the queue is already
+     * this deep is the lesser harm — the archive loses lines during a stall instead of the client
+     * dying — and the drop is counted so the user can see it happened.
+     */
+    private static final int MAX_QUEUED_WRITES = 4096;
+
+    private final ThreadPoolExecutor io;
+    private final AtomicLong droppedWrites = new AtomicLong();
 
     private volatile LogStore store;
     private volatile String lastError = "";
 
     public LogStorageService(Path root) {
         this.store = new LogStore(root);
+        this.io = new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS,
+            new LinkedBlockingQueue<>(MAX_QUEUED_WRITES),
+            runnable -> {
+                Thread thread = new Thread(runnable, "logvex-chatlog-io");
+                thread.setDaemon(true);
+                return thread;
+            },
+            // A rejected task means the queue is full, so the disk is not keeping up. Drop it and
+            // count it rather than blocking the caller, which is a render or tick callback.
+            (task, executor) -> droppedWrites.incrementAndGet());
+    }
+
+    /** Writes dropped because the queue was full, since the service started. */
+    public long droppedWrites() {
+        return droppedWrites.get();
     }
 
     public Path root() {
@@ -291,7 +316,15 @@ public final class LogStorageService {
     }
 
     public void shutdown() {
-        io.shutdownNow();
+        // Drain queued writes before stopping: shutdownNow() alone discards them, which loses the
+        // last few chat lines of every session at exactly the moment the user wants them kept.
+        io.shutdown();
+        try {
+            if (!io.awaitTermination(2, TimeUnit.SECONDS)) io.shutdownNow();
+        } catch (InterruptedException e) {
+            io.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
     }
 
     /**

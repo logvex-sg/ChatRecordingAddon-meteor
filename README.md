@@ -1054,11 +1054,16 @@ The first goes to the moderator; the second is a receipt to the reporter, so the
 out. Both wordings are settings (`modcall-message`, `modcall-receipt`); leave the receipt blank to
 send only the moderator message.
 
-- **modcall-enabled** — off by default. Nothing is sent until you switch it on and set a target.
-- **modcall-target** — the moderator's exact in-game name.
-- **modcall-message**, **modcall-receipt** — the two wordings. Tokens: `{reason}`, `{reporter}`,
-  `{moderator}`, `{prefix}`.
-- **modcall-cooldown-seconds** — per-player gap, 60 s by default, so one person cannot fill an inbox.
+`!modcall` is its own module (**modcall**), so it can be switched on and off on its own. Its
+settings are:
+
+- **target** — the moderator's exact in-game name. Nothing is sent until this is set; a call with no
+  target says so instead of failing silently.
+- **message**, **receipt** — the two wordings. Tokens: `{reason}`, `{reporter}`, `{moderator}`,
+  `{prefix}`.
+- **allow-remote** — off by default, so only you can trigger a call.
+- **feedback** — confirm locally when a call went out.
+- **cooldown-seconds** — per-player gap, 60 s by default, so one person cannot fill an inbox.
 
 This command sends from your own account, so it is **local-only**: only you can trigger it. That
 check does not depend on the `permissions` setting, which is off by default — otherwise a stranger
@@ -1068,6 +1073,48 @@ The reason is text from chat pasted into a server command, so it is sanitised be
 control character becomes a space (a newline would otherwise send a second command), runs of
 whitespace are collapsed, and the reason is capped at 180 characters. The moderator's exact name is
 validated too, so a typo fails loudly instead of messaging a stranger.
+
+### FAQ entries: `!faq`
+
+`!faq` keeps up to **50** short key/answer notes in the assistant's memory and reads them back by
+name or by number. An FAQ entry *is* a stored fact, so `!faq add spawn = the blue bed` and the
+`{fact:spawn}` placeholder read the same value — there is no second store that can drift.
+
+```
+!faq                      show the subcommands
+!faq count                how many of the 50 slots are used
+!faq list [text]          list entries, numbered, optionally filtered by key or answer
+!faq 30                   read entry 30
+!faq view 30              the same, spelled out
+!faq view spawn           read the entry named "spawn"
+!faq add key = answer     create or update an entry
+!faq remove 30            delete entry 30
+!faq remove key           delete the entry named "key"
+```
+
+Every listing is numbered, and the number is the entry's position in the store, not its position in
+that one listing — so entry 30 is entry 30 whether you saw it in a full list, a filtered list, or
+typed it from memory. A listing shows twelve rows by default and then says how many it held back.
+
+`count` answers the "how many are there" question directly:
+
+```
+FAQ: Used 32 of 50, Spare 18, Read !faq <number>
+```
+
+The store stops at 50 entries. A new entry past the cap is refused with a message saying so; updating
+an existing key is always allowed, so a typo in entry 12 stays fixable even when the FAQ is full.
+
+**Numbers shift after a removal.** Numbering is positional, so deleting entry 30 moves the old 31 into
+slot 30. Numbers are a shortcut for reading, not stable identifiers — use the key when you need
+something that does not move.
+
+The FAQ is its own module (**faq**), so it answers even with the assistant switched off. Settings:
+
+- **chat-output** — off by default, so answers stay in your own notifications instead of filling
+  public chat. Turn it on to answer out loud.
+- **max-listed** — how many rows one listing shows before it asks you to narrow the search.
+- **allow-remote-write** — off by default, so a stranger in public chat cannot edit your memory.
 
 ### Chat filter rules
 

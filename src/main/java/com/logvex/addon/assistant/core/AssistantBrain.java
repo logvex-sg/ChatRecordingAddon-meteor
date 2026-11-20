@@ -28,6 +28,8 @@ public final class AssistantBrain {
         CHAT,
         /** Raise a local notification only. */
         NOTIFY,
+        /** Whisper the text to the speaker, so only they see it. */
+        PRIVATE,
         /** Do nothing visible (memory bookkeeping only). */
         SILENT,
         /** Nothing to do. */
@@ -48,39 +50,32 @@ public final class AssistantBrain {
      */
     public record Decision(Delivery delivery, String text, TriggerRule rule,
                            boolean sound, boolean remember, boolean command, boolean denied,
-                           ReplyFormat.Embed embed, String report, String statusCard,
-                           String modCall) {
+                           ReplyFormat.Embed embed, String report, String statusCard) {
         public static final Decision NONE =
-            new Decision(Delivery.NONE, "", null, false, false, false, false, null, null, null, null);
+            new Decision(Delivery.NONE, "", null, false, false, false, false, null, null, null);
 
-        public Decision(Delivery delivery, String text, TriggerRule rule,
-                        boolean sound, boolean remember, boolean command, boolean denied,
-                        ReplyFormat.Embed embed, String report, String statusCard) {
-            this(delivery, text, rule, sound, remember, command, denied, embed, report, statusCard,
-                null);
-        }
 
         public Decision(Delivery delivery, String text, TriggerRule rule,
                         boolean sound, boolean remember, boolean command, boolean denied,
                         ReplyFormat.Embed embed, String report) {
-            this(delivery, text, rule, sound, remember, command, denied, embed, report, null, null);
+            this(delivery, text, rule, sound, remember, command, denied, embed, report, null);
         }
 
         public Decision(Delivery delivery, String text, TriggerRule rule,
                         boolean sound, boolean remember, boolean command, boolean denied,
                         ReplyFormat.Embed embed) {
-            this(delivery, text, rule, sound, remember, command, denied, embed, null, null, null);
+            this(delivery, text, rule, sound, remember, command, denied, embed, null, null);
         }
 
         public Decision(Delivery delivery, String text, TriggerRule rule,
                         boolean sound, boolean remember, boolean command, boolean denied) {
-            this(delivery, text, rule, sound, remember, command, denied, null, null, null, null);
+            this(delivery, text, rule, sound, remember, command, denied, null, null, null);
         }
 
         /** The original six-field form, for every decision that was not a refusal. */
         public Decision(Delivery delivery, String text, TriggerRule rule,
                         boolean sound, boolean remember, boolean command) {
-            this(delivery, text, rule, sound, remember, command, false, null, null, null, null);
+            this(delivery, text, rule, sound, remember, command, false, null, null, null);
         }
 
         /**
@@ -104,22 +99,6 @@ public final class AssistantBrain {
          */
         public boolean hasReport() {
             return report != null && !report.isBlank();
-        }
-
-        /**
-         * True when this decision also asks the caller to send a private message.
-         *
-         * <p>The payload travels with the decision for the same reason a report does: the brain
-         * decides and authorises, the module owns the settings and the network.
-         */
-        public boolean hasModCall() {
-            return modCall != null && !modCall.isBlank();
-        }
-
-        /** A decision that carries a private message for the caller to send. */
-        public static Decision modCall(Delivery delivery, String text, String modCall) {
-            return new Decision(delivery, text, null, false, false, true, false, null, null, null,
-                modCall);
         }
 
         public boolean acts() {
@@ -157,6 +136,9 @@ public final class AssistantBrain {
             Delivery delivery = switch (mode) {
                 case CHAT -> Delivery.CHAT;
                 case NOTIFY -> Delivery.NOTIFY;
+                // A refusal is still an answer to the person who asked, so a private rule keeps its
+                // refusal private too rather than leaking "denied" into public chat.
+                case PRIVATE -> Delivery.PRIVATE;
                 case SILENT -> Delivery.SILENT;
             };
             return new Decision(delivery, reason, null, false, false, true, true);
@@ -173,6 +155,9 @@ public final class AssistantBrain {
     /** The macro table, so {@code !macros} and {@code !macrohelp} can describe it. */
     private MacroSet macros = MacroSet.EMPTY;
 
+    /** The live trigger table, so {@code !triggers} can list what is actually armed. */
+    private TriggerSet triggerSet = TriggerSet.empty();
+
     /**
      * Per-command configuration for the non-status prefix commands.
      *
@@ -187,6 +172,15 @@ public final class AssistantBrain {
     /** Replaces the macro table the help commands read. */
     public void setMacros(MacroSet macros) {
         this.macros = macros == null ? MacroSet.EMPTY : macros;
+    }
+
+    /** Points the brain at the live rule table, so {@code !triggers} lists what will really fire. */
+    public void setTriggerSet(TriggerSet triggers) {
+        this.triggerSet = triggers == null ? TriggerSet.empty() : triggers;
+    }
+
+    public TriggerSet triggerSet() {
+        return triggerSet;
     }
 
     /** Replaces the per-command table; null restores the shipped defaults. */
@@ -387,6 +381,7 @@ public final class AssistantBrain {
         Delivery delivery = switch (config.aiReplyMode()) {
             case CHAT -> Delivery.CHAT;
             case NOTIFY -> Delivery.NOTIFY;
+            case PRIVATE -> Delivery.PRIVATE;
             case SILENT -> Delivery.SILENT;
         };
         boolean remember = config.rememberConversations();
@@ -455,6 +450,7 @@ public final class AssistantBrain {
         Delivery delivery = switch (rule.mode()) {
             case CHAT -> Delivery.CHAT;
             case NOTIFY -> Delivery.NOTIFY;
+            case PRIVATE -> Delivery.PRIVATE;
             case SILENT -> Delivery.SILENT;
         };
         if (text.isBlank() && delivery == Delivery.CHAT) delivery = Delivery.SILENT;
@@ -617,9 +613,9 @@ public final class AssistantBrain {
             case "gg" -> commandGoodGame(sender, config, now, stats);
             case "whoami" -> commandWhoAmI(sender, config);
             case "macros" -> commandMacros(config);
+            case "triggers" -> commandTriggers(identity, config, rest);
             case "macrohelp" -> commandMacroHelp(rest, config);
             case "mod", "report" -> commandReport(sender, canonical, rest, config);
-            case "modcall" -> commandModCall(sender, rest, config);
             case "summary" -> commandSummary(sender, rest, config);
             case "who" -> commandWho(config, stats);
             case "stats" -> commandStats(config, stats);
@@ -963,6 +959,101 @@ public final class AssistantBrain {
     }
 
     /**
+     * {@code !triggers}: the rules that are armed right now, as one page of rows.
+     *
+     * <p>This is the answer to "what can I type?", which {@code !help} cannot give: help lists the
+     * commands the dispatcher knows, while this lists the keyword rules that will actually fire. A
+     * rule the speaker could never use is hidden — a rule pinned to another player, or one whose
+     * reply is a state-changing command only the local player may run — so the list never advertises
+     * something that would be silently ignored.
+     *
+     * @param rest the page number, or a word to filter by
+     */
+    private Decision commandTriggers(SenderIdentity identity, AssistantConfig config, String rest) {
+        java.util.List<TriggerRule> armed = new java.util.ArrayList<>();
+        for (TriggerRule rule : triggerSet.rules()) {
+            if (!visibleTo(rule, identity)) continue;
+            armed.add(rule);
+        }
+        if (armed.isEmpty()) {
+            return reply(config.memoryReplyMode(),
+                "No triggers are active. Add one in the assistant's Trigger screen.", false);
+        }
+
+        String filter = filterWord(rest);
+        if (!filter.isEmpty()) {
+            armed.removeIf(rule -> !rule.pattern().toLowerCase(Locale.ROOT)
+                .contains(filter.toLowerCase(Locale.ROOT)));
+            if (armed.isEmpty()) {
+                return reply(config.memoryReplyMode(),
+                    "No trigger matches '" + filter + "'.", false);
+            }
+        }
+
+        int page = parsePage(rest);
+        int pages = Math.max(1, (armed.size() + HELP_PAGE_SIZE - 1) / HELP_PAGE_SIZE);
+        int wanted = Math.min(page, pages);
+        int from = (wanted - 1) * HELP_PAGE_SIZE;
+        int to = Math.min(armed.size(), from + HELP_PAGE_SIZE);
+
+        java.util.List<ReplyFormat.Field> rows = new java.util.ArrayList<>();
+        for (int i = from; i < to; i++) {
+            TriggerRule rule = armed.get(i);
+            rows.add(new ReplyFormat.Field(triggerLabel(rule), triggerValue(rule)));
+        }
+        String footer = armed.size() + (armed.size() == 1 ? " trigger" : " triggers")
+            + " - page " + wanted + "/" + pages;
+        if (pages > 1) footer += " - " + config.commandPrefix() + "triggers " + (wanted + 1);
+        return embedReply(config.memoryReplyMode(),
+            new ReplyFormat.Embed("Active triggers", rows, footer, ReplyFormat.Style.BOX), false);
+    }
+
+    /**
+     * True when {@code rule} is worth showing to this speaker.
+     *
+     * <p>A rule pinned to someone else is not their business, and a rule whose reply is a command
+     * only the local player may run would be a false promise in the list, so both are hidden.
+     */
+    private static boolean visibleTo(TriggerRule rule, SenderIdentity identity) {
+        if (rule == null || !rule.enabled() || rule.pattern().isBlank()) return false;
+        boolean local = identity != null && identity.local();
+        if (!rule.allowsCommandFrom(local)) return false;
+        return rule.sender().isBlank() || rule.senderAllowed(identity == null ? "" : identity.name());
+    }
+
+    /** The left column: the word to type, with the delivery mode when it is not plain chat. */
+    private static String triggerLabel(TriggerRule rule) {
+        String label = rule.pattern();
+        return switch (rule.mode()) {
+            case CHAT -> label;
+            case NOTIFY -> label + " [local]";
+            case PRIVATE -> label + " [" + rule.whisperCommand() + "]";
+            case SILENT -> label + " [silent]";
+        };
+    }
+
+    /** The right column: what the trigger does, without repeating its own reply text. */
+    private static String triggerValue(TriggerRule rule) {
+        if (rule.isCommandReply()) return "runs /" + rule.commandVerb();
+        String text = rule.reply() == null ? "" : rule.reply().strip();
+        if (text.isEmpty()) return "no reply";
+        return clampStatic(text, 60);
+    }
+
+    /** A page argument's word, when it is not a page number. */
+    private static String filterWord(String rest) {
+        if (rest == null || rest.isBlank()) return "";
+        String trimmed = rest.strip();
+        if (trimmed.matches("(?i)page\\s*\\d+") || trimmed.matches("\\d+")) return "";
+        return trimmed;
+    }
+
+    private static String clampStatic(String text, int max) {
+        if (text.length() <= max) return text;
+        return text.substring(0, Math.max(0, max - 3)) + "...";
+    }
+
+    /**
      * {@code !macros}: the shortcuts the local player can type, as one row per macro.
      *
      * <p>Only enabled, valid macros are listed, and a disabled or broken one is simply absent rather
@@ -1113,23 +1204,6 @@ public final class AssistantBrain {
      * contains readable text - and hands the payload on. The module refuses when no target is
      * configured, which is the one check that needs its settings.
      */
-    private Decision commandModCall(String sender, String rest, AssistantConfig config) {
-        String said = rest == null ? "" : rest.strip();
-        if (said.isEmpty()) {
-            return reply(config.memoryReplyMode(), ModCall.Problem.NO_REASON.message(
-                config.commandPrefix()), false);
-        }
-        if (ModCall.sanitise(said).isEmpty()) {
-            return reply(config.memoryReplyMode(), ModCall.Problem.EMPTY_REASON.message(
-                config.commandPrefix()), false);
-        }
-        // Only the reason travels: the module already knows who spoke, and it sanitises again
-        // against the real target, so a setting changed between here and the send cannot produce an
-        // unsanitised command.
-        return Decision.modCall(deliveryFor(config.memoryReplyMode()),
-            "Calling a moderator for you.", said);
-    }
-
     /** A reply carried as a block, so the caller can render it one line per field. */
     private Decision embedReply(TriggerRule.ReplyMode mode, ReplyFormat.Embed embed,
                                 boolean remember) {
@@ -1143,6 +1217,7 @@ public final class AssistantBrain {
         return switch (mode == null ? TriggerRule.ReplyMode.NOTIFY : mode) {
             case CHAT -> Delivery.CHAT;
             case NOTIFY -> Delivery.NOTIFY;
+            case PRIVATE -> Delivery.PRIVATE;
             case SILENT -> Delivery.SILENT;
         };
     }

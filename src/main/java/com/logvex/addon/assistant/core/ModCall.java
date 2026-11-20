@@ -26,7 +26,7 @@ public final class ModCall {
     public enum Problem {
         NONE(""),
         /** No target is configured, so there is nobody to message. */
-        NO_TARGET("No moderator is configured. Set a target on the assistant's modcall settings."),
+        NO_TARGET("No moderator is configured. Set a target in the modcall module's settings."),
         /** The configured target is not a legal player name. */
         BAD_TARGET("The configured modcall target is not a valid player name."),
         /** The player did not say what they need. */

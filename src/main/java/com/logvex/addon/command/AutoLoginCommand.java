@@ -44,12 +44,11 @@ public class AutoLoginCommand extends Command {
         builder.then(literal("gui").executes(context -> {
             AutoLoginModule module = module();
             if (module == null) return SINGLE_SUCCESS;
-            info("Set the password on the Auto Login settings page: %slog gui, then Modules > Auto Login.",
-                prefix());
-            info("The field is masked and the value is stored outside the Meteor config.");
-            if (!module.isActive()) {
-                warning("Auto Login is off; it will not answer prompts until you turn it on with %sautologin on.",
-                    prefix());
+            // Opens the setup screen directly. Printing directions instead meant the user had to
+            // find the module under !log gui > Modules and know the field lives on its settings page.
+            var client = net.minecraft.client.MinecraftClient.getInstance();
+            if (client != null) {
+                client.setScreen(new com.logvex.addon.automation.gui.AutoLoginScreen(module));
             }
             return SINGLE_SUCCESS;
         }));

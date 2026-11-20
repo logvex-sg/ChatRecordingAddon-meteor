@@ -174,30 +174,30 @@ public final class Placeholders {
         grouped("Player", "player", ctx -> Messages.player(ctx.player()));
         grouped("Player", "message", ctx -> ctx.message() == null ? "" : ctx.message());
         grouped("Time", "time", ctx -> Messages.clock(ctx.now()));
-        grouped("Time", "date", ctx -> Messages.dateTime(ctx.now()));
+        grouped("Calendar", "date", ctx -> Messages.dateTime(ctx.now()));
         grouped("Server", "server", ctx -> ctx.server() == null ? "" : ctx.server());
-        grouped("Server", "memory", ctx ->
+        grouped("Assistant", "memory", ctx ->
             ctx.memory() == null ? "0" : String.valueOf(ctx.memory().facts().size()));
 
-        grouped("Server", "tps", ctx -> ctx.stats().tps() <= 0f
+        grouped("Performance", "tps", ctx -> ctx.stats().tps() <= 0f
             ? "n/a" : ServerStats.formatTps(ctx.stats().tps()));
-        grouped("Server", "mspt", ctx -> ctx.stats().mspt() < 0f
+        grouped("Performance", "mspt", ctx -> ctx.stats().mspt() < 0f
             ? "n/a" : String.format(Locale.ROOT, "%.1f", ctx.stats().mspt()));
-        grouped("Server", "ping", ctx -> ctx.stats().latency() < 0
+        grouped("Performance", "ping", ctx -> ctx.stats().latency() < 0
             ? "n/a" : ctx.stats().latency() + " ms");
         grouped("Server", "players", ctx -> String.valueOf(ctx.stats().players()));
-        grouped("Server", "uptime", ctx -> ServerStats.formatUptime(ctx.stats().uptimeMs()));
-        grouped("Server", "verdict", ctx -> ctx.stats().verdict());
+        grouped("Client", "uptime", ctx -> ServerStats.formatUptime(ctx.stats().uptimeMs()));
+        grouped("Performance", "verdict", ctx -> ctx.stats().verdict());
 
         grouped("World", "dimension", ctx -> orQuestion(ctx.stats().dimension()));
         grouped("World", "world", ctx -> orQuestion(ctx.stats().world()));
         grouped("World", "biome", ctx -> orQuestion(ctx.stats().biome()));
-        grouped("World", "worldtime", ctx -> ServerStats.formatWorldTime(ctx.stats().worldTime()));
+        grouped("Time", "worldtime", ctx -> ServerStats.formatWorldTime(ctx.stats().worldTime()));
         grouped("World", "facing", ctx -> orQuestion(ctx.stats().facing()));
 
-        grouped("Position", "health", ctx -> String.format(Locale.ROOT, "%.1f/%.0f",
+        grouped("Vitals", "health", ctx -> String.format(Locale.ROOT, "%.1f/%.0f",
             ctx.stats().health(), ctx.stats().maxHealth()));
-        grouped("Position", "hunger", ctx -> String.valueOf(ctx.stats().food()));
+        grouped("Vitals", "hunger", ctx -> String.valueOf(ctx.stats().food()));
         grouped("Position", "x", ctx -> String.format(Locale.ROOT, "%.0f", ctx.stats().x()));
         grouped("Position", "y", ctx -> String.format(Locale.ROOT, "%.0f", ctx.stats().y()));
         grouped("Position", "z", ctx -> String.format(Locale.ROOT, "%.0f", ctx.stats().z()));
@@ -208,6 +208,12 @@ public final class Placeholders {
         grouped("World", "weather", ctx -> orQuestion(ctx.stats().weather()));
 
         grouped("Client", "fps", ctx -> String.valueOf(ctx.stats().fps()));
+
+        installServerPlaceholders();
+        installPerformancePlaceholders();
+        installPlayerPlaceholders();
+        installWorldPlaceholders();
+        installClientPlaceholders();
 
         // The assistant's own identity and memory size. Both identity values come from the
         // config the caller passed in; an empty value means there was no config, so each falls
@@ -226,6 +232,106 @@ public final class Placeholders {
             if (ctx.memory() == null) return "0";
             return String.valueOf(ctx.memory().counter(argument));
         });
+    }
+
+// ------------------------------------------------------------------ added groups
+
+    /**
+     * Server-side figures: the ones only the server can answer.
+     *
+     * <p>A value the client was never told stays {@code n/a}. The maximum player count and the
+     * server brand are the usual ones: the client protocol does not carry them, so a proxy that
+     * strips the brand or a server that hides its slots simply has nothing to report.
+     */
+    private void installServerPlaceholders() {
+        grouped("Server", "playercount", ctx -> String.valueOf(ctx.stats().players()));
+        grouped("Server", "maxplayers", ctx -> ctx.stats().hasMaxPlayers()
+            ? String.valueOf(ctx.stats().maxPlayers()) : "n/a");
+        grouped("Server", "serverstatus", ctx -> ctx.stats().inWorld()
+            ? (ctx.stats().singleplayer() ? "single-player" : "connected") : "not connected");
+        grouped("Server", "serverversion", ctx -> orQuestion(ctx.stats().serverVersion()));
+        grouped("Server", "serverbrand", ctx -> orQuestion(ctx.stats().serverBrand()));
+        grouped("Server", "serveruptime", ctx -> ctx.stats().serverUptimeMs() < 0L
+            ? "n/a" : ServerStats.formatUptime(ctx.stats().serverUptimeMs()));
+    }
+
+    /**
+     * Performance figures: the tick rate, the frame rate and the heap.
+     *
+     * <p>The tick-rate averages come from samples this client took while connected, so a window
+     * that has not been observed yet reports {@code n/a} rather than the current rate.
+     */
+    private void installPerformancePlaceholders() {
+        grouped("Performance", "tps1", ctx -> averageTps(ctx.stats().tps1()));
+        grouped("Performance", "tps5", ctx -> averageTps(ctx.stats().tps5()));
+        grouped("Performance", "tps15", ctx -> averageTps(ctx.stats().tps15()));
+        grouped("Memory", "memoryused", ctx -> String.valueOf(ctx.stats().usedMemoryMb()));
+        grouped("Memory", "memoryfree", ctx -> ctx.stats().freeMemoryMb() < 0L
+            ? "n/a" : String.valueOf(ctx.stats().freeMemoryMb()));
+        grouped("Memory", "memorymax", ctx -> String.valueOf(ctx.stats().maxMemoryMb()));
+        grouped("Memory", "memorypercent", ctx -> {
+            long max = ctx.stats().maxMemoryMb();
+            if (max <= 0L) return "n/a";
+            long used = ctx.stats().usedMemoryMb();
+            return String.format(Locale.ROOT, "%.0f", 100.0 * used / max);
+        });
+    }
+
+    /** Player figures, all read from the local player's own entity. */
+    private void installPlayerPlaceholders() {
+        grouped("Vitals", "maxhealth", ctx ->
+            String.format(Locale.ROOT, "%.0f", ctx.stats().player().maxHealth()));
+        grouped("Vitals", "absorption", ctx ->
+            String.format(Locale.ROOT, "%.1f", ctx.stats().player().absorption()));
+        grouped("Vitals", "saturation", ctx ->
+            String.format(Locale.ROOT, "%.1f", ctx.stats().player().saturation()));
+        grouped("Vitals", "armor", ctx -> String.valueOf(ctx.stats().armorPoints()));
+        grouped("Inventory", "level", ctx -> String.valueOf(ctx.stats().player().level()));
+        grouped("Inventory", "xp", ctx ->
+            String.format(Locale.ROOT, "%.0f%%", 100.0 * ctx.stats().player().xpProgress()));
+        grouped("Inventory", "gamemode", ctx -> orQuestion(ctx.stats().player().gamemodeName()));
+        grouped("Inventory", "held", ctx -> orQuestion(ctx.stats().player().heldItem()));
+        grouped("Inventory", "offhand", ctx -> orQuestion(ctx.stats().player().offhandItem()));
+        grouped("Inventory", "effects", ctx -> ctx.stats().player().effects().isEmpty()
+            ? "none" : String.join(", ", ctx.stats().player().effects()));
+        grouped("Inventory", "totems", ctx -> String.valueOf(ctx.stats().player().totems()));
+        grouped("Vitals", "food", ctx -> String.valueOf(ctx.stats().player().food()));
+        grouped("Vitals", "air", ctx -> String.valueOf(ctx.stats().player().air()));
+    }
+
+    /** World figures: the clock, the day count and the difficulty. */
+    private void installWorldPlaceholders() {
+        grouped("Time", "day", ctx -> String.valueOf(ctx.stats().day()));
+        grouped("Time", "daytime", ctx -> ctx.stats().dayLabel());
+        grouped("World", "difficulty", ctx -> orQuestion(ctx.stats().difficulty()));
+    }
+
+    /** Figures about this client rather than the server. */
+    private void installClientPlaceholders() {
+        grouped("Client", "clientversion", ctx -> orQuestion(ctx.stats().clientVersion()));
+        grouped("Client", "fabricversion", ctx -> orQuestion(ctx.stats().fabricVersion()));
+        grouped("Client", "modcount", ctx -> ctx.stats().modCount() <= 0
+            ? "n/a" : String.valueOf(ctx.stats().modCount()));
+        grouped("Client", "sessiontime", ctx -> ctx.stats().sessionStartMs() <= 0L
+            ? ServerStats.formatUptime(ctx.stats().uptimeMs())
+            : ServerStats.formatUptime(Math.max(0L, ctx.now() - ctx.stats().sessionStartMs())));
+        grouped("Calendar", "timestamp", ctx -> Messages.clock(ctx.now()));
+        grouped("Calendar", "weekday", ctx ->
+            zoned(ctx.now()).getDayOfWeek().getDisplayName(java.time.format.TextStyle.FULL,
+                Locale.ENGLISH));
+        grouped("Calendar", "month", ctx ->
+            zoned(ctx.now()).getMonth().getDisplayName(java.time.format.TextStyle.FULL,
+                Locale.ENGLISH));
+        grouped("Calendar", "year", ctx -> String.valueOf(zoned(ctx.now()).getYear()));
+    }
+
+    private static String averageTps(float value) {
+        return value <= 0f ? "n/a" : ServerStats.formatTps(value);
+    }
+
+    /** The clock the date placeholders format, in the machine's own zone. */
+    private static java.time.ZonedDateTime zoned(long millis) {
+        return java.time.Instant.ofEpochMilli(millis).atZone(java.time.ZoneId.systemDefault());
     }
 
     /** Registers {@code name} and records the section it belongs to for the reference list. */

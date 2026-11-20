@@ -45,7 +45,19 @@ public record ServerStats(
     long usedMemoryMb,
     long maxMemoryMb,
     List<String> onlinePlayers,
-    PlayerView player
+    PlayerView player,
+    float tps1,
+    float tps5,
+    float tps15,
+    long freeMemoryMb,
+    String serverVersion,
+    String serverBrand,
+    long serverUptimeMs,
+    long sessionStartMs,
+    String difficulty,
+    String clientVersion,
+    String fabricVersion,
+    int modCount
 ) {
     /** Tick rate a healthy server runs at. */
     public static final float TARGET_TPS = 20.0f;
@@ -56,7 +68,25 @@ public record ServerStats(
     /** Not connected: every measurement is absent rather than zero, so callers can omit them. */
     public static final ServerStats OFFLINE = new ServerStats(
         false, "", "", false, 0f, -1, 0, 0, 0L, "", "", "", 0L, 0L, "", 0, 0L, 0L,
-        List.of(), PlayerView.EMPTY);
+        List.of(), PlayerView.EMPTY, -1f, -1f, -1f, -1L, "", "", -1L, 0L, "", "", "", 0);
+
+    /**
+     * The original twenty-field form.
+     *
+     * <p>Kept so the callers and tests written before the extra figures still compile. A value the
+     * caller does not supply is left absent ({@code -1} for a measurement, empty for a name) rather
+     * than defaulted to zero, so a missing figure still renders as {@code n/a}.
+     */
+    public ServerStats(boolean inWorld, String server, String serverAddress, boolean singleplayer,
+                       float tps, int latency, int players, int maxPlayers, long uptimeMs,
+                       String dimension, String world, String biome, long worldTime, long day,
+                       String weather, int fps, long usedMemoryMb, long maxMemoryMb,
+                       List<String> onlinePlayers, PlayerView player) {
+        this(inWorld, server, serverAddress, singleplayer, tps, latency, players, maxPlayers,
+            uptimeMs, dimension, world, biome, worldTime, day, weather, fps, usedMemoryMb,
+            maxMemoryMb, onlinePlayers, player, -1f, -1f, -1f, -1L, "", "", -1L, 0L, "",
+            "", "", 0);
+    }
 
     /**
      * The flat form, for callers that predate {@link PlayerView}.
@@ -102,6 +132,15 @@ public record ServerStats(
         if (fps < 0) fps = 0;
         if (uptimeMs < 0L) uptimeMs = 0L;
         if (day < 0L) day = 0L;
+        if (tps1 > TARGET_TPS) tps1 = TARGET_TPS;
+        if (tps5 > TARGET_TPS) tps5 = TARGET_TPS;
+        if (tps15 > TARGET_TPS) tps15 = TARGET_TPS;
+        if (serverVersion == null) serverVersion = "";
+        if (serverBrand == null) serverBrand = "";
+        if (difficulty == null) difficulty = "";
+        if (clientVersion == null) clientVersion = "";
+        if (fabricVersion == null) fabricVersion = "";
+        if (sessionStartMs < 0L) sessionStartMs = 0L;
         if (onlinePlayers == null) onlinePlayers = List.of();
         onlinePlayers = List.copyOf(onlinePlayers);
         if (player == null) player = PlayerView.EMPTY;
@@ -144,6 +183,21 @@ public record ServerStats(
     }
 
     /** True when the player maximum is genuinely known rather than merely absent. */
+    /**
+     * Armour points, counted from the pieces the client can see.
+     *
+     * <p>The client is not told the armour value directly, so the worn pieces are counted instead.
+     * That is a count of items, not the protection rating, which is what a player reading the
+     * number expects from "armor".
+     */
+    public int armorPoints() {
+        int worn = 0;
+        for (String piece : player.armor()) {
+            if (piece != null && !piece.isBlank()) worn++;
+        }
+        return worn;
+    }
+
     public boolean hasMaxPlayers() {
         return maxPlayers > 0;
     }

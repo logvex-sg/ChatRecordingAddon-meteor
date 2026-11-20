@@ -2,6 +2,7 @@ package com.logvex.addon.automation.modules;
 
 import com.logvex.addon.automation.core.LoginAttemptPolicy;
 import com.logvex.addon.automation.core.LoginCredentialStore;
+import com.logvex.addon.automation.core.LoginPassword;
 import com.logvex.addon.automation.core.LoginPromptDetector;
 import com.logvex.addon.framework.SafeEventHandler;
 import com.logvex.addon.notify.core.NotificationType;
@@ -77,6 +78,8 @@ public class AutoLoginModule extends AutomationModule {
     private boolean storeLoaded;
     /** Set once the "no password stored" hint has been printed, so a repeating prompt cannot spam. */
     private boolean warnedMissing;
+    /** Set once the "this stored password cannot be sent" note has been printed. */
+    private boolean warnedInvalid;
     /** Set once the "this server wants a registration" note has been printed. */
     private boolean warnedRegister;
 
@@ -111,6 +114,7 @@ public class AutoLoginModule extends AutomationModule {
         newPolicy();
         pendingPrompt.set(null);
         warnedMissing = false;
+        warnedInvalid = false;
         warnedRegister = false;
     }
 
@@ -182,6 +186,20 @@ public class AutoLoginModule extends AutomationModule {
             return;
         }
 
+        // A stored value can predate the validation on the setup screen, or arrive from a file the
+        // user edited by hand. Sending it would either fail as a wrong password or, with a newline,
+        // run a second command — so refuse it and say why instead of burning an attempt.
+        LoginPassword.Problem problem = LoginPassword.check(password);
+        if (problem != LoginPassword.Problem.OK) {
+            if (!warnedInvalid) {
+                warnedInvalid = true;
+                warning("The stored password for %s cannot be sent: %s Fix it with %sautologin gui.",
+                    serverKey(), problem.message(),
+                    com.logvex.addon.framework.systems.config.ClientConfig.get().prefix());
+            }
+            return;
+        }
+
         long now = System.currentTimeMillis();
         if (!policy.shouldSend(now)) {
             if (policy.exhausted()) {
@@ -222,6 +240,28 @@ public class AutoLoginModule extends AutomationModule {
 
     public LoginAttemptPolicy policy() {
         return policy;
+    }
+
+    /** How many prompts may be answered before giving up. */
+    public int attemptLimit() {
+        return maxAttempts.get();
+    }
+
+    /** Raises or lowers the attempt limit, clamped to the setting's own range. */
+    public void setAttemptLimit(int value) {
+        maxAttempts.set(Math.min(5, Math.max(1, value)));
+        newPolicy();
+    }
+
+    /** Shortest gap between two login sends, in seconds. */
+    public int cooldownSeconds() {
+        return cooldownSeconds.get();
+    }
+
+    /** Raises or lowers the cooldown, clamped to the setting's own range. */
+    public void setCooldownSeconds(int value) {
+        cooldownSeconds.set(Math.min(300, Math.max(1, value)));
+        newPolicy();
     }
 
     /**

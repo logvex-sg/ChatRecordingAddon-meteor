@@ -12,7 +12,6 @@ import com.logvex.addon.assistant.core.ChatMacro;
 import com.logvex.addon.assistant.core.CommandPermission;
 import com.logvex.addon.assistant.core.GreetingPools;
 import com.logvex.addon.assistant.core.MacroSet;
-import com.logvex.addon.assistant.core.ModCall;
 import com.logvex.addon.assistant.core.PermissionLevel;
 import com.logvex.addon.assistant.core.PermissionSet;
 import com.logvex.addon.assistant.core.ReplyFormat;
@@ -193,62 +192,6 @@ public class AssistantModule extends AutomationModule {
     );
 
     // ------------------------------------------------------------------ modcall
-
-    private final SettingGroup sgModCall = settings.createGroup("Modcall");
-
-    private final Setting<Boolean> modCallEnabled = sgModCall.add(new BoolSetting.Builder()
-        .name("modcall-enabled")
-        .description("Let !modcall send a private message to the configured moderator.")
-        .defaultValue(false)
-        .build()
-    );
-
-    private final Setting<String> modCallTarget = sgModCall.add(new StringSetting.Builder()
-        .name("modcall-target")
-        .description("Player name to message. Must be an exact in-game name; a typo sends the "
-            + "request to nobody.")
-        .defaultValue("")
-        .visible(modCallEnabled::get)
-        .wide()
-        .build()
-    );
-
-    private final Setting<String> modCallModeratorFormat = sgModCall.add(new StringSetting.Builder()
-        .name("modcall-message")
-        .description("What the moderator is sent. Tokens: {reason}, {reporter}, {moderator}, {prefix}.")
-        .defaultValue(ModCall.DEFAULT_MODERATOR_FORMAT)
-        .visible(modCallEnabled::get)
-        .wide()
-        .build()
-    );
-
-    private final Setting<String> modCallReporterFormat = sgModCall.add(new StringSetting.Builder()
-        .name("modcall-receipt")
-        .description("Receipt messaged back to whoever asked. Leave blank to send no receipt.")
-        .defaultValue(ModCall.DEFAULT_REPORTER_FORMAT)
-        .visible(modCallEnabled::get)
-        .wide()
-        .build()
-    );
-
-    private final Setting<Boolean> modCallFeedback = sgModCall.add(new BoolSetting.Builder()
-        .name("modcall-feedback")
-        .description("Say locally when a modcall was sent.")
-        .defaultValue(true)
-        .visible(modCallEnabled::get)
-        .build()
-    );
-
-    private final Setting<Integer> modCallCooldownSeconds = sgModCall.add(new IntSetting.Builder()
-        .name("modcall-cooldown-seconds")
-        .description("Shortest gap between two modcalls from the same player, so one person cannot "
-            + "fill a moderator's inbox.")
-        .defaultValue(60)
-        .min(0)
-        .sliderRange(0, 600)
-        .visible(modCallEnabled::get)
-        .build()
-    );
 
     // ------------------------------------------------------------------ chat command macros
 
@@ -579,7 +522,6 @@ public class AssistantModule extends AutomationModule {
     private MacroSet macros = MacroSet.EMPTY;
 
     /** Last modcall per speaker, for the per-player cooldown. */
-    private final java.util.Map<String, Long> lastModCallAt = new java.util.HashMap<>();
     /**
      * Set while this module is itself sending a line.
      *
@@ -730,94 +672,6 @@ public class AssistantModule extends AutomationModule {
     }
 
     /**
-     * Sends the {@code /msg} a {@code !modcall} asked for.
-     *
-     * <p>Every refusal here is reported to the speaker rather than swallowed: a call that quietly
-     * did nothing is worse than one that says why it could not be sent.
-     *
-     * @return true when a command was sent, false when nothing was
-     */
-    private boolean sendModCall(String reason, String sender) {
-        // Hard local-only gate, independent of the permissions setting. This command makes the
-        // client send /msg from the local player's own account, so it must never be reachable from
-        // someone else's chat line: with permissions switched off - the default - a LOCAL_ONLY
-        // default would not be enforced, and a stranger could have their words delivered to a
-        // moderator under this player's name.
-        if (!isLocalSpeaker(sender)) {
-            return false;
-        }
-        if (!modCallEnabled.get()) {
-            notifyUser(NotificationType.IMPORTANT_CHAT, config.name(),
-                "Modcall is switched off. Enable it on the assistant's Modcall settings.");
-            return false;
-        }
-        ModCall.Call call = ModCall.build(modCallTarget.get(), reason, config.commandPrefix(),
-            modCallModeratorFormat.get(), modCallReporterFormat.get(), sender);
-        if (!call.ok()) {
-            notifyUser(NotificationType.IMPORTANT_CHAT, config.name(),
-                call.problem().message(config.commandPrefix()));
-            return false;
-        }
-        if (modCallBlocked(sender)) {
-            notifyUser(NotificationType.IMPORTANT_CHAT, config.name(),
-                "You called a moderator recently. Wait a moment before calling again.");
-            return false;
-        }
-        if (mc.getNetworkHandler() == null) {
-            return false;
-        }
-        sendingMacro = true;
-        try {
-            for (String command : call.commands()) {
-                mc.getNetworkHandler().sendChatCommand(command);
-            }
-        } catch (RuntimeException failure) {
-            notifyUser(NotificationType.IMPORTANT_CHAT, config.name(),
-                "The modcall could not be sent.");
-            return false;
-        } finally {
-            sendingMacro = false;
-        }
-        // Recorded only after the send: charging the cooldown for a call that failed would lock the
-        // player out of retrying something they never sent.
-        recordModCall(sender);
-        if (modCallFeedback.get()) {
-            info("Modcall sent to %s.", call.target());
-        }
-        return true;
-    }
-
-    /** True when {@code sender} is this client's own player, so the send is really theirs. */
-    private boolean isLocalSpeaker(String sender) {
-        String mine = localPlayerName();
-        if (mine == null || mine.isBlank()) return false;
-        if (sender == null || sender.isBlank()) return false;
-        return mine.equalsIgnoreCase(sender.strip());
-    }
-
-    /** True when {@code sender} called a moderator too recently to call again. */
-    private boolean modCallBlocked(String sender) {
-        int seconds = modCallCooldownSeconds.get();
-        if (seconds <= 0) return false;
-        Long last = lastModCallAt.get(modCallKey(sender));
-        return last != null && System.currentTimeMillis() - last < seconds * 1_000L;
-    }
-
-    /** Starts the cooldown for {@code sender}; called only once a call actually went out. */
-    private void recordModCall(String sender) {
-        if (modCallCooldownSeconds.get() <= 0) return;
-        long now = System.currentTimeMillis();
-        lastModCallAt.put(modCallKey(sender), now);
-        if (lastModCallAt.size() > 128) {
-            lastModCallAt.entrySet().removeIf(e -> now - e.getValue() > modCallCooldownSeconds.get() * 1_000L * 4);
-        }
-    }
-
-    private static String modCallKey(String sender) {
-        return sender == null ? "" : sender.strip().toLowerCase(java.util.Locale.ROOT);
-    }
-
-    /**
      * Mirrors a local {@code !status} readout to the admin webhook, when one is configured.
      *
      * <p>Only the overview is pushed, and only when it was answered locally: a command already sent
@@ -837,9 +691,6 @@ public class AssistantModule extends AutomationModule {
         // A report replaces the brain's optimistic confirmation with what actually happened: the
         // brain cannot know whether a webhook is configured, and "Report sent" when nothing was
         // queued would be a lie the reporter cannot check.
-        if (decision.hasModCall() && !sendModCall(decision.modCall(), sender)) {
-            return;
-        }
         boolean reported = !decision.hasReport() || sendReport(decision.report(), sender);
         if (decision.hasReport() && !reported) {
             notifyUser(NotificationType.IMPORTANT_CHAT, config.name(),
@@ -852,6 +703,7 @@ public class AssistantModule extends AutomationModule {
         }
         switch (decision.delivery()) {
             case CHAT -> speakAll(decision);
+            case PRIVATE -> whisperAll(decision, sender);
             case NOTIFY -> {
                 // A notification body can hold newlines, so a block keeps its shape here too.
                 String body = decision.hasEmbed()
@@ -893,6 +745,45 @@ public class AssistantModule extends AutomationModule {
         for (int i = 0; i < limit; i++) speak(lines.get(i));
         if (lines.size() > limit) {
             speak("(" + (lines.size() - limit) + " more lines; narrow the list with a command.)");
+        }
+    }
+
+    /**
+     * Sends a decision to the speaker alone, through the server's private-message command.
+     *
+     * <p>Used by {@link TriggerRule.ReplyMode#PRIVATE}: the answer goes only to whoever asked, so a
+     * public chat full of people does not see the reply. The verb comes from the rule (default
+     * {@code msg}), and the recipient is the name this client could verify, never one the message
+     * claimed — otherwise a stranger could have their own words delivered to someone else.
+     */
+    private void whisperAll(AssistantBrain.Decision decision, String sender) {
+        if (sender == null || sender.isBlank()) {
+            // No verifiable name means no safe recipient. Falling back to public chat would leak a
+            // reply the rule asked to keep private, so nothing is sent.
+            return;
+        }
+        String verb = decision.rule() == null ? TriggerRule.DEFAULT_WHISPER
+            : decision.rule().whisperCommand();
+        java.util.List<String> lines = decision.lines(replyWidth.get(), replyFormat.get().style());
+        int limit = Math.min(lines.size(), MAX_EMBED_LINES);
+        for (int i = 0; i < limit; i++) {
+            whisper(verb, sender, lines.get(i));
+        }
+    }
+
+    /** Sends one line as {@code /<verb> <player> <text>}. */
+    private void whisper(String verb, String player, String text) {
+        if (text == null || text.isBlank()) return;
+        if (mc.player == null || mc.player.networkHandler == null) return;
+        String line = "/" + verb + " " + player + " " + text.strip();
+        // Recorded before sending for the same reason as speak(): the echo comes back through the
+        // chat pipeline and must be recognised as ours rather than answered.
+        rememberOwnReply(line);
+        sendingMacro = true;
+        try {
+            ChatUtils.sendPlayerMsg(line);
+        } finally {
+            sendingMacro = false;
         }
     }
 
@@ -1054,6 +945,14 @@ public class AssistantModule extends AutomationModule {
         return entry == null ? -1 : entry.getLatency();
     }
 
+    /** True when {@code sender} is this client's own player, so an action is really theirs. */
+    private boolean isLocalSpeaker(String sender) {
+        String mine = localPlayerName();
+        if (mine == null || mine.isBlank()) return false;
+        if (sender == null || sender.isBlank()) return false;
+        return mine.equalsIgnoreCase(sender.strip());
+    }
+
     private String localPlayerName() {
         if (mc.player == null) return "";
         var profile = mc.player.getGameProfile();
@@ -1089,6 +988,7 @@ public class AssistantModule extends AutomationModule {
             aiLearnFromChat.get()
         );
         runtime.setTriggers(parsed);
+        runtime.brain().setTriggerSet(parsed);
         runtime.setConfig(config);
         runtime.setPermissions(buildPermissions());
         runtime.setDuplicateFilter(duplicateFilter.get());

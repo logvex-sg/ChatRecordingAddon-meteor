@@ -211,6 +211,13 @@ public final class AssistantRuntime {
             : null;
 
         if (rule != null) {
+            // A rule whose reply is a server command is gated by who is asking: a state-changing
+            // command may only run for the local player, so a stranger cannot type a trigger word
+            // and make this client run /tpaccept or /pay. A message-carrying command is safe.
+            if (!rule.allowsCommandFrom(sender.local())) {
+                denied++;
+                return AssistantBrain.Decision.NONE;
+            }
             if (!cooldowns.tryFire(rule, now)) {
                 ignored++;
                 return AssistantBrain.Decision.NONE;
