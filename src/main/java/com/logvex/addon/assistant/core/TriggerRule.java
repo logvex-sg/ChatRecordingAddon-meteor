@@ -625,11 +625,67 @@ public record TriggerRule(
         out.add(embedRule("!time", "Time {worldtime}, Day {day}"));
         out.add(commandRule("!day", "Day {day}"));
         out.add(commandRule("!weather", "Weather {weather}"));
-        out.add(commandRule("!gamemode", "Gamemode {gamemode}"));
-        out.add(embedRule("!health",
-            "Health {health} {healthbar}, Absorption {absorption}, Armour {armor}"));
-        out.add(commandRule("!speed", "Speed {speed} blocks/s"));
+        // !gamemode, !health and !speed are not triggers: each is a status command whose figures
+        // describe the player, so it is gated to the local speaker. A trigger of the same name would
+        // be matched first and would shadow that gate, so the command keeps the verb.
         out.add(commandRule("!who", "Online {playercount} of {maxplayers}"));
+
+        // ---------------------------------------------------------------- the rest of the command verbs
+        //
+        // One rule per verb a player is likely to try. They are grouped by what the answer is about,
+        // because that is what decides the gate: a rule naming the operator's own figure is refused
+        // to a stranger by the runtime (see PRIVATE_FIGURES), while a rule reading only the server
+        // answers anyone.
+        //
+        // Three spellings are deliberate:
+        //   * {ping} already carries " ms", {worldtime} already ends in day/night, so no template
+        //     appends a unit of its own - "Your ping is {ping}" and never "{ping}ms";
+        //   * {memory} is the assistant's fact count, not the heap, so a memory readout uses
+        //     {memoryused}/{memorymax} and {memory} is left to the fact questions;
+        //   * {uptime} is this session while {serveruptime} is the server's, so "server uptime"
+        //     says the latter.
+        out.add(commandRule("!biome", "Biome {biome}"));
+        out.add(commandRule("!dimension", "Dimension {dimension}"));
+        out.add(commandRule("!date", "Date {date}"));
+        out.add(commandRule("!timestamp", "Clock {time}"));
+        out.add(commandRule("!difficulty", "Difficulty {difficulty}"));
+        out.add(commandRule("!verdict", "Server status {verdict}"));
+        out.add(commandRule("!server", "Server {server}"));
+        out.add(commandRule("!whoami", "You are {player}"));
+        out.add(commandRule("!serverinfo",
+            "Server {server}, Players {players} of {maxplayers}, Uptime {uptime}"));
+        out.add(commandRule("!overview",
+            "Server {server}, TPS {tps}, Ping {ping}, FPS {fps}, Players {playercount}"));
+        out.add(commandRule("!welcome", "Welcome to the server, {player}!"));
+        out.add(commandRule("!clientinfo",
+            "FPS {fps}, Heap {memoryused} of {memorymax} MB, Ping {ping}"));
+
+        // About the operator: answered, but only to the operator. A stranger typing !hunger is
+        // refused rather than told how this player is doing. Verbs that a status command already
+        // owns - !coords, !armor, !held - are deliberately absent: the command answers them and is
+        // already gated, so a trigger would only shadow that gate to no benefit.
+        out.add(commandRule("!facing", "Facing {facing}"));
+        out.add(commandRule("!hunger", "Hunger {hunger}, Saturation {saturation}"));
+        out.add(commandRule("!vitals", "Health {health}, Hunger {hunger}, Absorption {absorption}"));
+        out.add(commandRule("!offhand", "Offhand {offhand}"));
+        out.add(commandRule("!environment", "Biome {biome}, Facing {facing}"));
+
+        // The command list, split so each page fits one chat message. Every name here is answered by
+        // a shipped rule or a status command, which a guard test enforces: a help page that
+        // advertises a verb nothing answers is worse than no help page.
+        out.add(commandRule("!cmds1",
+            "Server: !tps, !ping, !players, !uptime, !server, !verdict, !status, !who"));
+        out.add(commandRule("!cmds2",
+            "World: !world, !time, !day, !weather, !biome, !dimension, !difficulty, !serverinfo"));
+        out.add(commandRule("!cmds3",
+            "Client: !fps, !ram, !memory, !session, !clientinfo, !overview, !timestamp, !date"));
+        out.add(commandRule("!cmds4",
+            "You: !whoami, !welcome, !vitals, !hunger, !facing, !offhand, !environment"));
+        out.add(commandRule("!cmds5",
+            "Commands: !health, !speed, !gamemode, !coords, !armor, !held, !level, !absorption"));
+        out.add(commandRule("!cmds6",
+            "More: !location, !target, !effects, !network, !cmds1, !cmds2, !cmds3, !cmds4, "
+                + "!cmds5"));
 
         return java.util.List.copyOf(out);
     }

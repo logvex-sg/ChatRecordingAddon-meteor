@@ -11,6 +11,7 @@ import com.logvex.addon.assistant.core.SenderIdentity;
 import com.logvex.addon.assistant.core.TriggerRule;
 import com.logvex.addon.assistant.core.TriggerSet;
 import com.logvex.addon.stats.ServerStats;
+import com.logvex.addon.stats.StatusCommands;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -20,6 +21,7 @@ import java.util.Locale;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -169,7 +171,7 @@ class TriggerPackTest {
     }
 
     @Test
-    @DisplayName("every shipped rule carries the three-second cooldown and full field values")
+    @DisplayName("every shipped rule whispers, except one that runs a server command")
     void shippedRulesUseTheThreeSecondCooldown() {
         for (TriggerRule rule : TriggerRule.preconfigured()) {
             assertEquals(TriggerRule.TRIGGER_COOLDOWN_MS, rule.cooldownMs(),
@@ -178,8 +180,18 @@ class TriggerPackTest {
             assertTrue(rule.enabled(), "'" + rule.pattern() + "' ships disabled");
             assertTrue(rule.wholeWord(), "'" + rule.pattern() + "' must match whole words");
             assertFalse(rule.caseSensitive(), "'" + rule.pattern() + "' should ignore case");
-            assertEquals(TriggerRule.ReplyMode.PRIVATE, rule.mode(),
-                "'" + rule.pattern() + "' must whisper, so a busy chat does not see the answer");
+            if (rule.isCommandReply()) {
+                // A server command cannot be whispered: the send path recognises a leading "/" and
+                // runs it, so wrapping it in /msg would send the text of the command instead of
+                // running it. Such a rule is safe because only the local player may fire it.
+                assertEquals(TriggerRule.ReplyMode.CHAT, rule.mode(),
+                    "'" + rule.pattern() + "' runs a command but is not delivered as chat");
+                assertTrue(rule.allowsCommandFrom(true),
+                    "'" + rule.pattern() + "' must run for the local player");
+            } else {
+                assertEquals(TriggerRule.ReplyMode.PRIVATE, rule.mode(),
+                    "'" + rule.pattern() + "' must whisper, so a busy chat does not see the answer");
+            }
             assertEquals(0, rule.sessionLimit(), "'" + rule.pattern() + "' ships with a limit");
             assertFalse(rule.sound(), "'" + rule.pattern() + "' should not beep");
             assertFalse(rule.remember(), "'" + rule.pattern() + "' should not fill memory");
@@ -190,6 +202,10 @@ class TriggerPackTest {
     @Test
     @DisplayName("a prefixed shipped rule only shadows a command open to everyone")
     void prefixedRulesOnlyShadowPublicCommands() {
+        // A trigger is matched before the command parser, so a prefixed rule takes the place of the
+        // command of the same name. Shadowing a restricted command would hand a stranger what the
+        // command itself refuses them, so no shipped rule does it: the restricted verbs - !coords,
+        // !armor, !held and the rest - are answered by the status commands, which are already gated.
         List<String> clashes = new ArrayList<>();
         for (TriggerRule rule : TriggerRule.preconfigured()) {
             String pattern = rule.pattern().strip();
@@ -205,6 +221,103 @@ class TriggerPackTest {
         }
         assertTrue(clashes.isEmpty(), "a shipped trigger exposes a restricted command: "
             + clashes);
+    }
+
+    @Test
+    @DisplayName("a shipped rule that shadows a restricted command is refused to a stranger")
+    void shadowingRulesAreGatedForStrangers() {
+        // Defensive: if a future rule does shadow a restricted command, the runtime must still
+        // refuse it to a remote sender. Today no rule does, so the check is vacuous by design
+        // rather than by accident.
+        List<TriggerRule> shadowing = new ArrayList<>();
+        for (TriggerRule rule : TriggerRule.preconfigured()) {
+            String pattern = rule.pattern().strip();
+            if (!pattern.startsWith("!")) continue;
+            String verb = pattern.substring(1).split("\\s+", 2)[0].toLowerCase(Locale.ROOT);
+            String canonical = com.logvex.addon.assistant.core.CommandCatalog.canonical(verb)
+                .orElse(null);
+            if (canonical == null) continue;
+            if (com.logvex.addon.assistant.core.CommandCatalog.defaultLevelFor(canonical)
+                    != com.logvex.addon.assistant.core.PermissionLevel.EVERYONE) {
+                shadowing.add(rule);
+            }
+        }
+        for (TriggerRule rule : shadowing) {
+            AssistantRuntime runtime = new AssistantRuntime(new AssistantMemory());
+            runtime.setTriggers(TriggerSet.of(List.of(rule)));
+            runtime.setConfig(AssistantConfig.DEFAULTS);
+            runtime.setDuplicateFilter(false);
+
+            var stranger = SenderIdentity.unverified("RandomStranger");
+            AssistantBrain.Decision remote = runtime.handle(stranger, rule.pattern(), NOW,
+                context().stats(), StatusCommands.Settings.DEFAULTS);
+            assertNotNull(remote, "'" + rule.pattern() + "' produced no decision for a stranger");
+            assertTrue(remote.denied() || !remote.acts(),
+                "'" + rule.pattern() + "' answered a stranger with a private figure: "
+                    + remote.text());
+        }
+    }
+
+    @Test
+    @DisplayName("every verb a help page advertises is answered by a rule or a command")
+    void helpPagesOnlyAdvertiseRealVerbs() {
+        // A help page is the one place a user learns the vocabulary, so a stale entry is worse than
+        // a missing one: they type it, nothing happens, and the assistant looks broken. Every !verb
+        // in the pages is checked against the shipped rules and the status commands.
+        java.util.Set<String> answered = new java.util.HashSet<>();
+        for (TriggerRule rule : TriggerRule.preconfigured()) {
+            for (String phrase : rule.phrases()) {
+                String trimmed = phrase.strip();
+                if (trimmed.startsWith("!")) {
+                    answered.add(trimmed.split("\\s+", 2)[0].toLowerCase(java.util.Locale.ROOT));
+                }
+            }
+        }
+        for (String command : com.logvex.addon.stats.StatusCommand.names()) {
+            answered.add("!" + command.toLowerCase(java.util.Locale.ROOT));
+        }
+
+        List<String> advertised = new ArrayList<>();
+        for (TriggerRule rule : TriggerRule.preconfigured()) {
+            if (!rule.pattern().startsWith("!cmds")) continue;
+            for (String word : rule.reply().split("[\\s,]+")) {
+                String trimmed = word.strip();
+                if (trimmed.startsWith("!")) {
+                    advertised.add(trimmed.toLowerCase(java.util.Locale.ROOT));
+                }
+            }
+        }
+        assertFalse(advertised.isEmpty(), "the help pages advertise nothing at all");
+
+        List<String> stale = new ArrayList<>();
+        for (String verb : advertised) {
+            if (!answered.contains(verb)) stale.add(verb);
+        }
+        assertTrue(stale.isEmpty(), "a help page advertises verbs nothing answers: " + stale);
+    }
+
+    @Test
+    @DisplayName("an embed rule uses the same capitalisation for every label")
+    void embedLabelsAreCapitalised() {
+        // The first word of each clause becomes the row label, so a lowercase word next to a
+        // capitalised one reads as a typo rather than a style: "Server ... ping 42 ms". Every
+        // labelled row of a shipped embed rule must start with an upper-case letter.
+        List<String> inconsistent = new ArrayList<>();
+        for (TriggerRule rule : TriggerRule.preconfigured()) {
+            if (!rule.wantsEmbed(rule.reply())) continue;
+            String expanded = ResponseTemplate.expand(rule.reply(), context());
+            // Read the labels off the embed the runtime actually builds, so this checks what a user
+            // sees rather than a parallel reimplementation of the split.
+            for (ReplyFormat.Field field : rule.toEmbed(expanded, rule.pattern()).fields()) {
+                String label = field.label();
+                if (label.isEmpty()) continue;
+                if (!Character.isUpperCase(label.codePointAt(0))) {
+                    inconsistent.add(rule.pattern() + " -> '" + label + "'");
+                }
+            }
+        }
+        assertTrue(inconsistent.isEmpty(),
+            "an embed row label is not capitalised: " + inconsistent);
     }
 
     @Test

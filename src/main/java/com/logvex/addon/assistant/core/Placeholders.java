@@ -191,8 +191,8 @@ public final class Placeholders {
      */
     private static final java.util.Set<String> PRIVATE_FIGURES = java.util.Set.of(
         "coords", "x", "y", "z", "facing", "location", "target",
-        "health", "maxhealth", "absorption", "saturation", "food", "air", "armor", "totems",
-        "held", "offhand", "effects", "gamemode", "level", "xp", "speed",
+        "health", "maxhealth", "absorption", "saturation", "food", "hunger", "air", "armor",
+        "totems", "held", "offhand", "effects", "gamemode", "level", "xp", "speed",
         "factcount", "fact", "memory"
     );
 

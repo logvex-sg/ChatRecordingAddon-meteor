@@ -7,6 +7,7 @@ import com.logvex.addon.chatlog.core.MessageType;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -106,14 +107,23 @@ class UnsignedChatAndRoutingTest {
     @Test
     @DisplayName("no shipped rule pattern contains another, so order never decides the answer")
     void preconfiguredPatternsDoNotNest() {
+        // Checked with the real matcher rather than String.contains: "!timestamp" contains the text
+        // "!time", but whole-word matching refuses to let "!time" answer it because the next
+        // character is a letter. The hazard is a pattern that would actually be *matched*, so that
+        // is what is asserted.
         List<TriggerRule> table = TriggerRule.preconfigured();
+        List<String> nested = new ArrayList<>();
         for (TriggerRule outer : table) {
             for (TriggerRule inner : table) {
                 if (outer == inner) continue;
-                assertFalse(outer.pattern().contains(inner.pattern()),
-                    "'" + outer.pattern() + "' contains '" + inner.pattern()
-                        + "', so first-match-wins would pick by accident");
+                for (String phrase : inner.phrases()) {
+                    if (TriggerSet.matches(outer, phrase)) {
+                        nested.add("'" + outer.pattern() + "' would answer '" + phrase
+                            + "', which belongs to '" + inner.pattern() + "'");
+                    }
+                }
             }
         }
+        assertTrue(nested.isEmpty(), "a shipped pattern is answered by another: " + nested);
     }
 }

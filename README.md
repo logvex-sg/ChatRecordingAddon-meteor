@@ -377,14 +377,15 @@ single line each, so the whole feature set is editable from the settings list, t
 pattern;sender=;reply=;mode=private;cooldown=3000;limit=0;sound=false;remember=false;enabled=true;aliases=;pool=;whisper=msg;embed=false
 ```
 
-A fresh install ships **82 preconfigured rules** with 76 extra aliases, all enabled, all at the
+A fresh install ships **102 preconfigured rules** with 76 extra aliases, all enabled, all at the
 3000 ms cooldown, all matched on whole words, and all answered **privately to whoever asked**.
-That is 158 phrases answering out of the box — no setup step. They cover greetings, thanks,
+That is 178 phrases answering out of the box — no setup step. They cover greetings, thanks,
 farewells, `gg`/`wp`, small talk, the server-figure questions (`what is the tps`, `what is my ping`,
 `is the server lagging`, `how many players`), the player-figure questions (`where am i`,
 `what is my health`, `what is my armour`, `what is my gamemode`) and the command-shaped set
-(`!tps`, `!status`, `!memory`, `!world`, `!time`, `!health`, `!ping`, `!fps`, `!ram`, `!session`,
-`!players`, `!help`). `!ai triggers restore` puts the same table back.
+(`!tps`, `!status`, `!memory`, `!world`, `!time`, `!ping`, `!fps`, `!ram`, `!session`,
+`!players`, `!hunger`, `!vitals`, `!facing`, `!offhand`, `!environment`, `!help`).
+`!ai triggers restore` puts the same table back.
 
 Every shipped phrase is **reachable**: no rule's phrase can be answered by an earlier rule, so
 first-match-wins never has to break a tie and the reply never depends on list order. Two tests
@@ -594,6 +595,20 @@ so the three can never disagree.
 How the assistant answers these is controlled by `memory-reply-mode` (`chat`, `notify` or
 `silent`). The default, `notify`, keeps answers out of public chat.
 
+#### A trigger may not shadow a restricted command
+
+A trigger is matched **before** the command parser, so a rule named `!coords` would take the place
+of the `coords` command. That matters because the two paths gate differently: a command that reads
+your position, gear, effects or target is refused to anyone but you, while a trigger answers
+whoever typed it unless its reply happens to name a private figure. A trigger in front of a gated
+command would therefore hand a stranger what the command refuses them.
+
+No shipped trigger reuses a restricted command's name, and a guard test enforces it. The restricted
+verbs — `!coords`, `!armor`, `!held`, `!health`, `!speed`, `!gamemode`, `!level`, `!absorption`,
+`!effects`, `!target`, `!location`, `!network` — are answered by the status commands, which are
+already gated. If you add your own rule, keep the same rule: use a new word rather than reusing one
+of those.
+
 ### Configuring every prefix command
 
 Status commands have their own table. Every *other* prefix command — `!hello`, `!gg`, `!who`,
@@ -656,6 +671,14 @@ group, and the **Status** tab previews every command as it would answer right no
 | `!coords` | Your position, rounded to whole blocks. |
 | `!location` | Dimension, biome and the direction you face. |
 | `!health` | Health, absorption and hunger. |
+| `!vitals` | Health, hunger and absorption as a labelled block. |
+| `!hunger` | Your food and saturation. |
+| `!absorption` | The absorption hearts you are carrying. |
+| `!level` | Your experience level. |
+| `!facing` | The compass direction you face. |
+| `!offhand` | What is in your off hand. |
+| `!environment` | The biome you are in and the direction you face. |
+| `!difficulty` | The world difficulty, as the client can see it. |
 | `!armor` | Your armour pieces and their remaining durability. |
 | `!held` | What is in each hand. |
 | `!effects` | Active potion effects, with their remaining time. |
