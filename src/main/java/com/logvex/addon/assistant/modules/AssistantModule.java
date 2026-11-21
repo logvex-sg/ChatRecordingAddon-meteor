@@ -13,6 +13,7 @@ import com.logvex.addon.assistant.core.MacroSet;
 import com.logvex.addon.assistant.core.PermissionLevel;
 import com.logvex.addon.assistant.core.PermissionSet;
 import com.logvex.addon.assistant.core.RemoteMacroGate;
+import com.logvex.addon.assistant.core.ReplyDelivery;
 import com.logvex.addon.assistant.core.ReplyFormat;
 import com.logvex.addon.assistant.core.SelfReplyGuard;
 import com.logvex.addon.assistant.core.SendPacer;
@@ -23,7 +24,9 @@ import com.logvex.addon.assistant.gui.AssistantScreen;
 import com.logvex.addon.assistant.mc.AssistantService;
 import com.logvex.addon.automation.modules.AutomationModule;
 import com.logvex.addon.chatlog.core.ChatClassifier;
+import com.logvex.addon.chatlog.core.ChatEntry;
 import com.logvex.addon.chatlog.core.MessageType;
+import com.logvex.addon.chatlog.mc.LogService;
 import com.logvex.addon.chatlog.modules.WebhookRelayModule;
 import com.logvex.addon.common.Messages;
 import com.logvex.addon.stats.McServerStats;
@@ -51,6 +54,7 @@ import meteordevelopment.meteorclient.systems.modules.Modules;
 import meteordevelopment.meteorclient.utils.player.ChatUtils;
 import com.logvex.addon.notify.core.NotificationType;
 import net.minecraft.sound.SoundEvents;
+import net.minecraft.text.Text;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -831,17 +835,44 @@ public class AssistantModule extends AutomationModule {
      * a long list must not turn into a wall of chat.
      */
     private void speakAll(AssistantBrain.Decision decision) {
-        java.util.List<String> lines = decision.linesCapped(
-            replyWidth.get(), replyFormat.get().style(), MAX_EMBED_LINES);
-        if (lines.size() <= 1) {
-            for (String line : lines) speak(line);
-            return;
-        }
-        // A block is a dozen lines; sending them in one tick is what a spam filter kicks for. They
-        // are queued instead and released a line at a time by drainPacer().
-        java.util.List<SendPacer.Line> queued = new java.util.ArrayList<>(lines.size());
-        for (String line : lines) queued.add(new SendPacer.Line("", "", line));
-        pacer.enqueue(queued);
+        ReplyDelivery.Plan plan = ReplyDelivery.plan(AssistantBrain.Delivery.CHAT,
+            decision.linesCapped(replyWidth.get(), replyFormat.get().style(), MAX_EMBED_LINES),
+            ReplyFormat.oneLine(decision.embed(), replyWidth.get()), false);
+        for (String line : plan.lines()) speak(line);
+    }
+
+    /**
+     * Prints a block to the local chat box as a single message.
+     *
+     * <p>The lines are joined with {@code \n}, which {@code ChatHud} breaks on, so the block keeps
+     * its shape while costing one chat line in the history rather than a dozen. Nothing leaves the
+     * client, so no server-side flood filter can see it.
+     *
+     * <p>{@code ChatHud.addMessage} is used directly rather than {@code ChatUtils.sendMsg} because
+     * the latter always prepends Meteor's {@code [Meteor]} prefix, which would indent the first row
+     * of the card and push it out of line with the rest.
+     */
+    private void printLocally(java.util.List<String> lines) {
+        if (lines == null || lines.isEmpty()) return;
+        var mc = com.logvex.addon.framework.LogClientContext.mc;
+        if (mc == null || mc.inGameHud == null) return;
+        String text = String.join("\n", lines);
+        rememberOwnReply(text);
+        mc.inGameHud.getChatHud().addMessage(Text.literal(text));
+        recordLocally(text);
+    }
+
+    /**
+     * Records a locally printed reply in the chat log.
+     *
+     * <p>Printing straight to the chat box skips {@code ReceiveMessageEvent}, which is the only
+     * place {@code ChatRecorder} sees a line. Without this the card would be visible but absent from
+     * the archive, the export and any webhook — a silent hole in a chat-recording addon.
+     */
+    private void recordLocally(String text) {
+        if (text == null || text.isBlank()) return;
+        LogService.get().record(new ChatEntry(System.currentTimeMillis(),
+            MessageType.SYSTEM, localPlayerName(), text, LogService.get().serverName(), ""));
     }
 
     /**
@@ -860,17 +891,27 @@ public class AssistantModule extends AutomationModule {
         }
         String verb = decision.rule() == null ? TriggerRule.DEFAULT_WHISPER
             : decision.rule().whisperCommand();
-        java.util.List<String> lines = decision.linesCapped(
-            replyWidth.get(), replyFormat.get().style(), MAX_EMBED_LINES);
-        if (lines.size() <= 1) {
-            for (String line : lines) whisper(verb, sender, line);
-            return;
+        ReplyDelivery.Plan plan = ReplyDelivery.plan(AssistantBrain.Delivery.PRIVATE,
+            decision.linesCapped(replyWidth.get(), replyFormat.get().style(), MAX_EMBED_LINES),
+            ReplyFormat.oneLine(decision.embed(), replyWidth.get()), isLocalSpeaker(sender));
+        switch (plan.mode()) {
+            // Whispering to yourself is a round trip through the server to reach the screen you are
+            // already looking at. Printed locally instead, so a twelve-row block costs no /msg at
+            // all and cannot trip a flood filter.
+            case LOCAL_ONE_MESSAGE -> printLocally(plan.lines());
+            case SERVER_ONE_LINE -> {
+                for (String line : plan.lines()) whisper(verb, sender, line);
+            }
+            case SERVER_PACED_LINES -> {
+                // A remote asker only ever sees what the server relays, so the rows have to go out
+                // one message at a time. Queued and released by drainPacer().
+                java.util.List<SendPacer.Line> queued = new java.util.ArrayList<>(plan.lines().size());
+                for (String line : plan.lines()) queued.add(new SendPacer.Line(sender, verb, line));
+                pacer.enqueue(queued);
+            }
+            case NONE -> {
+            }
         }
-        // This is the path !cmds takes: an 11-line block became 11 /msg commands in one tick, which
-        // is a kick on any server with a flood filter. Queued and paced instead.
-        java.util.List<SendPacer.Line> queued = new java.util.ArrayList<>(lines.size());
-        for (String line : lines) queued.add(new SendPacer.Line(sender, verb, line));
-        pacer.enqueue(queued);
     }
 
     /** Sends one line as {@code /<verb> <player> <text>}. */
