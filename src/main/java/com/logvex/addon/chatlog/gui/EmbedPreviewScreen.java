@@ -123,6 +123,15 @@ public class EmbedPreviewScreen extends WindowScreen {
         if (footer instanceof Map<?, ?> footerMap) {
             add(theme.label(String.valueOf(footerMap.get("text")))).expandX().widget().color(GuiKit.MUTED);
         }
+        // Discord drops an embed over the combined budget, so the remaining room is worth showing
+        // where appearance is tuned: a long footer is the easiest way to spend it without noticing.
+        add(theme.label(budgetLabel(embed))).expandX().widget().color(GuiKit.MUTED);
+    }
+
+    private static String budgetLabel(DiscordEmbed embed) {
+        int used = embed.length();
+        int left = Math.max(0, DiscordEmbed.TOTAL_LIMIT - used);
+        return used + " / " + DiscordEmbed.TOTAL_LIMIT + " characters (" + left + " left)";
     }
 
     private DiscordEmbed sample() {
