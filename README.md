@@ -43,6 +43,13 @@ server-sent events, the bot controls, the task queue, the module switches, chat 
 statistics and storage usage. It is off by default, binds to loopback, and needs an access token.
 See [Companion (web app)](#companion-web-app).
 
+**Discord bridge** — `tools/discord_bridge.py` is a two-way bridge between a Discord channel and
+Minecraft chat, built on the companion API. Chat appears in both directions, a leading `/` from
+Discord is stripped so nobody can run commands through it, and players cannot ping `@everyone`.
+It is a separate Python process, because a bot token must not ship inside a client mod and a bot
+has to stay online when the game is closed. Standard library only. See
+[Discord bridge](docs/discord-bridge.md).
+
 **GUI** — `!log gui` opens the addon window: a Meteor-style interface with a
 navigation rail on the left (Modules, HUD, Theme, About) and a card list on the right. Every module
 and HUD element has an on/off switch and a Settings page, the list is searchable, and an enabled
