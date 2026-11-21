@@ -5,6 +5,7 @@ import com.logvex.addon.assistant.core.AssistantConfig;
 import com.logvex.addon.assistant.core.AssistantMemory;
 import com.logvex.addon.assistant.core.AssistantRuntime;
 import com.logvex.addon.assistant.core.ChatMacro;
+import com.logvex.addon.assistant.core.CommandCatalog;
 import com.logvex.addon.assistant.core.MacroSet;
 import com.logvex.addon.assistant.core.SenderIdentity;
 import com.logvex.addon.assistant.core.TriggerSet;
@@ -13,6 +14,7 @@ import com.logvex.addon.stats.StatusCommands;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -277,5 +279,37 @@ class MacroCommandsTest {
         assertTrue(runtime.handle("Notch", "!mods help me", 1_003L).hasReport());
         assertTrue(runtime.handle(SenderIdentity.unverified("Notch"), "!onlineplayers", 1_004L,
             online(1, List.of("Notch")), StatusCommands.Settings.DEFAULTS, -1).acts());
+    }
+
+    @Test
+    @DisplayName("no shipped macro is dead because a command claims its shortcut")
+    void noDefaultMacroIsShadowed() {
+        // A command is matched before a macro, so a macro whose shortcut is also a command or alias
+        // can never run. The shipped !rules macro was dead exactly this way: "rules" was an alias of
+        // !triggers. Checking the two tables against each other keeps the next alias from doing it.
+        List<String> shortcuts = new ArrayList<>();
+        for (ChatMacro macro : ChatMacro.defaults()) shortcuts.add(macro.shortcut());
+        List<String> dead = CommandCatalog.shadowedMacros(shortcuts);
+        assertTrue(dead.isEmpty(), "these shipped macros can never run: " + dead);
+    }
+
+    @Test
+    @DisplayName("a default macro really reaches the server command it names")
+    void defaultMacrosRun() {
+        MacroSet set = MacroSet.of(ChatMacro.defaults(), "!");
+        for (ChatMacro macro : ChatMacro.defaults()) {
+            // One argument per placeholder the template declares, not a fixed sample: a macro with
+            // no placeholders rejects any input as surplus, and feeding it "Steve x" would fail for
+            // a reason that has nothing to do with the macro being reachable.
+            int arity = macro.template().split("\\{[a-z]+}", -1).length - 1;
+            StringBuilder input = new StringBuilder(macro.shortcut());
+            for (int i = 0; i < arity; i++) input.append(" arg").append(i);
+            java.util.Optional<MacroSet.Call> found = set.resolve(input.toString());
+            assertTrue(found.isPresent(), "no macro matched " + input);
+            ChatMacro.Outcome outcome = found.get().macro().run(found.get().input());
+            assertTrue(outcome.ok(), macro.shortcut() + " failed: " + outcome.problem());
+            assertTrue(outcome.command().startsWith("/"),
+                macro.shortcut() + " produced " + outcome.command());
+        }
     }
 }

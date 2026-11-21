@@ -223,4 +223,29 @@ class CommandDefaultsTest {
                 "default trigger '" + pattern + "' would shadow a command");
         }
     }
+
+    @Test
+    @DisplayName("a shipped rule never answers in place of a command that knows more")
+    void rulesDoNotShadowRicherCommands() {
+        // A prefixed rule is matched before the command parser, so "!who" as a rule replaces the
+        // !who command entirely. That is acceptable for a one-figure verb, where the rule and the
+        // command carry the same information, but not for a verb whose command answers with more:
+        // !who lists the roster and !whoami reports the memory dossier, and a canned line hid both.
+        // This test names the verbs whose command is the better answer.
+        List<String> richer = List.of("who", "whoami", "history", "facts", "memories", "fact",
+            "triggers", "activity", "macros", "help", "cmds", "about", "summary");
+        List<String> shadowed = new ArrayList<>();
+        for (TriggerRule rule : TriggerRule.preconfigured()) {
+            String pattern = rule.pattern().strip();
+            if (!pattern.startsWith("!")) continue;
+            // Strip the prefix: without this the lookup is for "!who", which is no canonical name,
+            // so the check silently passed for every rule.
+            String verb = pattern.substring(1).split("\\s+", 2)[0].toLowerCase(Locale.ROOT);
+            String canonical = CommandCatalog.canonical(verb).orElse(null);
+            if (canonical != null && richer.contains(canonical)) {
+                shadowed.add(pattern + " replaces !" + canonical);
+            }
+        }
+        assertTrue(shadowed.isEmpty(), "these rules hide a richer command: " + shadowed);
+    }
 }

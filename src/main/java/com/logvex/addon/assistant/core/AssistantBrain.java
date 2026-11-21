@@ -5,6 +5,7 @@ import com.logvex.addon.stats.StatusCommand;
 import com.logvex.addon.stats.StatusCommands;
 import com.logvex.addon.stats.StatusTemplate;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
@@ -166,6 +167,15 @@ public final class AssistantBrain {
     /** Refusal for a command that reads the operator's own data, said to a non-local speaker. */
     private static final String NOT_LOCAL =
         "That command reads my owner's own notes, so only they can use it.";
+
+    /**
+     * The most rows a list card shows before summarising the rest in the footer.
+     *
+     * <p>A card is capped at 12 delivered lines, so a list longer than this could never be shown in
+     * full anyway. Bounding it here rather than letting the renderer cut means the footer can say
+     * how many are hidden, instead of a page ending on an unexplained "+n more".
+     */
+    private static final int MAX_LIST_ROWS = 8;
 
     /** The macro table, so {@code !macros} and {@code !macrohelp} can describe it. */
     private MacroSet macros = MacroSet.EMPTY;
@@ -604,10 +614,16 @@ public final class AssistantBrain {
         // A local answer is a notification; a chat answer is one line of ordinary chat. Both are
         // non-remembered: a status readout is not part of the conversation.
         Delivery delivery = value.localOnly() ? Delivery.NOTIFY : Delivery.CHAT;
+        // Every figure answers as a card, built from the operator's own template. The template is
+        // still what decides the wording and order, so a customised answer keeps its customisation;
+        // only the layout is imposed. The one-line text stays as the fallback and as what a caller
+        // that can show only one line sends.
+        ReplyFormat.Embed embed = ReplyFormat.fromTemplate(
+            config.commandPrefix() + value.command(), value.text());
         // Only the overview is mirrored to the admin webhook: a card per figure would flood the
         // channel the moment someone polls two commands in a row.
         String card = "status".equals(value.command()) ? value.command() : null;
-        return new Decision(delivery, value.text(), null, false, false, true, false, null, null,
+        return new Decision(delivery, value.text(), null, false, false, true, false, embed, null,
             card);
     }
 
@@ -902,7 +918,9 @@ public final class AssistantBrain {
         if (value == null) {
             return reply(config.memoryReplyMode(), "I do not know " + key + ".", false);
         }
-        return reply(config.memoryReplyMode(), key + " = " + value, false);
+        return embedReply(config.memoryReplyMode(), key + " = " + value,
+            new ReplyFormat.Embed(config.commandPrefix() + "fact",
+                List.of(new ReplyFormat.Field(key, value)), "", ReplyFormat.Style.BOX), false);
     }
 
     private Decision commandFacts(AssistantConfig config) {
@@ -910,25 +928,34 @@ public final class AssistantBrain {
         if (facts.isEmpty()) {
             return reply(config.memoryReplyMode(), "I have no stored facts.", false);
         }
-        StringBuilder sb = new StringBuilder("I know " + facts.size() + " fact"
-            + (facts.size() == 1 ? "" : "s") + ": ");
+        List<ReplyFormat.Field> rows = new ArrayList<>(facts.size());
         int shown = 0;
         for (AssistantMemory.Fact fact : facts) {
-            if (shown == 8) {
-                sb.append(", ...");
+            if (shown == MAX_LIST_ROWS) {
                 break;
             }
-            if (shown > 0) sb.append(", ");
-            sb.append(fact.key()).append('=').append(clamp(fact.value(), 24));
+            rows.add(new ReplyFormat.Field(fact.key(), clamp(fact.value(), 24)));
             shown++;
         }
-        return reply(config.memoryReplyMode(), sb.toString(), false);
+        String footer = facts.size() > shown
+            ? "+" + (facts.size() - shown) + " more"
+            : "";
+        return embedReply(config.memoryReplyMode(),
+            new ReplyFormat.Embed("Stored facts", rows, footer, ReplyFormat.Style.BOX), false);
     }
 
     private Decision commandMemories(String sender, AssistantConfig config) {
-        String summary = memory.facts().size() + " facts, " + memory.knownPlayers().size() + " players, "
-            + memory.historySize() + " remembered lines";
-        return reply(config.memoryReplyMode(), summary, false);
+        List<ReplyFormat.Field> rows = new ArrayList<>(4);
+        rows.add(new ReplyFormat.Field("Facts", String.valueOf(memory.facts().size())));
+        rows.add(new ReplyFormat.Field("Players", String.valueOf(memory.knownPlayers().size())));
+        rows.add(new ReplyFormat.Field("Remembered lines",
+            String.valueOf(memory.historySize())));
+        if (sender != null && !sender.isBlank()) {
+            rows.add(new ReplyFormat.Field("Your facts",
+                String.valueOf(memory.playerFacts(sender).size())));
+        }
+        return embedReply(config.memoryReplyMode(),
+            new ReplyFormat.Embed("What I remember", rows, "", ReplyFormat.Style.BOX), false);
     }
 
     private Decision commandForgetMe(String sender, AssistantConfig config, long now) {
@@ -944,24 +971,42 @@ public final class AssistantBrain {
     }
 
     private Decision commandHistory(AssistantConfig config) {
-        List<AssistantMemory.ConversationEntry> recent = memory.history(5);
+        List<AssistantMemory.ConversationEntry> recent = memory.history(MAX_LIST_ROWS);
         if (recent.isEmpty()) {
             return reply(config.memoryReplyMode(), "Nothing remembered yet.", false);
         }
-        StringBuilder sb = new StringBuilder("Recent: ");
-        for (int i = 0; i < recent.size(); i++) {
-            if (i > 0) sb.append(" | ");
-            sb.append(clamp(recent.get(i).question(), 30));
+        List<ReplyFormat.Field> rows = new ArrayList<>(recent.size());
+        for (AssistantMemory.ConversationEntry entry : recent) {
+            rows.add(new ReplyFormat.Field(clamp(entry.question(), 28),
+                clamp(entry.answer(), 28)));
         }
-        return reply(config.memoryReplyMode(), sb.toString(), false);
+        String footer = memory.historySize() > recent.size()
+            ? "+" + (memory.historySize() - recent.size()) + " older"
+            : "";
+        return embedReply(config.memoryReplyMode(),
+            new ReplyFormat.Embed("Recent exchanges", rows, footer, ReplyFormat.Style.BOX), false);
     }
 
     private Decision commandWhoAmI(String sender, AssistantConfig config) {
         String name = sender == null || sender.isBlank() ? "someone" : sender;
         List<AssistantMemory.Fact> perPlayer = memory.playerFacts(name);
-        return reply(config.memoryReplyMode(),
-            "You are " + name + (perPlayer.isEmpty() ? "." : ", and I know " + perPlayer.size()
-                + " thing" + (perPlayer.size() == 1 ? "" : "s") + " about you."), false);
+        // history(0) is empty by contract, so ask for everything and count this player's share.
+        long asked = memory.allHistory().stream()
+            .filter(entry -> entry.player() != null && entry.player().equalsIgnoreCase(name))
+            .count();
+        List<ReplyFormat.Field> rows = new ArrayList<>(3);
+        rows.add(new ReplyFormat.Field("Player", name));
+        rows.add(new ReplyFormat.Field("Your facts", String.valueOf(perPlayer.size())));
+        rows.add(new ReplyFormat.Field("Asked me", asked + (asked == 1 ? " time" : " times")));
+        String text = "You are " + name + (perPlayer.isEmpty() ? "."
+            : ", and I know " + perPlayer.size() + " thing"
+                + (perPlayer.size() == 1 ? "" : "s") + " about you.");
+        return embedReply(config.memoryReplyMode(), text,
+            new ReplyFormat.Embed("About you", rows,
+                perPlayer.isEmpty()
+                    ? config.commandPrefix() + "remember " + name + " <key> = <value> to add one"
+                    : "",
+                ReplyFormat.Style.BOX), false);
     }
 
     private Decision reply(TriggerRule.ReplyMode mode, String text, boolean remember) {
@@ -1354,6 +1399,18 @@ public final class AssistantBrain {
         // can only show one line still get every field. The chat path renders the block instead.
         return new Decision(deliveryFor(mode), ReplyFormat.oneLine(embed, Integer.MAX_VALUE), null,
             false, remember, true, false, embed);
+    }
+
+    /**
+     * A card with a hand-written one-line fallback.
+     *
+     * <p>{@link #embedReply} derives the fallback by flattening the block, which reads as
+     * {@code "Title | label value"} — fine for a table, poor for an answer that has a natural
+     * sentence of its own. Those callers pass it here so a single-line consumer still gets prose.
+     */
+    private Decision embedReply(TriggerRule.ReplyMode mode, String text, ReplyFormat.Embed embed,
+                                boolean remember) {
+        return new Decision(deliveryFor(mode), text, null, false, remember, true, false, embed);
     }
 
     private static Delivery deliveryFor(TriggerRule.ReplyMode mode) {

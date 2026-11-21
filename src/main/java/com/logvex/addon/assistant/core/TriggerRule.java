@@ -613,22 +613,23 @@ public record TriggerRule(
         out.add(embedRule("!tps", "TPS {tps} {tpsbar}, MSPT {mspt} ms, Status {verdict}"));
         out.add(embedRule("!status",
             "Server {server}, Ping {ping}, TPS {tps}, FPS {fps}, Players {playercount}"));
-        out.add(commandRule("!ping", "Ping {ping}, {verdict}"));
-        out.add(commandRule("!players", "Online {playercount} of {maxplayers}"));
-        out.add(commandRule("!uptime", "Session {uptime}"));
-        out.add(commandRule("!session", "Session {uptime}"));
-        out.add(commandRule("!fps", "FPS {fps}"));
-        out.add(commandRule("!ram", "Heap {memoryused} of {memorymax} MB, {memorypercent}%"));
+        out.add(embedRule("!ping", "Ping {ping}, Verdict {verdict}"));
+        out.add(embedRule("!players", "Online {playercount}, Max {maxplayers}"));
+        out.add(embedRule("!uptime", "Session {uptime}, Server {serveruptime}"));
+        out.add(embedRule("!session", "Session {uptime}, Server {serveruptime}"));
+        out.add(embedRule("!fps", "FPS {fps}, Ping {ping}"));
+        out.add(embedRule("!ram", "Used {memoryused} MB, Max {memorymax} MB, Load {memorypercent}%"));
         out.add(embedRule("!memory",
             "Used {memoryused} MB, Max {memorymax} MB, Load {memorypercent}%, Bar {memorybar}"));
         out.add(embedRule("!world", "Dimension {dimension}, Biome {biome}"));
         out.add(embedRule("!time", "Time {worldtime}, Day {day}"));
-        out.add(commandRule("!day", "Day {day}"));
-        out.add(commandRule("!weather", "Weather {weather}"));
+        out.add(embedRule("!day", "Day {day}, Time {worldtime}"));
+        out.add(embedRule("!weather", "Weather {weather}, Dimension {dimension}"));
         // !gamemode, !health and !speed are not triggers: each is a status command whose figures
         // describe the player, so it is gated to the local speaker. A trigger of the same name would
         // be matched first and would shadow that gate, so the command keeps the verb.
-        out.add(commandRule("!who", "Online {playercount} of {maxplayers}"));
+        // !who is deliberately absent: the command lists the visible roster, which is strictly more
+        // than a count, and a rule here would shadow it.
 
         // ---------------------------------------------------------------- the rest of the command verbs
         //
@@ -644,19 +645,20 @@ public record TriggerRule(
         //     {memoryused}/{memorymax} and {memory} is left to the fact questions;
         //   * {uptime} is this session while {serveruptime} is the server's, so "server uptime"
         //     says the latter.
-        out.add(commandRule("!biome", "Biome {biome}"));
-        out.add(commandRule("!dimension", "Dimension {dimension}"));
-        out.add(commandRule("!date", "Date {date}"));
-        out.add(commandRule("!timestamp", "Clock {time}"));
-        out.add(commandRule("!difficulty", "Difficulty {difficulty}"));
-        out.add(commandRule("!verdict", "Server status {verdict}"));
-        out.add(commandRule("!server", "Server {server}"));
-        out.add(commandRule("!whoami", "You are {player}"));
+        out.add(embedRule("!biome", "Biome {biome}, Dimension {dimension}"));
+        out.add(embedRule("!dimension", "Dimension {dimension}, Biome {biome}"));
+        out.add(embedRule("!date", "Date {date}, Clock {time}"));
+        out.add(embedRule("!timestamp", "Clock {time}, Date {date}"));
+        out.add(embedRule("!difficulty", "Difficulty {difficulty}, Verdict {verdict}"));
+        out.add(embedRule("!verdict", "Status {verdict}, TPS {tps}"));
+        out.add(embedRule("!server", "Server {server}, Players {playercount}"));
+        // !whoami is deliberately absent: the command answers from memory, naming how many facts it
+        // holds and how often the speaker has asked, which a canned line cannot.
         out.add(commandRule("!serverinfo",
             "Server {server}, Players {players} of {maxplayers}, Uptime {uptime}"));
         out.add(commandRule("!overview",
             "Server {server}, TPS {tps}, Ping {ping}, FPS {fps}, Players {playercount}"));
-        out.add(commandRule("!welcome", "Welcome to the server, {player}!"));
+        out.add(embedRule("!welcome", "Welcome {player}, Server {server}"));
         out.add(commandRule("!clientinfo",
             "FPS {fps}, Heap {memoryused} of {memorymax} MB, Ping {ping}"));
 
@@ -664,10 +666,10 @@ public record TriggerRule(
         // refused rather than told how this player is doing. Verbs that a status command already
         // owns - !coords, !armor, !held - are deliberately absent: the command answers them and is
         // already gated, so a trigger would only shadow that gate to no benefit.
-        out.add(commandRule("!facing", "Facing {facing}"));
+        out.add(embedRule("!facing", "Facing {facing}, Biome {biome}"));
         out.add(commandRule("!hunger", "Hunger {hunger}, Saturation {saturation}"));
         out.add(commandRule("!vitals", "Health {health}, Hunger {hunger}, Absorption {absorption}"));
-        out.add(commandRule("!offhand", "Offhand {offhand}"));
+        out.add(embedRule("!offhand", "Offhand {offhand}, Facing {facing}"));
         out.add(commandRule("!environment", "Biome {biome}, Facing {facing}"));
 
         // The command list is generated from the live tables rather than typed out here. Hand-written

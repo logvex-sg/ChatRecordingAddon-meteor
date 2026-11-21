@@ -146,6 +146,43 @@ public final class ReplyFormat {
     }
 
     /**
+     * Builds a card from a rendered status template such as {@code "TPS: 19.9 | MSPT: 12"}.
+     *
+     * <p>Status answers are user-editable templates, so the card cannot be built from a fixed list
+     * of fields — it has to follow whatever the operator wrote. The template's own separators carry
+     * the structure: {@code |} splits fields and the first {@code :} in a field splits its label
+     * from its value. A segment with no colon keeps its text as an unlabelled value, so a template
+     * like {@code "XYZ: 1, 2, 3 | overworld | plains"} still renders every part instead of
+     * silently dropping the ones without labels.
+     *
+     * @param title the card heading, usually the command name
+     * @param text  the already-rendered template output
+     * @return the card, or null when the text has no content to lay out
+     */
+    public static Embed fromTemplate(String title, String text) {
+        if (text == null || text.isBlank()) return null;
+        List<Field> fields = new ArrayList<>();
+        for (String segment : text.split("\\s*\\|\\s*")) {
+            String part = segment.strip();
+            if (part.isEmpty()) continue;
+            int colon = part.indexOf(':');
+            // A colon in the first position is not a label separator ("10:30"), and a value that
+            // is only punctuation would render as an empty row.
+            if (colon > 0) {
+                String label = part.substring(0, colon).strip();
+                String value = part.substring(colon + 1).strip();
+                if (!value.isEmpty()) {
+                    fields.add(new Field(label, value));
+                    continue;
+                }
+            }
+            fields.add(new Field("", part));
+        }
+        if (fields.isEmpty()) return null;
+        return new Embed(title == null ? "" : title, fields, "", Style.BOX);
+    }
+
+    /**
      * Renders at most {@code maxLines} lines, keeping the block whole.
      *
      * <p>Cutting a rendered list with {@code subList} is the obvious approach and it is wrong: a box

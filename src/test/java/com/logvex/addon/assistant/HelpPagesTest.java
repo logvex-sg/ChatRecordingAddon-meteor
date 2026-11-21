@@ -38,7 +38,10 @@ class HelpPagesTest {
     private static Set<String> advertised() {
         Set<String> out = new LinkedHashSet<>();
         for (TriggerRule rule : pages()) {
-            for (String word : rule.reply().split("[\\s,]+")) {
+            // Split on the middot and the box characters the pages are rendered with as well as
+            // whitespace and commas: a page reads "Server: !tps · !ping", and a verb glued to the
+            // separator would otherwise go unseen by this parser and look like a missing command.
+            for (String word : rule.reply().split("[\\s,·│┌┐└┘─]+")) {
                 if (word.startsWith("!")) out.add(word.toLowerCase(Locale.ROOT));
             }
         }
@@ -179,6 +182,23 @@ class HelpPagesTest {
         for (HelpPages.Page page : pages) {
             assertTrue(page.text().contains("#"), page.text() + " lost the prefix");
             assertFalse(page.text().contains("!tps"), page.text() + " kept the default prefix");
+        }
+    }
+
+    @Test
+    @DisplayName("no page loses its verbs to the card line cap")
+    void pagesSurviveTheCardCap() {
+        // The delivered card is capped at twelve lines. A page whose verbs each claimed a row used
+        // to overflow that cap, and the row the cap dropped was the "Next" link, so the reader was
+        // stranded on page one with no sign that anything was missing. Rendering the page as it is
+        // actually delivered is the only way to see that.
+        for (TriggerRule rule : pages()) {
+            List<String> lines = ReplyFormat.render(
+                rule.toEmbed(rule.reply(), rule.pattern()), 52);
+            assertTrue(lines.size() <= 12, rule.pattern() + " renders " + lines.size() + " lines");
+            String rendered = String.join("\n", lines);
+            assertFalse(rendered.matches("(?s).*\\+\\d+ more.*"),
+                rule.pattern() + " dropped a row: " + rendered);
         }
     }
 }
