@@ -670,28 +670,14 @@ public record TriggerRule(
         out.add(commandRule("!offhand", "Offhand {offhand}"));
         out.add(commandRule("!environment", "Biome {biome}, Facing {facing}"));
 
-        // The command list, split so each page fits one chat message. Every name here is answered by
-        // a shipped rule or a status command, which a guard test enforces: a help page that
-        // advertises a verb nothing answers is worse than no help page.
-        out.add(commandRule("!cmds1",
-            "Server: !tps, !ping, !players, !uptime, !server, !verdict, !status, !who"));
-        out.add(commandRule("!cmds2",
-            "World: !world, !time, !day, !weather, !biome, !dimension, !difficulty, !serverinfo"));
-        out.add(commandRule("!cmds3",
-            "Client: !fps, !ram, !memory, !session, !clientinfo, !overview, !timestamp, !date"));
-        out.add(commandRule("!cmds4",
-            "You: !whoami, !welcome, !vitals, !hunger, !facing, !offhand, !environment"));
-        out.add(commandRule("!cmds5",
-            "Commands: !health, !speed, !gamemode, !coords, !armor, !held, !level, !absorption"));
-        out.add(commandRule("!cmds6",
-            "More: !location, !target, !effects, !network, !cmds1, !cmds2, !cmds3, !cmds4, "
-                + "!cmds5, !cmds7"));
-        // The macro page names only the two commands, never a shortcut: shortcuts are the user's to
-        // rename, disable or delete, so a printed example would eventually advertise a dead word.
-        // !macros lists the live set instead.
-        out.add(commandRule("!cmds7",
-            "Macros: !macros lists your shortcuts, Help: !macro <name> explains one, "
-                + "Use: a shortcut you type sends the command it stands for"));
+        // The command list is generated from the live tables rather than typed out here. Hand-written
+        // pages drift: !macros shipped and appeared on none of them. HelpPages keeps the grouping
+        // curated and appends anything ungrouped, so a new command cannot be silently unlisted.
+        java.util.List<String> triggerVerbs = new java.util.ArrayList<>();
+        for (TriggerRule rule : out) {
+            if (rule.pattern().startsWith("!")) triggerVerbs.add(rule.pattern());
+        }
+        out.addAll(HelpPages.rules("!", 200, triggerVerbs));
 
         return java.util.List.copyOf(out);
     }

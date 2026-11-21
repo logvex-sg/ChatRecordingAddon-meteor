@@ -377,9 +377,9 @@ single line each, so the whole feature set is editable from the settings list, t
 pattern;sender=;reply=;mode=private;cooldown=3000;limit=0;sound=false;remember=false;enabled=true;aliases=;pool=;whisper=msg;embed=false
 ```
 
-A fresh install ships **102 preconfigured rules** with 76 extra aliases, all enabled, all at the
+A fresh install ships **106 preconfigured rules** with 76 extra aliases, all enabled, all at the
 3000 ms cooldown, all matched on whole words, and all answered **privately to whoever asked**.
-That is 178 phrases answering out of the box — no setup step. They cover greetings, thanks,
+That is 182 phrases answering out of the box — no setup step. They cover greetings, thanks,
 farewells, `gg`/`wp`, small talk, the server-figure questions (`what is the tps`, `what is my ping`,
 `is the server lagging`, `how many players`), the player-figure questions (`where am i`,
 `what is my health`, `what is my armour`, `what is my gamemode`) and the command-shaped set
@@ -391,6 +391,39 @@ Every shipped phrase is **reachable**: no rule's phrase can be answered by an ea
 first-match-wins never has to break a tie and the reply never depends on list order. Two tests
 enforce this (`earlierRulesDoNotSwallowLaterOnes`, `everyShippedRuleMatchesItsOwnPattern`), which
 is why near-duplicate phrasings are stored as aliases of one rule rather than as two rules.
+
+### The command pages generate themselves
+
+`!cmds` prints an index of every page, and `!cmds1`, `!cmds2`... list the commands. Both are
+**built at load time** from the live command tables (`HelpPages`), not typed out in the source.
+That distinction is not cosmetic: the pages used to be hand-written, and `!macros` shipped without
+appearing on any of them because nobody remembered to edit the text.
+
+The grouping — `!tps` next to `!ping`, `!biome` next to `!weather` — is still written by hand,
+because no rule infers that. What is automatic is completeness: anything the groups do not claim
+is appended to a catch-all page headed by the letters it spans (`A-G`, `H-P`). Adding a command
+therefore updates the pages on its own, with no edit to the help text.
+
+```
+┌─ !cmds ──────────────────────────────────┐
+│ Server:   !cmds1                         │
+│ World:    !cmds2                         │
+│ Client:   !cmds3                         │
+│ You:      !cmds4                         │
+│ Commands: !cmds5                         │
+│ More:     !cmds6                         │
+│ A-G:      !cmds7                         │
+│ H-P:      !cmds8                         │
+│ R-T:      !cmds9                         │
+└──────────────────────────────────────────┘
+```
+
+Each page ends by naming the next one, so a reader who lands on any page can walk the rest. Two
+tests keep this honest: one asserts every command the assistant answers appears on some page, and
+another asserts no page advertises a verb nothing answers.
+
+`!help` is separate and always was generated: it reads the permission-filtered catalogue and shows
+only the commands *that caller* may run, six to a page, with `!help 2` for the next page.
 
 The cooldown is **per player**. A rule paces each speaker separately, so a busy chat cannot use up
 the rule for everyone else: when three players ask `!tps` at once, all three get an answer. The
