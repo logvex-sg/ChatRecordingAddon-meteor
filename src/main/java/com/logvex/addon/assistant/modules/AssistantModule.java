@@ -1380,12 +1380,11 @@ public class AssistantModule extends AutomationModule {
     }
 
     private List<TriggerRule> parseRules() {
-        List<TriggerRule> out = new ArrayList<>();
-        for (String encoded : rules.get()) {
-            TriggerRule rule = TriggerRule.decode(encoded);
-            if (rule != null) out.add(rule);
-        }
-        return out;
+        // loadSaved is the one load path: it merges the shipped rules into the saved list, because
+        // the list is persisted and an install saved before a command shipped would never gain it.
+        // Merging at parse time leaves the setting as the user left it and cannot recurse through
+        // its onChanged.
+        return TriggerRule.loadSaved(rules.get());
     }
 
     private void flushMemory() {

@@ -249,8 +249,8 @@ public class ChatLoggerModule extends AddonModule {
 
     @Override
     public void onActivate() {
-        service.attach(new LogStorageService(storagePath()));
-        service.setRecording(recording.get());
+        attachStorage();
+        service.setRecording(recording.get() && saveLogs.get());
         service.setRecordedTypes(categories());
         service.setDuplicateWindow(duplicateDetection.get() ? duplicateWindow.get() : 0);
         if (service.session() == null) service.startSession(currentServer(), System.currentTimeMillis());
@@ -268,10 +268,28 @@ public class ChatLoggerModule extends AddonModule {
         });
     }
 
+    /**
+     * Points the runtime at the configured folder, reusing the live service when the path is
+     * unchanged.
+     *
+     * <p>A fresh {@link LogStorageService} owns its own I/O thread, so building one on every
+     * activation leaked a thread per toggle. The previous one is also shut down when the folder
+     * really does change, so its queued writes are drained instead of abandoned.
+     */
+    private void attachStorage() {
+        Path target = storagePath();
+        LogStorageService existing = service.storage();
+        if (existing != null && existing.root().equals(target)) return;
+        if (existing != null) existing.shutdown();
+        service.attach(new LogStorageService(target));
+    }
+
     @Override
     public void onDeactivate() {
         service.removeListener(reportListener);
-        service.setRecording(false);
+        // Recording is left as the settings describe rather than forced off: the recorder is
+        // subscribed for the addon's whole lifetime, so turning this module off must not silently
+        // stop the archive that the other modules read from.
         LogStorageService storage = service.storage();
         if (storage != null) storage.flushAsync(null);
     }
@@ -416,7 +434,6 @@ public class ChatLoggerModule extends AddonModule {
 
     /** Mirrors the live settings into the runtime. Safe to call before the module is active. */
     private void syncRuntime() {
-        if (!isActive()) return;
         service.setRecording(recording.get() && saveLogs.get());
         service.setRecordedTypes(categories());
         service.setDuplicateWindow(duplicateDetection.get() ? duplicateWindow.get() : 0);
@@ -424,7 +441,7 @@ public class ChatLoggerModule extends AddonModule {
         if (storage == null) return;
         storage.setCompressionLevel(compressionLevel.get());
         storage.setFlushThreshold(flushThreshold.get());
-        if (autoCleanup.get()) runCleanup();
+        if (isActive() && autoCleanup.get()) runCleanup();
     }
 
     /** Re-reads the settings that the runtime mirrors and applies retention. */

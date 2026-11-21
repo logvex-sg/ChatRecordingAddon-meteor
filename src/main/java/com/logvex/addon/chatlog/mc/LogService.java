@@ -88,7 +88,8 @@ public final class LogService {
 
     private volatile LogStorageService storage;
     private volatile LogSession session;
-    private volatile boolean recording;
+    /** On from the start: an addon called "chat recording" must record before anything is toggled. */
+    private volatile boolean recording = true;
     private volatile Set<MessageType> recordedTypes = EnumSet.allOf(MessageType.class);
     private volatile DuplicateDetector duplicates = new DuplicateDetector(0);
     private volatile List<KeywordRule> keywordRules = List.of();
@@ -109,6 +110,24 @@ public final class LogService {
 
     public void attach(LogStorageService storage) {
         this.storage = storage;
+    }
+
+    /**
+     * Attaches disk storage at the default location and loads it.
+     *
+     * <p>Storage used to be attached only from {@code ChatLoggerModule.onActivate}, so a user who
+     * never enabled that module recorded nothing to disk at all: the entries reached the live buffer
+     * and then vanished on quit. The recorder is subscribed unconditionally, so the storage it feeds
+     * has to be too.
+     *
+     * @return the attached service, so a caller can load extra state once it is ready
+     */
+    public LogStorageService attachDefaultStorage(java.nio.file.Path root) {
+        if (storage != null) return storage;
+        LogStorageService attached = new LogStorageService(root);
+        storage = attached;
+        attached.loadAsync(null);
+        return attached;
     }
 
     public LogStorageService storage() {
@@ -291,6 +310,17 @@ public final class LogService {
             return;
         }
         current.flushAsync(onDone);
+    }
+
+    /**
+     * Writes everything buffered and waits for it.
+     *
+     * <p>Called from the JVM shutdown hook, where an async flush would be abandoned when the process
+     * exits. Bounded so a stalled disk cannot hang the shutdown.
+     */
+    public void flush() {
+        LogStorageService current = storage;
+        if (current != null) current.flushBlocking();
     }
 
     // ------------------------------------------------------------------ recording

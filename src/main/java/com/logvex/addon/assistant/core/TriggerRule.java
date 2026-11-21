@@ -487,6 +487,57 @@ public record TriggerRule(
     }
 
     /**
+     * Fills in shipped rules a saved list does not have.
+     *
+     * <p>The rule table is a persisted setting, so an install that saved its rules before a command
+     * existed kept the old list for ever and the new command was unreachable. That is what a player
+     * sees as "you removed {@code !cmds}": the command is in the build, but their config never
+     * gained it. Merging on load is what makes a newly shipped command appear for an existing
+     * install.
+     *
+     * <p>Two things are deliberately not done. A rule the user wrote is never rewritten, and a
+     * shipped rule they deleted is not resurrected: only patterns absent from the saved list are
+     * added, so a deletion is still a deletion. Disabling a shipped rule in place also works,
+     * because a disabled rule is still present and so is never re-added.
+     *
+     * @param saved the encoded rules as stored, in order
+     * @return {@code saved} followed by the shipped rules whose pattern it lacks
+     */
+    public static java.util.List<String> mergeWithPreconfigured(java.util.List<String> saved) {
+        java.util.List<String> out = new java.util.ArrayList<>(saved == null ? java.util.List.of() : saved);
+
+        java.util.Set<String> have = new java.util.HashSet<>();
+        for (String line : out) {
+            TriggerRule rule = decode(line);
+            if (rule != null) have.add(rule.pattern().strip().toLowerCase(Locale.ROOT));
+        }
+
+        for (TriggerRule shipped : preconfigured()) {
+            if (have.add(shipped.pattern().strip().toLowerCase(Locale.ROOT))) {
+                out.add(shipped.encode());
+            }
+        }
+        return java.util.List.copyOf(out);
+    }
+
+    /**
+     * The rules to run for a saved list: the saved rules with the shipped ones filled in.
+     *
+     * <p>This is the single load path, so a caller cannot accidentally read the saved setting
+     * directly and skip the merge. Undecodable lines are dropped here rather than at each caller.
+     *
+     * @param saved the encoded rules as stored, in order
+     */
+    public static java.util.List<TriggerRule> loadSaved(java.util.List<String> saved) {
+        java.util.List<TriggerRule> out = new java.util.ArrayList<>();
+        for (String encoded : mergeWithPreconfigured(saved)) {
+            TriggerRule rule = decode(encoded);
+            if (rule != null) out.add(rule);
+        }
+        return java.util.List.copyOf(out);
+    }
+
+    /**
      * The preconfigured trigger table shipped on a fresh install.
      *
      * <p>Every entry whispers its answer to whoever asked, matches whole words, and carries
