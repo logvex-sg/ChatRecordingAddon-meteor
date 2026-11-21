@@ -276,6 +276,15 @@ class TriggerPackTest {
         for (String command : com.logvex.addon.stats.StatusCommand.names()) {
             answered.add("!" + command.toLowerCase(java.util.Locale.ROOT));
         }
+        // The catalog is the other half of the vocabulary. Without it the pages could not mention
+        // !macros or !macro, which are real commands but not status commands.
+        for (String command : com.logvex.addon.assistant.core.CommandCatalog.names()) {
+            answered.add("!" + command.toLowerCase(java.util.Locale.ROOT));
+        }
+        for (java.util.Map.Entry<String, String> alias
+            : com.logvex.addon.assistant.core.CommandCatalog.aliases().entrySet()) {
+            answered.add("!" + alias.getKey().toLowerCase(java.util.Locale.ROOT));
+        }
 
         List<String> advertised = new ArrayList<>();
         for (TriggerRule rule : TriggerRule.preconfigured()) {

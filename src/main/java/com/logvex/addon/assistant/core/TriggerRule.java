@@ -685,7 +685,13 @@ public record TriggerRule(
             "Commands: !health, !speed, !gamemode, !coords, !armor, !held, !level, !absorption"));
         out.add(commandRule("!cmds6",
             "More: !location, !target, !effects, !network, !cmds1, !cmds2, !cmds3, !cmds4, "
-                + "!cmds5"));
+                + "!cmds5, !cmds7"));
+        // The macro page names only the two commands, never a shortcut: shortcuts are the user's to
+        // rename, disable or delete, so a printed example would eventually advertise a dead word.
+        // !macros lists the live set instead.
+        out.add(commandRule("!cmds7",
+            "Macros: !macros lists your shortcuts, Help: !macro <name> explains one, "
+                + "Use: a shortcut you type sends the command it stands for"));
 
         return java.util.List.copyOf(out);
     }

@@ -777,7 +777,26 @@ loop.
 | Command | Effect |
 | --- | --- |
 | `!macros` | List the enabled macros as a block, one row each. |
-| `!macrohelp <name>` | One macro's syntax, the command it sends and its aliases. |
+| `!macro <name>` | One macro's syntax, the command it sends and its aliases. |
+| `!macrohelp <name>` | The same answer, under the longer spelling. |
+
+`!macro` and `!macrohelp` are the same command, so both of these show `!home`:
+
+```
+!macro home
+!macrohelp home
+```
+
+The reply is a block, not a sentence:
+
+```
+┌─ Macro !home ──────────────────────────────┐
+│ Usage   !home <name>                       │
+│ Sends   /home {name}                       │
+│ About   Teleport to one of your homes.     │
+│ Enabled yes                                │
+└────────────────────────────────────────────┘
+```
 
 `macro-feedback` shows a local note when a macro runs or is refused. `echo-command` shows the
 expanded command in chat as if you had typed it; turn it off to send it silently.
