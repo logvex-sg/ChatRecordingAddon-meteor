@@ -1,0 +1,310 @@
+# Log Client dictionary
+
+Generated from the source by `tools/build_datasets.py`. Do not edit by hand.
+
+## Concepts (6)
+
+- **companion access token** — The shared secret the companion server requires. Sent as an Authorization Bearer header or a token query parameter. The server binds to loopback by default and refuses a remote bind without an explicit opt-in.
+- **webhook relay** — One-way delivery of chat events to Discord as rich embeds. Opt-in: nothing is sent until a URL is configured. A failed delivery is retried for transient errors (network, 5xx, 429) and dropped for a 4xx, because a rejected payload will not become valid on a retry.
+- **embed character budget** — Discord rejects an embed whose visible text exceeds 6000 characters across all its parts. Each part is clipped to its own limit and to the remaining total budget as it is added, so the sum cannot exceed the limit.
+- **leading slash rule** — The companion chat endpoint forwards a message starting with '/' to the command path, which runs it as the player. Any external input must have leading slashes stripped first, or it becomes remote command execution.
+- **chat event field names** — The companion event stream names a chat line's text 'content', following ChatEntry.toMap(). The snapshot names the same field 'message', following ChatEntryView. A consumer must accept both.
+- **keyword webhook routing** — A keyword rule can name its own webhook URL. Precedence is the chat-logger keyword URL, then the relay's keywords= route, then the shared webhook. A route on its own is enough; a shared URL is not required.
+
+## Modules (22)
+
+- **auto-bot** — Autonomous task bot: gather, craft, build, farm and more. — _Log Client_
+- **chat-digest** — Summarises chat activity on demand and on a timer. — _Log Client_
+- **chat-filter** — Suppresses chat noise with ordered hide/allow rules. — _Log Client_
+- **chat-logger** — Records chat to disk for search, export and stats. — _Log Client_
+- **chat-monitor** — Live chat feed with search, filters and highlighting. — _Log Client_
+- **chat-timestamps** — Prefixes incoming chat with the time it arrived. — _Log Client_
+- **companion** — Serve a small web dashboard so a phone or another machine can watch and control this client. — _Log Client_
+- **keyword-alerts** — Alerts on configurable keywords with sound and webhook options. — _Log Client_
+- **mention-alerts** — Alerts when your name or a watched name is used in chat. — _Log Client_
+- **notifications** — Central notification stream: chat, sound and history for every Log Client feature. — _Log Client_
+- **player-activity** — Tracks and displays per-player chat activity. — _Log Client_
+- **player-identity** — Tracks observed player name changes and a per-account watchlist. — _Log Client_
+- **player-notes** — Keeps notes about players and links them to observed activity. — _Log Client_
+- **repeat-collapse** — Hides repeated identical chat lines and reports how many times one repeated. — _Log Client_
+- **schematic-dropper** — Automated schematic material dropping. — _Log Client_
+- **session-history** — Keeps a browsable history of past recording sessions. — _Log Client_
+- **session-stats** — Collects session statistics for the stats HUD and dashboard. — _Log Client_
+- **session-timeline** — Chronological record of joins, leaves, deaths and session events. — _Log Client_
+- **updates** — Checks GitHub Releases for a newer build and downloads it on request. — _Log Client_
+- **webhook-monitor** — Monitors webhook delivery health, queue depth and failure reasons. — _Log Client_
+- **webhook-relay** — One webhook, rich embed output, and cards for sessions, renames and watchlist activity. — _Log Client_
+- **world-intelligence** — Remembers discovered locations, biomes, resources and chunks, per world. — _Log Client_
+
+## Settings (206)
+
+- **auto-bot.auto-start** — Start working as soon as an objective is added. — _default `true`_
+- **auto-bot.pause-on-disconnect** — Pause the bot when the world changes or the connection drops. — _default `true`_
+- **auto-bot.task-timeout** — Seconds a single task may run before it is failed. — _default `120`_
+- **auto-bot.retry-limit** — How many times a failing step is retried before the task fails. — _default `3`_
+- **auto-bot.gather-radius** — How far the bot searches for blocks to gather. — _default `32`_
+- **auto-bot.max-scan-results** — Upper bound on blocks returned by one search. — _default `512`_
+- **auto-bot.min-tool-durability** — Durability below which a tool is reported as worn. — _default `10`_
+- **auto-bot.container-radius** — How far the bot searches for containers to store items in. — _default `16`_
+- **auto-bot.arrival-tolerance** — How close counts as arrived, in blocks. — _default `2.0`_
+- **auto-bot.max-travel-distance** — Longest route the bot will attempt, in blocks. — _default `256`_
+- **auto-bot.walk-on-water** — Allow the path manager to cross water. Ignored without Baritone or Voyager. — _default `false`_
+- **auto-bot.walk-on-lava** — Allow the path manager to cross lava. Ignored without Baritone or Voyager. — _default `false`_
+- **auto-bot.path-step** — Allow the path manager to step up single blocks. Ignored without Baritone or Voyager. — _default `true`_
+- **auto-bot.path-no-fall** — Allow the path manager to fall safely. Ignored without Baritone or Voyager. — _default `true`_
+- **auto-bot.pause-on-danger** — Pause the bot when health or food drops below the safety thresholds. — _default `true`_
+- **auto-bot.health-threshold** — Pause when health is at or below this many half-hearts. — _default `8`_
+- **auto-bot.food-threshold** — Pause when food is at or below this many shanks. — _default `6`_
+- **auto-bot.action-cooldown** — Milliseconds between two bot actions. — _default `100`_
+- **auto-bot.actions-per-tick** — How many bot actions may run per tick. — _default `1`_
+- **auto-bot.low-performance-mode** — Halve the search radius and the per-tick budget on a slow machine. — _default `false`_
+- **auto-bot.persist-memory** — Save waypoints and objectives to disk. — _default `true`_
+- **auto-bot.memory-file** — Where the bot memory is stored. Leave blank for the default location.
+- **auto-bot.verbosity** — How much the bot reports in chat. — _default `a built-in default`_
+- **auto-bot.chat-feedback** — Print bot status changes to chat. — _default `true`_
+- **auto-bot.hud** — Show the bot status HUD. — _default `false`_
+- **chat-digest.automatic** — Print a digest automatically on a timer. — _default `false`_
+- **chat-digest.interval-minutes** — Minutes between automatic digests. — _default `30`_
+- **chat-digest.window-size** — How many recent messages a digest covers. — _default `200`_
+- **chat-digest.top-players** — How many players to list in a digest. — _default `5`_
+- **chat-digest.send-to-webhook** — Also send each digest to the configured webhook. — _default `false`_
+- **chat-filter.rules** — Filter rules, one per line, applied top to bottom. First match wins. — _default `computed at startup`_
+- **chat-filter.default-action** — What to do with a message no rule matches. — _default `a built-in default`_
+- **chat-filter.announce-hides** — Print a chat note the first time a rule hides a message. — _default `false`_
+- **chat-logger.recording** — Record incoming chat to disk. — _default `true`_
+- **chat-logger.chat-feedback** — Print recording status changes to chat. — _default `true`_
+- **chat-logger.duplicate-detection** — Ignore a line that repeats the same sender and text within the window. — _default `true`_
+- **chat-logger.duplicate-window-ms** — How close two identical lines must be to count as a duplicate. — _default `250`_
+- **chat-logger.public-chat** — Record public chat messages. — _default `true`_
+- **chat-logger.player-messages** — Record direct messages. — _default `true`_
+- **chat-logger.system** — Record system messages. — _default `true`_
+- **chat-logger.joins** — Record join notifications. — _default `true`_
+- **chat-logger.leaves** — Record leave notifications. — _default `true`_
+- **chat-logger.deaths** — Record death messages. — _default `true`_
+- **chat-logger.announcements** — Record server announcements. — _default `true`_
+- **chat-logger.game** — Record game notifications (advancements, mode changes). — _default `true`_
+- **chat-logger.other** — Record anything that does not fit another category. — _default `false`_
+- **chat-logger.save-logs** — Persist recorded chat to disk. — _default `true`_
+- **chat-logger.storage-directory** — Folder for the logs, relative to the game directory. — _default `logclient/logs`_
+- **chat-logger.compression-level** — GZIP level for stored segments (1 fastest, 9 smallest). — _default `6`_
+- **chat-logger.flush-threshold** — Entries buffered before a segment is written to disk. — _default `250`_
+- **chat-logger.auto-cleanup** — Enforce the retention limits automatically after each flush. — _default `true`_
+- **chat-logger.max-age-days** — Delete log segments older than this. 0 disables the age limit. — _default `30`_
+- **chat-logger.max-size-mb** — Maximum total size of the stored logs. Oldest segments are removed first. — _default `100`_
+- **chat-logger.max-segments** — Maximum number of stored segments. 0 disables the count limit. — _default `2000`_
+- **chat-logger.export-format** — Default format used by the export controls. — _default `a built-in default`_
+- **chat-logger.webhook-url** — Discord webhook URL used by Send Now and periodic reports. Never written to saved logs.
+- **chat-logger.webhook-username** — Display name used for webhook reports. — _default `Log Client`_
+- **chat-logger.auto-reports** — Send a report to the webhook on a fixed interval. — _default `false`_
+- **chat-logger.report-interval-minutes** — Minutes between automatic reports. — _default `5`_
+- **chat-logger.keyword-webhook-url** — Send keyword alerts to this Discord webhook instead of the one above, so a noisy word does not bury the reports. Blank inherits the webhook above.
+- **chat-monitor.feed-size** — How many recent messages the live feed keeps. — _default `10`_
+- **chat-monitor.show-timestamps** — Prefix each live message with its time. — _default `true`_
+- **chat-monitor.show-sender** — Prefix each live message with the sender name. — _default `true`_
+- **chat-monitor.shown-types** — Message categories shown in the live feed (ids such as public_chat, system). — _default `a built-in list of defaults`_
+- **chat-monitor.highlight-words** — Words highlighted in the live feed. — _default `diamondnetheriteelytra`_
+- **chat-monitor.highlight-players** — Players whose messages are highlighted.
+- **chat-monitor.ignore-words** — Messages containing any of these words are hidden from the live feed.
+- **chat-monitor.ignore-players** — Messages from these players are hidden from the live feed.
+- **chat-monitor.notification-sounds** — Play a click when a highlighted message arrives. — _default `false`_
+- **chat-monitor.desktop-notifications** — Post a highlighted message to the notification centre. — _default `false`_
+- **chat-timestamps.style** — How much of the clock to show. — _default `a built-in default`_
+- **chat-timestamps.dim** — Draw the prefix in dark grey so the message stays the brightest part of the line. — _default `true`_
+- **companion.port** — The TCP port the companion listens on. — _default `6767`_
+- **companion.node-name** — The name this client shows up as in the app. — _default `Log Client`_
+- **companion.allow-remote** — Also listen on other interfaces. Anyone who can reach the port and knows the token can control this client. — _default `false`_
+- **companion.bind-address** — The interface to bind when remote access is allowed. — _default `0.0.0.0`_
+- **companion.token** — The access token the app must present. Regenerate it if it is ever exposed.
+- **companion.publish-chat** — Stream new chat lines to the app as they arrive. — _default `true`_
+- **companion.publish-bot** — Stream bot state and task changes to the app. — _default `true`_
+- **companion.notify-on-connect** — Show a notification when a client connects or disconnects. — _default `true`_
+- **keyword-alerts.rules** — Keyword rules, one per line: pattern;case=;whole=;sound=;webhook=;enabled=;color= — _default `a built-in list of defaults`_
+- **keyword-alerts.chat-feedback** — Print a chat note when a keyword matches. — _default `false`_
+- **keyword-alerts.cooldown-seconds** — Shortest gap between two alerts for the same rule. Matches inside the gap are counted and reported with the next alert instead of printing a line each. — _default `2`_
+- **keyword-alerts.burst-limit** — Most alerts allowed in ten seconds, across every rule. Keeps a common word from flooding chat and the webhook. — _default `6`_
+- **keyword-alerts.webhook-url** — Discord webhook URL used by rules that enable webhook notifications. Kept out of saved data.
+- **keyword-alerts.webhook-username** — Display name used for webhook alerts. — _default `Log Client`_
+- **keyword-alerts.periodic-summary** — Also send a periodic chat summary to the webhook. — _default `false`_
+- **keyword-alerts.summary-interval-minutes** — Minutes between periodic summaries. — _default `15`_
+- **mention-alerts.names** — Names to watch, one per line. Your own name is added automatically.
+- **mention-alerts.include-own-name** — Also alert when your own player name is mentioned. — _default `true`_
+- **mention-alerts.others-only** — Ignore lines you sent yourself. — _default `true`_
+- **mention-alerts.cooldown-seconds** — Shortest gap between two alerts for the same name. Mentions inside the gap are counted and reported with the next alert instead of printing a line each. — _default `2`_
+- **mention-alerts.burst-limit** — Most alerts allowed in ten seconds, across every watched name. Keeps a busy server from flooding chat even when many different names are hit. — _default `6`_
+- **mention-alerts.sound** — Play a note when a watched name is mentioned. — _default `true`_
+- **mention-alerts.notification** — Raise a notification for each mention. — _default `true`_
+- **mention-alerts.chat-feedback** — Print a chat note for each mention. — _default `false`_
+- **mention-alerts.webhook** — Send a mention embed to the shared webhook. — _default `false`_
+- **notifications.chat-feedback** — Print accepted notifications to chat. Off by default: the modules that raise a notification usually print it themselves, and enabling both would double it. — _default `false`_
+- **notifications.chat-min-priority** — Only print notifications at or above this priority to chat. — _default `a built-in default`_
+- **notifications.sound** — Play a sound for notifications at or above the sound priority. — _default `false`_
+- **notifications.sound-min-priority** — Only play a sound for notifications at or above this priority. — _default `a built-in default`_
+- **notifications.volume** — Notification sound volume. — _default `1.0`_
+- **notifications.hud** — Show the recent-notifications HUD. — _default `false`_
+- **player-activity.rebuild-on-activate** — Rebuild the player index from stored logs when the module is enabled. — _default `true`_
+- **player-activity.min-messages** — Hide players below this message count in the overview. — _default `0`_
+- **player-activity.excluded-players** — Players never tracked or listed (one name per line).
+- **player-identity.track-identities** — Record the names each account is seen using. — _default `true`_
+- **player-identity.notify-renames** — Raise a notification when an account is seen under a new name. — _default `true`_
+- **player-identity.watched-only** — Only notify for players on the watchlist. — _default `false`_
+- **player-identity.watchlist** — Player names to watch (one per line). Watched renames are always highlighted.
+- **player-notes.notes** — Saved notes, managed from the Notes screen. Editing this by hand is not recommended. — _default `computed at startup`_
+- **player-notes.max-notes** — How many player notes to keep. The oldest note is dropped past this many. — _default `a built-in default size`_
+- **player-notes.chat-feedback** — Print a chat note when a note is saved or removed. — _default `true`_
+- **player-notes.show-activity** — Show a player's observed activity alongside their note. — _default `true`_
+- **repeat-collapse.window** — How soon the same line must arrive to count as a repeat, in milliseconds. — _default `3000`_
+- **repeat-collapse.announce-count** — Print how many times a line was repeated once the run ends. — _default `true`_
+- **repeat-collapse.ignore-own** — Do not collapse your own messages, so a macro you are testing stays visible. — _default `false`_
+- **schematic-dropper.auto-continue** — Keep dropping until every required material has been processed. — _default `true`_
+- **schematic-dropper.operation-delay** — Milliseconds to wait between two drop operations. — _default `120`_
+- **schematic-dropper.retry-limit** — How many times a failed operation is retried before the material is skipped. — _default `3`_
+- **schematic-dropper.retry-backoff** — Milliseconds to wait before retrying a failed operation. — _default `250`_
+- **schematic-dropper.recovery-mode** — Strict Order waits for the current material; Best Effort blocks it and moves on. — _default `a built-in default`_
+- **schematic-dropper.pause-on-missing** — Wait for materials instead of finishing when something is missing. — _default `true`_
+- **schematic-dropper.completion-notification** — Announce in chat when every material has been dropped. — _default `true`_
+- **schematic-dropper.material-list** — Material list to drop. One entry per line, e.g. minecraft:cobblestone 128. — _default `computed at startup`_
+- **schematic-dropper.material-file** — Full path to a material list (.txt/.md/.csv) or schematic, used by "Import Path".
+- **schematic-dropper.ordering-mode** — Order in which materials are processed. Stays fixed for the whole run. — _default `a built-in default`_
+- **schematic-dropper.rotation-enabled** — Rotate the player's head toward the intended drop direction. — _default `true`_
+- **schematic-dropper.rotation-mode** — Instant snaps to the target; Smooth interpolates. — _default `a built-in default`_
+- **schematic-dropper.rotation-speed** — Degrees per tick the head moves in Smooth mode. — _default `30`_
+- **schematic-dropper.restore-rotation** — Restore the original head rotation when the run stops or completes. — _default `true`_
+- **schematic-dropper.target-update-interval** — Milliseconds between target re-evaluations. — _default `100`_
+- **schematic-dropper.rotation-debug** — Print rotation targets to chat. — _default `false`_
+- **schematic-dropper.drop-pitch-offset** — Vertical offset of the player-position target, in blocks. — _default `-1.0`_
+- **schematic-dropper.inventory-mode** — Silent clicks the screen handler directly; Open Inventory opens the inventory first. — _default `a built-in default`_
+- **schematic-dropper.stack-strategy** — Which stack of a material to use first. — _default `a built-in default`_
+- **schematic-dropper.drop-action** — Drop One throws single items; Drop Full Stack throws whole stacks when allowed. — _default `a built-in default`_
+- **schematic-dropper.sync-timeout** — Milliseconds to wait for the server to confirm an operation. — _default `1500`_
+- **schematic-dropper.rescan-interval** — Milliseconds between inventory rescans while waiting for materials. — _default `1000`_
+- **schematic-dropper.target-mode** — Where to aim the drop. — _default `a built-in default`_
+- **schematic-dropper.validate-target** — Skip rotation when the target is invalid instead of rotating to bad coordinates. — _default `true`_
+- **schematic-dropper.hud-enabled** — Show the progress HUD element. — _default `true`_
+- **schematic-dropper.notify-progress** — Report each confirmed drop in chat. — _default `false`_
+- **schematic-dropper.auto-acquire** — Create missing materials automatically while in Creative mode. — _default `false`_
+- **schematic-dropper.auto-drop** — Drop acquired batches through the normal dropping workflow so large lists fit. — _default `true`_
+- **schematic-dropper.acquire-delay** — Milliseconds between two creative gives. — _default `80`_
+- **schematic-dropper.acquire-retry-limit** — How many times a rejected creative give is retried before the material waits. — _default `3`_
+- **schematic-dropper.acquire-sync-timeout** — Milliseconds to wait for the server to confirm a creative give. — _default `1500`_
+- **schematic-dropper.acquire-scan-interval** — Milliseconds between inventory re-scans while waiting for space. — _default `500`_
+- **schematic-dropper.build-enabled** — Place a loaded schematic block by block, verifying every placement. — _default `false`_
+- **schematic-dropper.origin** — Where the schematic is anchored. — _default `a built-in default`_
+- **schematic-dropper.origin-x** — X coordinate used when Origin is set to Custom. — _default `0`_
+- **schematic-dropper.origin-y** — Y coordinate used when Origin is set to Custom. — _default `64`_
+- **schematic-dropper.origin-z** — Z coordinate used when Origin is set to Custom. — _default `0`_
+- **schematic-dropper.conflicts** — What to do when a block that is not part of the schematic is in the way. — _default `a built-in default`_
+- **schematic-dropper.blocks-per-tick** — How many placements to attempt per tick. — _default `1`_
+- **schematic-dropper.range** — Maximum distance in blocks the player may place from. — _default `5`_
+- **schematic-dropper.checkpoints** — Save progress so an interrupted build can resume safely. — _default `true`_
+- **schematic-dropper.notify-build** — Report build progress and completion in chat. — _default `true`_
+- **schematic-dropper.schematic-file** — Full path to a .schem/.schematic/.litematic file, used by "Load Path".
+- **session-history.history-size** — How many past sessions to keep. Older sessions are dropped first. — _default `500`_
+- **session-stats.summary-on-leave** — Print a short session summary when leaving a world. — _default `true`_
+- **session-timeline.record-joins** — Record player joins on the timeline. — _default `true`_
+- **session-timeline.record-leaves** — Record player leaves on the timeline. — _default `true`_
+- **session-timeline.record-deaths** — Record deaths on the timeline. — _default `true`_
+- **session-timeline.max-events** — How many milestones the timeline keeps before dropping the oldest. — _default `a built-in default size`_
+- **updates.channel** — Stable only offers full releases; Beta also offers pre-releases. — _default `a built-in default`_
+- **updates.check-on-join** — Check for updates once after joining a world. — _default `true`_
+- **updates.auto-download** — Download a newer release automatically when one is found. — _default `false`_
+- **updates.check-interval-minutes** — How often to check while the game is running. 0 disables the periodic check. — _default `60`_
+- **updates.chat-feedback** — Print a short line when a check finishes or a download completes. — _default `true`_
+- **webhook-monitor.notify-on-failure** — Print a chat note when a webhook delivery fails. — _default `true`_
+- **webhook-monitor.notify-on-recovery** — Print a chat note when a delivery succeeds after a failure. — _default `false`_
+- **webhook-monitor.history-size** — How many delivery attempts to keep in the history. — _default `100`_
+- **webhook-relay.webhook-url** — Discord webhook URL. Treated as a secret: never written to logs or payloads.
+- **webhook-relay.webhook-username** — Display name used for webhook messages. — _default `Log Client`_
+- **webhook-relay.relay-enabled** — Actually send embeds. Off means the URL is stored but nothing is transmitted. — _default `true`_
+- **webhook-relay.feature-webhooks** — Send one feature to its own Discord webhook. One per line: keywords=URL, macros=URL, modcall=URL, help=URL, status=URL. Unset features use the URL above. — _default `computed at startup`_
+- **webhook-relay.accent** — Embed accent colour. Auto colours each card by its type. — _default `a built-in default`_
+- **webhook-relay.footer** — Footer text shown on every embed. — _default `Log Client`_
+- **webhook-relay.author** — Author line shown on every embed. Blank hides it.
+- **webhook-relay.timestamp** — Show a timestamp under each embed. — _default `true`_
+- **webhook-relay.inline-fields** — Lay short fields out side by side. — _default `true`_
+- **webhook-relay.show-server** — Include the server address on each embed. — _default `true`_
+- **webhook-relay.session-end** — Send a summary embed when a recording session ends. — _default `true`_
+- **webhook-relay.player-rename** — Send an embed when an account is seen under a new name. — _default `true`_
+- **webhook-relay.watchlist-presence** — Send an embed when a watched player joins or leaves. — _default `false`_
+- **webhook-relay.deaths** — Send an embed for every death message. — _default `false`_
+- **webhook-relay.announcements** — Send an embed for server announcements. — _default `false`_
+- **webhook-relay.admin-webhook-url** — A separate webhook for figures about you: position, gear and targets. Leave blank to keep those local. Never post them to the public webhook.
+- **webhook-relay.allow-reports** — Let !mod and !report post a report card and ping the moderator role. — _default `true`_
+- **webhook-relay.allow-macro-cards** — Post a card for each macro run. Off keeps macro runs out of the webhook. — _default `false`_
+- **webhook-relay.moderator-role-id** — Discord role to ping on a report: a role id, or plain text to show instead.
+- **webhook-relay.digest** — Send a chat-digest embed on a timer. — _default `false`_
+- **webhook-relay.digest-interval-minutes** — Minutes between digest embeds. — _default `30`_
+- **webhook-relay.report-log-size** — How many filed reports to remember. The oldest is dropped past this many. — _default `a built-in default size`_
+- **webhook-relay.persist-report-log** — Keep the report log across restarts. — _default `true`_
+- **webhook-relay.reports** — Saved reports, managed by the module. Editing this by hand is not recommended. — _default `computed at startup`_
+- **world-intelligence.track-chunks** — Record the chunks you visit, so the map can show where you have been. — _default `true`_
+- **world-intelligence.track-biomes** — Record each biome you stand in and count how often you see it. — _default `true`_
+- **world-intelligence.mark-spawn** — Mark the world spawn as a waypoint the first time you see it. — _default `true`_
+- **world-intelligence.scan-interval** — How often, in ticks, to sample the world. Higher is cheaper. — _default `40`_
+- **world-intelligence.scan-radius** — How far, in blocks, to scan for watched blocks. 0 disables block scanning. — _default `24`_
+- **world-intelligence.track-resources** — Record watched resource blocks and structure signatures when seen. — _default `true`_
+- **world-intelligence.resources** — Block ids to record as resources, e.g. minecraft:diamond_ore. — _default `minecraft:diamond_oreminecraft:deepslate_diamond_oreminecraft:ancient_debrisminecraft:emerald_oreminecraft:deepslate_emerald_oreminecraft:gold_oreminecraft:deepslate_gold_ore`_
+- **world-intelligence.structure-blocks** — Comma-separated block=name pairs that mark a structure, e.g. minecraft:chest=Village chest. Recorded as a structure when seen.
+
+## Commands (37)
+
+- **log help [group]** — List every command, or one group in detail.
+- **log status** — Overall state: recording, storage, automation and notifications.
+- **log gui** — Open the Log Client window.
+- **log modules** — List every Log Client module and whether it is on.
+- **log modules check** — Report module names claimed twice, which silently deletes a module and crashes lookups.
+- **log stats** — This session's message, player and keyword figures.
+- **log overview** — One card with session, players, alerts, world and automation together.
+- **prefix [command]** — Copy every command prefix to the clipboard, or just one.
+- **chat <online|seen|top|recent|me>** — Ask about who is online, when a player was last seen, and who talks most.
+- **log record <on|off>** — Turn chat recording on or off.
+- **log search [terms]** — Search the recorded archive.
+- **log digest** — Summarise recent chat activity.
+- **log timeline [filter]** — Recent session milestones: joins, leaves and deaths.
+- **log filter [stats|reset]** — Chat filter status and counters.
+- **log notes <subcommand>** — Notes you keep about players: list, add, remove, search.
+- **log identities <subcommand>** — Observed name changes: renamed, watch, unwatch, watchlist, clear.
+- **log sessions [list|clear]** — Past recording sessions.
+- **log playtime [player]** — Observed player session durations.
+- **log importlog <file>** — Import a chat log file into the archive.
+- **log alerts [count|clear]** — Recent keyword, webhook and error alerts.
+- **log notifications [count|clear]** — Recent notifications.
+- **log webhook <subcommand>** — Embeds and delivery: status, test, preview, digest, leaderboard, profile, set, accent.
+- **bot <subcommand>** — The bot: status, start, pause, resume, stop, emergency, goto, tasks, waypoint, profile.
+- **log tasks [list|add|pause|resume|stop|clear]** — The bot task queue.
+- **log waypoints [list|add <name>]** — Bot waypoints.
+- **log import <file>** — Import a material list.
+- **autologin [status|on|off|test|servers]** — Auto Login: answers a server's /login prompt with the stored password.
+- **autologin [gui|clear|clearall]** — Where the password goes: set it in a masked field, or clear stored ones.
+- **log schematic [status|load|start|pause|resume|stop]** — Schematic dropper control.
+- **log acquire [start|pause|resume|stop|status|retry|import]** — Creative material acquisition.
+- **log world [status|map|places|nearest|mark|export]** — World intelligence: places, biomes and resources.
+- **log companion [status|start|stop|token|regenerate|gui]** — The companion web app.
+- **log update [status|check|download|channel|gui]** — GitHub release updates.
+- **log web** — Open the local web console in your browser.
+- **ai [status|triggers|facts|remember|forget|test|gui]** — The chat assistant.
+- **ai placeholders [section]** — The reply placeholders, one section at a time.
+- **ai perms [list|gui|set|allow|deny|admin|reset]** — Who may run each command.
+
+## Companion API (21)
+
+- **GET /api/v1/bot** — The bot's state and current objective.
+- **POST /api/v1/bot/emergency-stop** — Emergency stop: halt everything immediately.
+- **POST /api/v1/bot/pause** — Pause the bot.
+- **POST /api/v1/bot/resume** — Resume a paused bot.
+- **POST /api/v1/bot/start** — Start the autonomous bot.
+- **POST /api/v1/bot/stop** — Stop the bot.
+- **GET /api/v1/chat** — Send a chat line to the server.
+- **POST /api/v1/chat** — Send a chat line to the server.
+- **POST /api/v1/command** — Run a command, as if typed by the player.
+- **GET /api/v1/events** — Server-sent events: chat, bot and session updates, with replay from Last-Event-ID.
+- **GET /api/v1/modules** — Module list with each module's on/off state.
+- **POST /api/v1/modules/{name}** — Turn a module on or off.
+- **POST /api/v1/notify** — Raise a notification inside the client.
+- **GET /api/v1/players** — Known players and their observed activity.
+- **GET /api/v1/queries** — The query names the query endpoint accepts.
+- **GET /api/v1/query/{name}** — Run a named query with parameters.
+- **GET /api/v1/snapshot** — Everything the dashboard needs in one response: modules, tasks, players, chat, bot, storage.
+- **GET /api/v1/storage** — Storage usage for the chat archive.
+- **GET /api/v1/tasks** — Enqueue a task with an objective.
+- **POST /api/v1/tasks** — Enqueue a task with an objective.
+- **DELETE /api/v1/tasks/{id}** — Cancel a queued task.
