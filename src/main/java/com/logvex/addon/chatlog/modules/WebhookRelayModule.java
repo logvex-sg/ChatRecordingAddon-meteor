@@ -82,7 +82,8 @@ public class WebhookRelayModule extends AddonModule {
     private final Setting<List<String>> featureWebhooks = sgTarget.add(new StringListSetting.Builder()
         .name("feature-webhooks")
         .description("Send one feature to its own Discord webhook. One per line: "
-            + "macros=URL, modcall=URL, help=URL, status=URL. Unset features use the URL above.")
+            + "keywords=URL, macros=URL, modcall=URL, help=URL, status=URL. "
+            + "Unset features use the URL above.")
         .defaultValue(List.of())
         .onChanged(value -> publishTarget())
         .build()
@@ -256,6 +257,7 @@ public class WebhookRelayModule extends AddonModule {
     @Override
     public void onDeactivate() {
         service.setRelayTarget("", "");
+        service.setRelayRoutes(new FeatureWebhook("", List.of()));
         service.setEmbedStyle(WebhookEmbeds.Style.defaults());
         service.removeSessionListener(sessionListener);
         identities.removeListener(renameListener);
@@ -265,6 +267,9 @@ public class WebhookRelayModule extends AddonModule {
     private void publishTarget() {
         boolean on = isActive() && enabled.get();
         service.setRelayTarget(on ? url() : "", webhookUsername.get());
+        // The routes are published with the target: a sender reads the route for its own feature, so
+        // a feature-only override has to reach it even when the shared URL is blank.
+        service.setRelayRoutes(on ? routes() : new FeatureWebhook("", List.of()));
     }
 
     private void publishStyle() {

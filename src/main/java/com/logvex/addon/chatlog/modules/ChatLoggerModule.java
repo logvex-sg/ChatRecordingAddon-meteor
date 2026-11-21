@@ -234,6 +234,16 @@ public class ChatLoggerModule extends AddonModule {
         .build()
     );
 
+    private final Setting<String> keywordWebhookUrl = sgRelay.add(new StringSetting.Builder()
+        .name("keyword-webhook-url")
+        .description("Send keyword alerts to this Discord webhook instead of the one above, so a "
+            + "noisy word does not bury the reports. Blank inherits the webhook above.")
+        .defaultValue("")
+        .wide()
+        .onChanged(value -> publishKeywordRoute())
+        .build()
+    );
+
     // Runtime
 
     private final LogService service = LogService.get();
@@ -258,6 +268,7 @@ public class ChatLoggerModule extends AddonModule {
         reportBuffer.clear();
         lastReportAt = System.currentTimeMillis();
         service.addListener(reportListener);
+        publishKeywordRoute();
 
         LogStorageService storage = service.storage();
         storage.setCompressionLevel(compressionLevel.get());
@@ -370,6 +381,17 @@ public class ChatLoggerModule extends AddonModule {
     /** The configured webhook display name. */
     public String webhookUsername() {
         return webhookUsername.get() == null ? "" : webhookUsername.get();
+    }
+
+    /**
+     * Publishes (or clears) this module's keyword webhook to the shared service.
+     *
+     * <p>Published rather than read directly because the sender is the keyword-alerts module, which
+     * must not depend on the chat-logger being active. Blank clears the override so the relay's
+     * route and then its shared URL apply again.
+     */
+    private void publishKeywordRoute() {
+        service.setKeywordRoute(keywordWebhookUrl.get());
     }
 
     /**

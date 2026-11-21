@@ -4,8 +4,10 @@ import com.logvex.addon.framework.systems.modules.AddonModule;
 import com.logvex.addon.LogClient;
 import com.logvex.addon.chatlog.core.AlertThrottle;
 import com.logvex.addon.chatlog.core.ChatEntry;
+import com.logvex.addon.chatlog.core.FeatureWebhook;
 import com.logvex.addon.chatlog.core.KeywordMatcher;
 import com.logvex.addon.chatlog.core.KeywordRule;
+import com.logvex.addon.chatlog.core.WebhookTarget;
 import com.logvex.addon.chatlog.mc.LogService;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import com.logvex.addon.framework.gui.GuiTheme;
@@ -145,18 +147,22 @@ public class KeywordAlertsModule extends AddonModule {
             if (System.currentTimeMillis() - lastSummaryAt >= interval) {
                 lastSummaryAt = System.currentTimeMillis();
                 List<ChatEntry> recent = service.recent(200);
-                if (!recent.isEmpty()) service.notifySummary(targetUrl(), targetUsername(), recent);
+                if (!recent.isEmpty()) service.notifySummary(target().url(), target().username(), recent);
             }
         }
     }
 
-    /** The shared relay target when one is published, else this module's own URL. */
-    private String targetUrl() {
-        return service.hasRelay() ? service.relayUrl() : webhookUrl.get();
-    }
-
-    private String targetUsername() {
-        return service.hasRelay() ? service.relayUsername() : webhookUsername.get();
+    /**
+     * Where a keyword card goes: the keyword route if one is set, else the shared relay, else this
+     * module's own URL.
+     *
+     * <p>The route is resolved first on purpose. The old code tested {@code hasRelay()} — the shared
+     * URL only — so a user who set just {@code keywords=...} in the relay sent nothing: the shared
+     * URL was blank, so the route was skipped and the fallback was blank too.
+     */
+    private WebhookTarget target() {
+        return WebhookTarget.resolve(service.relayUrlFor(FeatureWebhook.Feature.KEYWORDS),
+            service.relayUsername(), webhookUrl.get(), webhookUsername.get());
     }
 
     private void evaluateRecent() {
@@ -192,7 +198,7 @@ public class KeywordAlertsModule extends AddonModule {
                     "keyword-alerts", label,
                     entry.sender().isBlank() ? entry.content() : entry.sender() + ": " + entry.content());
                 if (rule.sound()) playAlert();
-                if (rule.webhook()) service.notifyKeyword(targetUrl(), targetUsername(), rule, entry);
+                if (rule.webhook()) service.notifyKeyword(target().url(), target().username(), rule, entry);
                 if (chatFeedback.get()) {
                     warning("Keyword '%s' matched in %s", label, entry.sender().isBlank() ? "chat" : entry.sender());
                 }
@@ -232,11 +238,29 @@ public class KeywordAlertsModule extends AddonModule {
         return webhookUsername.get();
     }
 
+    /**
+     * Where keyword alerts would go, in words, so the routing is visible without reading settings.
+     *
+     * <p>The chain has three sources now, and which one is in force is not obvious from the GUI: a
+     * user who sets a route in the relay and then wonders why the keyword module's own field does
+     * nothing needs to be told which won.
+     */
+    public String targetSummary() {
+        WebhookTarget target = target();
+        if (!target.configured()) return "No webhook configured for keyword alerts.";
+        String source;
+        if (service.hasKeywordRoute()) source = "chat-logger keyword webhook";
+        else if (service.relayConfiguredFor(FeatureWebhook.Feature.KEYWORDS)) source = "relay keywords route";
+        else source = "shared relay webhook";
+        return "Keyword alerts go to the " + source + ".";
+    }
+
     public void testWebhook(meteordevelopment.meteorclient.systems.modules.Module feedbackModule) {
-        service.testWebhook(targetUrl(), targetUsername(), (success, message) -> {
+        WebhookTarget target = target();
+        service.testWebhook(target.url(), target.username(), (success, message) -> {
             if (feedbackModule != null) {
-                if (success) feedbackModule.info("Webhook test succeeded.");
-                else feedbackModule.warning("Webhook test failed: %s", message);
+                if (success) feedbackModule.info("Webhook test succeeded. %s", targetSummary());
+                else feedbackModule.warning("Webhook test failed: %s. %s", message, targetSummary());
             }
         });
     }
@@ -261,6 +285,7 @@ public class KeywordAlertsModule extends AddonModule {
         };
         WButton test = list.add(theme.button("Test Webhook")).expandX().widget();
         test.action = () -> testWebhook(this);
+        list.add(theme.label(targetSummary()));
         return list;
     }
 }

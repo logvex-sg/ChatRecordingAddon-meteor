@@ -18,7 +18,14 @@ public final class FeatureWebhook {
         MACROS("macros"),
         MODCALL("modcall"),
         HELP("help"),
-        STATUS("status");
+        STATUS("status"),
+        /**
+         * Keyword alerts.
+         *
+         * <p>The noisiest sender: one busy word can fire many cards an hour, so this is the route
+         * most users want out of the main channel.
+         */
+        KEYWORDS("keywords");
 
         private final String id;
 

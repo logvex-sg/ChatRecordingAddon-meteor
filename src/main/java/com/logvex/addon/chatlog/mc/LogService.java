@@ -1,6 +1,7 @@
 package com.logvex.addon.chatlog.mc;
 
 import com.logvex.addon.chatlog.core.ChatEntry;
+import com.logvex.addon.chatlog.core.FeatureWebhook;
 import com.logvex.addon.chatlog.core.ChatDigest;
 import com.logvex.addon.chatlog.core.DuplicateDetector;
 import com.logvex.addon.chatlog.core.KeywordMatcher;
@@ -102,6 +103,10 @@ public final class LogService {
     /** Shared webhook target published by the relay module, or empty when the relay is off. */
     private volatile String relayUrl = "";
     private volatile String relayUsername = "";
+    /** Per-feature overrides published by the relay, so a sender can honour its own route. */
+    private volatile FeatureWebhook relayRoutes = new FeatureWebhook("", java.util.List.of());
+    /** The chat-logger's own keyword webhook, which outranks the relay's keyword route. */
+    private volatile String keywordRoute = "";
 
     private LogService() {
     }
@@ -248,9 +253,58 @@ public final class LogService {
         this.relayUsername = username == null ? "" : username;
     }
 
+    /**
+     * Publishes the relay's per-feature routes, so a sender can honour its own override.
+     *
+     * <p>Kept separate from {@link #setRelayTarget} because the two answer different questions: the
+     * shared URL says "where do most cards go", the routes say "and where does this one go instead".
+     * A sender that only reads the shared URL silently ignores an override.
+     */
+    public void setRelayRoutes(FeatureWebhook routes) {
+        this.relayRoutes = routes == null ? new FeatureWebhook("", java.util.List.of()) : routes;
+    }
+
+    /**
+     * The webhook URL for one feature, honouring the relay's override.
+     *
+     * <p>Returns blank when neither the override nor the shared URL is set, so a caller tests one
+     * value. This is what makes a route work on its own: reading {@link #relayUrl()} would report
+     * blank and the override would never be consulted.
+     *
+     * <p>Keyword alerts get an extra, earlier source: the chat-logger's own
+     * {@code keyword-webhook-url}. It sits beside the report webhook, where a user already looks, so
+     * splitting noisy alerts from reports does not require finding the relay's route syntax.
+     */
+    public String relayUrlFor(FeatureWebhook.Feature feature) {
+        if (feature == FeatureWebhook.Feature.KEYWORDS && !keywordRoute.isBlank()) {
+            return keywordRoute;
+        }
+        return relayRoutes.url(feature);
+    }
+
+    /**
+     * Sets the chat-logger's own keyword webhook, or clears it with a blank value.
+     *
+     * <p>Blank means "inherit", so clearing this setting falls back to the relay's
+     * {@code keywords} route and then to its shared URL.
+     */
+    public void setKeywordRoute(String url) {
+        this.keywordRoute = url == null ? "" : url.strip();
+    }
+
+    /** True when the chat-logger set a keyword webhook of its own. */
+    public boolean hasKeywordRoute() {
+        return !keywordRoute.isBlank();
+    }
+
     /** True when a shared webhook target is configured. */
     public boolean hasRelay() {
         return relayUrl != null && !relayUrl.isBlank();
+    }
+
+    /** True when anything would be sent for {@code feature}, routed or shared. */
+    public boolean relayConfiguredFor(FeatureWebhook.Feature feature) {
+        return !relayUrlFor(feature).isBlank();
     }
 
     public String lastError() {
