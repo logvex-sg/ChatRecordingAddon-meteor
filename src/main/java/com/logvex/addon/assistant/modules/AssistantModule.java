@@ -12,8 +12,10 @@ import com.logvex.addon.assistant.core.GreetingPools;
 import com.logvex.addon.assistant.core.MacroSet;
 import com.logvex.addon.assistant.core.PermissionLevel;
 import com.logvex.addon.assistant.core.PermissionSet;
+import com.logvex.addon.assistant.core.RemoteMacroGate;
 import com.logvex.addon.assistant.core.ReplyFormat;
 import com.logvex.addon.assistant.core.SelfReplyGuard;
+import com.logvex.addon.assistant.core.SendPacer;
 import com.logvex.addon.assistant.core.SenderIdentity;
 import com.logvex.addon.assistant.core.TriggerRule;
 import com.logvex.addon.assistant.core.TriggerSet;
@@ -72,6 +74,9 @@ public class AssistantModule extends AutomationModule {
     /** How many block lines one reply may occupy before the rest is summarised. */
     private static final int MAX_EMBED_LINES = 12;
 
+    /** How many reply lines may wait to be sent before the oldest is dropped. */
+    private static final int PACER_CAPACITY = 40;
+
     /** How the user wants blocks laid out; {@link #AUTO} keeps whatever the reply was written for. */
     public enum ReplyLayout {
         AUTO, BOX, COMPACT, PLAIN, LIST;
@@ -92,6 +97,7 @@ public class AssistantModule extends AutomationModule {
     private final SettingGroup sgTriggers = settings.createGroup("Triggers");
     private final SettingGroup sgMemory = settings.createGroup("Memory");
     private final SettingGroup sgLimits = settings.createGroup("Limits");
+    private final SettingGroup sgPacing = settings.createGroup("Send pacing");
     private final SettingGroup sgStatus = settings.createGroup("Live Status");
     private final SettingGroup sgMacros = settings.createGroup("Chat Command Macros");
     private final SettingGroup sgGreetings = settings.createGroup("Greetings");
@@ -169,6 +175,54 @@ public class AssistantModule extends AutomationModule {
         .build()
     );
 
+    // ------------------------------------------------------------------ send pacing
+
+    private final Setting<Boolean> pacingEnabled = sgPacing.add(new BoolSetting.Builder()
+        .name("pace-replies")
+        .description("Release multi-line replies a line at a time instead of all at once. "
+            + "A block such as !cmds is a dozen lines, and servers kick for that burst.")
+        .defaultValue(true)
+        .onChanged(ignored -> rebuildPacer())
+        .build()
+    );
+
+    private final Setting<Integer> pacingGapMs = sgPacing.add(new IntSetting.Builder()
+        .name("line-gap-ms")
+        .description("Shortest gap between two reply lines. Servers allow a few lines a second; "
+            + "1000 is safe on the strictest ones.")
+        .defaultValue(1_000)
+        .min(0)
+        .max(10_000)
+        .sliderRange(250, 3_000)
+        .visible(pacingEnabled::get)
+        .onChanged(ignored -> rebuildPacer())
+        .build()
+    );
+
+    private final Setting<Integer> pacingBurst = sgPacing.add(new IntSetting.Builder()
+        .name("burst-lines")
+        .description("Most lines allowed in one burst window, however fast they are released.")
+        .defaultValue(3)
+        .min(1)
+        .max(50)
+        .sliderRange(1, 10)
+        .visible(pacingEnabled::get)
+        .onChanged(ignored -> rebuildPacer())
+        .build()
+    );
+
+    private final Setting<Integer> pacingBurstWindowMs = sgPacing.add(new IntSetting.Builder()
+        .name("burst-window-ms")
+        .description("The window the burst limit applies to.")
+        .defaultValue(5_000)
+        .min(1_000)
+        .max(60_000)
+        .sliderRange(1_000, 15_000)
+        .visible(pacingEnabled::get)
+        .onChanged(ignored -> rebuildPacer())
+        .build()
+    );
+
     // ------------------------------------------------------------------ chat command macros
 
     private final Setting<Boolean> macrosEnabled = sgMacros.add(new BoolSetting.Builder()
@@ -201,6 +255,37 @@ public class AssistantModule extends AutomationModule {
         .description("Show the expanded command in chat as if you typed it.")
         .defaultValue(true)
         .visible(macrosEnabled::get)
+        .build()
+    );
+
+    private final Setting<Boolean> macrosRemote = sgMacros.add(new BoolSetting.Builder()
+        .name("allow-remote")
+        .description("Let other players run macros marked 'remote'. A macro sends a command as you, "
+            + "so this is off by default and only shared macros are reachable.")
+        .defaultValue(false)
+        .visible(macrosEnabled::get)
+        .onChanged(ignored -> rebuildRemoteGate())
+        .build()
+    );
+
+    private final Setting<List<String>> macrosAllowList = sgMacros.add(new StringListSetting.Builder()
+        .name("remote-allow-list")
+        .description("Players allowed to run shared macros. Empty means everyone, once allow-remote is on.")
+        .defaultValue(List.of())
+        .visible(() -> macrosEnabled.get() && macrosRemote.get())
+        .onChanged(ignored -> rebuildRemoteGate())
+        .build()
+    );
+
+    private final Setting<Integer> macrosRemoteCooldownMs = sgMacros.add(new IntSetting.Builder()
+        .name("remote-cooldown-ms")
+        .description("Shortest gap between two remote macro runs by the same player.")
+        .defaultValue(5_000)
+        .min(0)
+        .max(120_000)
+        .sliderRange(0, 30_000)
+        .visible(() -> macrosEnabled.get() && macrosRemote.get())
+        .onChanged(ignored -> rebuildRemoteGate())
         .build()
     );
 
@@ -449,6 +534,17 @@ public class AssistantModule extends AutomationModule {
      */
     private boolean sendingMacro;
 
+    /**
+     * Holds reply lines that must not all leave in one tick.
+     *
+     * <p>Rebuilt when the pacing settings change. A block is a dozen lines and a server kicks for
+     * that burst, so the lines are released a few at a time from the tick handler instead.
+     */
+    private SendPacer pacer = SendPacer.defaults();
+
+    /** Decides whether a stranger may run one of this client's shared macros. */
+    private RemoteMacroGate remoteGate = RemoteMacroGate.disabled();
+
     public AssistantModule() {
         super("assistant", "A configurable chat assistant with keyword triggers and persistent memory.");
         runtime = new AssistantRuntime(service.memory());
@@ -495,6 +591,9 @@ public class AssistantModule extends AutomationModule {
     protected void onWorldLeave() {
         runtime.resetSession();
         selfReplies.reset();
+        // A backlog would arrive in the next world out of context, and its recipients are no longer
+        // verifiable there.
+        pacer.clear();
         flushMemory();
     }
 
@@ -503,10 +602,29 @@ public class AssistantModule extends AutomationModule {
         if (mc.player != null) {
             speed.sample(mc.player.getX(), mc.player.getZ(), System.currentTimeMillis());
         }
+        drainPacer();
         // Persist on a slow cadence rather than on every memory write, so a busy chat cannot cause
         // a disk write storm. The dirty flag makes this a no-op when nothing changed.
         if (System.currentTimeMillis() - lastSaveAt < 30_000L) return;
         if (memoryDirty && persist.get()) flushMemory();
+    }
+
+    /**
+     * Releases at most one queued reply line, when the pacer allows it.
+     *
+     * <p>Driven from the tick so the pacing survives a tick that renders no lines: the queue is a
+     * property of the module, not of the reply that filled it.
+     */
+    private void drainPacer() {
+        if (pacer.isEmpty() || mc.player == null || mc.player.networkHandler == null) return;
+        long now = System.currentTimeMillis();
+        for (SendPacer.Line line : pacer.ready(now)) {
+            if (line.isWhisper()) {
+                whisper(line.verb(), line.recipient(), line.text());
+            } else {
+                speak(line.text());
+            }
+        }
     }
 
     @EventHandler
@@ -531,6 +649,10 @@ public class AssistantModule extends AutomationModule {
         if (isOwnMessage(sender, content)) return;
 
         long now = System.currentTimeMillis();
+        // A shared macro is answered before triggers: the sender typed a command, and a trigger
+        // rule that happened to match the same words must not answer it instead.
+        if (tryRemoteMacro(sender, content, now)) return;
+
         SenderIdentity identity = identify(sender);
         AssistantBrain.Decision decision = runtime.handle(identity, content, now,
             McServerStats.snapshot(mc, now, sessionStart, speed.blocksPerSecond()),
@@ -539,7 +661,72 @@ public class AssistantModule extends AutomationModule {
         deliver(decision, sender);
     }
 
+    // ------------------------------------------------------------------ remote macros
+
+    /**
+     * Runs a shared macro on behalf of another player, when the gate allows it.
+     *
+     * <p>The command still leaves as the operator, so the gate is the only thing standing between a
+     * stranger and the operator's account. Every refusal is silent to the sender — a reply would
+     * confirm which shortcuts exist — and is only reported locally, where the operator can see that
+     * someone tried.
+     *
+     * @return true when the line was a shared macro and has been handled, whether or not it ran
+     */
+    private boolean tryRemoteMacro(String sender, String content, long now) {
+        if (!macrosEnabled.get() || !macros.anyRemote()) return false;
+        if (!macros.hasPrefix(content)) return false;
+        java.util.Optional<MacroSet.Call> found = macros.resolveRemote(content);
+        if (found.isEmpty()) return false;
+
+        MacroSet.Call call = found.get();
+        ChatMacro macro = call.macro();
+        RemoteMacroGate.Verdict verdict = remoteGate.check(sender, macro, now);
+        if (!verdict.allowed()) {
+            if (matchFeedback.get()) {
+                info("Remote macro %s from %s refused: %s.", macro.shortcut(),
+                    Messages.player(sender), verdict.reason());
+            }
+            return true;
+        }
+
+        ChatMacro.Outcome outcome = macro.run(call.input());
+        if (!outcome.ok()) {
+            if (macroFeedback.get()) {
+                info("Remote macro %s from %s was malformed: %s", macro.shortcut(),
+                    Messages.player(sender), outcome.problem());
+            }
+            return true;
+        }
+        if (macros.wouldRecurse(macro, outcome.command())) return true;
+
+        remoteGate.record(sender, now);
+        if (macroFeedback.get()) {
+            info("Running macro %s for %s.", macro.shortcut(), Messages.player(sender));
+        }
+        postMacroCard(macro, sender, outcome.command(), true);
+        sendMacroCommand(outcome.command(), macro);
+        return true;
+    }
+
     // ------------------------------------------------------------------ reports
+
+    /**
+     * Mirrors a macro run to the macros webhook, when the user opted in.
+     *
+     * <p>Off by default: a macro is a command the user typed, so most people do not want every one
+     * of them posted to a channel. The card exists for the case where it is useful — an operator
+     * letting others run shared macros wants a record of who ran what.
+     */
+    private void postMacroCard(ChatMacro macro, String sender, String command, boolean remote) {
+        WebhookRelayModule relay = Modules.get().get(WebhookRelayModule.class);
+        if (relay == null || !relay.macroCardsAllowed()) return;
+        relay.sendMacroRun(macro.shortcut(), sender, command, remote, (success, message) -> {
+            if (!success) {
+                info("Macro card could not be delivered: %s", message);
+            }
+        });
+    }
 
     /**
      * Posts a report to the webhook, pinging the moderator role.
@@ -646,7 +833,15 @@ public class AssistantModule extends AutomationModule {
     private void speakAll(AssistantBrain.Decision decision) {
         java.util.List<String> lines = decision.linesCapped(
             replyWidth.get(), replyFormat.get().style(), MAX_EMBED_LINES);
-        for (String line : lines) speak(line);
+        if (lines.size() <= 1) {
+            for (String line : lines) speak(line);
+            return;
+        }
+        // A block is a dozen lines; sending them in one tick is what a spam filter kicks for. They
+        // are queued instead and released a line at a time by drainPacer().
+        java.util.List<SendPacer.Line> queued = new java.util.ArrayList<>(lines.size());
+        for (String line : lines) queued.add(new SendPacer.Line("", "", line));
+        pacer.enqueue(queued);
     }
 
     /**
@@ -667,7 +862,15 @@ public class AssistantModule extends AutomationModule {
             : decision.rule().whisperCommand();
         java.util.List<String> lines = decision.linesCapped(
             replyWidth.get(), replyFormat.get().style(), MAX_EMBED_LINES);
-        for (String line : lines) whisper(verb, sender, line);
+        if (lines.size() <= 1) {
+            for (String line : lines) whisper(verb, sender, line);
+            return;
+        }
+        // This is the path !cmds takes: an 11-line block became 11 /msg commands in one tick, which
+        // is a kick on any server with a flood filter. Queued and paced instead.
+        java.util.List<SendPacer.Line> queued = new java.util.ArrayList<>(lines.size());
+        for (String line : lines) queued.add(new SendPacer.Line(sender, verb, line));
+        pacer.enqueue(queued);
     }
 
     /** Sends one line as {@code /<verb> <player> <text>}. */
@@ -872,6 +1075,8 @@ public class AssistantModule extends AutomationModule {
     /** Rebuilds the runtime's rules, config and permissions from the current settings. */
     public void rebuild() {
         parsed = TriggerSet.of(parseRules());
+        rebuildPacer();
+        rebuildRemoteGate();
         config = new AssistantConfig(
             assistantName.get(),
             respondToTriggers.get(),
@@ -908,7 +1113,22 @@ public class AssistantModule extends AutomationModule {
         return ChatMacro.defaults().stream().map(ChatMacro::encode).toList();
     }
 
-    /** The macro table as it stands, for the GUI and for a test. */
+    /** Rebuilds the send pacer from the pacing settings. */
+    private void rebuildPacer() {
+        if (!pacingEnabled.get()) {
+            pacer = SendPacer.immediate();
+            return;
+        }
+        pacer = new SendPacer(pacingGapMs.get(), pacingBurst.get(), pacingBurstWindowMs.get(),
+            PACER_CAPACITY);
+    }
+
+    /** Rebuilds the remote-macro gate from its settings. */
+    private void rebuildRemoteGate() {
+        remoteGate = new RemoteMacroGate(macrosEnabled.get() && macrosRemote.get(),
+            macrosAllowList.get(), macrosRemoteCooldownMs.get());
+    }
+
     /** The widest line a formatted reply may use, so other commands can match the assistant. */
     public int replyWidth() {
         return replyWidth.get();
@@ -1014,6 +1234,9 @@ public class AssistantModule extends AutomationModule {
     private void sendStep(SendMessageEvent event) {
         if (!isActive() || event == null) return;
         if (!ready() || sendingMacro) return;
+        // ModCallModule also handles this command, and it cancels the event as it files. Whichever
+        // listener Meteor dispatches first claims the report; the other must not file it again.
+        if (event.isCancelled()) return;
 
         String message = event.message;
         if (message == null) return;
@@ -1044,6 +1267,7 @@ public class AssistantModule extends AutomationModule {
             }
             return;
         }
+        postMacroCard(macro, ownName, outcome.command(), false);
         sendMacroCommand(outcome.command(), macro);
     }
 

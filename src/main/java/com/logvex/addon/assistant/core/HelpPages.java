@@ -47,7 +47,15 @@ public final class HelpPages {
             "environment"));
         out.put("Commands", List.of("health", "speed", "gamemode", "coords", "armor", "held",
             "level", "absorption"));
-        out.put("More", List.of("location", "target", "effects", "network", "help", "cmds"));
+        out.put("More", List.of("location", "target", "effects", "network", "help", "cmds",
+            "macros", "macrohelp", "share"));
+        // Grouped rather than left to the automatic pages: an "A-G" heading tells a reader nothing
+        // about what is on the page, and these were the commands that landed there.
+        out.put("Assistant", List.of("about", "activity", "summary", "history", "triggers",
+            "player", "memories"));
+        out.put("Memory", List.of("fact", "facts", "remember", "forget", "forgetme", "faq"));
+        out.put("Reports", List.of("mod", "modcall", "report", "reports"));
+        out.put("Social", List.of("hello", "gg"));
         return out;
     }
 

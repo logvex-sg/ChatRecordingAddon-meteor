@@ -95,6 +95,35 @@ public final class MacroSet {
     }
 
     /**
+     * Resolves {@code message} for another player, returning only macros the owner has shared.
+     *
+     * <p>A macro is a command this client sends as the operator. Letting a stranger invoke one means
+     * the server sees {@code /pay ...} from the operator's account, so only macros explicitly marked
+     * {@code remote} are reachable this way, and everything else is invisible rather than refused —
+     * a refusal would confirm the shortcut exists.
+     */
+    public Optional<Call> resolveRemote(String message) {
+        return resolve(message).filter(call -> call.macro().remote());
+    }
+
+    /** The macros shared with other players, in configuration order. */
+    public List<ChatMacro> remote() {
+        List<ChatMacro> out = new ArrayList<>();
+        for (ChatMacro macro : macros) {
+            if (macro.enabled() && macro.valid() && macro.remote()) out.add(macro);
+        }
+        return List.copyOf(out);
+    }
+
+    /** True when at least one macro is shared, so a caller can skip the whole remote path. */
+    public boolean anyRemote() {
+        for (ChatMacro macro : macros) {
+            if (macro.enabled() && macro.valid() && macro.remote()) return true;
+        }
+        return false;
+    }
+
+    /**
      * True when {@code command} is this macro's own template, fully substituted.
      *
      * <p>Used as the last guard before sending: the command about to go to the server must not be

@@ -86,6 +86,9 @@ public final class CommandCatalog {
             "List the enabled chat command macros.", PermissionLevel.EVERYONE, false));
         out.add(new Command("macrohelp", List.of("macro"),
             "One macro's description and syntax.", PermissionLevel.EVERYONE, false));
+        out.add(new Command("share", List.of("shared", "macroshare"),
+            "List the macros other players may run, or share one.",
+            PermissionLevel.LOCAL_ONLY, false));
         out.add(new Command("mod", List.of("mods"),
             "Ping a moderator through the webhook with a report.", PermissionLevel.EVERYONE, true));
         out.add(new Command("report", List.of("alert"),

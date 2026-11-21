@@ -4,9 +4,11 @@ import com.logvex.addon.framework.systems.modules.AddonModule;
 import com.logvex.addon.LogClient;
 import com.logvex.addon.chatlog.core.ChatDigest;
 import com.logvex.addon.chatlog.core.EmbedAccent;
+import com.logvex.addon.chatlog.core.FeatureWebhook;
 import com.logvex.addon.chatlog.core.ReportLog;
 import com.logvex.addon.chatlog.core.SessionRecord;
 import com.logvex.addon.chatlog.core.WebhookEmbeds;
+import com.logvex.addon.chatlog.core.WebhookQueue;
 import com.logvex.addon.chatlog.gui.EmbedPreviewScreen;
 import com.logvex.addon.chatlog.mc.LogService;
 import com.logvex.addon.chatlog.mc.PlayerIdentityService;
@@ -73,6 +75,15 @@ public class WebhookRelayModule extends AddonModule {
         .name("relay-enabled")
         .description("Actually send embeds. Off means the URL is stored but nothing is transmitted.")
         .defaultValue(true)
+        .onChanged(value -> publishTarget())
+        .build()
+    );
+
+    private final Setting<List<String>> featureWebhooks = sgTarget.add(new StringListSetting.Builder()
+        .name("feature-webhooks")
+        .description("Send one feature to its own Discord webhook. One per line: "
+            + "macros=URL, modcall=URL, help=URL, status=URL. Unset features use the URL above.")
+        .defaultValue(List.of())
         .onChanged(value -> publishTarget())
         .build()
     );
@@ -180,6 +191,13 @@ public class WebhookRelayModule extends AddonModule {
         .build()
     );
 
+    private final Setting<Boolean> allowMacroCards = sgEvents.add(new BoolSetting.Builder()
+        .name("allow-macro-cards")
+        .description("Post a card for each macro run. Off keeps macro runs out of the webhook.")
+        .defaultValue(false)
+        .build()
+    );
+
     private final Setting<String> moderatorRoleId = sgEvents.add(new StringSetting.Builder()
         .name("moderator-role-id")
         .description("Discord role to ping on a report: a role id, or plain text to show instead.")
@@ -268,6 +286,21 @@ public class WebhookRelayModule extends AddonModule {
         return webhookUrl.get() == null ? "" : webhookUrl.get();
     }
 
+    /**
+     * The routing table: the shared URL plus any per-feature override.
+     *
+     * <p>Rebuilt on read so a change to either setting takes effect without a restart, and so the
+     * caller never holds a stale copy of a URL that may be a secret.
+     */
+    public FeatureWebhook routes() {
+        return new FeatureWebhook(url(), featureWebhooks.get());
+    }
+
+    /** The URL for one feature, honouring its override. */
+    public String urlFor(FeatureWebhook.Feature feature) {
+        return routes().url(feature);
+    }
+
     public String username() {
         return webhookUsername.get() == null ? "" : webhookUsername.get();
     }
@@ -340,7 +373,30 @@ public class WebhookRelayModule extends AddonModule {
 
     /** True when reports may be posted through this webhook. */
     public boolean reportsAllowed() {
-        return allowReports.get() && configured() && enabled.get();
+        // Checked against the modcall route, not the shared URL: a user may point reports at their
+        // own channel and leave the shared URL blank.
+        return allowReports.get() && enabled.get()
+            && routes().configured(FeatureWebhook.Feature.MODCALL);
+    }
+
+    /** True when macro-run cards may be posted. */
+    public boolean macroCardsAllowed() {
+        return allowMacroCards.get() && enabled.get()
+            && routes().configured(FeatureWebhook.Feature.MACROS);
+    }
+
+    /**
+     * Posts a macro-run card to the macros route.
+     *
+     * <p>The URL comes from the routing table, so a user who keeps macro runs in a separate channel
+     * gets that channel without a second module. Nothing is sent unless the user opted in.
+     */
+    public boolean sendMacroRun(String shortcut, String sender, String command, boolean remote,
+                                WebhookQueue.Listener listener) {
+        if (!macroCardsAllowed()) return false;
+        return service.notifyMacroRun(
+            urlFor(FeatureWebhook.Feature.MACROS), username(),
+            shortcut, sender, command, remote, listener);
     }
 
     /** The role id (or plain text) to ping on a report; may be blank. */
@@ -366,7 +422,7 @@ public class WebhookRelayModule extends AddonModule {
      * who wants those in a private channel sets this URL and nothing else changes.
      */
     public boolean sendAdminStatus(com.logvex.addon.stats.ServerStats stats,
-                                   com.logvex.addon.chatlog.core.WebhookQueue.Listener listener) {
+                                   WebhookQueue.Listener listener) {
         if (!adminStatusAllowed() || stats == null) return false;
         return service.notifyStatus(adminUrl(), username(), stats, listener);
     }
@@ -378,7 +434,7 @@ public class WebhookRelayModule extends AddonModule {
      * report the user believes was filed but was not is the case most worth keeping.
      */
     public boolean sendReport(String reporter, String reason, String kind,
-                              com.logvex.addon.chatlog.core.WebhookQueue.Listener listener) {
+                              WebhookQueue.Listener listener) {
         if (!reportsAllowed()) {
             recordReport(reporter, reason, kind, false, "reports not allowed");
             return false;
@@ -386,7 +442,9 @@ public class WebhookRelayModule extends AddonModule {
         // Written before queueing, so the record exists even if the queue invokes the listener
         // immediately; a report that was attempted must never be missing from the log.
         ReportLog.Record record = recordReport(reporter, reason, kind, false, "queued");
-        boolean queued = service.notifyReport(url(), username(), reporter, reason, moderatorRole(),
+        boolean queued = service.notifyReport(
+            urlFor(FeatureWebhook.Feature.MODCALL), username(),
+            reporter, reason, moderatorRole(),
             kind, (success, message) -> {
                 // Delivery happens on the network worker, after this method has returned, so the
                 // log is settled here with what really happened rather than with "queued".

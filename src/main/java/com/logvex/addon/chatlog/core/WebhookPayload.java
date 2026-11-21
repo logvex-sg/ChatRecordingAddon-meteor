@@ -91,6 +91,13 @@ public final class WebhookPayload {
         return WebhookEmbeds.payload(username, WebhookEmbeds.status(style, stats));
     }
 
+    /** A macro-run card. */
+    public static String macroRun(String username, String shortcut, String sender, String command,
+                                  boolean remote, String server, WebhookEmbeds.Style style) {
+        return WebhookEmbeds.payload(username,
+            WebhookEmbeds.macroRun(style, shortcut, sender, command, remote, server));
+    }
+
     /** A test card. */
     public static String test(String username) {
         return test(username, "", WebhookEmbeds.Style.defaults());

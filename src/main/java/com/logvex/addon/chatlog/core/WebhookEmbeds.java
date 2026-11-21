@@ -207,6 +207,26 @@ public final class WebhookEmbeds {
         return decorate(embed, style, joined ? MessageType.JOIN : MessageType.LEAVE);
     }
 
+    /**
+     * A macro-run card: who ran which shortcut, and the command that went out.
+     *
+     * <p>Shown as a card rather than a line because a macro run has three facts worth lining up —
+     * the shortcut, the sender, the expanded command — and a sentence runs them together. The
+     * expanded command is included on purpose: it is what the server actually received.
+     */
+    public static DiscordEmbed macroRun(Style style, String shortcut, String sender, String command,
+                                        boolean remote, String server) {
+        DiscordEmbed embed = new DiscordEmbed()
+            .title(remote ? "\uD83D\uDD17 Shared macro run" : "\u26A1 Macro run")
+            .description("**" + shortcut + "**")
+            .color(remote ? EmbedColor.PURPLE : EmbedColor.TEAL);
+        embed.field("Command", "`" + neutralize(command) + "`");
+        embed.field("Sender", sender == null || sender.isBlank() ? "local player" : sender, true);
+        embed.field("Kind", remote ? "remote" : "local", true);
+        if (style.showServer()) embed.field("Server", server(server), true);
+        return decorate(embed, style, MessageType.SYSTEM);
+    }
+
     /** The webhook test card. */
     public static DiscordEmbed test(Style style, String version) {
         DiscordEmbed embed = new DiscordEmbed()

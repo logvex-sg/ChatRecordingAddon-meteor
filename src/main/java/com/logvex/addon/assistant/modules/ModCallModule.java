@@ -111,6 +111,9 @@ public class ModCallModule extends AutomationModule {
 
     private void sendStep(SendMessageEvent event) {
         if (!isActive() || event == null) return;
+        // The assistant answers modcall too, when it is enabled. Cancellation is the arbiter, so
+        // only the listener that gets there first files the report.
+        if (event.isCancelled()) return;
         String message = event.message;
         if (message == null) return;
         String prefix = commandPrefix();

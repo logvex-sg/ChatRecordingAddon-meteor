@@ -146,16 +146,16 @@ public final class ReplyFormat {
     }
 
     /**
-     * Renders at most {@code maxLines} lines, keeping the block closed.
+     * Renders at most {@code maxLines} lines, keeping the block whole.
      *
      * <p>Cutting a rendered list with {@code subList} is the obvious approach and it is wrong: a box
-     * that is cut before its closing rule ends on a {@code │} row, which reads as a message that was
-     * truncated mid-send. So the cap is applied to the <em>fields</em> instead and the block is
-     * rendered again, which always produces a whole box. The rows that did not fit are reported in
-     * the footer rather than dropped silently.
+     * that is cut before its closing rule ends on a {@code │} row, and a list that is cut stops
+     * mid-sentence. Either reads as a message that failed to send. So the cap is applied to the
+     * <em>fields</em> instead and the block is rendered again, and the rows that did not fit are
+     * counted in the footer rather than dropped silently.
      *
-     * <p>For a non-box style there is no frame to protect, so the cap is applied to the rendered
-     * lines directly.
+     * <p>COMPACT and PLAIN collapse to one line, so there is no field to drop there; a single line
+     * that still overflows means the caller's width is too small, and truncating is the only option.
      *
      * @param maxLines the most lines the caller can send, at least one
      */
@@ -165,14 +165,14 @@ public final class ReplyFormat {
         int limit = width <= 0 ? DEFAULT_WIDTH : width;
         List<String> full = render(embed, limit);
         if (full.size() <= maxLines) return full;
-        if (embed.style() != Style.BOX) return List.copyOf(full.subList(0, maxLines));
+        if (embed.style() == Style.COMPACT || embed.style() == Style.PLAIN) {
+            return List.copyOf(full.subList(0, maxLines));
+        }
 
-        // Two frame lines are unavoidable, so the body gets whatever is left.
-        int body = Math.max(1, maxLines - 2);
+        // Two frame lines for a box, a title line for a list; the loop corrects any guess that was
+        // wrong, because a wrapped value can cost more rows than the field count suggests.
         List<Field> fields = embed.fields();
-        int keep = Math.min(fields.size(), body);
-        // Re-rendering can need more rows than the field count suggests, because a value may wrap.
-        // Shrinking until it fits keeps the box closed instead of guessing a row budget.
+        int keep = Math.min(fields.size(), Math.max(1, maxLines - 2));
         while (keep > 0) {
             List<Field> subset = fields.subList(0, keep);
             String footer = embed.footer();
@@ -180,7 +180,7 @@ public final class ReplyFormat {
                 String omitted = "+" + (fields.size() - keep) + " more";
                 footer = footer == null || footer.isBlank() ? omitted : footer + " · " + omitted;
             }
-            List<String> lines = render(new Embed(embed.title(), subset, footer, Style.BOX), limit);
+            List<String> lines = render(new Embed(embed.title(), subset, footer, embed.style()), limit);
             if (lines.size() <= maxLines) return lines;
             keep--;
         }

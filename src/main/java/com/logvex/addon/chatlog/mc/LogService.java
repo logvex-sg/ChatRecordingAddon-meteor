@@ -395,6 +395,15 @@ public final class LogService {
         return webhook.enqueue(url, payload, listener);
     }
 
+    /** Sends a macro-run card. */
+    public boolean notifyMacroRun(String url, String username, String shortcut, String sender,
+                                  String command, boolean remote, WebhookQueue.Listener listener) {
+        if (url == null || url.isBlank()) return false;
+        String payload = WebhookPayload.macroRun(username, shortcut, sender, command, remote,
+            serverName, embedStyle);
+        return webhook.enqueue(url, payload, listener);
+    }
+
     /** Sends a chat digest card. */
     public boolean notifyDigest(String url, String username, ChatDigest.Summary summary, WebhookQueue.Listener listener) {
         if (url == null || url.isBlank() || summary == null || summary.isEmpty()) return false;

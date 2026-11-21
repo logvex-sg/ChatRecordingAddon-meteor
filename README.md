@@ -402,7 +402,9 @@ appearing on any of them because nobody remembered to edit the text.
 The grouping — `!tps` next to `!ping`, `!biome` next to `!weather` — is still written by hand,
 because no rule infers that. What is automatic is completeness: anything the groups do not claim
 is appended to a catch-all page headed by the letters it spans (`A-G`, `H-P`). Adding a command
-therefore updates the pages on its own, with no edit to the help text.
+therefore updates the pages on its own, with no edit to the help text. A letter heading is a
+fallback, not the intended result, so every named command is grouped: `Assistant`, `Memory`,
+`Reports` and `Social` exist for exactly that reason.
 
 ```
 ┌─ !cmds ──────────────────────────────────┐
@@ -412,9 +414,10 @@ therefore updates the pages on its own, with no edit to the help text.
 │ You:      !cmds4                         │
 │ Commands: !cmds5                         │
 │ More:     !cmds6                         │
-│ A-G:      !cmds7                         │
-│ H-P:      !cmds8                         │
-│ R-T:      !cmds9                         │
+│ Assistant:!cmds7                         │
+│ Memory:   !cmds8                         │
+│ Reports:  !cmds9                         │
+│ Social:   !cmds10                        │
 └──────────────────────────────────────────┘
 ```
 
@@ -423,7 +426,10 @@ tests keep this honest: one asserts every command the assistant answers appears 
 another asserts no page advertises a verb nothing answers.
 
 `!help` is separate and always was generated: it reads the permission-filtered catalogue and shows
-only the commands *that caller* may run, six to a page, with `!help 2` for the next page.
+only the commands *that caller* may run, six to a page, with `!help 2` for the next page. Naming a
+command instead of a page gives that one command its own card — `!help modcall` answers with the
+usage, the aliases, the access level and whether you may run it. Aliases resolve, so `!help
+shortcuts` and `!help macros` show the same card.
 
 The cooldown is **per player**. A rule paces each speaker separately, so a busy chat cannot use up
 the rule for everyone else: when three players ask `!tps` at once, all three get an answer. The
@@ -606,6 +612,7 @@ understood:
 | Command | Effect |
 | --- | --- |
 | `!help [page]` | List every command you may use, one page at a time. |
+| `!help <command>` | One command's usage, aliases and access level. |
 | `!hello` | A greeting that suits the time of day. |
 | `!gg` | The configured good-game line. |
 | `!status` | Assistant state and memory size. |
@@ -812,6 +819,7 @@ loop.
 | `!macros` | List the enabled macros as a block, one row each. |
 | `!macro <name>` | One macro's syntax, the command it sends and its aliases. |
 | `!macrohelp <name>` | The same answer, under the longer spelling. |
+| `!share` | The macros other players may run, and how to spell them. |
 
 `!macro` and `!macrohelp` are the same command, so both of these show `!home`:
 
@@ -828,8 +836,13 @@ The reply is a block, not a sentence:
 │ Sends   /home {name}                       │
 │ About   Teleport to one of your homes.     │
 │ Enabled yes                                │
+│ Shared  no                                 │
 └────────────────────────────────────────────┘
 ```
+
+The `Shared` row says whether another player may run the macro. Sharing is off by default and is
+only possible once **allow-remote** is on and the macro itself is marked `remote`; `!share` lists
+what is currently reachable, and `!macros` marks those entries with `(shared)`.
 
 `macro-feedback` shows a local note when a macro runs or is refused. `echo-command` shows the
 expanded command in chat as if you had typed it; turn it off to send it silently.

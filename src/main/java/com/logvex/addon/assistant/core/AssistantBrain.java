@@ -543,10 +543,15 @@ public final class AssistantBrain {
             case "hello" -> commandHello(sender, config, now, stats);
             case "gg" -> commandGoodGame(sender, config, now, stats);
             case "whoami" -> commandWhoAmI(sender, config);
-            case "macros" -> commandMacros(config);
+            case "macros" -> commandMacros(config, rest);
             case "triggers" -> commandTriggers(identity, config, rest);
             case "macrohelp" -> commandMacroHelp(rest, config);
+            case "share" -> commandShare(config);
             case "mod", "report" -> commandReport(sender, canonical, rest, config);
+            // modcall is its own module for the case where the assistant is off, but it is also in
+            // the command table, so the assistant must answer it too. Without this case the line
+            // fell through to public chat and the player's reason was broadcast to everyone.
+            case "modcall" -> commandReport(sender, "mod", rest, config);
             // Both read the operator's own private data - who they reported and what they
             // remember about a player - so they are gated on the local speaker here rather than
             // left to the permissions setting, which is off by default. Without this a stranger
@@ -644,6 +649,12 @@ public final class AssistantBrain {
     /** {@code !help}: every command the assistant answers, as one row per command. */
     private Decision commandHelp(SenderIdentity identity, AssistantConfig config, String rest,
                                  StatusCommands.Settings statusSettings, PermissionSet perms) {
+        // A name is a request for that one command, not a page. Without this, "!help modcall" was
+        // read as "page 1" and silently answered with the whole list.
+        CommandCatalog.Command single = namedCommand(rest);
+        if (single != null) {
+            return commandHelpDetail(identity, config, single, perms);
+        }
         int page = parsePage(rest);
         ReplyFormat.Embed embed = helpEmbed(identity, config, statusSettings, perms, page);
         if (embed.fields().isEmpty()) {
@@ -653,13 +664,64 @@ public final class AssistantBrain {
     }
 
     /**
+     * The command {@code rest} names, or null when it names none.
+     *
+     * <p>Only a single token is treated as a name. {@code "page 2"} and a bare number stay on the
+     * paging path, so the two ways of using the command do not collide.
+     */
+    private static CommandCatalog.Command namedCommand(String rest) {
+        if (rest == null) return null;
+        String text = rest.strip();
+        if (text.isEmpty()) return null;
+        String word = text.toLowerCase(Locale.ROOT);
+        if (word.startsWith("page")) return null;
+        if (word.chars().allMatch(Character::isDigit)) return null;
+        if (text.indexOf(' ') >= 0) return null;
+        // find() matches canonical names only, so an alias such as "shortcuts" has to be resolved
+        // through the alias table before the lookup or it reads as an unknown command.
+        String canonical = CommandCatalog.canonical(word).orElse(word);
+        return CommandCatalog.find(canonical).orElse(null);
+    }
+
+    /**
+     * One command, in full: what it does, how to spell it, and whether the caller may run it.
+     *
+     * <p>Refused rather than omitted when the caller could not run it, unlike the list: asking about
+     * a named command is not the same as being offered it, and saying so is more useful than an
+     * empty answer.
+     */
+    private Decision commandHelpDetail(SenderIdentity identity, AssistantConfig config,
+                                       CommandCatalog.Command command, PermissionSet perms) {
+        PermissionSet live = perms == null ? PermissionSet.permissive() : perms;
+        PermissionSet.Verdict verdict = live.permits(command.name(), identity);
+        PermissionLevel level = live.effectiveLevel(command.name());
+        String prefix = config.commandPrefix();
+
+        java.util.List<ReplyFormat.Field> fields = new java.util.ArrayList<>();
+        fields.add(new ReplyFormat.Field("Usage", prefix + command.name()));
+        fields.add(new ReplyFormat.Field("About", command.description()));
+        if (!command.aliases().isEmpty()) {
+            java.util.List<String> spelled = new java.util.ArrayList<>();
+            for (String alias : command.aliases()) spelled.add(prefix + alias);
+            fields.add(new ReplyFormat.Field("Also", String.join(", ", spelled)));
+        }
+        fields.add(new ReplyFormat.Field("Access", levelLabel(level)));
+        if (!verdict.allowed()) {
+            fields.add(new ReplyFormat.Field("You", "may not run this"));
+        }
+        return embedReply(config.memoryReplyMode(),
+            new ReplyFormat.Embed(prefix + command.name(), fields, "", ReplyFormat.Style.BOX), false);
+    }
+
+    /**
      * How many command rows one help page holds.
      *
-     * <p>Six, not eight: a row with its description and aliases can still wrap to two lines in a
-     * narrow chat window, and a page has to stay inside the delivery cap or the tail is cut off. The
-     * level is no longer repeated per row, which is what made six fit where four did.
+     * <p>Five, not eight or six: a row carrying aliases wraps to two lines at the default width, and
+     * the delivery cap is twelve lines including both frame rules. Six rows meant a page could need
+     * fourteen lines, so the tail was cut and reported as "+1 more" — a command the reader was told
+     * about but never shown. Five rows is the largest count that always fits.
      */
-    public static final int HELP_PAGE_SIZE = 6;
+    public static final int HELP_PAGE_SIZE = 5;
 
     /** The page number in {@code rest} ({@code "2"} or {@code "page 2"}), clamped to 1 or more. */
     static int parsePage(String rest) {
@@ -1002,37 +1064,57 @@ public final class AssistantBrain {
     }
 
     /**
+     * How many macro rows one {@code !macros} page holds.
+     *
+     * <p>Six, matching a help page: the reply cap is twelve lines and a row with a wrapped
+     * description can take two, so a larger page would be cut and the tail lost.
+     */
+    public static final int MACROS_PAGE_SIZE = 6;
+
+    /**
      * {@code !macros}: the shortcuts the local player can type, as one row per macro.
      *
      * <p>Only enabled, valid macros are listed, and a disabled or broken one is simply absent rather
      * than shown as a shortcut that would not work. The rows carry the usage and the description, so
      * the list doubles as a reference card.
+     *
+     * <p>Paged, because the shipped set is fifteen macros and a single block is cut at twelve lines:
+     * the tail used to be reported as "+9 more" with no way to see it. The page number is the same
+     * argument {@code !help} takes.
      */
-    private Decision commandMacros(AssistantConfig config) {
+    private Decision commandMacros(AssistantConfig config, String rest) {
         java.util.List<ChatMacro> enabled = macros.enabled();
         if (enabled.isEmpty()) {
             return reply(config.memoryReplyMode(),
                 "No chat command macros are enabled. Add one in the assistant's Macro screen.", false);
         }
+        int wanted = parsePage(rest);
+        int pages = Math.max(1, (enabled.size() + MACROS_PAGE_SIZE - 1) / MACROS_PAGE_SIZE);
+        int page = Math.min(wanted, pages);
+        int from = (page - 1) * MACROS_PAGE_SIZE;
+        int to = Math.min(from + MACROS_PAGE_SIZE, enabled.size());
+
         java.util.List<ReplyFormat.Field> fields = new java.util.ArrayList<>();
-        for (ChatMacro macro : enabled) {
+        for (ChatMacro macro : enabled.subList(from, to)) {
             String label = macro.args().isEmpty() ? "no arguments" : macro.usageLine();
-            fields.add(new ReplyFormat.Field(macro.usageLine(),
-                macro.description().isBlank() ? label : macro.description()));
+            String about = macro.description().isBlank() ? label : macro.description();
+            // A shared macro runs as the operator, so it is called out here: the list is what a
+            // user scans, and "why did someone else run /spawn" is answered by seeing the marker.
+            if (macro.remote()) about = about + " (shared)";
+            fields.add(new ReplyFormat.Field(macro.usageLine(), about));
         }
-        String footer = enabled.size() + (enabled.size() == 1 ? " macro" : " macros")
-            + " - " + config.commandPrefix() + "macrohelp <name> for one";
+        String footer;
+        if (pages > 1) {
+            footer = "Page " + page + " of " + pages + " - " + config.commandPrefix() + "macros "
+                + (page < pages ? (page + 1) : 1) + " for the next.";
+        } else {
+            footer = enabled.size() + (enabled.size() == 1 ? " macro" : " macros")
+                + " - " + config.commandPrefix() + "macrohelp <name> for one";
+        }
         return embedReply(config.memoryReplyMode(),
             new ReplyFormat.Embed("Chat command macros", fields, footer, ReplyFormat.Style.BOX), false);
     }
 
-    /**
-     * {@code !who}: the players the client can see, laid out as a block that fits the reply width.
-     *
-     * <p>Names are grouped into lines rather than crammed into one, so a busy server reads as a list
-     * instead of a paragraph. The count is carried as its own field so it stays legible even when the
-     * names wrap.
-     */
     /**
      * {@code !stats}: every figure the client can see, as a labelled block.
      *
@@ -1050,6 +1132,13 @@ public final class AssistantBrain {
             new ReplyFormat.Embed("Server stats", fields, "", ReplyFormat.Style.BOX), false);
     }
 
+    /**
+     * {@code !who}: the players the client can see, laid out as a block that fits the reply width.
+     *
+     * <p>Names are grouped into lines rather than crammed into one, so a busy server reads as a list
+     * instead of a paragraph. The count is carried as its own field so it stays legible even when the
+     * names wrap.
+     */
     private Decision commandWho(AssistantConfig config, ServerStats stats) {
         ServerStats live = stats == null ? ServerStats.OFFLINE : stats;
         if (!live.inWorld()) {
@@ -1094,9 +1183,38 @@ public final class AssistantBrain {
             fields.add(new ReplyFormat.Field("Aliases", String.join(", ", macro.aliases())));
         }
         fields.add(new ReplyFormat.Field("Enabled", macro.enabled() ? "yes" : "no"));
+        fields.add(new ReplyFormat.Field("Shared",
+            macro.remote() ? "yes, other players may run it" : "no"));
         return embedReply(config.memoryReplyMode(),
             new ReplyFormat.Embed("Macro " + macro.shortcut(), fields, "", ReplyFormat.Style.BOX),
             false);
+    }
+
+    /**
+     * {@code !share}: which macros other players may run.
+     *
+     * <p>Read-only. Sharing is a security decision — a shared macro runs a command as the operator —
+     * so it is made in the module, where the allow-list and the on/off switch live, and this command
+     * only reports the result. A command that could silently flip sharing on would make that
+     * decision reachable from public chat.
+     */
+    private Decision commandShare(AssistantConfig config) {
+        java.util.List<ChatMacro> shared = macros.remote();
+        String prefix = config.commandPrefix();
+        if (shared.isEmpty()) {
+            return reply(config.memoryReplyMode(),
+                "No macros are shared. Mark one 'remote' in the assistant's Macro screen to let "
+                    + "other players run it.", false);
+        }
+        java.util.List<ReplyFormat.Field> fields = new java.util.ArrayList<>();
+        for (ChatMacro macro : shared) {
+            fields.add(new ReplyFormat.Field(macro.usageLine(),
+                macro.description().isBlank() ? macro.template() : macro.description()));
+        }
+        String footer = shared.size() + (shared.size() == 1 ? " shared macro" : " shared macros")
+            + " - " + prefix + "macrohelp <name> for one";
+        return embedReply(config.memoryReplyMode(),
+            new ReplyFormat.Embed("Shared macros", fields, footer, ReplyFormat.Style.BOX), false);
     }
 
     /**
