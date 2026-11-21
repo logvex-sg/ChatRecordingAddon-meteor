@@ -91,6 +91,25 @@ combined with real documentation, not to train a model from scratch. If you want
 honest way to get it is to add more source: the README sections, the per-module doc comments, and
 the command help text are all still unextracted.
 
+## Using the data: the assistant bot
+
+`tools/assistant_bot.py` answers questions from these datasets. It is a retrieval bot, not a
+language model: it returns the best matching record and says so when nothing matches.
+
+```bash
+python3 tools/assistant_bot.py                        # interactive
+python3 tools/assistant_bot.py --ask "how do I send chat to discord"
+python3 tools/assistant_bot.py --stats
+```
+
+It needs no API key and no network. Because it can only return a record that exists, it cannot
+invent a setting — the failure mode is "I do not have that" rather than a plausible wrong answer.
+Measured on a fixed set of 26 questions: 88% return the exact record, 96% land in the right module,
+and all 8 out-of-scope questions are refused. Those numbers are enforced by `EvalSetTest`, so a
+change that makes retrieval worse fails the build.
+
+It can also count its own usage, anonymously and off by default. See `TELEMETRY.md`.
+
 ## Extending it
 
 `build_datasets.py` is organised by source. To add a dataset:

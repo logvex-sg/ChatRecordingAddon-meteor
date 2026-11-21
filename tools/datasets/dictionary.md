@@ -2,13 +2,17 @@
 
 Generated from the source by `tools/build_datasets.py`. Do not edit by hand.
 
-## Concepts (6)
+## Concepts (10)
 
 - **companion access token** — The shared secret the companion server requires. Sent as an Authorization Bearer header or a token query parameter. The server binds to loopback by default and refuses a remote bind without an explicit opt-in.
 - **webhook relay** — One-way delivery of chat events to Discord as rich embeds. Opt-in: nothing is sent until a URL is configured. A failed delivery is retried for transient errors (network, 5xx, 429) and dropped for a 4xx, because a rejected payload will not become valid on a retry.
 - **embed character budget** — Discord rejects an embed whose visible text exceeds 6000 characters across all its parts. Each part is clipped to its own limit and to the remaining total budget as it is added, so the sum cannot exceed the limit.
 - **leading slash rule** — The companion chat endpoint forwards a message starting with '/' to the command path, which runs it as the player. Any external input must have leading slashes stripped first, or it becomes remote command execution.
 - **chat event field names** — The companion event stream names a chat line's text 'content', following ChatEntry.toMap(). The snapshot names the same field 'message', following ChatEntryView. A consumer must accept both.
+- **Discord bridge** — tools/discord_bridge.py mirrors a Discord channel and Minecraft chat in both directions, on top of the companion API. It is a separate Python process, not part of the mod, because a bot token must not ship inside a client mod and a bot has to stay online when the game is closed.
+- **bridge echo suppression** — A Discord message becomes a Minecraft chat line, which the bridge would read back and post to Discord again, forever. Injected lines are remembered and consumed, so one injection produces exactly one echo, and a player genuinely repeating the same text later still reaches Discord.
+- **anonymous usage counting** — Off by default. When enabled it records only which public record ids were answered, how many questions went unanswered, and which module names those questions mentioned. It never stores question text, file paths, hostnames or usernames, and --preview-telemetry shows the exact payload first.
+- **offline assistant bot** — tools/assistant_bot.py answers questions about Log Client by searching the generated datasets. It is retrieval, not a language model: it returns the best matching record and says when nothing matches, so it cannot invent a setting that does not exist. No API key and no network needed.
 - **keyword webhook routing** — A keyword rule can name its own webhook URL. Precedence is the chat-logger keyword URL, then the relay's keywords= route, then the shared webhook. A route on its own is enough; a shared URL is not required.
 
 ## Modules (22)
