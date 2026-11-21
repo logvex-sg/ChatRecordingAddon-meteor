@@ -31,9 +31,25 @@ public record ReleaseInfo(
         publishedAt = publishedAt == null ? "" : publishedAt;
     }
 
-    /** The version this release represents. */
+    /**
+     * The version this release represents.
+     *
+     * <p>The tag is not always the version. Releases here are tagged with a bare counter
+     * ({@code v33}) while the mod version lives in the title ({@code Log Client 18.16.0}). Reading
+     * the tag would compare {@code 33.0.0} against an installed {@code 18.16.0} and report an
+     * update on every check, forever. When the tag carries no dotted version the title is used
+     * instead, and the tag remains the fallback for releases that have nothing better.
+     */
     public Version version() {
-        return Version.parse(tagName);
+        Version fromTag = Version.parse(tagName);
+        if (!isBareTag(tagName)) return fromTag;
+        Version fromName = Version.parse(name);
+        return fromName.compareTo(Version.parse("0")) > 0 ? fromName : fromTag;
+    }
+
+    /** True for a tag like {@code v33}: a release counter with no dotted version in it. */
+    private static boolean isBareTag(String tag) {
+        return tag.trim().matches("(?i)v?\\d+");
     }
 
     /** True when this release is newer than {@code installed}. */
@@ -41,11 +57,33 @@ public record ReleaseInfo(
         return version().isNewerThan(installed);
     }
 
-    /** The first asset whose name ends with {@code .jar}, or null when the release ships none. */
+    /**
+     * The jar to install, or null when the release ships none.
+     *
+     * <p>Releases attach more than one jar — a sources jar alongside the mod — and GitHub returns
+     * assets in alphabetical order, so "the first .jar" is the sources jar. Installing that would
+     * replace the mod with source code. Classifier jars are therefore skipped, and a plain jar is
+     * preferred over any other.
+     */
     public ReleaseAsset primaryJar() {
+        ReleaseAsset fallback = null;
         for (ReleaseAsset asset : assets) {
-            if (asset.name().toLowerCase(java.util.Locale.ROOT).endsWith(".jar")) return asset;
+            String name = asset.name().toLowerCase(java.util.Locale.ROOT);
+            if (!name.endsWith(".jar")) continue;
+            if (isClassifierJar(name)) {
+                if (fallback == null) fallback = asset;
+                continue;
+            }
+            return asset;
         }
-        return null;
+        return fallback;
+    }
+
+    /** True for the jars Gradle publishes beside the mod rather than as the mod. */
+    private static boolean isClassifierJar(String name) {
+        return name.endsWith("-sources.jar")
+            || name.endsWith("-javadoc.jar")
+            || name.endsWith("-dev.jar")
+            || name.endsWith("-slim.jar");
     }
 }

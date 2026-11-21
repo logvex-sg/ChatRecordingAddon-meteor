@@ -3,6 +3,7 @@ package com.logvex.addon.update;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonParser;
 import com.logvex.addon.update.core.GitHubReleaseSource;
+import com.logvex.addon.update.core.Version;
 import com.logvex.addon.update.core.ReleaseInfo;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -11,6 +12,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Parsing of the GitHub Releases JSON, including the fields that are easy to get wrong. */
@@ -101,5 +103,70 @@ class GitHubReleaseSourceTest {
             [{"tag_name": "v1.0.0", "assets": [{"name": "notes.txt", "browser_download_url": "https://x/n.txt"}]}]
             """).getAsJsonArray();
         assertTrue(GitHubReleaseSource.parseReleases(array, false).get(0).primaryJar() == null);
+    }
+
+    @Test
+    @DisplayName("a sources jar is never chosen over the mod jar")
+    void sourcesJarIsNotTheDownload() {
+        // GitHub returns assets alphabetically and "-sources" sorts before ".jar", so taking the
+        // first .jar hands the player source code instead of the mod.
+        JsonArray array = JsonParser.parseString("""
+            [{"tag_name": "v33", "name": "Log Client 18.16.0", "assets": [
+                {"name": "log-client-18.16.0-sources.jar", "browser_download_url": "https://x/s.jar", "size": 940},
+                {"name": "log-client-18.16.0.jar", "browser_download_url": "https://x/m.jar", "size": 1814}]}]
+            """).getAsJsonArray();
+        ReleaseInfo release = GitHubReleaseSource.parseReleases(array, false).get(0);
+        assertEquals("log-client-18.16.0.jar", release.primaryJar().name());
+        assertEquals("https://x/m.jar", release.primaryJar().browserDownloadUrl());
+    }
+
+    @Test
+    @DisplayName("a sources-only release still yields an asset rather than nothing")
+    void sourcesOnlyFallsBack() {
+        JsonArray array = JsonParser.parseString("""
+            [{"tag_name": "v1.0.0", "assets": [
+                {"name": "mod-1.0.0-sources.jar", "browser_download_url": "https://x/s.jar"}]}]
+            """).getAsJsonArray();
+        ReleaseInfo release = GitHubReleaseSource.parseReleases(array, false).get(0);
+        assertNotNull(release.primaryJar(), "a lone classifier jar is better than no update at all");
+        assertEquals("mod-1.0.0-sources.jar", release.primaryJar().name());
+    }
+
+    @Test
+    @DisplayName("a bare release tag takes its version from the release title")
+    void bareTagReadsTheTitle() {
+        // Releases are tagged v33 while the mod version is 18.16.0. Reading the tag as 33.0.0 makes
+        // every check report an update, forever.
+        JsonArray array = JsonParser.parseString("""
+            [{"tag_name": "v33", "name": "Log Client 18.16.0"}]
+            """).getAsJsonArray();
+        ReleaseInfo release = GitHubReleaseSource.parseReleases(array, false).get(0);
+        assertEquals(0, release.version().compareTo(Version.parse("18.16.0")),
+            "expected 18.16.0 but was " + release.version());
+        assertFalse(release.isNewerThan(Version.parse("18.16.0")),
+            "an up-to-date install must not be offered the release it already has");
+        assertTrue(release.isNewerThan(Version.parse("18.15.0")));
+    }
+
+    @Test
+    @DisplayName("a dotted tag is still read from the tag, not the title")
+    void dottedTagWins() {
+        JsonArray array = JsonParser.parseString("""
+            [{"tag_name": "v13.1.0", "name": "Some unrelated title"}]
+            """).getAsJsonArray();
+        ReleaseInfo release = GitHubReleaseSource.parseReleases(array, false).get(0);
+        assertEquals(0, release.version().compareTo(Version.parse("13.1.0")),
+            "expected 13.1.0 but was " + release.version());
+    }
+
+    @Test
+    @DisplayName("a bare tag with no version in the title falls back to the tag")
+    void bareTagWithoutTitleVersion() {
+        JsonArray array = JsonParser.parseString("""
+            [{"tag_name": "v5", "name": "V5"}]
+            """).getAsJsonArray();
+        ReleaseInfo release = GitHubReleaseSource.parseReleases(array, false).get(0);
+        assertEquals(0, release.version().compareTo(Version.parse("5")),
+            "expected 5 but was " + release.version());
     }
 }
