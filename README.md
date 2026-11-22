@@ -1965,7 +1965,7 @@ archive with in-memory doubles (no Minecraft runtime required):
   check the element is on, or press **Show all**. A hidden element costs nothing per frame.
 - **The companion app will not connect.** The server only runs while the **Companion** module is
   on, and it binds to loopback by default. From another device, turn on **allow-remote** and use the
-  machine's LAN address (`http://<host>:8765/?token=...`), and make sure the port is not blocked by a
+  machine's LAN address (`http://<host>:6767/?token=...`), and make sure the port is not blocked by a
   firewall. If the port is already in use the module says so and does not listen; change the port or
   free it. A `401` means the token is missing or wrong — copy the address again from the widget, the
   Companion screen or `!log companion token`.

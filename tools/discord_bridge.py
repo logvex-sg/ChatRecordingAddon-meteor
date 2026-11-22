@@ -192,7 +192,7 @@ class Config:
 
     bot_token: str = ""
     channel_id: str = ""
-    companion_url: str = "http://127.0.0.1:8765"
+    companion_url: str = "http://127.0.0.1:6767"
     companion_token: str = ""
     transport: str = "gateway"
     webhook_url: str = ""
@@ -211,7 +211,7 @@ class Config:
             description="Two-way Discord <-> Minecraft chat bridge for Log Client.",
         )
         parser.add_argument("--companion-url", default=os.environ.get("COMPANION_URL",
-                            "http://127.0.0.1:8765"), help="Log Client companion base URL")
+                            "http://127.0.0.1:6767"), help="Log Client companion base URL")
         parser.add_argument("--companion-token", default=os.environ.get("COMPANION_TOKEN", ""),
                             help="Companion access token (or COMPANION_TOKEN)")
         parser.add_argument("--channel-id", default=os.environ.get("BRIDGE_CHANNEL_ID", ""),

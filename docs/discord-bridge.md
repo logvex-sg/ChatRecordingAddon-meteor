@@ -52,7 +52,7 @@ python3 tools/discord_bridge.py
 Expected output:
 
 ```
-[12:00:00] Connected to Log Client at http://127.0.0.1:8765.
+[12:00:00] Connected to Log Client at http://127.0.0.1:6767.
 [12:00:00] Gateway: identifying.
 [12:00:01] Gateway: ready as MyBridge#1234.
 [12:00:01] Bridging channel 123456789012345678. Ctrl-C to stop.
@@ -72,7 +72,7 @@ a token in your shell history is better than a token in a file you might commit.
 | `DISCORD_BOT_TOKEN` | – | – | Bot token. Required unless Discord → Minecraft is off. |
 | `BRIDGE_CHANNEL_ID` | `--channel-id` | – | The one channel that is bridged. |
 | `COMPANION_TOKEN` | `--companion-token` | – | Access token from the Companion module. |
-| `COMPANION_URL` | `--companion-url` | `http://127.0.0.1:8765` | Where the companion server listens. |
+| `COMPANION_URL` | `--companion-url` | `http://127.0.0.1:6767` | Where the companion server listens. |
 | `BRIDGE_TRANSPORT` | `--transport` | `gateway` | `gateway` posts as the bot, `webhook` posts through a webhook URL. |
 | `BRIDGE_WEBHOOK_URL` | `--webhook-url` | – | Required for `--transport webhook`. |
 | `BRIDGE_INGRESS` | `--ingress` | `gateway` | `gateway` reads live, `poll` polls the REST API. |
