@@ -1484,6 +1484,13 @@ public class LogCommand extends Command {
         info("Companion listening on port %d with %s connected.",
             module.boundPort(), Messages.plural(module.connectedClients(), "app client"));
         info("Address: %s", module.url());
+        if (module.isLoopbackOnly()) {
+            info("Only this machine can connect. Turn on allow-remote to reach it from a phone "
+                + "or another PC, then reopen this screen for the address to use.");
+        } else {
+            info("Reachable from other devices on the same network. Use a LAN address, not your "
+                + "Minecraft server's address: the companion runs on this PC, not on the server.");
+        }
     }
 
     private void companionSet(boolean on) {

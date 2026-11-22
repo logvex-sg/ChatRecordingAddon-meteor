@@ -331,15 +331,22 @@ public class CompanionModule extends AddonModule {
         return config.token();
     }
 
-    /** The URL a browser can open on this machine. */
+    /**
+     * The URL a browser can open. With remote access on this is the machine's LAN address, so the
+     * link works from another device; with it off it is loopback, which is all that is listening.
+     */
     public String url() {
-        int bound = boundPort();
-        return "http://127.0.0.1:" + (bound > 0 ? bound : config.port()) + "/";
+        return config.advertisedUrl(boundPort());
     }
 
     /** The URL with the token, ready to paste into a phone or a browser. */
     public String urlWithToken() {
         return url() + "?token=" + accessToken();
+    }
+
+    /** True when the server only accepts connections from this machine. */
+    public boolean isLoopbackOnly() {
+        return config.isLoopbackOnly();
     }
 
     public String statusLine() {

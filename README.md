@@ -1488,7 +1488,8 @@ Enable **Companion** in the addon window (or run `!log companion start`). The se
 
 - The server is **off unless the module is on**, and binds to loopback only by default. Turning on
   **allow-remote** binds every interface and is a deliberate choice: anyone who can reach the port
-  and knows the token can control the client.
+  and knows the token can control the client. The switch is what decides this, not the bind
+  address, so turning it on works even while the address still reads `127.0.0.1`.
 - Every request except the app shell and the health probe needs the token, as an
   `Authorization: Bearer <token>` header or a `?token=` query parameter (the query form is what a
   browser and an `EventSource` can send).
@@ -1963,12 +1964,25 @@ archive with in-memory doubles (no Minecraft runtime required):
   `Schematic` envelope before detection, so v1/v2/v3 `.schem` files all load.
 - **The HUD element is missing.** Open the addon window (Right Shift), go to the **HUD** tab and
   check the element is on, or press **Show all**. A hidden element costs nothing per frame.
-- **The companion app will not connect.** The server only runs while the **Companion** module is
-  on, and it binds to loopback by default. From another device, turn on **allow-remote** and use the
-  machine's LAN address (`http://<host>:6767/?token=...`), and make sure the port is not blocked by a
-  firewall. If the port is already in use the module says so and does not listen; change the port or
-  free it. A `401` means the token is missing or wrong — copy the address again from the widget, the
-  Companion screen or `!log companion token`.
+- **The companion app will not connect.** The companion is a small web server that runs **inside
+  your game, on your own PC**. It is not hosted on the Minecraft server you play on, so a server
+  address (`play.example.com:25565`, or any IP:port the game shows you) is never the right address
+  for it. Your Minecraft server's address and the companion's address are unrelated.
+
+  Use the address the addon gives you: the **Companion** screen, the module widget, or
+  `!log companion status`. It looks like `http://127.0.0.1:6767/?token=...`.
+
+  Then check, in order:
+  1. **The Companion module is on.** Nothing listens while it is off.
+  2. **Same machine?** `127.0.0.1` only works on the PC running Minecraft. From a phone or another
+     PC, turn on **allow-remote** and reopen the screen — the address shown then becomes your PC's
+     LAN address. `!log companion status` says which of the two you are in.
+  3. **Same network.** A LAN address does not work from outside your home network without a
+     tunnel; the addon does not do that for you.
+  4. **Firewall.** Allow the port through your OS firewall. On Windows, the prompt appears the
+     first time the module starts; if it was dismissed, add the rule by hand.
+  5. **Port already in use.** The module says so and does not listen. Change the port or free it.
+  6. **`401`.** The token is missing or wrong — copy the address again, including `?token=`.
 - **A config written by a newer build.** Unknown keys are preserved on save, so downgrading does not
   truncate them, and a missing or invalid value falls back to its default rather than aborting the
   load. A theme name from an older build (`DARK`, `ROSE`, `FOREST`) migrates to its nearest
