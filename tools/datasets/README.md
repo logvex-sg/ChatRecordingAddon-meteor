@@ -100,11 +100,21 @@ language model: it returns the best matching record and says so when nothing mat
 python3 tools/assistant_bot.py                        # interactive
 python3 tools/assistant_bot.py --ask "how do I send chat to discord"
 python3 tools/assistant_bot.py --stats
+python3 tools/assistant_bot.py --ask "companion port" --plain    # no box drawing
+python3 tools/assistant_bot.py --ask "companion port" --width 72  # wider box
 ```
+
+An answer is a bordered block, the same shape the in-game assistant and the Discord webhooks use:
+the definition across the top, then `related`, `kind` and `source`, with the record id in the
+footer. The box widens to fit a long source path, because a shortened path sends you to the wrong
+file.
+
+`--plain` drops the box for pipes, log files, or a terminal that cannot render the box-drawing
+characters. The facts are identical; only the framing changes.
 
 It needs no API key and no network. Because it can only return a record that exists, it cannot
 invent a setting — the failure mode is "I do not have that" rather than a plausible wrong answer.
-Measured on a fixed set of 26 questions: 88% return the exact record, 96% land in the right module,
+Measured on a fixed set of 28 questions: 89% return the exact record, 96% land in the right module,
 and all 8 out-of-scope questions are refused. Those numbers are enforced by `EvalSetTest`, so a
 change that makes retrieval worse fails the build.
 

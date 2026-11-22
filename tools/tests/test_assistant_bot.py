@@ -108,7 +108,9 @@ class RetrievalTest(unittest.TestCase):
 
     def test_setting_answer_points_at_neighbours(self):
         answer = self.ask("what does the webhook url setting do")
-        self.assertIn("Related in this module", answer.text)
+        self.assertTrue(answer.related, "a setting answer should name its neighbours")
+        for sibling in answer.related:
+            self.assertIn(sibling, answer.text)
 
 
 class EvalSetTest(unittest.TestCase):

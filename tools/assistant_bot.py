@@ -379,18 +379,179 @@ class Answer:
     score: float
     source: str
     kind: str = ""
+    term: str = ""
+    definition: str = ""
+    module: str = ""
+    related: tuple[str, ...] = ()
 
     @property
     def found(self) -> bool:
         return self.record_id is not None
 
 
+# --------------------------------------------------------------------------- embed rendering
+
+DEFAULT_WIDTH = 48
+MAX_WIDTH = 100
+TOP_LEFT, TOP_RIGHT = "\u250c", "\u2510"
+BOTTOM_LEFT, BOTTOM_RIGHT = "\u2514", "\u2518"
+BAR, HORIZONTAL = "\u2502", "\u2500"
+
+
+def _display_width(text: str) -> int:
+    return len(text)
+
+
+def _shorten(text: str, width: int) -> str:
+    if _display_width(text) <= width:
+        return text
+    if width <= 1:
+        return text[:width]
+    return text[: width - 1] + "\u2026"
+
+
+def _wrap(text: str, width: int) -> list[str]:
+    """Greedy word wrap. A single word longer than the width is hard-split, never dropped."""
+    width = max(1, width)
+    if not text:
+        return [""]
+    words = text.split()
+    if not words:
+        return [""]
+    lines: list[str] = []
+    current = ""
+    for word in words:
+        if not current:
+            current = word
+        elif len(current) + 1 + len(word) <= width:
+            current += " " + word
+        else:
+            lines.append(current)
+            current = word
+        while len(current) > width:
+            lines.append(current[:width])
+            current = current[width:]
+    if current:
+        lines.append(current)
+    return lines
+
+
+def _border(left: str, right: str, label: str, width: int) -> str:
+    text = f" {label} " if label else ""
+    room = width - 3
+    if _display_width(text) > room:
+        text = " " + _shorten(label, max(1, room - 2)) + " "
+    fill = max(0, room - _display_width(text))
+    return left + HORIZONTAL + text + HORIZONTAL * fill + right
+
+
+def _fit_path(path: str, width: int) -> str:
+    """Shortens a path from the left so it fits one row, keeping the filename.
+
+    A path is a reference, so it has to stay on one row: split across rows it cannot be read or
+    copied. The tail is what identifies the file, so the head is what gets dropped.
+    """
+    width = max(1, width)
+    if len(path) <= width:
+        return path
+    if width == 1:
+        return "\u2026"
+    return "\u2026" + path[-(width - 1):]
+
+
+def _rule(name: str, width: int) -> str:
+    """A filled rule with the name centred, used as a section divider inside a box."""
+    room = max(1, width)
+    text = f" {name} " if name else ""
+    if _display_width(text) >= room:
+        return HORIZONTAL * room
+    fill = room - _display_width(text)
+    left = fill // 2
+    return f"{BAR} {HORIZONTAL * left}{text}{HORIZONTAL * (fill - left)} {BAR}"
+
+
+def render_embed(title: str, fields: list[tuple[str, str]], footer: str = "",
+                 width: int = DEFAULT_WIDTH, path_labels: tuple[str, ...] = ("source",)) -> str:
+    """Renders a bordered block, mirroring the mod's ReplyFormat BOX style.
+
+    The game and the Discord webhooks both answer in a titled box, so the CLI uses the same shape:
+    one field per row with values in an aligned column, rather than a run-on sentence. Width is
+    capped because a wrapped row destroys the alignment the box exists to provide.
+
+    A field whose label is in {@code path_labels} is kept on one row and shortened from the left if
+    it cannot fit, because a path split across rows cannot be read. A field with an empty label is
+    the body of the block and takes the full width; a field whose label ends with
+    {@code !} is a section heading, drawn as a rule with the body beneath it. Prose and lists need
+    the whole width — squeezing them into a narrow value column breaks them into a ragged ribbon
+    that is harder to read than the sentence it replaced.
+    """
+    width = width if width > 0 else DEFAULT_WIDTH
+    scalar_labels = [label for label, _ in fields if label and not label.endswith("!")]
+    label_width = max((_display_width(label) for label in scalar_labels), default=0)
+    label_cap = max(8, (width - 5) * 2 // 5)
+    if label_width > 0:
+        label_width = max(1, min(label_width, min(label_cap, width - 6)))
+
+    lines: list[str] = []
+    if title:
+        lines.append(_border(TOP_LEFT, TOP_RIGHT, title, width))
+    room = max(1, width - (4 if label_width == 0 else 5) - label_width)
+    full_room = max(1, width - 4)
+    for label, value in fields:
+        if label.endswith("!"):
+            lines.append(_rule(label[:-1], width - 4))
+            for row in _wrap(value, full_room):
+                lines.append(f"{BAR} {row.ljust(full_room)} {BAR}")
+            continue
+        if not label:
+            for row in _wrap(value, full_room):
+                lines.append(f"{BAR} {row.ljust(full_room)} {BAR}")
+            continue
+        label_rows = _wrap(label, label_width) if label_width else []
+        value_rows = ([_fit_path(value, room)] if label in path_labels
+                      else _wrap(value, room))
+        for i in range(max(len(label_rows), len(value_rows))):
+            left = (label_rows[i] if i < len(label_rows) else "").ljust(label_width)
+            right = (value_rows[i] if i < len(value_rows) else "").ljust(room)
+            lines.append(f"{BAR} {left} {right} {BAR}" if label_width
+                         else f"{BAR} {right} {BAR}")
+    lines.append(_border(BOTTOM_LEFT, BOTTOM_RIGHT, footer, width))
+    return "\n".join(lines)
+
+
+def render_answer(document: Document, related: tuple[str, ...] = (), width: int = DEFAULT_WIDTH) -> str:
+    """One record as a box: the answer, then what kind of thing it is and where it comes from.
+
+    The box widens when the source path would not fit. A path is a reference the user may want to
+    open, and a shortened one sends them to the wrong place, so it is kept whole up to a sane cap.
+    """
+    fields = [("", document.definition)]
+    if related:
+        fields.append(("related!", ", ".join(related)))
+    fields.append(("kind", document.kind))
+    fields.append(("source", document.source))
+    width = max(width, min(MAX_WIDTH, len(document.source) + len("source") + 5))
+    return render_embed(document.term, fields, footer=document.record_id, width=width)
+
+
+def plain_answer(document: Document, related: tuple[str, ...] = ()) -> str:
+    """The same answer without box drawing, for pipes, logs and terminals without UTF-8."""
+    lines = [f"{document.term}: {document.definition}"]
+    if related:
+        lines.append("related: " + ", ".join(related))
+    lines.append(f"{document.kind} · {document.source} · {document.record_id}")
+    return "\n".join(lines)
+
+
 class Assistant:
     """Answers questions from the index, and admits when it cannot."""
 
-    def __init__(self, index: Index, related: Optional[dict[str, list[Document]]] = None) -> None:
+    def __init__(self, index: Index, related: Optional[dict[str, list[Document]]] = None,
+                 boxed: bool = True, width: int = DEFAULT_WIDTH) -> None:
         self.index = index
         self.related = related or {}
+        self.boxed = boxed
+        self.width = width
 
     def answer(self, question: str) -> Answer:
         matches = self.index.search_confident(question, limit=3)
@@ -401,16 +562,17 @@ class Assistant:
                 record_id=None, score=matches[0][0] if matches else 0.0, source="")
 
         score, document = matches[0]
-        lines = [f"{document.term} — {document.definition}"]
+        siblings: tuple[str, ...] = ()
         if document.kind == "setting" and document.module:
-            siblings = [d for d in self.related.get(document.module, [])
-                        if d.record_id != document.record_id][:3]
-            if siblings:
-                lines.append("Related in this module: "
-                             + ", ".join(d.term for d in siblings) + ".")
-        lines.append(f"[{document.kind}] {document.source}")
-        return Answer(text="\n".join(lines), record_id=document.record_id, score=score,
-                      source=document.source, kind=document.kind)
+            related = [d for d in self.related.get(document.module, [])
+                       if d.record_id != document.record_id][:3]
+            siblings = tuple(d.term for d in related)
+        text = (render_answer(document, siblings, self.width) if self.boxed
+                else plain_answer(document, siblings))
+        return Answer(text=text, record_id=document.record_id,
+                      score=score, source=document.source, kind=document.kind,
+                      term=document.term, definition=document.definition,
+                      module=document.module, related=siblings)
 
 
 def build_related(documents: list[Document]) -> dict[str, list[Document]]:
@@ -515,9 +677,10 @@ class UsageCounter:
 # --------------------------------------------------------------------------- CLI
 
 
-def make_assistant(dataset_dir: str = DATASET_DIR) -> Assistant:
+def make_assistant(dataset_dir: str = DATASET_DIR, boxed: bool = True,
+                   width: int = DEFAULT_WIDTH) -> Assistant:
     documents = load_documents(dataset_dir)
-    return Assistant(Index(documents), build_related(documents))
+    return Assistant(Index(documents), build_related(documents), boxed=boxed, width=width)
 
 
 def interactive(assistant: Assistant, usage: UsageCounter, documents: list[Document]) -> int:
@@ -556,6 +719,18 @@ def coverage(documents: list[Document]) -> str:
     return f"{len(documents)} records: {detail}."
 
 
+def _coverage_fields(documents: list[Document], usage: "UsageCounter") -> list[tuple[str, str]]:
+    kinds: Counter[str] = Counter(document.kind for document in documents)
+    modules = {document.module for document in documents if document.module}
+    fields: list[tuple[str, str]] = [("records", str(len(documents)))]
+    fields.extend((kind, str(count)) for kind, count in sorted(kinds.items()))
+    fields.append(("modules", str(len(modules))))
+    fields.append(("counting", "on" if usage.opt_in else "off"))
+    if usage.opt_in:
+        fields.append(("usage", usage.summary()))
+    return fields
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         prog="assistant_bot.py",
@@ -569,9 +744,13 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--opt-out", action="store_true", help="Disable and erase usage counts")
     parser.add_argument("--preview-telemetry", action="store_true",
                         help="Print exactly what would be shared, then exit")
+    parser.add_argument("--plain", action="store_true",
+                        help="No box drawing: for pipes, logs or a terminal without UTF-8")
+    parser.add_argument("--width", type=int, default=DEFAULT_WIDTH,
+                        help=f"Box width in columns (default {DEFAULT_WIDTH})")
     args = parser.parse_args(argv)
 
-    assistant = make_assistant(args.dataset_dir)
+    assistant = make_assistant(args.dataset_dir, boxed=not args.plain, width=args.width)
     documents = assistant.index.documents
     usage = UsageCounter(args.state)
 
@@ -599,8 +778,12 @@ def main(argv: Optional[list[str]] = None) -> int:
         return 0
 
     if args.stats:
-        print(coverage(documents))
-        print(f"Usage: {usage.summary()} (counting {'on' if usage.opt_in else 'off'})")
+        if args.plain:
+            print(coverage(documents))
+            print(f"Usage: {usage.summary()} (counting {'on' if usage.opt_in else 'off'})")
+        else:
+            print(render_embed("Log Client assistant", _coverage_fields(documents, usage),
+                               footer="coverage", width=args.width))
         return 0
 
     if args.ask:
