@@ -385,7 +385,8 @@ pattern;sender=;reply=;mode=private;cooldown=3000;limit=0;sound=false;remember=f
 ```
 
 A fresh install ships **106 preconfigured rules** with 76 extra aliases, all enabled, all at the
-3000 ms cooldown, all matched on whole words, and all answered **privately to whoever asked**.
+3000 ms cooldown, all matched on whole words, and all answered **privately to the person they
+answer** (see *Who the assistant will answer* below for who that is).
 That is 182 phrases answering out of the box — no setup step. They cover greetings, thanks,
 farewells, `gg`/`wp`, small talk, the server-figure questions (`what is the tps`, `what is my ping`,
 `is the server lagging`, `how many players`), the player-figure questions (`where am i`,
@@ -393,6 +394,26 @@ farewells, `gg`/`wp`, small talk, the server-figure questions (`what is the tps`
 (`!tps`, `!status`, `!memory`, `!world`, `!time`, `!ping`, `!fps`, `!ram`, `!session`,
 `!players`, `!hunger`, `!vitals`, `!facing`, `!offhand`, `!environment`, `!help`).
 `!ai triggers restore` puts the same table back.
+
+#### Who the assistant will answer
+
+Because the table is full of courtesies, a client that answered everyone whispered a reply to
+almost every line of ordinary chatter on a busy server: `gg`, `ty`, `lol`, `wb` and `hello` all
+match. That reads as the assistant talking to strangers, so it is now **opt-in**.
+
+| `who-can-trigger` | Behaviour |
+| --- | --- |
+| `ALLOWLIST` (default) | Only you, plus the names in `who-can-trigger-list`. An empty list means only you. |
+| `LOCAL_ONLY` | Only you, whatever the list says. |
+| `EVERYONE` | Anyone in chat, which is how earlier builds behaved. |
+
+The gate covers **triggers only** — the assistant speaking unprompted. A player who types
+`!help` or `!ping` has asked for something, so commands still follow the `Permissions` group and
+are unaffected. The local player is always answered: silencing the person who installed the mod
+would be a bug, and theirs is the only identity the client can actually prove.
+
+If you *want* the assistant to greet your friends, add their names to `who-can-trigger-list`.
+Set `who-can-trigger` to `Everyone` to restore the old behaviour.
 
 Every shipped phrase is **reachable**: no rule's phrase can be answered by an earlier rule, so
 first-match-wins never has to break a tie and the reply never depends on list order. Two tests
@@ -1466,6 +1487,34 @@ Enable **Companion** in the addon window (or run `!log companion start`). The se
 **127.0.0.1** by default; the module widget, the Companion screen and the command all offer a
 **Copy address** action that includes the access token, so you can paste one URL into a browser.
 
+### Terminal dashboard (no browser)
+
+`tools/dashboard.py` is a desktop dashboard that runs in a terminal. It is a native application —
+curses drawing, no browser, no JavaScript — and it **connects by itself**:
+
+```sh
+python3 tools/dashboard.py            # connect automatically and open the dashboard
+python3 tools/dashboard.py --once     # print one snapshot and exit
+python3 tools/dashboard.py --json     # print the raw snapshot JSON
+```
+
+There is no URL to paste and no token to copy. While the companion server runs, the mod writes
+`logclient/companion.json` into the game directory, holding the port it actually bound and the
+token it actually uses. The dashboard reads that file and connects. It only publishes the file when
+the server is bound to loopback, because copying a secret to a predictable path next to a
+network-exposed server would widen the exposure for no benefit. A clean stop deletes the file.
+
+If the file is missing, the dashboard probes `127.0.0.1` on ports 6767-6769 and reports what it
+tried. `--url` and `--token` still work for a server you have exposed on purpose.
+
+Keys: `q` quit, `r` refresh, `Tab` or `1`-`5` switch tab, `j`/`k` scroll, `p` pause/resume the bot,
+`e` emergency stop, `s` send chat, `c` run a command. Tabs are Overview, Chat, Players, Modules and
+Bot.
+
+The dashboard needs only the Python standard library. The only files it reads are the discovery
+file and the HTTP API, so it works anywhere Python 3.8+ runs — including the same machine as the
+game, which is the usual case.
+
 ### What the app shows
 
 - **Overview** — the player, server address, game mode, in-world state and how long the client has
@@ -1495,6 +1544,11 @@ Enable **Companion** in the addon window (or run `!log companion start`). The se
   browser and an `EventSource` can send).
 - The token is generated on first start and stored in the config. **Generate a new token** (module
   widget, Companion screen or `!log companion regenerate`) replaces it and restarts the server.
+- While a loopback-bound server runs, the same token is also written to
+  `logclient/companion.json` so the terminal dashboard can connect without being told it. The file
+  is created only for a loopback bind and is deleted on a clean stop. It is not a new class of
+  secret: the token is already stored in the Meteor config on the same machine, and the file adds no
+  access that the config did not already grant. It is never written when **allow-remote** is on.
 - Requests are rate limited per client, and every action runs on the client thread, so the app can
   only do what a user could do by hand — it never edits the inventory, never fabricates state and
   never blocks the game.

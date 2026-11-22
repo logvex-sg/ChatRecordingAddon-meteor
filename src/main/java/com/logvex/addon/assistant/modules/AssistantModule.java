@@ -18,6 +18,7 @@ import com.logvex.addon.assistant.core.ReplyFormat;
 import com.logvex.addon.assistant.core.SelfReplyGuard;
 import com.logvex.addon.assistant.core.SendPacer;
 import com.logvex.addon.assistant.core.SenderIdentity;
+import com.logvex.addon.assistant.core.TriggerAudience;
 import com.logvex.addon.assistant.core.TriggerRule;
 import com.logvex.addon.assistant.core.TriggerSet;
 import com.logvex.addon.assistant.gui.AssistantScreen;
@@ -318,6 +319,27 @@ public class AssistantModule extends AutomationModule {
         .name("rules")
         .description("Trigger rules, one per line: pattern;sender=;reply=;mode=;cooldown=;limit=;sound=;remember=;enabled=")
         .defaultValue(TriggerRule.preconfigured().stream().map(TriggerRule::encode).toList())
+        .onChanged(ignored -> rebuild())
+        .build()
+    );
+
+    private final Setting<TriggerAudience> triggerAudience = sgTriggers.add(
+        new EnumSetting.Builder<TriggerAudience>()
+            .name("who-can-trigger")
+            .description("Who may fire a keyword trigger. Triggers are the assistant speaking unprompted, "
+                + "so by default only you are answered. Commands (!help, !ping) are unaffected and "
+                + "follow the Permissions group instead.")
+            .defaultValue(TriggerAudience.ALLOWLIST)
+            .onChanged(ignored -> rebuild())
+            .build()
+    );
+
+    private final Setting<List<String>> triggerAllowList = sgTriggers.add(new StringListSetting.Builder()
+        .name("who-can-trigger-list")
+        .description("Player names allowed to fire triggers when 'who-can-trigger' is ALLOWLIST. "
+            + "Empty means only you.")
+        .defaultValue(List.of())
+        .visible(() -> triggerAudience.get() == TriggerAudience.ALLOWLIST)
         .onChanged(ignored -> rebuild())
         .build()
     );
@@ -1126,7 +1148,9 @@ public class AssistantModule extends AutomationModule {
             memoryReplyMode.get(),
             rememberConversations.get(),
             rateLimit.get(),
-            maxReplyLength.get()
+            maxReplyLength.get(),
+            triggerAudience.get(),
+            TriggerAudience.normalise(triggerAllowList.get())
         );
         runtime.setTriggers(parsed);
         runtime.brain().setTriggerSet(parsed);

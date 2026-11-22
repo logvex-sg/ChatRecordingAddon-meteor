@@ -3,6 +3,7 @@ package com.logvex.addon.assistant;
 import com.logvex.addon.assistant.core.AssistantBrain;
 import com.logvex.addon.assistant.core.AssistantRuntime;
 import com.logvex.addon.assistant.core.GreetingPools;
+import com.logvex.addon.assistant.core.TriggerAudience;
 import com.logvex.addon.assistant.core.TriggerRule;
 import com.logvex.addon.assistant.core.TriggerSet;
 import org.junit.jupiter.api.DisplayName;
@@ -106,7 +107,8 @@ class DeterministicReplyTest {
     void whisperIsTheDelivery() {
         AssistantRuntime runtime = new AssistantRuntime(
             new com.logvex.addon.assistant.core.AssistantMemory());
-        runtime.setConfig(com.logvex.addon.assistant.core.AssistantConfig.DEFAULTS);
+        runtime.setConfig(com.logvex.addon.assistant.core.AssistantConfig.DEFAULTS
+            .withAudience(TriggerAudience.EVERYONE));
         runtime.setDuplicateFilter(false);
         runtime.setTriggers(TriggerSet.of(List.of(TriggerRule.of("hello bot", "Hello {player}!"))));
 

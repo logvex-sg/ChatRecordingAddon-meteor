@@ -8,6 +8,7 @@ import com.logvex.addon.assistant.core.PermissionSet;
 import com.logvex.addon.assistant.core.ReplyFormat;
 import com.logvex.addon.assistant.core.SelfReplyGuard;
 import com.logvex.addon.assistant.core.SenderIdentity;
+import com.logvex.addon.assistant.core.TriggerAudience;
 import com.logvex.addon.assistant.core.TriggerRule;
 import com.logvex.addon.assistant.core.TriggerSet;
 import org.junit.jupiter.api.DisplayName;
@@ -30,7 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ReplyFormatTest {
 
     private static final AssistantConfig CONFIG = AssistantConfig.basic("Bot", true, true, "!",
-        TriggerRule.ReplyMode.CHAT, true, 20, 200);
+        TriggerRule.ReplyMode.CHAT, true, 20, 200).withAudience(TriggerAudience.EVERYONE);
 
     private static AssistantBrain brain() {
         return new AssistantBrain(new AssistantMemory());
@@ -499,7 +500,7 @@ class ReplyFormatTest {
         TriggerSet triggers = TriggerSet.of(List.of(
             TriggerRule.of("hello bot", "Hi {player}!")));
         runtime.setConfig(AssistantConfig.basic("Bot", true, false, "!",
-            TriggerRule.ReplyMode.CHAT, true, 0, 200));
+            TriggerRule.ReplyMode.CHAT, true, 0, 200).withAudience(TriggerAudience.EVERYONE));
         // The same trigger text is used once only; the duplicate filter is irrelevant here.
         runtime.setTriggers(triggers);
         runtime.setDuplicateFilter(false);

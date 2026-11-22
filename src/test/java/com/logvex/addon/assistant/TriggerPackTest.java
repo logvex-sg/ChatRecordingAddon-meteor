@@ -8,6 +8,7 @@ import com.logvex.addon.assistant.core.Placeholders;
 import com.logvex.addon.assistant.core.ReplyFormat;
 import com.logvex.addon.assistant.core.ResponseTemplate;
 import com.logvex.addon.assistant.core.SenderIdentity;
+import com.logvex.addon.assistant.core.TriggerAudience;
 import com.logvex.addon.assistant.core.TriggerRule;
 import com.logvex.addon.assistant.core.TriggerSet;
 import com.logvex.addon.stats.ServerStats;
@@ -245,7 +246,7 @@ class TriggerPackTest {
         for (TriggerRule rule : shadowing) {
             AssistantRuntime runtime = new AssistantRuntime(new AssistantMemory());
             runtime.setTriggers(TriggerSet.of(List.of(rule)));
-            runtime.setConfig(AssistantConfig.DEFAULTS);
+            runtime.setConfig(AssistantConfig.DEFAULTS.withAudience(TriggerAudience.EVERYONE));
             runtime.setDuplicateFilter(false);
 
             var stranger = SenderIdentity.unverified("RandomStranger");
@@ -351,13 +352,15 @@ class TriggerPackTest {
         TriggerRule rule = TriggerRule.of("where am i", "{coords} in {biome}");
         AssistantRuntime runtime = new AssistantRuntime(new AssistantMemory());
         runtime.setTriggers(TriggerSet.of(List.of(rule)));
-        runtime.setConfig(com.logvex.addon.assistant.core.AssistantConfig.DEFAULTS);
+        runtime.setConfig(com.logvex.addon.assistant.core.AssistantConfig.DEFAULTS
+            .withAudience(TriggerAudience.EVERYONE));
         runtime.setDuplicateFilter(false);
 
         ServerStats stats = context().stats();
         AssistantRuntime r2 = new AssistantRuntime(new AssistantMemory());
         r2.setTriggers(TriggerSet.of(List.of(rule)));
-        r2.setConfig(com.logvex.addon.assistant.core.AssistantConfig.DEFAULTS);
+        r2.setConfig(com.logvex.addon.assistant.core.AssistantConfig.DEFAULTS
+            .withAudience(TriggerAudience.EVERYONE));
         r2.setDuplicateFilter(false);
 
         com.logvex.addon.assistant.core.AssistantBrain.Decision stranger =
@@ -378,7 +381,8 @@ class TriggerPackTest {
         TriggerRule rule = TriggerRule.of("what is the tps", "TPS {tps}, {mspt} ms per tick");
         AssistantRuntime runtime = new AssistantRuntime(new AssistantMemory());
         runtime.setTriggers(TriggerSet.of(List.of(rule)));
-        runtime.setConfig(com.logvex.addon.assistant.core.AssistantConfig.DEFAULTS);
+        runtime.setConfig(com.logvex.addon.assistant.core.AssistantConfig.DEFAULTS
+            .withAudience(TriggerAudience.EVERYONE));
         runtime.setDuplicateFilter(false);
 
         com.logvex.addon.assistant.core.AssistantBrain.Decision stranger = runtime.handle(
@@ -408,7 +412,7 @@ class TriggerPackTest {
         // trigger path rather than only the command path.
         AssistantRuntime runtime = new AssistantRuntime(new AssistantMemory());
         runtime.setTriggers(TriggerSet.of(TriggerRule.preconfigured()));
-        runtime.setConfig(AssistantConfig.DEFAULTS);
+        runtime.setConfig(AssistantConfig.DEFAULTS.withAudience(TriggerAudience.EVERYONE));
         runtime.setDuplicateFilter(false);
 
         SenderIdentity stranger = SenderIdentity.unverified("Stranger");

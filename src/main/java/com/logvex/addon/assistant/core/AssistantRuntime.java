@@ -209,6 +209,14 @@ public final class AssistantRuntime {
             : null;
 
         if (rule != null) {
+            // A trigger is the assistant speaking unprompted, so who may fire one is a separate
+            // decision from who may run a command. Ordinary chatter ("gg", "ty") matches the shipped
+            // table constantly, so answering strangers by default is noise, not a feature. A line
+            // from someone out of earshot is ignored, not refused: nothing was asked of the assistant.
+            if (!cfg.triggerAudience().allows(sender, cfg.triggerAllowList())) {
+                ignored++;
+                return AssistantBrain.Decision.NONE;
+            }
             // A rule whose reply is a server command is gated by who is asking: a state-changing
             // command may only run for the local player, so a stranger cannot type a trigger word
             // and make this client run /tpaccept or /pay. A message-carrying command is safe.

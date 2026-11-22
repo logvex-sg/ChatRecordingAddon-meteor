@@ -2,6 +2,7 @@ package com.logvex.addon.assistant;
 
 import com.logvex.addon.assistant.core.CommandCatalog;
 import com.logvex.addon.assistant.core.PermissionLevel;
+import com.logvex.addon.assistant.core.TriggerAudience;
 import com.logvex.addon.assistant.core.TriggerRule;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -118,7 +119,8 @@ class CommandDefaultsTest {
                 new com.logvex.addon.assistant.core.AssistantMemory());
         runtime.setTriggers(com.logvex.addon.assistant.core.TriggerSet.of(
             List.of(TriggerRule.of("hello", "canned trigger reply"))));
-        runtime.setConfig(com.logvex.addon.assistant.core.AssistantConfig.DEFAULTS);
+        runtime.setConfig(com.logvex.addon.assistant.core.AssistantConfig.DEFAULTS
+            .withAudience(TriggerAudience.EVERYONE));
         runtime.setDuplicateFilter(false);
 
         String bare = runtime.handle("p", "hello", 1_000L).text();

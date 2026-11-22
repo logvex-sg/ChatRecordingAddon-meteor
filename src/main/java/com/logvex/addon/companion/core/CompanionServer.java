@@ -156,6 +156,12 @@ public final class CompanionServer {
         exchange.getResponseHeaders().set("Content-Type", response.contentType());
         exchange.getResponseHeaders().set("X-Content-Type-Options", "nosniff");
         exchange.getResponseHeaders().set("Cache-Control", "no-store");
+        // The token travels in the query string, so it would leak to any third-party resource the
+        // app loads through the Referer header. The app needs no referrer at all.
+        exchange.getResponseHeaders().set("Referrer-Policy", "no-referrer");
+        // The app can send chat and run commands, so a page that frames it can make the operator
+        // click through to sending something. Refuse to be framed.
+        exchange.getResponseHeaders().set("X-Frame-Options", "DENY");
         exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
         if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
             exchange.getResponseHeaders().set("Access-Control-Allow-Headers", "Authorization, Content-Type");
@@ -185,6 +191,7 @@ public final class CompanionServer {
         exchange.getResponseHeaders().set("Cache-Control", "no-store");
         exchange.getResponseHeaders().set("Connection", "keep-alive");
         exchange.getResponseHeaders().set("X-Accel-Buffering", "no");
+        exchange.getResponseHeaders().set("Referrer-Policy", "no-referrer");
         exchange.sendResponseHeaders(200, 0);
 
         BlockingQueue<String> outbox = new ArrayBlockingQueue<>(256);

@@ -4,6 +4,7 @@ import com.logvex.addon.assistant.core.AssistantBrain;
 import com.logvex.addon.assistant.core.AssistantConfig;
 import com.logvex.addon.assistant.core.AssistantMemory;
 import com.logvex.addon.assistant.core.AssistantRuntime;
+import com.logvex.addon.assistant.core.TriggerAudience;
 import com.logvex.addon.assistant.core.TriggerRule;
 import com.logvex.addon.assistant.core.TriggerSet;
 import org.junit.jupiter.api.DisplayName;
@@ -22,7 +23,7 @@ class AssistantBrainTest {
     private AssistantRuntime runtime(TriggerRule... rules) {
         AssistantRuntime runtime = new AssistantRuntime(new AssistantMemory());
         runtime.setTriggers(TriggerSet.of(List.of(rules)));
-        runtime.setConfig(AssistantConfig.DEFAULTS);
+        runtime.setConfig(AssistantConfig.DEFAULTS.withAudience(TriggerAudience.EVERYONE));
         // These tests drive the same message repeatedly to exercise cooldowns and limits, so the
         // duplicate filter is switched off here; it has its own tests.
         runtime.setDuplicateFilter(false);
@@ -115,7 +116,8 @@ class AssistantBrainTest {
         TriggerRule rule = new TriggerRule("ping", false, false, "", "pong",
             TriggerRule.ReplyMode.CHAT, 0L, 0, false, false, true);
         AssistantRuntime runtime = runtime(rule);
-        runtime.setConfig(AssistantConfig.basic("A", true, true, "!", TriggerRule.ReplyMode.NOTIFY, true, 2, 200));
+        runtime.setConfig(AssistantConfig.basic("A", true, true, "!", TriggerRule.ReplyMode.NOTIFY, true, 2, 200)
+            .withAudience(TriggerAudience.EVERYONE));
 
         assertTrue(runtime.handle("p", "ping", 1_000L).acts());
         assertTrue(runtime.handle("p", "ping", 1_100L).acts());
@@ -198,7 +200,8 @@ class AssistantBrainTest {
     @DisplayName("a long reply is clamped to the configured maximum")
     void replyClamped() {
         AssistantRuntime runtime = runtime(TriggerRule.of("ping", "x".repeat(500)));
-        runtime.setConfig(AssistantConfig.basic("A", true, true, "!", TriggerRule.ReplyMode.NOTIFY, true, 20, 50));
+        runtime.setConfig(AssistantConfig.basic("A", true, true, "!", TriggerRule.ReplyMode.NOTIFY, true, 20, 50)
+            .withAudience(TriggerAudience.EVERYONE));
         AssistantBrain.Decision decision = runtime.handle("p", "ping", 1L);
         assertEquals(50, decision.text().length());
     }
