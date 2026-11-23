@@ -85,7 +85,14 @@ public class BotStatusHud extends HudElement {
             List<BotEvent> events = module.controller().events();
             out.add(events.isEmpty() ? "No recent events" : events.get(0).message());
         }
-        if (showNavigation.get()) out.add("Nav: " + module.navigation().backendName());
+        if (showNavigation.get()) {
+            String nav = "Nav: " + module.navigation().backendName();
+            int left = module.navigation().remainingWaypoints();
+            // A planned route is several waypoints long, so showing the count makes a long detour
+            // read as progress rather than as a stuck bot.
+            if (left > 0) nav += " (" + left + " left)";
+            out.add(nav);
+        }
         return out;
     }
 

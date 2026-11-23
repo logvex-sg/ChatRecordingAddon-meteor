@@ -5,7 +5,8 @@ A Meteor Client addon for Minecraft 1.21.1.
 It runs as an addon on Meteor Client: the addon registers its modules, HUD and commands through
 Meteor's own registries and event bus, so its features appear in Meteor's GUI and keybind system
 alongside the built-in ones. Baritone is used for navigation only when it happens to be installed,
-and is detected at runtime rather than compiled against.
+and is detected at runtime rather than compiled against; without it the addon plans routes with its
+own A* pathfinder.
 
 **Chat toolkit** — `chat-logger` (records chat to compressed, searchable logs),
 `chat-monitor` (live feed with filters and highlighting), `keyword-alerts` (keyword alerts with
@@ -308,15 +309,33 @@ confirmed from the world or the server before it is treated as done.
 Navigation goes through the addon's own path-manager abstraction (`PathManagers`), so **no separate
 Baritone mod jar is bundled or required**. When Baritone is installed, the addon detects it at
 runtime (reflection only) and drives it via `IPathManager.moveTo(...)`; when it is not present,
-the path manager is the `none` backend and the bot falls back to a bounded built-in walker
-that walks toward the target and gives up when it stops making progress. The active backend is
-shown on the bot dashboard (`Navigation: Baritone` / `built-in walker`) and, optionally, in the
-HUD (`show-navigation`).
+the bot plans its own route with a built-in **A\* pathfinder** (`bot/core/Pathfinder`) and walks it
+waypoint by waypoint. The active backend is shown on the bot dashboard
+(`Navigation: Baritone` / `built-in A*`) and, optionally, in the HUD (`show-navigation`), together
+with the number of waypoints still to walk.
+
+The built-in planner is a real search, not a straight-line walker:
+
+- It reads the world through a bounded grid (`MinecraftNavGrid`) that classifies each block as open,
+  floor, obstacle, hazard, liquid or unknown, and caches every cell so a search does not re-read the
+  same block repeatedly.
+- Movement follows what a player can actually do: walk level, step up **one** block, or drop up to
+  **three**. Diagonal moves may not squeeze between two blocked corners. Liquid and damage blocks
+  (fire, magma, cactus, sweet berry, powder snow, cobweb) are never routed through.
+- Paths are shortened by string-pulling (`PathSmoother`), so the bot walks long straight runs and
+  only turns where the world forces it, instead of following a staircase.
+- The search is bounded by a node budget and a grid size, because it runs on the game thread. A
+  200-block diagonal across open ground plans in about **1 ms** and expands about 200 cells.
+- A goal past the grid edge is walked in **stages** (`NavReach`): the bot aims for the edge of its
+  reachable area in the goal's direction and re-plans when it arrives, rather than refusing the trip.
+- Every failure is reported with a reason (out of bounds, bad start, no route, budget exhausted) so
+  the task can fail honestly instead of pushing into a wall.
 
 The Navigation settings group exposes the path-manager options — `walk-on-water`, `walk-on-lava`,
 `path-step` and `path-no-fall`. These are written into Baritone's settings, so Baritone and the
-bot agree on how the player may move; they have no effect with the built-in walker. Movement is never teleported or otherwise faked: success requires the player's
-actual position to be within the arrival tolerance.
+bot agree on how the player may move; they have no effect with the built-in planner. Movement is
+never teleported or otherwise faked: success requires the player's actual position to be within the
+arrival tolerance.
 
 ### Profiles
 
@@ -2096,10 +2115,12 @@ archive with in-memory doubles (no Minecraft runtime required):
   and `logs/sessions.json`) and restored on the next launch. A file written by an older build that
   lacks the new keys still loads: unknown or missing fields are skipped rather than rejecting the
   record.
-- The bot uses Baritone only when the user has installed it (detected at runtime by reflection). The
-  addon bundles no pathfinder of its own beyond the bounded fallback walker, and navigation quality
-  with the fallback is limited — it walks in a straight line and stops when blocked rather than
-  solving complex terrain.
+- The bot uses Baritone only when the user has installed it (detected at runtime by reflection). When
+  Baritone is absent, navigation falls back to the addon's own A\* planner, which solves walls, single
+  block steps and short drops within a bounded area around the player. It does **not** mine, pillar,
+  bridge, swim, or plan across hundreds of blocks in one search — a trip past its reach is walked in
+  stages, and terrain that needs a block placed or broken is reported as unreachable rather than
+  attempted. For long or vertical cross-country travel, install Baritone.
 - The companion is a **local** control surface, not a remote-hosting service: it speaks plain HTTP,
   so over an untrusted network the token would travel in the clear. Use it on loopback or a trusted
   LAN; if you enable **allow-remote**, treat the token as a password and rotate it if it leaks.

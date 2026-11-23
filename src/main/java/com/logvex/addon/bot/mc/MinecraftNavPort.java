@@ -2,27 +2,39 @@ package com.logvex.addon.bot.mc;
 
 import com.logvex.addon.bot.core.BlockPos3;
 import com.logvex.addon.bot.core.NavPort;
+import com.logvex.addon.bot.core.NavReach;
+import com.logvex.addon.bot.core.PathSmoother;
+import com.logvex.addon.bot.core.Pathfinder;
+import com.logvex.addon.bot.core.WaypointFollower;
 import meteordevelopment.meteorclient.pathing.IPathManager;
 import meteordevelopment.meteorclient.pathing.PathManagers;
 import meteordevelopment.meteorclient.utils.player.CustomPlayerInput;
 import net.minecraft.client.input.Input;
 import net.minecraft.util.math.BlockPos;
 
+import java.util.List;
+
 import static com.logvex.addon.framework.LogClientContext.mc;
 
 /**
- * {@link NavPort} that prefers a real path manager and otherwise falls back to a bounded walker.
+ * {@link NavPort} that prefers a real path manager and otherwise plans its own route.
  *
- * <p>If Baritone or Voyager is installed, their path manager is used. Otherwise the bot walks toward
- * the target using the same {@link CustomPlayerInput} override the walker uses. The walker
- * is deliberately conservative: it stops and reports failure when it stops making progress, so a
- * blocked or impossible route ends the navigation instead of walking into a wall forever.
+ * <p>If Baritone or Voyager is installed, their path manager is used. Otherwise this class plans a
+ * path with {@link Pathfinder} over a bounded {@link MinecraftNavGrid}, smooths it with
+ * {@link PathSmoother} and walks it with {@link WaypointFollower}.
+ *
+ * <p>The earlier fallback simply faced the target and held forward, which stalled against any wall
+ * between the bot and its goal. Planning a route is what makes the bot usable on real terrain; the
+ * walker still reports failure the moment it stops making progress, so an impossible route ends
+ * instead of pushing into a wall forever.
  */
 public final class MinecraftNavPort implements NavPort {
     /** How many ticks without progress before the walker gives up. */
     private static final int STUCK_TICKS = 40;
     /** How many ticks of no progress before a jump is attempted. */
     private static final int JUMP_AFTER_TICKS = 8;
+    /** How many cells the planner may expand before it gives up. */
+    private static final int SEARCH_BUDGET = 60_000;
 
     private BlockPos3 target;
     private boolean active;
@@ -33,9 +45,11 @@ public final class MinecraftNavPort implements NavPort {
     private CustomPlayerInput input;
     private Input previousInput;
     private double bestDistance = Double.MAX_VALUE;
-    private int stuckTicks;
-    private int noProgressTicks;
     private boolean usingPathManager;
+
+    private WaypointFollower follower;
+    /** The backend actually driving this trip, for the dashboard. */
+    private String backend = "built-in walker";
 
     public void setMaxDistance(double value) {
         this.maxDistance = Math.max(8, value);
@@ -55,24 +69,77 @@ public final class MinecraftNavPort implements NavPort {
         this.failure = "";
         this.unreachable = false;
         this.bestDistance = Double.MAX_VALUE;
-        this.stuckTicks = 0;
-        this.noProgressTicks = 0;
+        this.follower = null;
 
         IPathManager manager = PathManagers.get();
         usingPathManager = manager != null && !"none".equals(manager.getName());
         if (usingPathManager) {
+            backend = manager.getName();
             manager.moveTo(new BlockPos(target.x(), target.y(), target.z()));
             return true;
         }
-        return startWalker();
+        backend = "built-in A*";
+        return startWalker(target);
     }
 
-    private boolean startWalker() {
+    /**
+     * Plans a route to {@code target} and starts following it.
+     *
+     * <p>A planning failure is reported rather than papered over: the caller needs to know the route
+     * is impossible so it can pick another task, and silently walking in a straight line would look
+     * like progress while achieving nothing.
+     */
+    private boolean startWalker(BlockPos3 target) {
         if (mc.player == null) return false;
+        BlockPos3 start = new BlockPos3(
+            (int) Math.floor(mc.player.getX()),
+            (int) Math.floor(mc.player.getY()),
+            (int) Math.floor(mc.player.getZ()));
+
+        // A goal past the planner's reach is walked in stages: plan to the edge of the box in the
+        // goal's direction, and re-plan once the bot gets there. Failing outright would make a long
+        // trip impossible, which is worse than taking it in two hops.
+        BlockPos3 goal = NavReach.clamp(start, target, MinecraftNavGrid.MAX_HORIZONTAL - 8);
+
+        MinecraftNavGrid grid = MinecraftNavGrid.aroundPlayer(goal);
+        if (grid == null) {
+            failure = "The world is not loaded.";
+            unreachable = true;
+            stop();
+            return false;
+        }
+
+        Pathfinder.Result result = new Pathfinder(SEARCH_BUDGET, 1).find(grid, start, goal);
+        if (!result.found()) {
+            failure = describeFailure(result.failure());
+            unreachable = result.failure() == Pathfinder.Failure.NO_ROUTE
+                || result.failure() == Pathfinder.Failure.OUT_OF_BOUNDS;
+            stop();
+            return false;
+        }
+
+        List<BlockPos3> path = PathSmoother.smooth(grid, start, result.path());
+        if (path.isEmpty()) {
+            // Already at the goal: nothing to walk, which is a success rather than a failure.
+            active = false;
+            return true;
+        }
+        follower = new WaypointFollower(path);
+
         previousInput = mc.player.input;
         input = new CustomPlayerInput();
         mc.player.input = input;
         return true;
+    }
+
+    private static String describeFailure(Pathfinder.Failure reason) {
+        return switch (reason) {
+            case OUT_OF_BOUNDS -> "The target is outside the area the bot can see.";
+            case BAD_START -> "The bot cannot stand where it is.";
+            case NO_ROUTE -> "No walkable route to the target.";
+            case BUDGET_EXHAUSTED -> "The route search was too large; the target is probably too far.";
+            case NONE -> "";
+        };
     }
 
     @Override
@@ -94,34 +161,47 @@ public final class MinecraftNavPort implements NavPort {
 
         if (target == null) return;
 
-        double[] pos = position();
-        double distance = Math.sqrt(Math.pow(pos[0] - target.x(), 2) + Math.pow(pos[1] - target.y(), 2)
-            + Math.pow(pos[2] - target.z(), 2));
-
-        if (distance < bestDistance - 0.15) {
-            bestDistance = distance;
-            stuckTicks = 0;
-            noProgressTicks = 0;
-        } else {
-            stuckTicks++;
-            noProgressTicks++;
+        if (follower == null) {
+            stop();
+            return;
         }
 
-        if (stuckTicks >= STUCK_TICKS) {
+        double[] pos = position();
+        // Reaching a waypoint is horizontal, because a player walking over uneven ground is rarely
+        // at the exact centre height the planner used.
+        boolean reachedWaypoint = follower.advanceIfArrived(pos[0], pos[2]);
+        if (follower.done()) {
+            stop();
+            return;
+        }
+
+        // Progress is measured against the waypoint being walked to, not the final target. A detour
+        // around a large wall temporarily walks away from the target, and measuring against the
+        // target would read that legitimate detour as being stuck.
+        BlockPos3 waypoint = follower.current();
+        double distance = Math.sqrt(Math.pow(pos[0] - waypoint.x(), 2)
+            + Math.pow(pos[1] - waypoint.y(), 2) + Math.pow(pos[2] - waypoint.z(), 2));
+
+        // A fresh waypoint resets the yardstick, or the first tick after a turn would compare a new
+        // distance against the previous waypoint's and read as a stall.
+        if (reachedWaypoint) bestDistance = Double.MAX_VALUE;
+        boolean progressed = reachedWaypoint || distance < bestDistance - 0.15;
+        if (distance < bestDistance) bestDistance = distance;
+
+        if (follower.noteProgress(progressed, STUCK_TICKS)) {
             failure = "No progress toward the target; the route is blocked.";
             unreachable = true;
             stop();
             return;
         }
 
-        double dx = target.x() + 0.5 - pos[0];
-        double dz = target.z() + 0.5 - pos[2];
-        float yaw = (float) (Math.toDegrees(Math.atan2(-dx, dz)));
-        mc.player.setYaw(yaw);
+        mc.player.setYaw(follower.desiredYaw(pos[0], pos[2]));
 
         if (input == null) return;
         input.pressingForward = true;
-        input.jumping = noProgressTicks >= JUMP_AFTER_TICKS;
+        // Jump for a waypoint above the feet, or when a level waypoint will not budge — a lip of
+        // terrain still needs a hop even though the planner saw flat ground.
+        input.jumping = follower.shouldJump(pos[1]) || follower.stalledTicks() >= JUMP_AFTER_TICKS;
         input.sneaking = false;
         input.pressingBack = false;
         input.pressingLeft = false;
@@ -150,6 +230,7 @@ public final class MinecraftNavPort implements NavPort {
             input = null;
             previousInput = null;
         }
+        follower = null;
         active = false;
     }
 
@@ -190,7 +271,20 @@ public final class MinecraftNavPort implements NavPort {
             IPathManager manager = PathManagers.get();
             return manager == null ? "none" : manager.getName();
         }
-        return "built-in walker";
+        return backend;
+    }
+
+    /**
+     * How many waypoints are left on the planned route, or {@code -1} when no route is being walked.
+     * The dashboard shows this so a long detour is visible rather than looking like a stuck bot.
+     */
+    public int remainingWaypoints() {
+        return follower == null ? -1 : follower.remaining();
+    }
+
+    /** The planned route being walked, for a HUD or a debug overlay. Empty when none. */
+    public List<BlockPos3> plannedPath() {
+        return follower == null ? List.of() : follower.waypoints();
     }
 
     /**
