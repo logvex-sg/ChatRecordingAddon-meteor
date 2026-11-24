@@ -3,6 +3,7 @@ package com.logvex.addon.chatlog.gui;
 import com.logvex.addon.chatlog.core.LogSegmentMeta;
 import com.logvex.addon.chatlog.core.LogStore;
 import com.logvex.addon.chatlog.core.ReportFormatting;
+import com.logvex.addon.common.Messages;
 import com.logvex.addon.chatlog.mc.LogStorageService;
 import com.logvex.addon.chatlog.modules.ChatLoggerModule;
 import com.logvex.addon.framework.gui.GuiThemes;
@@ -47,24 +48,32 @@ public class StorageScreen extends WindowScreen {
         long saved = Math.max(0, uncompressed - compressed);
 
         add(theme.horizontalSeparator("Storage")).expandX();
-        GuiKit.keyValue(add(theme.verticalList()).expandX().widget(), theme, "Location:", store.root().toString());
+
+        var tiles = add(theme.verticalList()).expandX().widget();
+        GuiKit.tiles(tiles, theme,
+            GuiKit.Tile.of(Messages.number(store.segmentCount()), "segments"),
+            GuiKit.Tile.of(Messages.number(store.totalEntries()), "entries"),
+            GuiKit.Tile.of(Messages.bytes(compressed), "on disk"),
+            GuiKit.Tile.of(Messages.bytes(saved), "saved", GuiKit.goodColor()));
+
         var stats = add(theme.verticalList()).expandX().widget();
-        GuiKit.keyValue(stats, theme, "Segments:", Integer.toString(store.segmentCount()));
-        GuiKit.keyValue(stats, theme, "Entries:", Long.toString(store.totalEntries()));
-        GuiKit.keyValue(stats, theme, "Compressed size:", ReportFormatting.bytes(compressed));
-        GuiKit.keyValue(stats, theme, "Uncompressed size:", ReportFormatting.bytes(uncompressed));
-        GuiKit.keyValue(stats, theme, "Space saved:", ReportFormatting.bytes(saved));
-        GuiKit.keyValue(stats, theme, "Oldest entry:", store.oldestTimestamp() == 0 ? "-" : ReportFormatting.time(store.oldestTimestamp()));
-        GuiKit.keyValue(stats, theme, "Newest entry:", store.newestTimestamp() == 0 ? "-" : ReportFormatting.time(store.newestTimestamp()));
+        GuiKit.facts(stats, theme,
+            "Location", store.root().toString(),
+            "Uncompressed", Messages.bytes(uncompressed),
+            "Oldest entry", store.oldestTimestamp() == 0 ? "none yet" : ReportFormatting.time(store.oldestTimestamp()),
+            "Newest entry", store.newestTimestamp() == 0 ? "none yet" : ReportFormatting.time(store.newestTimestamp()));
 
         add(theme.horizontalSeparator("Retention")).expandX();
         var retention = add(theme.verticalList()).expandX().widget();
-        GuiKit.keyValue(retention, theme, "Max age (days):", limitOrUnlimited(logger.maxAgeDays()));
-        GuiKit.keyValue(retention, theme, "Max size:", logger.maxBytes() <= 0
-            ? "unlimited" : ReportFormatting.bytes(logger.maxBytes()));
-        GuiKit.keyValue(retention, theme, "Max segments:", limitOrUnlimited(logger.maxSegmentsSetting()));
-        GuiKit.keyValue(retention, theme, "Automatic cleanup:",
-            logger.autoCleanupEnabled() ? "on, after each flush" : "off, nothing is deleted for you");
+        boolean auto = logger.autoCleanupEnabled();
+        GuiKit.facts(retention, theme,
+            "Max age", limitOrUnlimited(logger.maxAgeDays(), "days"),
+            "Max size", logger.maxBytes() <= 0 ? "unlimited" : Messages.bytes(logger.maxBytes()),
+            "Max segments", limitOrUnlimited(logger.maxSegmentsSetting(), "segments"),
+            "Automatic cleanup", auto ? "on, after each flush" : "off");
+        GuiKit.muted(retention, theme, auto
+            ? "Old entries are removed automatically once a limit above is reached."
+            : "Nothing is deleted automatically. The limits above are ignored until you turn it on.");
 
         WTable actions = add(theme.table()).expandX().widget();
         WButton cleanup = actions.add(theme.button("Cleanup now")).widget();
@@ -120,7 +129,7 @@ public class StorageScreen extends WindowScreen {
             : Long.compare(a.lastTimestamp(), b.lastTimestamp()));
 
         if (segments.isEmpty()) {
-            add(theme.label("No stored segments.")).expandX().widget().color(GuiKit.MUTED);
+            add(theme.label("No stored segments yet.")).expandX().widget().color(GuiKit.mutedColor());
             return;
         }
 
@@ -129,10 +138,10 @@ public class StorageScreen extends WindowScreen {
         page = Math.min(page, totalPages - 1);
 
         WTable table = add(theme.table()).expandX().widget();
-        table.add(theme.label("Started")).widget().color(GuiKit.MUTED);
-        table.add(theme.label("Server")).expandCellX().widget().color(GuiKit.MUTED);
-        table.add(theme.label("Entries")).widget().color(GuiKit.MUTED);
-        table.add(theme.label("Size")).widget().color(GuiKit.MUTED);
+        table.add(theme.label("Started")).widget().color(GuiKit.mutedColor());
+        table.add(theme.label("Server")).expandCellX().widget().color(GuiKit.mutedColor());
+        table.add(theme.label("Entries")).widget().color(GuiKit.mutedColor());
+        table.add(theme.label("Size")).widget().color(GuiKit.mutedColor());
         table.add(theme.label("")).widget();
         table.row();
 
@@ -140,13 +149,14 @@ public class StorageScreen extends WindowScreen {
         int to = Math.min(segments.size(), from + pageSize);
         for (int i = from; i < to; i++) {
             LogSegmentMeta meta = segments.get(i);
-            table.add(theme.label(ReportFormatting.time(meta.firstTimestamp()))).widget().color(GuiKit.MUTED);
+            table.add(theme.label(ReportFormatting.time(meta.firstTimestamp()))).widget().color(GuiKit.mutedColor());
             table.add(theme.label(meta.server().isBlank() ? "-" : meta.server())).expandCellX().widget();
-            table.add(theme.label(Integer.toString(meta.count()))).widget();
+            table.add(theme.label(Messages.number(meta.count()))).widget();
             table.add(theme.label(ReportFormatting.bytes(meta.compressedSize()))).widget();
             WButton delete = table.add(theme.button("Delete")).widget();
             delete.action = () -> mc.setScreen(new ConfirmScreen("Delete segment",
-                "Delete " + meta.count() + " stored messages from " + meta.server() + "?",
+                "Delete " + Messages.plural(meta.count(), "stored message") + " from "
+                    + (meta.server().isBlank() ? "this server" : meta.server()) + "?",
                 () -> {
                     storage.deleteSegmentAsync(meta.fileName(), () -> taskAfterRender = this::render);
                     info("Deleting segment.");
@@ -178,7 +188,7 @@ public class StorageScreen extends WindowScreen {
     }
 
     /** Shows a retention limit the way the player thinks about it: 0 means nothing is deleted. */
-    private static String limitOrUnlimited(long value) {
-        return value <= 0 ? "unlimited" : Long.toString(value);
+    private static String limitOrUnlimited(long value, String unit) {
+        return value <= 0 ? "unlimited" : Messages.number(value) + " " + unit;
     }
 }

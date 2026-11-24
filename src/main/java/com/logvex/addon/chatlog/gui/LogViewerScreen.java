@@ -1,5 +1,6 @@
 package com.logvex.addon.chatlog.gui;
 
+import com.logvex.addon.common.Messages;
 import com.logvex.addon.chatlog.core.ChatEntry;
 import com.logvex.addon.chatlog.core.LogQuery;
 import com.logvex.addon.chatlog.core.ReportFormatting;
@@ -68,20 +69,22 @@ public class LogViewerScreen extends WindowScreen {
         page = Math.min(page, totalPages - 1);
 
         WVerticalList header = add(theme.verticalList()).expandX().widget();
-        GuiKit.keyValue(header, theme, "Messages:", entries.size() + " (page " + (page + 1) + "/" + totalPages + ")");
+        GuiKit.facts(header, theme,
+            "Messages", Messages.number(entries.size()),
+            "Page", (page + 1) + " of " + totalPages);
 
         WTable table = add(theme.table()).expandX().widget();
-        table.add(theme.label("Time")).widget().color(GuiKit.MUTED);
-        table.add(theme.label("Type")).widget().color(GuiKit.MUTED);
-        table.add(theme.label("Sender")).widget().color(GuiKit.MUTED);
-        table.add(theme.label("Message")).expandCellX().widget().color(GuiKit.MUTED);
+        table.add(theme.label("Time")).widget().color(GuiKit.mutedColor());
+        table.add(theme.label("Type")).widget().color(GuiKit.mutedColor());
+        table.add(theme.label("Sender")).widget().color(GuiKit.mutedColor());
+        table.add(theme.label("Message")).expandCellX().widget().color(GuiKit.mutedColor());
         table.row();
 
         int from = page * PAGE_SIZE;
         int to = Math.min(entries.size(), from + PAGE_SIZE);
         for (int i = from; i < to; i++) {
             ChatEntry entry = entries.get(i);
-            table.add(theme.label(ReportFormatting.shortTime(entry.timestamp()))).widget().color(GuiKit.MUTED);
+            table.add(theme.label(ReportFormatting.shortTime(entry.timestamp()))).widget().color(GuiKit.mutedColor());
             table.add(theme.label(entry.type().toString())).widget().color(typeColor(entry));
             table.add(theme.label(entry.sender().isBlank() ? "-" : entry.sender())).widget();
             table.add(theme.label(GuiKit.truncate(entry.content(), 90))).expandCellX().widget();
@@ -108,17 +111,17 @@ public class LogViewerScreen extends WindowScreen {
 
         if (entries.size() >= 5000) {
             add(theme.label("Showing the first 5000 matches. Narrow the filter to see more precisely."))
-                .expandX().widget().color(GuiKit.WARN);
+                .expandX().widget().color(GuiKit.warnColor());
         }
     }
 
     private static meteordevelopment.meteorclient.utils.render.color.Color typeColor(ChatEntry entry) {
         return switch (entry.type()) {
-            case PUBLIC_CHAT, PLAYER_MESSAGE -> GuiKit.ACCENT;
-            case JOIN -> GuiKit.GOOD;
-            case LEAVE -> GuiKit.WARN;
-            case DEATH -> GuiKit.BAD;
-            default -> GuiKit.MUTED;
+            case PUBLIC_CHAT, PLAYER_MESSAGE -> GuiKit.accentColor();
+            case JOIN -> GuiKit.goodColor();
+            case LEAVE -> GuiKit.warnColor();
+            case DEATH -> GuiKit.badColor();
+            default -> GuiKit.mutedColor();
         };
     }
 

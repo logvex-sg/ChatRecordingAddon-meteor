@@ -1,5 +1,6 @@
 package com.logvex.addon.chatlog.gui;
 
+import com.logvex.addon.common.Messages;
 import com.logvex.addon.chatlog.core.ChatEntry;
 import com.logvex.addon.chatlog.core.LogImporter;
 import com.logvex.addon.chatlog.core.ReportFormatting;
@@ -54,33 +55,33 @@ public class LogImportScreen extends WindowScreen {
         }
 
         add(theme.label("Import an exported log or a stored segment back into the archive."))
-            .expandX().widget().color(GuiKit.MUTED);
+            .expandX().widget().color(GuiKit.mutedColor());
         add(theme.label("Supported: .txt, .csv, .json and native .log.gz segments."))
-            .expandX().widget().color(GuiKit.MUTED);
+            .expandX().widget().color(GuiKit.mutedColor());
 
         WTable actions = add(theme.table()).expandX().widget();
         WButton choose = actions.add(theme.button("Choose file...")).widget();
         choose.action = this::chooseFile;
 
         if (busy) {
-            add(theme.label("Reading " + chosenName + "...")).expandX().widget().color(GuiKit.ACCENT);
+            add(theme.label("Reading " + chosenName + "...")).expandX().widget().color(GuiKit.accentColor());
             return;
         }
         if (!error.isEmpty()) {
             add(theme.horizontalSeparator("Error")).expandX();
-            add(theme.label(error)).expandX().widget().color(GuiKit.BAD);
+            add(theme.label(error)).expandX().widget().color(GuiKit.badColor());
         }
         if (result == null) return;
 
         add(theme.horizontalSeparator("Preview: " + chosenName)).expandX();
         var summary = add(theme.verticalList()).expandX().widget();
-        GuiKit.keyValue(summary, theme, "Format:", result.format());
-        GuiKit.keyValue(summary, theme, "Entries:", Integer.toString(result.entries().size()));
-        GuiKit.keyValue(summary, theme, "Skipped lines:", Integer.toString(result.skipped().size()));
-        if (!result.entries().isEmpty()) {
-            GuiKit.keyValue(summary, theme, "First:", firstLine(result.entries().get(0)));
-            GuiKit.keyValue(summary, theme, "Last:", firstLine(result.entries().get(result.entries().size() - 1)));
-        }
+        boolean anyEntries = !result.entries().isEmpty();
+        GuiKit.facts(summary, theme,
+            "Format", result.format(),
+            "Entries", Messages.number(result.entries().size()),
+            "Skipped lines", Messages.number(result.skipped().size()),
+            "First", anyEntries ? firstLine(result.entries().get(0)) : "none",
+            "Last", anyEntries ? firstLine(result.entries().get(result.entries().size() - 1)) : "none");
 
         WTable importRow = add(theme.table()).expandX().widget();
         WButton importButton = importRow.add(theme.button("Import into archive")).widget();
@@ -96,11 +97,11 @@ public class LogImportScreen extends WindowScreen {
             add(theme.horizontalSeparator("Skipped lines (" + result.skipped().size() + ")")).expandX();
             int shown = Math.min(result.skipped().size(), 20);
             for (int i = 0; i < shown; i++) {
-                add(theme.label("  " + result.skipped().get(i))).expandX().widget().color(GuiKit.WARN);
+                add(theme.label("  " + result.skipped().get(i))).expandX().widget().color(GuiKit.warnColor());
             }
             if (result.skipped().size() > shown) {
                 add(theme.label("  ... and " + (result.skipped().size() - shown) + " more."))
-                    .expandX().widget().color(GuiKit.MUTED);
+                    .expandX().widget().color(GuiKit.mutedColor());
             }
         }
 
@@ -121,7 +122,7 @@ public class LogImportScreen extends WindowScreen {
             page = Math.max(0, page - 1);
             render();
         };
-        nav.add(theme.label("Page " + (page + 1) + " / " + totalPages)).widget().color(GuiKit.MUTED);
+        nav.add(theme.label("Page " + (page + 1) + " / " + totalPages)).widget().color(GuiKit.mutedColor());
         WButton next = nav.add(theme.button("Next")).widget();
         next.action = () -> {
             page = Math.min(totalPages - 1, page + 1);
@@ -129,17 +130,17 @@ public class LogImportScreen extends WindowScreen {
         };
 
         WTable table = add(theme.table()).expandX().widget();
-        table.add(theme.label("Time")).widget().color(GuiKit.MUTED);
-        table.add(theme.label("Type")).widget().color(GuiKit.MUTED);
-        table.add(theme.label("Sender")).widget().color(GuiKit.MUTED);
-        table.add(theme.label("Message")).expandCellX().widget().color(GuiKit.MUTED);
+        table.add(theme.label("Time")).widget().color(GuiKit.mutedColor());
+        table.add(theme.label("Type")).widget().color(GuiKit.mutedColor());
+        table.add(theme.label("Sender")).widget().color(GuiKit.mutedColor());
+        table.add(theme.label("Message")).expandCellX().widget().color(GuiKit.mutedColor());
         table.row();
 
         int from = page * PREVIEW_LIMIT;
         int to = Math.min(entries.size(), from + PREVIEW_LIMIT);
         for (int i = from; i < to; i++) {
             ChatEntry entry = entries.get(i);
-            table.add(theme.label(ReportFormatting.shortTime(entry.timestamp()))).widget().color(GuiKit.MUTED);
+            table.add(theme.label(ReportFormatting.shortTime(entry.timestamp()))).widget().color(GuiKit.mutedColor());
             table.add(theme.label(entry.type().toString())).widget();
             table.add(theme.label(entry.sender().isBlank() ? "-" : entry.sender())).widget();
             table.add(theme.label(GuiKit.truncate(entry.content(), 90))).expandCellX().widget();

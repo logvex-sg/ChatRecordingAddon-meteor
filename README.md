@@ -1158,6 +1158,18 @@ These modules extend the chat toolkit. They share the same output formatter (`co
 so every line reads the same way: a `[Log]` prefix, sentence case, readable numbers and proper
 pluralisation.
 
+The GUI panels follow one layout too, so a screen you have not seen before is still easy to scan:
+
+- **Stat tiles** sit at the top when a screen exists to show a few figures. The number is the
+  loudest thing on the tile and the caption underneath says what it counts.
+- **Facts** are `label  value` rows in one aligned block, so every value starts in the same
+  column. Counting columns are grouped (`12,861`, not `12861`), and sizes and durations use the
+  same units everywhere (`4.2 MB`, `2m 05s`).
+- **A limit of `0` reads as `unlimited`**, never as `0`, and a table says "none yet" rather than
+  a bare dash when it is empty.
+- Colours come from the active theme preset, so switching preset restyles the panels instead of
+  leaving parts of them on the old palette.
+
 | Module | What it does |
 | --- | --- |
 | `chat-filter` | Ordered hide/allow rules. The first matching rule wins, so a specific `ALLOW` can punch a hole in a broad `HIDE`. A matched message is cancelled on the incoming message event at the highest priority, so it is removed before it reaches the chat HUD, the recorder or the log file. |

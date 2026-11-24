@@ -1,5 +1,6 @@
 package com.logvex.addon.chatlog.gui;
 
+import com.logvex.addon.common.Messages;
 import com.logvex.addon.chatlog.core.ChatDigest;
 import com.logvex.addon.chatlog.core.MessageType;
 import com.logvex.addon.chatlog.modules.ChatDigestModule;
@@ -33,20 +34,21 @@ public class DigestScreen extends WindowScreen {
 
         ChatDigest.Summary summary = module.summary();
         if (summary.isEmpty()) {
-            add(theme.label("No messages in the digest window.")).expandX().widget().color(GuiKit.MUTED);
+            add(theme.label("No messages in the digest window.")).expandX().widget().color(GuiKit.mutedColor());
             return;
         }
 
         WVerticalList overview = add(theme.verticalList()).expandX().widget();
-        GuiKit.keyValue(overview, theme, "Messages:", String.valueOf(summary.totalMessages()));
-        GuiKit.keyValue(overview, theme, "Players:", String.valueOf(summary.uniquePlayers()));
-        GuiKit.keyValue(overview, theme, "Joins:", String.valueOf(summary.joinEvents()));
-        GuiKit.keyValue(overview, theme, "Leaves:", String.valueOf(summary.leaveEvents()));
-        GuiKit.keyValue(overview, theme, "Deaths:", String.valueOf(summary.deathEvents()));
+        GuiKit.facts(overview, theme,
+            "Messages that matched", Messages.number(summary.totalMessages()),
+            "Players", Messages.number(summary.uniquePlayers()),
+            "Joins", Messages.number(summary.joinEvents()),
+            "Leaves", Messages.number(summary.leaveEvents()),
+            "Deaths", Messages.number(summary.deathEvents()));
 
         WTable types = add(theme.table()).expandX().widget();
-        types.add(theme.label("Type")).widget().color(GuiKit.MUTED);
-        types.add(theme.label("Count")).widget().color(GuiKit.MUTED);
+        types.add(theme.label("Type")).widget().color(GuiKit.mutedColor());
+        types.add(theme.label("Count")).widget().color(GuiKit.mutedColor());
         types.row();
         for (MessageType type : MessageType.values()) {
             long count = summary.count(type);
@@ -57,18 +59,18 @@ public class DigestScreen extends WindowScreen {
         }
 
         if (!summary.topPlayers().isEmpty()) {
-            add(theme.label("Most active players")).expandX().widget().color(GuiKit.ACCENT);
+            add(theme.label("Most active players")).expandX().widget().color(GuiKit.accentColor());
             WTable players = add(theme.table()).expandX().widget();
-            players.add(theme.label("Player")).expandCellX().widget().color(GuiKit.MUTED);
-            players.add(theme.label("Messages")).widget().color(GuiKit.MUTED);
-            players.add(theme.label("Joins")).widget().color(GuiKit.MUTED);
-            players.add(theme.label("Deaths")).widget().color(GuiKit.MUTED);
+            players.add(theme.label("Player")).expandCellX().widget().color(GuiKit.mutedColor());
+            players.add(theme.label("Messages")).widget().color(GuiKit.mutedColor());
+            players.add(theme.label("Joins")).widget().color(GuiKit.mutedColor());
+            players.add(theme.label("Deaths")).widget().color(GuiKit.mutedColor());
             players.row();
             for (ChatDigest.PlayerLine line : summary.topPlayers()) {
                 players.add(theme.label(line.name())).expandCellX().widget();
                 players.add(theme.label(String.valueOf(line.messages()))).widget();
                 players.add(theme.label(String.valueOf(line.joins()))).widget();
-                players.add(theme.label(String.valueOf(line.deaths()))).widget().color(GuiKit.BAD);
+                players.add(theme.label(String.valueOf(line.deaths()))).widget().color(GuiKit.badColor());
                 players.row();
             }
         }

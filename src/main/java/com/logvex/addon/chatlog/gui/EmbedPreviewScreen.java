@@ -80,7 +80,7 @@ public class EmbedPreviewScreen extends WindowScreen {
             .color(accentColor(embed));
 
         if (embed == null) {
-            add(theme.label("No data for this card yet.")).expandX().widget().color(GuiKit.MUTED);
+            add(theme.label("No data for this card yet.")).expandX().widget().color(GuiKit.mutedColor());
         } else {
             renderEmbed(embed);
         }
@@ -101,7 +101,7 @@ public class EmbedPreviewScreen extends WindowScreen {
         Map<String, Object> map = embed.toMap();
         Object title = map.get("title");
         if (title != null) {
-            add(theme.label(String.valueOf(title))).expandX().widget().color(GuiKit.ACCENT);
+            add(theme.label(String.valueOf(title))).expandX().widget().color(GuiKit.accentColor());
         }
         Object description = map.get("description");
         if (description != null) {
@@ -114,18 +114,18 @@ public class EmbedPreviewScreen extends WindowScreen {
             for (Object element : list) {
                 if (!(element instanceof Map<?, ?> field)) continue;
                 WHorizontalList row = add(theme.horizontalList()).expandX().widget();
-                row.add(theme.label(String.valueOf(field.get("name")) + ":")).widget().color(GuiKit.MUTED);
+                row.add(theme.label(String.valueOf(field.get("name")) + ":")).widget().color(GuiKit.mutedColor());
                 row.add(theme.label(GuiKit.truncate(String.valueOf(field.get("value")), 70)))
                     .expandX().widget();
             }
         }
         Object footer = map.get("footer");
         if (footer instanceof Map<?, ?> footerMap) {
-            add(theme.label(String.valueOf(footerMap.get("text")))).expandX().widget().color(GuiKit.MUTED);
+            add(theme.label(String.valueOf(footerMap.get("text")))).expandX().widget().color(GuiKit.mutedColor());
         }
         // Discord drops an embed over the combined budget, so the remaining room is worth showing
         // where appearance is tuned: a long footer is the easiest way to spend it without noticing.
-        add(theme.label(budgetLabel(embed))).expandX().widget().color(GuiKit.MUTED);
+        add(theme.label(budgetLabel(embed))).expandX().widget().color(GuiKit.mutedColor());
     }
 
     private static String budgetLabel(DiscordEmbed embed) {
@@ -194,7 +194,7 @@ public class EmbedPreviewScreen extends WindowScreen {
             int rgb = number.intValue();
             return new Color((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
         }
-        return GuiKit.ACCENT;
+        return GuiKit.accentColor();
     }
 
     private String accentLabel(DiscordEmbed embed) {

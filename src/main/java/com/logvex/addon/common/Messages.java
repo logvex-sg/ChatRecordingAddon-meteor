@@ -75,16 +75,22 @@ public final class Messages {
         return String.format(Locale.ROOT, "%.1f %s", v, UNITS[unit]);
     }
 
-    /** Human readable duration, e.g. {@code 1m 05s} or {@code 3.4s}. */
+    /**
+     * Human readable duration: {@code 1h 02m 03s}, {@code 2m 05s}, {@code 7s} or {@code 0.4s}.
+     *
+     * <p>Every field below the largest one is zero-padded, so a column of durations lines up and
+     * {@code 2m 05s} never reads as {@code 2m 5s}. Seconds are only shown when the duration is under
+     * an hour, which keeps a long session from printing a meaningless trailing count.
+     */
     public static String duration(long millis) {
-        if (millis < 0) millis = 0;
-        long seconds = millis / 1000;
-        if (seconds < 60) return String.format(Locale.ROOT, "%.1fs", millis / 1000.0);
+        long clamped = Math.max(0, millis);
+        if (clamped < 1000) return String.format(Locale.ROOT, "%.1fs", clamped / 1000.0);
+        long seconds = clamped / 1000;
+        if (seconds < 60) return seconds + "s";
         long minutes = seconds / 60;
-        long rest = seconds % 60;
-        if (minutes < 60) return minutes + "m " + (rest < 10 ? "0" : "") + rest + "s";
+        if (minutes < 60) return String.format(Locale.ROOT, "%dm %02ds", minutes, seconds % 60);
         long hours = minutes / 60;
-        return hours + "h " + (minutes % 60) + "m";
+        return String.format(Locale.ROOT, "%dh %02dm %02ds", hours, minutes % 60, seconds % 60);
     }
 
     /** Pluralises a noun against a count: {@code 1 message} / {@code 2 messages}. */

@@ -48,14 +48,14 @@ public class TimelineScreen extends WindowScreen {
         WTable kinds = add(theme.table()).expandX().widget();
         for (SessionTimeline.Kind kind : SessionTimeline.Kind.values()) {
             kinds.add(theme.label(kind.label() + ": " + module.timeline().count(kind)))
-                .widget().color(GuiKit.MUTED);
+                .widget().color(GuiKit.mutedColor());
         }
         kinds.row();
 
         List<SessionTimeline.Event> events = module.events(filter);
         if (events.isEmpty()) {
             add(theme.label(filter.isBlank() ? "No milestones yet." : "No events match that filter."))
-                .expandX().widget().color(GuiKit.MUTED);
+                .expandX().widget().color(GuiKit.mutedColor());
             return;
         }
 
@@ -63,20 +63,21 @@ public class TimelineScreen extends WindowScreen {
         page = Math.min(page, totalPages - 1);
 
         WVerticalList header = add(theme.verticalList()).expandX().widget();
-        GuiKit.keyValue(header, theme, "Milestones:",
-            events.size() + " (page " + (page + 1) + "/" + totalPages + ")");
+        GuiKit.facts(header, theme,
+            "Milestones", Messages.number(events.size()),
+            "Page", (page + 1) + " of " + totalPages);
 
         WTable table = add(theme.table()).expandX().widget();
-        table.add(theme.label("Time")).widget().color(GuiKit.MUTED);
-        table.add(theme.label("Kind")).widget().color(GuiKit.MUTED);
-        table.add(theme.label("Detail")).expandCellX().widget().color(GuiKit.MUTED);
+        table.add(theme.label("Time")).widget().color(GuiKit.mutedColor());
+        table.add(theme.label("Kind")).widget().color(GuiKit.mutedColor());
+        table.add(theme.label("Detail")).expandCellX().widget().color(GuiKit.mutedColor());
         table.row();
 
         int from = page * PAGE_SIZE;
         int to = Math.min(events.size(), from + PAGE_SIZE);
         for (int i = from; i < to; i++) {
             SessionTimeline.Event event = events.get(i);
-            table.add(theme.label(Messages.clock(event.timestamp()))).widget().color(GuiKit.MUTED);
+            table.add(theme.label(Messages.clock(event.timestamp()))).widget().color(GuiKit.mutedColor());
             table.add(theme.label(event.kind().label())).widget().color(kindColor(event.kind()));
             table.add(theme.label(GuiKit.truncate(event.line(), 90))).expandCellX().widget();
             table.row();
@@ -109,11 +110,11 @@ public class TimelineScreen extends WindowScreen {
 
     private static Color kindColor(SessionTimeline.Kind kind) {
         return switch (kind) {
-            case JOIN, SESSION_START -> GuiKit.GOOD;
-            case LEAVE, SESSION_END -> GuiKit.WARN;
-            case DEATH, WARNING -> GuiKit.BAD;
-            case KEYWORD -> GuiKit.ACCENT;
-            default -> GuiKit.MUTED;
+            case JOIN, SESSION_START -> GuiKit.goodColor();
+            case LEAVE, SESSION_END -> GuiKit.warnColor();
+            case DEATH, WARNING -> GuiKit.badColor();
+            case KEYWORD -> GuiKit.accentColor();
+            default -> GuiKit.mutedColor();
         };
     }
 

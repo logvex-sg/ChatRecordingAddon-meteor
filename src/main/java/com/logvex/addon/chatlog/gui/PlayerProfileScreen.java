@@ -1,5 +1,6 @@
 package com.logvex.addon.chatlog.gui;
 
+import com.logvex.addon.common.Messages;
 import com.logvex.addon.chatlog.core.ChatDigest;
 import com.logvex.addon.chatlog.core.PlayerActivity;
 import com.logvex.addon.chatlog.core.ReportFormatting;
@@ -50,21 +51,21 @@ public class PlayerProfileScreen extends WindowScreen {
 
         List<PlayerActivity> players = service.players().search(filter);
         if (players.isEmpty()) {
-            add(theme.label("No player activity recorded.")).expandX().widget().color(GuiKit.MUTED);
+            add(theme.label("No player activity recorded.")).expandX().widget().color(GuiKit.mutedColor());
             return;
         }
 
         WTable table = add(theme.table()).expandX().widget();
-        table.add(theme.label("Player")).expandCellX().widget().color(GuiKit.MUTED);
-        table.add(theme.label("Messages")).widget().color(GuiKit.MUTED);
-        table.add(theme.label("Deaths")).widget().color(GuiKit.MUTED);
+        table.add(theme.label("Player")).expandCellX().widget().color(GuiKit.mutedColor());
+        table.add(theme.label("Messages")).widget().color(GuiKit.mutedColor());
+        table.add(theme.label("Deaths")).widget().color(GuiKit.mutedColor());
         table.add(theme.label("")).widget();
         table.row();
 
         for (PlayerActivity activity : players) {
             boolean isSelected = selected != null && selected.name().equals(activity.name());
             table.add(theme.label((isSelected ? "\u25B8 " : "") + activity.name())).expandCellX().widget()
-                .color(isSelected ? GuiKit.ACCENT : null);
+                .color(isSelected ? GuiKit.accentColor() : null);
             table.add(theme.label(String.valueOf(activity.messageCount()))).widget();
             table.add(theme.label(String.valueOf(activity.deathCount()))).widget();
             WButton pick = table.add(theme.button("Profile")).widget();
@@ -78,17 +79,14 @@ public class PlayerProfileScreen extends WindowScreen {
         if (selected != null) {
             add(theme.horizontalSeparator(selected.name())).expandX();
             WVerticalList details = add(theme.verticalList()).expandX().widget();
-            GuiKit.keyValue(details, theme, "Messages:", String.valueOf(selected.messageCount()));
-            GuiKit.keyValue(details, theme, "Joins:", String.valueOf(selected.joinCount()));
-            GuiKit.keyValue(details, theme, "Leaves:", String.valueOf(selected.leaveCount()));
-            GuiKit.keyValue(details, theme, "Deaths:", String.valueOf(selected.deathCount()));
-            GuiKit.keyValue(details, theme, "Sessions:", String.valueOf(selected.sessionCount()));
-            if (selected.firstSeen() > 0) {
-                GuiKit.keyValue(details, theme, "First seen:", ReportFormatting.time(selected.firstSeen()));
-            }
-            if (selected.lastSeen() > 0) {
-                GuiKit.keyValue(details, theme, "Last seen:", ReportFormatting.time(selected.lastSeen()));
-            }
+            GuiKit.tiles(details, theme,
+                GuiKit.Tile.of(Messages.number(selected.messageCount()), "messages"),
+                GuiKit.Tile.of(Messages.number(selected.sessionCount()), "sessions"),
+                GuiKit.Tile.of(Messages.number(selected.joinCount() + selected.leaveCount()), "joins + leaves"));
+            GuiKit.facts(details, theme,
+                "Deaths", Messages.number(selected.deathCount()),
+                "First seen", selected.firstSeen() > 0 ? ReportFormatting.time(selected.firstSeen()) : "unknown",
+                "Last seen", selected.lastSeen() > 0 ? ReportFormatting.time(selected.lastSeen()) : "unknown");
 
             if (relay != null) {
                 WButton send = add(theme.button("Send Profile Embed")).expandX().widget();

@@ -42,14 +42,14 @@ public class AlertLogScreen extends WindowScreen {
         };
 
         WTable summary = add(theme.table()).expandX().widget();
-        summary.add(theme.label("Keyword")).widget().color(GuiKit.MUTED);
-        summary.add(theme.label("Webhook")).widget().color(GuiKit.MUTED);
-        summary.add(theme.label("Error")).widget().color(GuiKit.MUTED);
-        summary.add(theme.label("Total")).widget().color(GuiKit.MUTED);
+        summary.add(theme.label("Keyword")).widget().color(GuiKit.mutedColor());
+        summary.add(theme.label("Webhook")).widget().color(GuiKit.mutedColor());
+        summary.add(theme.label("Error")).widget().color(GuiKit.mutedColor());
+        summary.add(theme.label("Total")).widget().color(GuiKit.mutedColor());
         summary.row();
-        summary.add(theme.label(Integer.toString(log.count(AlertLog.Kind.KEYWORD)))).widget().color(GuiKit.ACCENT);
-        summary.add(theme.label(Integer.toString(log.count(AlertLog.Kind.WEBHOOK)))).widget().color(GuiKit.WARN);
-        summary.add(theme.label(Integer.toString(log.count(AlertLog.Kind.ERROR)))).widget().color(GuiKit.BAD);
+        summary.add(theme.label(Integer.toString(log.count(AlertLog.Kind.KEYWORD)))).widget().color(GuiKit.accentColor());
+        summary.add(theme.label(Integer.toString(log.count(AlertLog.Kind.WEBHOOK)))).widget().color(GuiKit.warnColor());
+        summary.add(theme.label(Integer.toString(log.count(AlertLog.Kind.ERROR)))).widget().color(GuiKit.badColor());
         summary.add(theme.label(Long.toString(log.totalRecorded()))).widget();
 
         WButton clear = add(theme.button("Clear alerts")).expandX().widget();
@@ -64,19 +64,19 @@ public class AlertLogScreen extends WindowScreen {
         List<AlertLog.Alert> alerts = log.recent(filter, 500);
         if (alerts.isEmpty()) {
             add(theme.label(filter.isBlank() ? "No alerts recorded yet." : "No alerts match the search."))
-                .expandX().widget().color(GuiKit.MUTED);
+                .expandX().widget().color(GuiKit.mutedColor());
             return;
         }
 
         WTable table = add(theme.table()).expandX().widget();
-        table.add(theme.label("Time")).widget().color(GuiKit.MUTED);
-        table.add(theme.label("Kind")).widget().color(GuiKit.MUTED);
-        table.add(theme.label("Title")).widget().color(GuiKit.MUTED);
-        table.add(theme.label("Detail")).expandCellX().widget().color(GuiKit.MUTED);
+        table.add(theme.label("Time")).widget().color(GuiKit.mutedColor());
+        table.add(theme.label("Kind")).widget().color(GuiKit.mutedColor());
+        table.add(theme.label("Title")).widget().color(GuiKit.mutedColor());
+        table.add(theme.label("Detail")).expandCellX().widget().color(GuiKit.mutedColor());
         table.row();
 
         for (AlertLog.Alert alert : alerts) {
-            table.add(theme.label(ReportFormatting.shortTime(alert.timestamp()))).widget().color(GuiKit.MUTED);
+            table.add(theme.label(ReportFormatting.shortTime(alert.timestamp()))).widget().color(GuiKit.mutedColor());
             table.add(theme.label(alert.kind().toString())).widget().color(colorFor(alert.kind()));
             table.add(theme.label(GuiKit.truncate(alert.title(), 28))).widget();
             table.add(theme.label(GuiKit.truncate(alert.detail(), 90))).expandCellX().widget();
@@ -86,9 +86,9 @@ public class AlertLogScreen extends WindowScreen {
 
     private static Color colorFor(AlertLog.Kind kind) {
         return switch (kind) {
-            case KEYWORD -> GuiKit.ACCENT;
-            case WEBHOOK -> GuiKit.WARN;
-            case ERROR -> GuiKit.BAD;
+            case KEYWORD -> GuiKit.accentColor();
+            case WEBHOOK -> GuiKit.warnColor();
+            case ERROR -> GuiKit.badColor();
         };
     }
 

@@ -55,26 +55,27 @@ public class SessionHistoryScreen extends WindowScreen {
         };
 
         var summary = add(theme.verticalList()).expandX().widget();
-        GuiKit.keyValue(summary, theme, "Sessions kept:", Integer.toString(module.size()));
-        GuiKit.keyValue(summary, theme, "Messages total:", Messages.number(module.totalMessages()));
-        GuiKit.keyValue(summary, theme, "Time total:", Messages.duration(module.totalDurationMs()));
+        GuiKit.facts(summary, theme,
+            "Sessions kept", Messages.number(module.size()),
+            "Messages total", Messages.number(module.totalMessages()),
+            "Time total", Messages.duration(module.totalDurationMs()));
 
         List<SessionRecord> sessions = module.sessions(filter);
         add(theme.horizontalSeparator("Sessions (" + sessions.size() + ")")).expandX();
 
         if (sessions.isEmpty()) {
-            add(theme.label("No sessions recorded yet.")).expandX().widget().color(GuiKit.MUTED);
+            add(theme.label("No sessions recorded yet.")).expandX().widget().color(GuiKit.mutedColor());
             return;
         }
 
         WTable table = add(theme.table()).expandX().widget();
-        table.add(theme.label("Started")).widget().color(GuiKit.MUTED);
-        table.add(theme.label("Server")).expandCellX().widget().color(GuiKit.MUTED);
-        table.add(theme.label("Duration")).widget().color(GuiKit.MUTED);
-        table.add(theme.label("Messages")).widget().color(GuiKit.MUTED);
-        table.add(theme.label("Players")).widget().color(GuiKit.MUTED);
-        table.add(theme.label("J/L/D")).widget().color(GuiKit.MUTED);
-        table.add(theme.label("Alerts")).widget().color(GuiKit.MUTED);
+        table.add(theme.label("Started")).widget().color(GuiKit.mutedColor());
+        table.add(theme.label("Server")).expandCellX().widget().color(GuiKit.mutedColor());
+        table.add(theme.label("Duration")).widget().color(GuiKit.mutedColor());
+        table.add(theme.label("Messages")).widget().color(GuiKit.mutedColor());
+        table.add(theme.label("Players")).widget().color(GuiKit.mutedColor());
+        table.add(theme.label("J/L/D")).widget().color(GuiKit.mutedColor());
+        table.add(theme.label("Alerts")).widget().color(GuiKit.mutedColor());
         table.add(theme.label("")).widget();
         table.row();
 
