@@ -368,6 +368,17 @@ public class AssistantModule extends AutomationModule {
         .build()
     );
 
+    private final Setting<Integer> historySize = sgMemory.add(new IntSetting.Builder()
+        .name("history-size")
+        .description("How many remembered exchanges to keep on disk and in memory. "
+            + "0 keeps every exchange.")
+        .defaultValue(0)
+        .min(0)
+        .sliderRange(0, 2000)
+        .onChanged(ignored -> rebuild())
+        .build()
+    );
+
     private final Setting<Integer> rateLimit = sgLimits.add(new IntSetting.Builder()
         .name("rate-limit-per-minute")
         .description("Maximum assistant replies per minute. 0 disables the global limit.")
@@ -913,9 +924,13 @@ public class AssistantModule extends AutomationModule {
         }
         String verb = decision.rule() == null ? TriggerRule.DEFAULT_WHISPER
             : decision.rule().whisperCommand();
+        // The compact form is built at the message cap rather than at the display width: it is what
+        // a remote asker's reply is repacked from, and rendering it narrow first would wrap the
+        // fields into fragments that read as rubble once joined ("Server: | !cmds1 | World: ...").
+        int wireWidth = Math.max(replyWidth.get(), ReplyDelivery.MAX_MESSAGE_CHARS);
         ReplyDelivery.Plan plan = ReplyDelivery.plan(AssistantBrain.Delivery.PRIVATE,
             decision.linesCapped(replyWidth.get(), replyFormat.get().style(), MAX_EMBED_LINES),
-            ReplyFormat.oneLine(decision.embed(), replyWidth.get()), isLocalSpeaker(sender));
+            ReplyFormat.oneLine(decision.embed(), wireWidth), isLocalSpeaker(sender));
         switch (plan.mode()) {
             // Whispering to yourself is a round trip through the server to reach the screen you are
             // already looking at. Printed locally instead, so a twelve-row block costs no /msg at
@@ -925,8 +940,9 @@ public class AssistantModule extends AutomationModule {
                 for (String line : plan.lines()) whisper(verb, sender, line);
             }
             case SERVER_PACED_LINES -> {
-                // A remote asker only ever sees what the server relays, so the rows have to go out
-                // one message at a time. Queued and released by drainPacer().
+                // A remote asker only ever sees what the server relays, so the packed messages go
+                // out one at a time rather than as a burst. Paced, but also few: the count is what
+                // a flood filter acts on, and pacing alone never reduced it.
                 java.util.List<SendPacer.Line> queued = new java.util.ArrayList<>(plan.lines().size());
                 for (String line : plan.lines()) queued.add(new SendPacer.Line(sender, verb, line));
                 pacer.enqueue(queued);
@@ -1152,6 +1168,7 @@ public class AssistantModule extends AutomationModule {
             triggerAudience.get(),
             TriggerAudience.normalise(triggerAllowList.get())
         );
+        service.memory().setHistoryCapacity(historySize.get());
         runtime.setTriggers(parsed);
         runtime.brain().setTriggerSet(parsed);
         runtime.setConfig(config);
@@ -1171,6 +1188,52 @@ public class AssistantModule extends AutomationModule {
             WebhookRelayModule relay = Modules.get().get(WebhookRelayModule.class);
             return relay == null ? null : relay.reportLog();
         });
+        runtime.brain().setTriggerToggle(this::setTriggerEnabled);
+        // The catalog is the saved list merged with the shipped rules, disabled entries included:
+        // the active set cannot answer "what can I switch back on?".
+        runtime.brain().setTriggerCatalog(() -> TriggerRule.loadSaved(rules.get()));
+    }
+
+    /**
+     * Turns one saved rule's enabled flag on or off, and rebuilds.
+     *
+     * <p>Written through the same persisted list the settings screen edits, so {@code !trigger off}
+     * survives a restart. A disabled rule stays in the list: it is not re-added by the shipped-rule
+     * merge, and its reply text is kept for when it is turned back on.
+     *
+     * @return null when the change was saved, otherwise a sentence saying why it was not
+     */
+    private String setTriggerEnabled(String pattern, boolean enabled) {
+        if (pattern == null || pattern.isBlank()) return "That trigger has no name.";
+        List<String> saved = new ArrayList<>(rules.get());
+        String needle = pattern.strip();
+        for (int i = 0; i < saved.size(); i++) {
+            TriggerRule rule = TriggerRule.decode(saved.get(i));
+            if (rule == null || !rule.pattern().strip().equalsIgnoreCase(needle)) continue;
+            if (rule.enabled() == enabled) {
+                return null;
+            }
+            saved.set(i, new TriggerRule(rule.pattern(), rule.caseSensitive(), rule.wholeWord(),
+                rule.sender(), rule.reply(), rule.mode(), rule.cooldownMs(), rule.sessionLimit(),
+                rule.sound(), rule.remember(), enabled, rule.aliases(), rule.pool(),
+                rule.whisper(), rule.embedMode()).encode());
+            rules.set(saved);
+            rebuild();
+            return null;
+        }
+        // A rule that only exists in the merged defaults is not in the saved list yet, so it is
+        // added in its disabled form rather than the command silently doing nothing.
+        for (TriggerRule shipped : TriggerRule.preconfigured()) {
+            if (!shipped.pattern().strip().equalsIgnoreCase(needle)) continue;
+            saved.add(new TriggerRule(shipped.pattern(), shipped.caseSensitive(), shipped.wholeWord(),
+                shipped.sender(), shipped.reply(), shipped.mode(), shipped.cooldownMs(),
+                shipped.sessionLimit(), shipped.sound(), shipped.remember(), enabled,
+                shipped.aliases(), shipped.pool(), shipped.whisper(), shipped.embedMode()).encode());
+            rules.set(saved);
+            rebuild();
+            return null;
+        }
+        return "No trigger is called '" + pattern + "'.";
     }
 
     /** The default macro table, as configuration lines. */

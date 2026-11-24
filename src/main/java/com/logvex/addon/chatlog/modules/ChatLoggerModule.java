@@ -151,10 +151,15 @@ public class ChatLoggerModule extends AddonModule {
 
     // Retention
 
+    // Retention is opt-in on every axis. Logs are the one thing this addon exists to keep, so the
+    // default is to keep all of them: nothing is deleted until the player asks for it. Turning
+    // auto-cleanup on with all three limits at 0 is also a no-op, which is why the limits default
+    // to 0 rather than to a number that would silently start deleting.
     private final Setting<Boolean> autoCleanup = sgRetention.add(new BoolSetting.Builder()
         .name("auto-cleanup")
-        .description("Enforce the retention limits automatically after each flush.")
-        .defaultValue(true)
+        .description("Enforce the limits below automatically after each flush and at startup. "
+            + "Off by default: logs are never deleted unless you ask.")
+        .defaultValue(false)
         .visible(saveLogs::get)
         .onChanged(value -> syncRuntime())
         .build()
@@ -162,33 +167,34 @@ public class ChatLoggerModule extends AddonModule {
 
     private final Setting<Integer> maxAgeDays = sgRetention.add(new IntSetting.Builder()
         .name("max-age-days")
-        .description("Delete log segments older than this. 0 disables the age limit.")
-        .defaultValue(30)
+        .description("Delete log segments older than this. 0 keeps every segment forever.")
+        .defaultValue(0)
         .min(0)
         .sliderRange(0, 365)
-        .visible(saveLogs::get)
+        .visible(() -> saveLogs.get() && autoCleanup.get())
         .onChanged(value -> syncRuntime())
         .build()
     );
 
     private final Setting<Integer> maxSizeMb = sgRetention.add(new IntSetting.Builder()
         .name("max-size-mb")
-        .description("Maximum total size of the stored logs. Oldest segments are removed first.")
-        .defaultValue(100)
-        .min(1)
-        .sliderRange(1, 2000)
-        .visible(saveLogs::get)
+        .description("Maximum total size of the stored logs, oldest segments first. "
+            + "0 keeps every segment regardless of size.")
+        .defaultValue(0)
+        .min(0)
+        .sliderRange(0, 2000)
+        .visible(() -> saveLogs.get() && autoCleanup.get())
         .onChanged(value -> syncRuntime())
         .build()
     );
 
     private final Setting<Integer> maxSegments = sgRetention.add(new IntSetting.Builder()
         .name("max-segments")
-        .description("Maximum number of stored segments. 0 disables the count limit.")
-        .defaultValue(2000)
+        .description("Maximum number of stored segments. 0 keeps every segment.")
+        .defaultValue(0)
         .min(0)
         .sliderRange(0, 20000)
-        .visible(saveLogs::get)
+        .visible(() -> saveLogs.get() && autoCleanup.get())
         .onChanged(value -> syncRuntime())
         .build()
     );
@@ -514,6 +520,11 @@ public class ChatLoggerModule extends AddonModule {
 
     public int maxSegmentsSetting() {
         return maxSegments.get();
+    }
+
+    /** Whether the retention limits are applied automatically. */
+    public boolean autoCleanupEnabled() {
+        return autoCleanup.get();
     }
 
     public long maxAgeMs() {

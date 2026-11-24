@@ -29,10 +29,10 @@ public class SessionHistoryModule extends AddonModule {
 
     private final Setting<Integer> capacity = sgGeneral.add(new IntSetting.Builder()
         .name("history-size")
-        .description("How many past sessions to keep. Older sessions are dropped first.")
-        .defaultValue(500)
-        .min(10)
-        .sliderRange(10, 5000)
+        .description("How many past sessions to keep. 0 keeps every session.")
+        .defaultValue(0)
+        .min(0)
+        .sliderRange(0, 5000)
         .onChanged(value -> service.sessionHistory().setCapacity(value))
         .build()
     );

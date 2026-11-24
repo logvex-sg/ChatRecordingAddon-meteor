@@ -12,13 +12,16 @@ import java.util.Map;
  *
  * <p>A rename is only ever inferred from a name difference for the same UUID in the server's player
  * list. The tracker never guesses: without a UUID it records nothing, so it cannot mislabel two
- * different players as one account. The map is bounded, so a long-running client on a busy network
- * cannot grow it without limit.
+ * different players as one account.
+ *
+ * <p>Uncapped by default. The index is written to disk, so evicting an account deletes a name
+ * history the player collected on a busy server. {@link #setCapacity} allows a bound; {@code 0}
+ * keeps every account.
  *
  * <p>Thread-safe: the packet thread records while the GUI thread reads snapshots.
  */
 public final class PlayerIdentityTracker {
-    /** How many distinct accounts to keep before the least recently seen is dropped. */
+    /** The cap used before it became configurable, kept as the setting's suggestion. */
     public static final int MAX_ACCOUNTS = 2000;
 
     /** One rename worth reporting: the account, its old name and its new one. */
@@ -26,6 +29,7 @@ public final class PlayerIdentityTracker {
     }
 
     private final Map<String, PlayerIdentity> byUuid = new LinkedHashMap<>();
+    private int capacity;
     private final List<Rename> renames = new ArrayList<>();
     private final int maxRenames;
 
@@ -162,8 +166,19 @@ public final class PlayerIdentityTracker {
         return false;
     }
 
+    /** Sets the cap on distinct accounts; {@code 0} keeps every account. */
+    public synchronized void setCapacity(int capacity) {
+        this.capacity = Math.max(0, capacity);
+        evictIfNeeded();
+    }
+
+    public int capacity() {
+        return capacity;
+    }
+
     private void evictIfNeeded() {
-        while (byUuid.size() > MAX_ACCOUNTS) {
+        if (capacity <= 0) return;
+        while (byUuid.size() > capacity) {
             String oldest = null;
             long oldestSeen = Long.MAX_VALUE;
             for (Map.Entry<String, PlayerIdentity> entry : byUuid.entrySet()) {

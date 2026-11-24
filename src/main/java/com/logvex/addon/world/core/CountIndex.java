@@ -7,13 +7,17 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * A bounded tally of things seen in a world — biomes visited or resource blocks found.
+ * A tally of things seen in a world — biomes visited or resource blocks found.
  *
- * <p>Keeps a count per key and the last coordinate each was seen at, capped at {@link #MAX_KEYS} so a
- * world with hundreds of biome or block variants cannot grow without limit. Minecraft-free, so it is
- * unit testable.
+ * <p>Keeps a count per key and the last coordinate each was seen at. Minecraft-free, so it is unit
+ * testable.
+ *
+ * <p>Uncapped by default. The keys are biome and block ids, which are a bounded vocabulary anyway,
+ * so the old 512-key cap only ever bit on modded packs with more variants — and bit by silently
+ * dropping a biome the player had explored. {@link #setCapacity} is available; {@code 0} means no cap.
  */
 public final class CountIndex {
+    /** The cap this store used before it became configurable, kept as the setting's suggestion. */
     public static final int MAX_KEYS = 512;
 
     /** One key's tally. */
@@ -21,6 +25,7 @@ public final class CountIndex {
     }
 
     private final Map<String, Entry> entries = new LinkedHashMap<>();
+    private int capacity;
 
     /** Records one observation of {@code key} at a coordinate. */
     public void observe(String key, int x, int y, int z, long now) {
@@ -30,8 +35,18 @@ public final class CountIndex {
             entries.put(key, new Entry(key, existing.count() + 1, x, y, z, now));
             return;
         }
-        if (entries.size() >= MAX_KEYS) evictLeastSeen();
+        if (capacity > 0 && entries.size() >= capacity) evictLeastSeen();
         entries.put(key, new Entry(key, 1, x, y, z, now));
+    }
+
+    /** Sets the cap on distinct keys; {@code 0} keeps every key. */
+    public void setCapacity(int capacity) {
+        this.capacity = Math.max(0, capacity);
+        while (capacity > 0 && entries.size() > capacity) evictLeastSeen();
+    }
+
+    public int capacity() {
+        return capacity;
     }
 
     private void evictLeastSeen() {

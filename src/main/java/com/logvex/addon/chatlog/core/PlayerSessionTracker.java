@@ -14,13 +14,16 @@ import java.util.Set;
  * Per-player session durations, derived only from observed join and leave events.
  *
  * <p>Only join/leave entries are observed, so the cost of feeding every recorded line is a cheap
- * type check. The map is bounded: once {@link #MAX_PLAYERS} players are tracked, the least recently
- * seen is dropped, so a long-running client on a busy server cannot grow without limit.
+ * type check. Uncapped by default: a session list is a summary of who was online, and dropping the
+ * least recently seen player is losing part of that summary. {@link #setCapacity} allows a bound;
+ * {@code 0} keeps every player.
  */
 public final class PlayerSessionTracker {
+    /** The cap used before it became configurable, kept as the setting's suggestion. */
     public static final int MAX_PLAYERS = 2000;
 
     private final Map<String, PlayerSession> players = new LinkedHashMap<>();
+    private int capacity;
     private final Set<String> excluded = new LinkedHashSet<>();
 
     public synchronized void record(ChatEntry entry) {
@@ -108,8 +111,19 @@ public final class PlayerSessionTracker {
         return out;
     }
 
+    /** Sets the cap on tracked players; {@code 0} keeps every player. */
+    public synchronized void setCapacity(int capacity) {
+        this.capacity = Math.max(0, capacity);
+        evictIfNeeded();
+    }
+
+    public int capacity() {
+        return capacity;
+    }
+
     private void evictIfNeeded() {
-        while (players.size() > MAX_PLAYERS) {
+        if (capacity <= 0) return;
+        while (players.size() > capacity) {
             String oldest = null;
             long oldestSeen = Long.MAX_VALUE;
             for (Map.Entry<String, PlayerSession> entry : players.entrySet()) {

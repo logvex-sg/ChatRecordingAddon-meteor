@@ -227,6 +227,53 @@ public final class AssistantBrain {
         return reportLogSource == null ? null : reportLogSource.get();
     }
 
+    /**
+     * How a trigger rule's enabled flag is persisted.
+     *
+     * <p>Null means the caller can read rules but not change them, which is what a headless test
+     * wants: {@code !trigger off goodbye} then answers "no way to save that" instead of pretending
+     * the change stuck. The module wires this to its persisted rule list, because the brain owns no
+     * settings and must not start.
+     */
+    public interface TriggerToggle {
+        /**
+         * Turns the rule matching {@code pattern} on or off.
+         *
+         * @return null when it worked, or a sentence explaining why it did not
+         */
+        String setEnabled(String pattern, boolean enabled);
+    }
+
+    private TriggerToggle triggerToggle;
+
+    /**
+     * Every rule, including the disabled ones, for {@code !trigger} to resolve a name against.
+     *
+     * <p>{@link #triggerSet} cannot be used for this: a {@link TriggerSet} holds only the rules that
+     * are on, so a rule that was just switched off would vanish from the lookup and could never be
+     * switched back on.
+     */
+    private java.util.function.Supplier<List<TriggerRule>> triggerCatalog;
+
+    /** Wires the callback that persists a trigger's enabled flag; null disables the command. */
+    public void setTriggerToggle(TriggerToggle toggle) {
+        this.triggerToggle = toggle;
+    }
+
+    /** Wires the full rule list, disabled rules included; null falls back to the active set. */
+    public void setTriggerCatalog(java.util.function.Supplier<List<TriggerRule>> catalog) {
+        this.triggerCatalog = catalog;
+    }
+
+    /** Every rule {@code !trigger} may act on, enabled or not. */
+    private List<TriggerRule> knownRules() {
+        if (triggerCatalog != null) {
+            List<TriggerRule> all = triggerCatalog.get();
+            if (all != null) return all;
+        }
+        return triggerSet == null ? List.of() : triggerSet.rules();
+    }
+
     /** Replaces the per-command table; null restores the shipped defaults. */
     public void setCommandDefaults(java.util.Map<String, CommandDefaults.Entry> entries) {
         this.commandDefaults = entries;
@@ -399,8 +446,17 @@ public final class AssistantBrain {
         }
         // An embed rule delivers the same figures as a labelled block, so the values line up instead
         // of running together in one sentence. The one-line text stays as the fallback for a caller
-        // that can only show a single line, and as what memory records.
+        // that can only show a single line, and as what memory records. A command-shaped trigger
+        // carries its catalogue description in the footer, so the card says what it reports.
         ReplyFormat.Embed embed = rule.wantsEmbed(text) ? rule.toEmbed(text, rule.pattern()) : null;
+        if (embed != null && rule.isCommandShaped()) {
+            String description = CommandCatalog.find(rule.pattern().replaceFirst("^[!/]", ""))
+                .map(CommandCatalog.Command::description).orElse("");
+            if (!description.isEmpty()) {
+                embed = new ReplyFormat.Embed(embed.title(), embed.fields(), description,
+                    embed.style());
+            }
+        }
         return new Decision(delivery, text, rule, rule.sound(), remember, false, false, embed);
     }
 
@@ -555,6 +611,11 @@ public final class AssistantBrain {
             case "whoami" -> commandWhoAmI(sender, config);
             case "macros" -> commandMacros(config, rest);
             case "triggers" -> commandTriggers(identity, config, rest);
+            // Changing the trigger table is an operator action. Without this gate a stranger could
+            // type !trigger off in public chat and silence the operator's answers for everyone.
+            case "trigger" -> identity.local()
+                ? commandTrigger(sender, config, rest)
+                : reply(config.memoryReplyMode(), NOT_LOCAL, false);
             case "macrohelp" -> commandMacroHelp(rest, config);
             case "share" -> commandShare(config);
             case "mod", "report" -> commandReport(sender, canonical, rest, config);
@@ -618,13 +679,28 @@ public final class AssistantBrain {
         // still what decides the wording and order, so a customised answer keeps its customisation;
         // only the layout is imposed. The one-line text stays as the fallback and as what a caller
         // that can show only one line sends.
-        ReplyFormat.Embed embed = ReplyFormat.fromTemplate(
-            config.commandPrefix() + value.command(), value.text());
+        ReplyFormat.Embed embed = statusEmbed(config, value);
         // Only the overview is mirrored to the admin webhook: a card per figure would flood the
         // channel the moment someone polls two commands in a row.
         String card = "status".equals(value.command()) ? value.command() : null;
         return new Decision(delivery, value.text(), null, false, false, true, false, embed, null,
             card);
+    }
+
+    /**
+     * The card for one status command.
+     *
+     * <p>The footer carries the command's one-line description, so the block explains itself
+     * instead of repeating its own name back at the reader. The description is optional: an
+     * unknown verb still renders, just without a footer.
+     */
+    private static ReplyFormat.Embed statusEmbed(AssistantConfig config, StatusCommands.Answer value) {
+        ReplyFormat.Embed card = ReplyFormat.fromTemplate(
+            config.commandPrefix() + value.command(), value.text());
+        if (card == null) return null;
+        String description = CommandCatalog.find(value.command())
+            .map(CommandCatalog.Command::description).orElse("");
+        return new ReplyFormat.Embed(card.title(), card.fields(), description, card.style());
     }
 
     /**
@@ -1025,8 +1101,10 @@ public final class AssistantBrain {
      * @param rest the page number, or a word to filter by
      */
     private Decision commandTriggers(SenderIdentity identity, AssistantConfig config, String rest) {
+        // The full catalog, so a rule that was switched off still appears to the local player,
+        // marked "[off]". A remote player is only shown what is actually running.
         java.util.List<TriggerRule> armed = new java.util.ArrayList<>();
-        for (TriggerRule rule : triggerSet.rules()) {
+        for (TriggerRule rule : knownRules()) {
             if (!visibleTo(rule, identity)) continue;
             armed.add(rule);
         }
@@ -1064,14 +1142,150 @@ public final class AssistantBrain {
     }
 
     /**
+     * {@code !trigger on|off <pattern>}: flips one rule's enabled flag and saves it.
+     *
+     * <p>The trigger table is what makes the assistant answer, and the shipped one is full of
+     * courtesies a player may not want ("cya" answers goodbye, "gg" answers good game). Without this
+     * command the only way to silence one was to delete it in the settings screen, which also threw
+     * away its reply text. Disabling keeps the rule and its wording, so it can be turned back on.
+     *
+     * <p>The pattern is matched the way the list shows it: a bare name that is a prefix of exactly
+     * one rule is enough ({@code !trigger off goodbye} for the {@code goodbye} rule), and an
+     * ambiguous prefix lists the candidates rather than guessing.
+     */
+    private Decision commandTrigger(String sender, AssistantConfig config, String rest) {
+        String body = rest == null ? "" : rest.strip();
+        String verb = body.split("\\s+", 2)[0].toLowerCase(Locale.ROOT);
+        String target = body.length() > verb.length() ? body.substring(verb.length()).strip() : "";
+
+        List<TriggerRule> rules = knownRules();
+        if (body.isEmpty() || target.isEmpty()) {
+            return reply(config.memoryReplyMode(), "Usage: " + config.commandPrefix()
+                + "trigger on|off <name>, for example " + config.commandPrefix()
+                + "trigger off goodbye", false);
+        }
+        boolean enable;
+        switch (verb) {
+            case "on", "enable", "true" -> enable = true;
+            case "off", "disable", "false" -> enable = false;
+            case "toggle" -> {
+                TriggerRule found = findRule(rules, target);
+                if (found == null || ambiguous(rules, target)) {
+                    return triggerLookupFailure(rules, config, target);
+                }
+                enable = !found.enabled();
+            }
+            default -> {
+                return reply(config.memoryReplyMode(), "Say on or off: " + config.commandPrefix()
+                    + "trigger off goodbye", false);
+            }
+        }
+
+        TriggerRule found = findRule(rules, target);
+        if (found == null || ambiguous(rules, target)) return triggerLookupFailure(rules, config, target);
+
+        if (triggerToggle == null) {
+            return reply(config.memoryReplyMode(),
+                "Triggers can only be changed from the assistant's settings screen.", false);
+        }
+        String problem = triggerToggle.setEnabled(found.pattern(), enable);
+        if (problem != null) return reply(config.memoryReplyMode(), problem, false);
+
+        return reply(config.memoryReplyMode(), "Trigger '" + found.pattern() + "' is now "
+            + (enable ? "on" : "off") + ".", true);
+    }
+
+    /**
+     * The rule {@code target} names: its pattern, one of its aliases, or a unique prefix of either.
+     *
+     * <p>Aliases are included because that is how a rule is usually known. A player sees "cya" in
+     * chat, not the {@code goodbye} rule that answers it, so a name-only lookup would answer "no
+     * trigger is called 'cya'" for the very word they want to silence. A pattern always wins over an
+     * alias, so an exact name is never ambiguous.
+     */
+    private static TriggerRule findRule(List<TriggerRule> rules, String target) {
+        String needle = target.strip().toLowerCase(Locale.ROOT);
+        if (needle.isEmpty()) return null;
+
+        for (TriggerRule rule : rules) {
+            if (rule.pattern().strip().toLowerCase(Locale.ROOT).equals(needle)) return rule;
+        }
+        for (TriggerRule rule : rules) {
+            if (hasAlias(rule, needle)) return rule;
+        }
+        TriggerRule prefix = null;
+        int hits = 0;
+        for (TriggerRule rule : rules) {
+            if (rule.pattern().toLowerCase(Locale.ROOT).startsWith(needle) || aliasStartsWith(rule, needle)) {
+                if (++hits > 1) return null;
+                prefix = rule;
+            }
+        }
+        return prefix;
+    }
+
+    /** True when {@code rule} lists {@code needle} as one of its aliases. */
+    private static boolean hasAlias(TriggerRule rule, String needle) {
+        String aliases = rule.aliases() == null ? "" : rule.aliases();
+        for (String alias : aliases.split(",")) {
+            if (alias.strip().toLowerCase(Locale.ROOT).equals(needle)) return true;
+        }
+        return false;
+    }
+
+    /** True when one of {@code rule}'s aliases starts with {@code needle}. */
+    private static boolean aliasStartsWith(TriggerRule rule, String needle) {
+        String aliases = rule.aliases() == null ? "" : rule.aliases();
+        for (String alias : aliases.split(",")) {
+            if (alias.strip().toLowerCase(Locale.ROOT).startsWith(needle)) return true;
+        }
+        return false;
+    }
+
+    /** True when {@code target} matches more than one rule, so acting on it would be a guess. */
+    private static boolean ambiguous(List<TriggerRule> rules, String target) {
+        String needle = target.strip().toLowerCase(Locale.ROOT);
+        if (needle.isEmpty()) return false;
+        int exact = 0;
+        int hits = 0;
+        for (TriggerRule rule : rules) {
+            String pattern = rule.pattern().strip().toLowerCase(Locale.ROOT);
+            if (pattern.equals(needle) || hasAlias(rule, needle)) exact++;
+            else if (pattern.startsWith(needle) || aliasStartsWith(rule, needle)) hits++;
+        }
+        if (exact >= 1) return exact > 1;
+        return hits > 1;
+    }
+
+    /** Says why a name could not be resolved, naming the candidates when it was only ambiguous. */
+    private Decision triggerLookupFailure(List<TriggerRule> rules, AssistantConfig config,
+                                          String target) {
+        List<String> candidates = new java.util.ArrayList<>();
+        String needle = target.strip().toLowerCase(Locale.ROOT);
+        for (TriggerRule rule : rules) {
+            if (rule.pattern().toLowerCase(Locale.ROOT).startsWith(needle)) {
+                candidates.add(rule.pattern());
+            }
+        }
+        if (candidates.isEmpty()) {
+            return reply(config.memoryReplyMode(), "No trigger is called '" + target
+                + "'. " + config.commandPrefix() + "triggers lists them.", false);
+        }
+        return reply(config.memoryReplyMode(), "Which one? " + String.join(", ", candidates), false);
+    }
+
+    /**
      * True when {@code rule} is worth showing to this speaker.
      *
      * <p>A rule pinned to someone else is not their business, and a rule whose reply is a command
      * only the local player may run would be a false promise in the list, so both are hidden.
      */
     private static boolean visibleTo(TriggerRule rule, SenderIdentity identity) {
-        if (rule == null || !rule.enabled() || rule.pattern().isBlank()) return false;
+        if (rule == null || rule.pattern().isBlank()) return false;
         boolean local = identity != null && identity.local();
+        // A rule that is off is shown to the local player only, marked "[off]": it is how they find
+        // the name to switch back on. A remote player is told only what is actually running.
+        if (!rule.enabled() && !local) return false;
         if (!rule.allowsCommandFrom(local)) return false;
         return rule.sender().isBlank() || rule.senderAllowed(identity == null ? "" : identity.name());
     }
@@ -1079,6 +1293,9 @@ public final class AssistantBrain {
     /** The left column: the word to type, annotated when it is not the default whisper. */
     private static String triggerLabel(TriggerRule rule) {
         String label = rule.pattern();
+        // A rule that is off is still listed, marked as such: it is the only place the operator can
+        // see what "!trigger on <name>" would bring back.
+        if (!rule.enabled()) return label + " [off]";
         return switch (rule.mode()) {
             case PRIVATE -> label;
             case CHAT -> label + " [chat]";

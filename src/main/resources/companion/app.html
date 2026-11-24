@@ -6,107 +6,297 @@
 <title>Log Client Companion</title>
 <style>
   :root {
-    --bg: #0b1020;
-    --panel: #121a2e;
-    --panel-2: #172140;
-    --line: #26324f;
-    --text: #e6ecff;
-    --muted: #8fa0c4;
-    --accent: #60a5fa;
+    --bg: #080c18;
+    --bg-2: #0d1426;
+    --panel: #121b30;
+    --panel-2: #18233d;
+    --panel-3: #1f2c4b;
+    --line: #253252;
+    --line-soft: rgba(37, 50, 82, .55);
+    --text: #e8eeff;
+    --muted: #8fa2c8;
+    --faint: #62729a;
+    --accent: #6aa8ff;
     --accent-2: #3b82f6;
-    --good: #6ee7a8;
-    --warn: #f0c86e;
-    --bad: #f08a8a;
-    --radius: 10px;
-    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --accent-glow: rgba(96, 165, 250, .22);
+    --good: #5eead4;
+    --warn: #fbbf6e;
+    --bad: #fb8a8a;
+    --radius: 14px;
+    --radius-sm: 9px;
+    --mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, monospace;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px -12px rgba(0, 0, 0, .6);
   }
   * { box-sizing: border-box; }
+  html { color-scheme: dark; }
   body {
-    margin: 0; background: var(--bg); color: var(--text);
-    font: 14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    margin: 0; min-height: 100vh; color: var(--text);
+    background:
+      radial-gradient(1100px 520px at 8% -12%, rgba(96, 165, 250, .13), transparent 62%),
+      radial-gradient(900px 460px at 96% 4%, rgba(94, 234, 212, .08), transparent 58%),
+      var(--bg);
+    font: 14px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
   }
   a { color: var(--accent); }
+  ::selection { background: var(--accent-glow); }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--panel-3); border-radius: 999px; border: 2px solid var(--bg); }
+  ::-webkit-scrollbar-thumb:hover { background: #2b3a5e; }
+
   header {
-    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-    padding: 12px 16px; background: var(--panel); border-bottom: 1px solid var(--line);
-    position: sticky; top: 0; z-index: 5;
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 11px 18px; position: sticky; top: 0; z-index: 10;
+    background: rgba(10, 16, 32, .82);
+    backdrop-filter: blur(14px) saturate(140%);
+    border-bottom: 1px solid var(--line-soft);
   }
-  header h1 { font-size: 16px; margin: 0; letter-spacing: .2px; }
+  .brand { display: flex; align-items: center; gap: 10px; margin-right: 4px; }
+  .brand-mark {
+    width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center;
+    background: linear-gradient(145deg, var(--accent), #4f46e5);
+    color: #fff; font-size: 13px; font-weight: 700; letter-spacing: -.5px;
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, .12) inset, 0 4px 14px -4px var(--accent-glow);
+  }
+  header h1 { font-size: 14.5px; margin: 0; font-weight: 650; letter-spacing: .1px; }
+  header h1 small { display: block; font-size: 10.5px; font-weight: 500; color: var(--faint); letter-spacing: .3px; }
   header .spacer { flex: 1; }
+
   .badge {
-    font-size: 11px; padding: 2px 8px; border-radius: 999px;
+    font-size: 11px; padding: 3px 9px; border-radius: 999px; white-space: nowrap;
     background: var(--panel-2); color: var(--muted); border: 1px solid var(--line);
   }
-  .badge.good { color: var(--good); border-color: #2c5a45; }
-  .badge.bad { color: var(--bad); border-color: #5a2c2c; }
-  .badge.warn { color: var(--warn); border-color: #5a4d2c; }
-  nav { display: flex; gap: 6px; flex-wrap: wrap; padding: 10px 16px 0; }
+  .badge.good { color: var(--good); border-color: rgba(94, 234, 212, .35); background: rgba(94, 234, 212, .1); }
+  .badge.bad { color: var(--bad); border-color: rgba(251, 138, 138, .35); background: rgba(251, 138, 138, .1); }
+  .badge.warn { color: var(--warn); border-color: rgba(251, 191, 110, .35); background: rgba(251, 191, 110, .1); }
+  .badge .dot {
+    display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+    background: currentColor; margin-right: 5px; vertical-align: middle;
+  }
+  .badge.good .dot { animation: pulse 2.4s ease-in-out infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+
+  nav {
+    display: flex; gap: 4px; flex-wrap: wrap; padding: 12px 18px 0;
+    max-width: 1320px; margin: 0 auto;
+  }
   nav button {
-    background: var(--panel); color: var(--muted); border: 1px solid var(--line);
-    padding: 7px 13px; border-radius: 999px; cursor: pointer; font-size: 13px;
+    background: transparent; color: var(--muted); border: 1px solid transparent;
+    padding: 7px 14px; border-radius: var(--radius-sm); cursor: pointer;
+    font-size: 13px; font-weight: 500; transition: background .14s, color .14s, border-color .14s;
   }
-  nav button.active { background: var(--accent-2); color: #fff; border-color: var(--accent-2); }
-  main { padding: 16px; max-width: 1280px; margin: 0 auto; }
+  nav button:hover { color: var(--text); background: var(--panel); }
+  nav button.active {
+    background: linear-gradient(180deg, var(--accent-2), #2f6fd8);
+    color: #fff; border-color: rgba(255, 255, 255, .14);
+    box-shadow: 0 4px 14px -6px var(--accent-glow);
+  }
+  nav button .count {
+    font-size: 10.5px; margin-left: 6px; padding: 0 5px; border-radius: 999px;
+    background: rgba(255, 255, 255, .14); color: inherit;
+  }
+
+  main { padding: 16px 18px 56px; max-width: 1320px; margin: 0 auto; }
   section { display: none; }
-  section.active { display: block; }
-  .grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+  section.active { display: block; animation: fade .18s ease-out; }
+  @keyframes fade { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+
+  .grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); }
+  .grid.tight { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 11px; }
+
   .card {
-    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
-    padding: 14px;
+    background: linear-gradient(180deg, rgba(24, 35, 61, .72), rgba(18, 27, 48, .92));
+    border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 15px; box-shadow: var(--shadow);
+    transition: border-color .16s, transform .16s;
   }
-  .card h3 { margin: 0 0 10px; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+  .card:hover { border-color: #31436b; }
+  .card h3 {
+    margin: 0 0 11px; font-size: 13px; font-weight: 620; letter-spacing: .2px;
+    display: flex; align-items: center; gap: 8px; color: var(--text);
+  }
   .card h3 .spacer { flex: 1; }
+  .card h3 .hint { font-size: 11px; font-weight: 500; color: var(--faint); letter-spacing: 0; }
   .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .kv { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; }
+  .stack { display: flex; flex-direction: column; gap: 14px; }
+
+  .kv { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; font-size: 13px; }
+  .kv + .kv { border-top: 1px solid var(--line-soft); }
   .kv span:first-child { color: var(--muted); }
+  .kv span:last-child { text-align: right; }
   .muted { color: var(--muted); }
+  .faint { color: var(--faint); }
   .mono { font-family: var(--mono); font-size: 12px; }
+
+  /* stat tiles: a figure is the loudest thing in its tile */
+  .tiles { display: grid; gap: 11px; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); }
+  .tile {
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius-sm);
+    padding: 11px 12px; display: flex; flex-direction: column; gap: 3px;
+  }
+  .tile .label {
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: .7px; color: var(--faint); font-weight: 600;
+  }
+  .tile .value { font-size: 21px; font-weight: 650; letter-spacing: -.4px; line-height: 1.15; font-variant-numeric: tabular-nums; }
+  .tile .value small { font-size: 11.5px; font-weight: 500; color: var(--faint); margin-left: 3px; letter-spacing: 0; }
+  .tile .sub { font-size: 11px; color: var(--muted); }
+  .tile.good .value { color: var(--good); }
+  .tile.warn .value { color: var(--warn); }
+  .tile.bad .value { color: var(--bad); }
+  .tile .bar { margin-top: 5px; }
+
+  .bar { height: 6px; background: rgba(255, 255, 255, .07); border-radius: 999px; overflow: hidden; }
+  .bar > i {
+    display: block; height: 100%; border-radius: 999px; width: 0;
+    background: linear-gradient(90deg, var(--accent-2), var(--accent));
+    transition: width .3s ease;
+  }
+  .bar.good > i { background: linear-gradient(90deg, #2dd4bf, var(--good)); }
+  .bar.warn > i { background: linear-gradient(90deg, #f59e0b, var(--warn)); }
+  .bar.bad > i { background: linear-gradient(90deg, #ef4444, var(--bad)); }
+
   button.btn {
     background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
-    padding: 6px 11px; border-radius: 8px; cursor: pointer; font-size: 13px;
+    padding: 6px 12px; border-radius: var(--radius-sm); cursor: pointer;
+    font-size: 12.5px; font-weight: 500; transition: background .14s, border-color .14s, transform .1s;
   }
-  button.btn:hover { border-color: var(--accent); }
-  button.btn.primary { background: var(--accent-2); border-color: var(--accent-2); color: #fff; }
-  button.btn.danger { border-color: #7a3333; color: var(--bad); }
-  button.btn:disabled { opacity: .45; cursor: not-allowed; }
+  button.btn:hover { border-color: var(--accent); background: var(--panel-3); }
+  button.btn:active { transform: translateY(1px); }
+  button.btn.primary {
+    background: linear-gradient(180deg, var(--accent-2), #2f6fd8);
+    border-color: rgba(255, 255, 255, .14); color: #fff;
+  }
+  button.btn.primary:hover { background: linear-gradient(180deg, #4b8ef8, #3576de); border-color: var(--accent); }
+  button.btn.danger { border-color: rgba(251, 138, 138, .4); color: var(--bad); background: rgba(251, 138, 138, .08); }
+  button.btn.danger:hover { border-color: var(--bad); background: rgba(251, 138, 138, .16); }
+  button.btn:disabled { opacity: .4; cursor: not-allowed; }
+  button.btn:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px;
+  }
+  .btn.sm { padding: 3px 9px; font-size: 11.5px; }
+
   input, select, textarea {
-    background: #0e1526; color: var(--text); border: 1px solid var(--line);
-    border-radius: 8px; padding: 7px 9px; font: inherit; width: 100%;
+    background: #0c1424; color: var(--text); border: 1px solid var(--line);
+    border-radius: var(--radius-sm); padding: 7px 10px; font: inherit; width: 100%;
+    transition: border-color .14s, box-shadow .14s;
   }
-  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
-  label { display: block; font-size: 12px; color: var(--muted); margin: 8px 0 3px; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); }
-  th { color: var(--muted); font-weight: 600; font-size: 12px; }
+  input::placeholder { color: var(--faint); }
+  input:focus, select:focus, textarea:focus {
+    outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow);
+  }
+  select { cursor: pointer; }
+  label { display: block; font-size: 11.5px; color: var(--muted); margin: 9px 0 4px; font-weight: 500; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th, td { text-align: left; padding: 7px 9px; border-bottom: 1px solid var(--line-soft); }
+  th {
+    color: var(--faint); font-weight: 600; font-size: 10.5px;
+    text-transform: uppercase; letter-spacing: .6px;
+    position: sticky; top: 0; background: var(--panel); z-index: 1;
+  }
+  tbody tr { transition: background .12s; }
   tbody tr:hover { background: var(--panel-2); }
-  .log { font-family: var(--mono); font-size: 12px; max-height: 380px; overflow: auto; }
-  .log .line { padding: 2px 0; border-bottom: 1px solid rgba(38,50,79,.5); }
-  .log .t { color: var(--muted); }
-  .empty { color: var(--muted); padding: 14px; text-align: center; }
+  tbody tr:last-child td { border-bottom: none; }
+  td.num { font-variant-numeric: tabular-nums; text-align: right; }
+
+  .log {
+    font-family: var(--mono); font-size: 11.5px; max-height: 400px; overflow: auto;
+    background: #0a1120; border: 1px solid var(--line-soft); border-radius: var(--radius-sm);
+    padding: 8px 10px;
+  }
+  .log .line { padding: 3px 0; border-bottom: 1px solid rgba(37, 50, 82, .4); word-break: break-word; }
+  .log .line:last-child { border-bottom: none; }
+  .log .t { color: var(--faint); }
+  .log .ev-chat { color: var(--accent); }
+  .log .ev-player { color: var(--good); }
+  .log .ev-bot { color: var(--warn); }
+  .log .ev-task { color: #c4b5fd; }
+  .log .ev-module { color: #7dd3fc; }
+  .log .ev-notify { color: var(--bad); }
+  .group-head {
+    display: flex; align-items: center; gap: 8px; margin: 18px 0 9px;
+    font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .8px;
+    color: var(--faint);
+  }
+  .group-head:first-child { margin-top: 0; }
+  .group-head .spacer { flex: 1; }
+  .group-head .hint { font-weight: 500; letter-spacing: .3px; color: var(--faint); opacity: .8; }
+  .group-head {
+    display: flex; align-items: center; gap: 8px; margin: 18px 0 9px;
+    font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .8px;
+    color: var(--faint);
+  }
+  .group-head:first-child { margin-top: 0; }
+  .group-head .spacer { flex: 1; }
+  .group-head .hint { font-weight: 500; letter-spacing: .3px; opacity: .8; }
+  .empty { color: var(--faint); padding: 22px 14px; text-align: center; font-size: 12.5px; }
   .error { color: var(--bad); }
   .ok { color: var(--good); }
+  .warn-text { color: var(--warn); }
+
   .toast {
-    position: fixed; right: 16px; bottom: 16px; max-width: 360px; z-index: 20;
+    position: fixed; right: 18px; bottom: 18px; max-width: 380px; z-index: 30;
     display: flex; flex-direction: column; gap: 8px;
   }
   .toast .item {
-    background: var(--panel-2); border: 1px solid var(--line); border-left: 3px solid var(--accent);
-    border-radius: 8px; padding: 10px 12px; font-size: 13px;
+    background: var(--panel-3); border: 1px solid var(--line);
+    border-left: 3px solid var(--accent); border-radius: var(--radius-sm);
+    padding: 10px 13px; font-size: 12.5px; box-shadow: var(--shadow);
+    animation: slide .2s ease-out;
   }
+  @keyframes slide { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: none; } }
   .toast .item.bad { border-left-color: var(--bad); }
   .toast .item.good { border-left-color: var(--good); }
-  .pill { font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
-  .pill.on { color: var(--good); border-color: #2c5a45; }
-  .pill.off { color: var(--muted); }
-  .progress { height: 8px; background: var(--panel-2); border-radius: 999px; overflow: hidden; }
-  .progress > i { display: block; height: 100%; background: var(--accent); width: 0; }
-  dialog { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: var(--radius); max-width: 560px; width: 92%; }
-  dialog::backdrop { background: rgba(0,0,0,.6); }
+
+  .pill {
+    font-size: 10.5px; padding: 2px 8px; border-radius: 999px; font-weight: 600;
+    border: 1px solid var(--line); color: var(--muted); white-space: nowrap;
+    text-transform: uppercase; letter-spacing: .4px;
+  }
+  .pill.on { color: var(--good); border-color: rgba(94, 234, 212, .35); background: rgba(94, 234, 212, .1); }
+  .pill.off { color: var(--faint); }
+  .pill.warn { color: var(--warn); border-color: rgba(251, 191, 110, .35); background: rgba(251, 191, 110, .1); }
+  .pill.bad { color: var(--bad); border-color: rgba(251, 138, 138, .35); background: rgba(251, 138, 138, .1); }
+
+  .chip {
+    font-size: 11px; padding: 2px 9px; border-radius: 999px;
+    background: var(--panel-2); border: 1px solid var(--line); color: var(--muted);
+    font-family: var(--mono);
+  }
+  .avatar {
+    width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center;
+    font-size: 11px; font-weight: 700; color: #08111f; flex: 0 0 auto;
+    background: linear-gradient(145deg, var(--accent), #7dd3fc);
+  }
+  .avatar.off { background: linear-gradient(145deg, #3b4a6b, #2a3550); color: var(--muted); }
+  .who { display: flex; align-items: center; gap: 8px; }
+
+  dialog {
+    background: var(--panel); color: var(--text); border: 1px solid var(--line);
+    border-radius: var(--radius); max-width: 560px; width: 92%; padding: 20px;
+    box-shadow: 0 24px 60px -20px rgba(0, 0, 0, .8);
+  }
+  dialog::backdrop { background: rgba(4, 8, 16, .7); backdrop-filter: blur(3px); }
+  dialog h3 { margin-top: 0; font-size: 15px; }
+
+  @media (max-width: 620px) {
+    header { padding: 10px 13px; }
+    main { padding: 13px 13px 48px; }
+    nav { padding: 10px 13px 0; overflow-x: auto; flex-wrap: nowrap; }
+    .tiles { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
 </style>
 </head>
 <body>
 <header>
-  <h1>Log Client Companion</h1>
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true">LC</span>
+    <h1>Log Client Companion<small>Live control for your Minecraft clients</small></h1>
+  </div>
   <span class="badge" id="node-count">0 clients</span>
   <span class="badge" id="link-state">offline</span>
   <span class="spacer"></span>
@@ -216,13 +406,30 @@ function boot() {
 
 // ---------------------------------------------------------------- tabs
 
+// A few tabs carry a number worth seeing before the tab is opened: how much is queued, how many
+// players are known, how many modules are on. It comes from the active snapshot, so an unreachable
+// client shows no count rather than a stale one.
+function tabCount(id) {
+  const snap = activeSnapshot();
+  if (!snap) return null;
+  switch (id) {
+    case "tasks": return snap.tasks.length || null;
+    case "chat": return snap.chat.length || null;
+    case "players": return snap.players.length || null;
+    case "modules": return snap.modules.filter(m => m.active).length || null;
+    default: return null;
+  }
+}
+
 function renderTabs() {
   const nav = document.getElementById("tabs");
   nav.innerHTML = "";
   for (const [id, label] of TABS) {
     const button = document.createElement("button");
-    button.textContent = label;
     button.className = id === tab ? "active" : "";
+    button.appendChild(document.createTextNode(label));
+    const count = tabCount(id);
+    if (count !== null) button.appendChild(el("span", { class: "count", text: String(count) }));
     button.onclick = () => { tab = id; localStorage.setItem(TAB_KEY, id); renderTabs(); render(); };
     nav.appendChild(button);
   }
@@ -277,6 +484,7 @@ async function refreshAll() {
     }
   }));
   renderHeader();
+  renderTabs();
   render();
 }
 
@@ -289,7 +497,67 @@ function activeSnapshot() {
   return node ? snapshots.get(node.id) : null;
 }
 
-// ---------------------------------------------------------------- live events
+// ---------------------------------------------------------------- focus-safe rendering
+//
+// Every view is rebuilt from scratch on each refresh, and refreshAll() runs every three seconds.
+// That is simple and has no stale-DOM bugs, but it also throws away whatever the user was doing:
+// the element with focus is destroyed, so a half-typed search or chat line vanished mid-word every
+// few seconds. Instead of rebuilding less often, the render remembers the focused field and puts it
+// back. The field is identified by its placeholder plus its view, which is stable across renders and
+// does not need an id on every input.
+
+function fieldKey(node) {
+  return node.tagName + ":" + (node.getAttribute("placeholder") || node.name || "");
+}
+
+/** Everything needed to restore a field exactly as the user left it. */
+function captureFields() {
+  const active = document.activeElement;
+  const state = { key: null, value: "", start: 0, end: 0, scroll: new Map() };
+  for (const section of document.querySelectorAll("section")) {
+    state.scroll.set(section.id, { top: section.scrollTop, left: section.scrollLeft });
+  }
+  if (!active || !/^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName)) return state;
+  const section = active.closest("section");
+  state.key = (section ? section.id + "|" : "") + fieldKey(active);
+  state.value = active.value;
+  try {
+    state.start = active.selectionStart ?? active.value.length;
+    state.end = active.selectionEnd ?? active.value.length;
+  } catch {
+    state.start = active.value.length;
+    state.end = state.start;
+  }
+  return state;
+}
+
+/** Puts back the value, selection and focus captured before the rebuild. */
+function restoreFields(state) {
+  for (const section of document.querySelectorAll("section")) {
+    const saved = state.scroll.get(section.id);
+    if (saved) { section.scrollTop = saved.top; section.scrollLeft = saved.left; }
+  }
+  if (!state.key) return;
+  for (const section of document.querySelectorAll("section")) {
+    for (const node of section.querySelectorAll("input, textarea, select")) {
+      const key = section.id + "|" + fieldKey(node);
+      if (key !== state.key) continue;
+      node.value = state.value;
+      node.focus({ preventScroll: true });
+      try {
+        if (node.setSelectionRange) node.setSelectionRange(state.start, state.end);
+      } catch {
+        // Some input types refuse a selection range; the value and focus are what matter.
+      }
+      // The rebuilt field is a new element, so its listeners never saw the old value. Replaying an
+      // input event makes the fresh view filter on the restored text instead of showing it unfiltered
+      // until the next keystroke.
+      node.dispatchEvent(new Event("input", { bubbles: true }));
+      return;
+    }
+  }
+}
+
 
 function connectStream() {
   const node = activeNode();
@@ -317,9 +585,11 @@ function connectStream() {
 }
 
 function setLink(state) {
-  const el = document.getElementById("link-state");
-  el.textContent = state;
-  el.className = "badge " + (state === "live" ? "good" : state === "reconnecting" ? "warn" : "bad");
+  const badge = document.getElementById("link-state");
+  badge.className = "badge " + (state === "live" ? "good" : state === "reconnecting" ? "warn" : "bad");
+  badge.innerHTML = "";
+  badge.appendChild(linkDot());
+  badge.appendChild(document.createTextNode(state));
 }
 
 // ---------------------------------------------------------------- rendering
@@ -331,12 +601,14 @@ function renderHeader() {
 }
 
 function render() {
+  const state = captureFields();
   show(tab);
   const builders = {
     overview: renderOverview, bot: renderBot, tasks: renderTasks, chat: renderChat,
     players: renderPlayers, modules: renderModules, storage: renderStorage, events: renderEvents
   };
   builders[tab]();
+  restoreFields(state);
 }
 
 function el(tag, props = {}, children = []) {
@@ -348,7 +620,7 @@ function el(tag, props = {}, children = []) {
     else if (key.startsWith("on")) node.addEventListener(key.slice(2), value);
     else if (value !== null && value !== undefined) node.setAttribute(key, value);
   }
-  for (const child of children) node.appendChild(child);
+  for (const child of children) if (child) node.appendChild(child);
   return node;
 }
 
@@ -367,6 +639,51 @@ function kv(label, value, cls = "") {
 
 function button(label, onClick, cls = "btn") {
   return el("button", { class: cls, text: label, onclick: onClick });
+}
+
+/** The live/offline dot, kept in one place so both header states match. */
+function linkDot() {
+  return el("span", { class: "dot", "aria-hidden": "true" });
+}
+
+/** The first letter of a name, for the small square beside it. */
+function initials(name) {
+  const trimmed = (name || "").trim();
+  return trimmed ? trimmed[0].toUpperCase() : "?";
+}
+
+/** Ping quality, so the number is not the only signal. */
+function pingClass(ping) {
+  if (ping === undefined || ping === null || ping < 0) return "";
+  if (ping < 80) return "ok";
+  if (ping < 200) return "warn-text";
+  return "error";
+}
+
+/**
+ * A figure tile: a label, a big value and an optional bar.
+ *
+ * <p>A bar is only drawn when the caller has a real fraction to show. Drawing an empty bar for a
+ * value the client could not read would look like a measurement of zero.
+ *
+ * @param tone "good", "warn" or "bad", or "" for the neutral accent colour
+ * @param fraction 0..1 for the bar, or null to leave the bar out
+ */
+function tile(label, value, unit, tone, fraction, sub) {
+  const children = [
+    el("div", { class: "label", text: label }),
+    el("div", { class: "value" }, [
+      el("span", { text: value }),
+      unit ? el("small", { text: unit }) : null
+    ])
+  ];
+  if (sub) children.push(el("div", { class: "sub", text: sub }));
+  if (fraction !== null && fraction !== undefined) {
+    const bar = el("div", { class: "bar " + (tone || "") }, [el("i", {})]);
+    bar.firstChild.style.width = Math.max(0, Math.min(1, fraction)) * 100 + "%";
+    children.push(bar);
+  }
+  return el("div", { class: "tile " + (tone || "") }, children);
 }
 
 function emptyState(text) {
@@ -426,12 +743,59 @@ function notConnected() {
 
 // ---------------------------------------------------------------- overview
 
+/**
+ * The figures on a node card.
+ *
+ * <p>The client reports what it can see; a value it could not read is absent rather than zero, so
+ * every figure has to survive a missing number. That is why a bar is only drawn when the reading
+ * exists: an empty bar would read as a measured zero.
+ */
+function nodeTiles(snap) {
+  const stats = snap.stats || {};
+  const node = snap.node || {};
+  const bot = snap.bot || {};
+  const storage = snap.storage || {};
+  const completed = Number(bot.completed) || 0;
+  const failed = Number(bot.failed) || 0;
+  const finished = completed + failed;
+  return el("div", { class: "tiles" }, [
+    tile("Players", String(Number(stats.players) || 0), "",
+      node.inWorld ? "good" : "", null, node.inWorld ? "in world" : "not in a world"),
+    tile("Messages", String(Number(stats.messages) || 0), "", "", null,
+      stats.joins !== undefined ? stats.joins + " joins · " + stats.leaves + " leaves" : ""),
+    tile("Bot", bot.state || "unknown", "", failed > 0 ? "warn" : "",
+      finished > 0 ? completed / finished : null,
+      finished > 0 ? completed + " done · " + failed + " failed · " + (bot.queued || 0) + " queued"
+        : (bot.queued || 0) + " queued"),
+    tile("Log size", fmtBytes(Number(storage.bytes) || 0), "", "", null,
+      storage.segments !== undefined ? storage.segments + " segments" : "")
+  ]);
+}
+
+/** The build/uptime chips, so a card says which client it is talking to. */
+function nodeMeta(snap) {
+  const node = snap.node || {};
+  const chips = [];
+  if (node.addonVersion) chips.push(el("span", { class: "chip", text: "addon " + node.addonVersion }));
+  if (node.minecraftVersion) chips.push(el("span", { class: "chip", text: "mc " + node.minecraftVersion }));
+  if (node.gameMode) chips.push(el("span", { class: "chip", text: node.gameMode }));
+  if (node.uptimeMs) chips.push(el("span", { class: "chip", text: "up " + fmtDuration(node.uptimeMs) }));
+  if (node.serverAddress) chips.push(el("span", { class: "chip", text: node.serverAddress }));
+  else if (node.singleplayer) chips.push(el("span", { class: "chip", text: "singleplayer" }));
+  if (Array.isArray(snap.capabilities)) {
+    for (const capability of snap.capabilities.slice(0, 6)) {
+      chips.push(el("span", { class: "chip", text: capability }));
+    }
+  }
+  return chips.length ? el("div", { class: "row", style: "margin-bottom:11px" }, chips) : null;
+}
+
 function renderOverview() {
   const view = document.getElementById("view-overview");
   view.innerHTML = "";
   if (nodes.length === 0) { view.appendChild(notConnected()); return; }
 
-  view.appendChild(card("Clients", [el("div", { class: "grid" }, nodes.map(node => {
+  const cards = nodes.map(node => {
     const state = nodeState.get(node.id) || {};
     const snap = snapshots.get(node.id);
     const children = [];
@@ -439,23 +803,32 @@ function renderOverview() {
       children.push(el("div", { class: "error", text: state.error || "Unreachable" }));
       children.push(el("div", { class: "muted mono", text: node.url }));
     } else if (snap) {
-      children.push(kv("Player", snap.node.playerName || "not in game"));
-      children.push(kv("Server", snap.node.serverAddress || (snap.node.singleplayer ? "singleplayer" : "—")));
-      children.push(kv("In world", snap.node.inWorld ? "yes" : "no", snap.node.inWorld ? "ok" : "muted"));
-      children.push(kv("Messages", String(snap.stats.messages)));
-      children.push(kv("Bot", snap.bot.state + (snap.bot.paused ? " (paused)" : "")));
+      const meta = nodeMeta(snap);
+      if (meta) children.push(meta);
+      children.push(nodeTiles(snap));
+      children.push(el("div", { class: "kv", style: "margin-top:11px" }, [
+        el("span", { text: "Player" }),
+        el("span", { text: (snap.node || {}).playerName || "not in game" })
+      ]));
+    } else {
+      children.push(emptyState("Waiting for the first snapshot…"));
     }
-    children.push(el("div", { class: "row", style: "margin-top:8px" }, [
+    children.push(el("div", { class: "row", style: "margin-top:12px" }, [
       button("Select", () => { activeNodeId = node.id; connectStream(); renderTabs(); refreshAll(); }),
-      button("Remove", () => { nodes = nodes.filter(n => n.id !== node.id); saveNodes(); renderNodeList(); renderHeader(); render(); })
+      button("Remove", () => {
+        nodes = nodes.filter(n => n.id !== node.id);
+        saveNodes(); renderNodeList(); renderHeader(); renderTabs(); render();
+      })
     ]));
     const head = el("h3", {}, [
       el("span", { text: node.label || node.url }),
       el("span", { class: "spacer" }),
-      el("span", { class: "pill " + (state.ok ? "on" : "off"), text: state.ok ? "online" : "offline" })
+      el("span", { class: "pill " + (state.ok ? "on" : "bad"), text: state.ok ? "online" : "offline" })
     ]);
     return el("div", { class: "card" }, [head, ...children]);
-  }))]));
+  });
+
+  view.appendChild(card("Clients", [el("div", { class: "grid" }, cards)]));
 }
 
 // ---------------------------------------------------------------- bot
@@ -480,22 +853,39 @@ function renderBot() {
   if (!snap) { view.appendChild(card("Bot", [emptyState("Waiting for the first snapshot…")])); return; }
 
   const bot = snap.bot;
+  // A control is disabled against the state it cannot act on, so the panel never sends a request
+  // the bot would only reject - and a greyed button already says the bot is running or stopped.
+  const running = bot.state && bot.state !== "IDLE" && bot.state !== "STOPPED";
   const controls = [
     button("Start", () => act(node, "/api/v1/bot/start", {}, "Bot started."), "btn primary"),
     button(bot.paused ? "Resume" : "Pause", () => act(node, bot.paused ? "/api/v1/bot/resume" : "/api/v1/bot/pause", {})),
     button("Stop", () => act(node, "/api/v1/bot/stop", {})),
     button("Emergency stop", () => act(node, "/api/v1/bot/emergency-stop", {}, "Emergency stop sent."), "btn danger")
   ];
+  controls[0].disabled = running;
+  controls[1].disabled = !running;
+  controls[2].disabled = !running;
 
-  const details = [
-    kv("State", bot.state),
+  const completed = Number(bot.completed) || 0;
+  const failed = Number(bot.failed) || 0;
+  const finished = completed + failed;
+  const tiles = el("div", { class: "tiles" }, [
+    tile("State", bot.state || "unknown", "", running ? "good" : "", null,
+      bot.paused ? "paused" : (running ? "working" : "idle")),
+    tile("Queued", String(Number(bot.queued) || 0), "", (bot.queued > 0 ? "warn" : ""), null,
+      bot.queued > 0 ? "waiting to run" : "nothing waiting"),
+    tile("Completed", String(completed), "", "good", null,
+      finished > 0 ? Math.round(completed / finished * 100) + "% of finished" : ""),
+    tile("Failed", String(failed), "", (failed > 0 ? "bad" : ""), null,
+      failed > 0 ? "check the task list" : "none failed")
+  ]);
+
+  view.appendChild(card("Bot control", [
+    tiles,
     kv("Active task", bot.activeTask || "none"),
-    kv("Queued", String(bot.queued)),
-    kv("Completed", String(bot.completed), "ok"),
-    kv("Failed", String(bot.failed), bot.failed > 0 ? "error" : "")
-  ];
-
-  view.appendChild(card("Bot control", [...details, el("div", { class: "row", style: "margin-top:10px" }, controls)]));
+    kv("Client uptime", fmtDuration((snap.node || {}).uptimeMs)),
+    el("div", { class: "row", style: "margin-top:12px" }, controls)
+  ]));
 
   const objective = el("input", { placeholder: "e.g. mine oak_log 64" });
   view.appendChild(card("Queue an objective", [
@@ -607,18 +997,33 @@ function renderChat() {
     for (const entry of lines) {
       list.appendChild(el("div", { class: "line" }, [
         el("span", { class: "t", text: "[" + new Date(entry.timestamp).toLocaleTimeString() + "] " }),
-        el("span", { class: "muted", text: "(" + entry.type + ") " }),
-        el("span", { text: (entry.sender ? entry.sender + ": " : "") + entry.message })
+        el("span", { class: "ev-" + entry.type, text: entry.type }),
+        el("span", { text: " " + (entry.sender ? entry.sender + ": " : "") + entry.message })
       ]));
     }
+    counts.textContent = lines.length + " of " + snap.chat.length + " shown";
   };
+  const counts = el("span", { class: "muted" });
   filter.addEventListener("input", draw);
   draw();
 
-  view.appendChild(card("Recent chat (" + snap.chat.length + ")", [filter, el("div", { style: "margin-top:10px" }, [list])]));
+  view.appendChild(card("Recent chat (" + snap.chat.length + ")", [
+    el("div", { class: "row" }, [filter, counts]),
+    el("div", { style: "margin-top:11px" }, [list])
+  ]));
 }
 
 // ---------------------------------------------------------------- players
+
+// The list has two sources, so it is drawn as two blocks: who the server says is here right now,
+// and who this client has seen before. Merging them into one table hid the difference, and a
+// player who was online but silent - or logging that was off - made the tab look empty.
+const PLAYER_SORTS = {
+  name: (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+  ping: (a, b) => (a.ping < 0 ? 1e9 : a.ping) - (b.ping < 0 ? 1e9 : b.ping),
+  messages: (a, b) => b.messages - a.messages,
+  lastSeen: (a, b) => (b.lastSeen || 0) - (a.lastSeen || 0)
+};
 
 function renderPlayers() {
   const view = document.getElementById("view-players");
@@ -629,38 +1034,86 @@ function renderPlayers() {
   view.appendChild(card("Client", [nodeSelect()]));
   if (!snap) { view.appendChild(card("Players", [emptyState("No snapshot yet.")])); return; }
 
+  const all = Array.isArray(snap.players) ? snap.players : [];
+  const online = all.filter(p => p.online);
+  const offline = all.filter(p => !p.online);
+
   const filter = el("input", { placeholder: "Search players" });
-  const body = el("tbody");
-  const draw = () => {
-    const needle = filter.value.trim().toLowerCase();
+  const sortSelect = el("select", {}, [
+    el("option", { value: "name", text: "Name" }),
+    el("option", { value: "ping", text: "Ping" }),
+    el("option", { value: "messages", text: "Messages" }),
+    el("option", { value: "lastSeen", text: "Last seen" })
+  ]);
+  const counts = el("span", { class: "muted" });
+
+  const onlineBody = el("tbody");
+  const offlineBody = el("tbody");
+  const onlineCard = el("div");
+  const offlineCard = el("div");
+
+  const table = (head, body) => el("table", {}, [
+    el("thead", {}, [el("tr", {}, head.map(h => el("th", { text: h })))]),
+    body
+  ]);
+
+  const row = player => el("tr", {}, [
+    el("td", {}, [
+      el("div", { class: "who" }, [
+        el("span", { class: "avatar" + (player.online ? "" : " off"), text: initials(player.name) }),
+        el("span", { text: player.name }),
+        player.gameMode ? el("span", { class: "pill", text: player.gameMode }) : null
+      ])
+    ]),
+    el("td", { class: pingClass(player.ping), text: player.ping >= 0 ? player.ping + " ms" : "—" }),
+    el("td", { class: "num", text: String(player.messages || 0) }),
+    el("td", { text: player.lastSeen ? fmtAgo(player.lastSeen) : "—" }),
+    el("td", { class: "mono faint", text: player.uuid ? player.uuid.slice(0, 8) : "—" }),
+    el("td", {}, [player.excluded
+      ? el("span", { class: "pill warn", text: "excluded" })
+      : el("span", { class: "pill on", text: "tracked" })])
+  ]);
+
+  const fill = (body, players, message) => {
     body.innerHTML = "";
-    const players = snap.players.filter(p => !needle || (p.name || "").toLowerCase().includes(needle));
     if (players.length === 0) {
-      body.appendChild(el("tr", {}, [el("td", { colspan: "6" }, [emptyState("No players match.")])]));
+      body.appendChild(el("tr", {}, [el("td", { colspan: "6" }, [emptyState(message)])]));
       return;
     }
-    for (const player of players) {
-      body.appendChild(el("tr", {}, [
-        el("td", {}, [el("span", { text: player.name }), player.online ? el("span", { class: "pill on", text: " online", style: "margin-left:6px" }) : null]),
-        el("td", { text: String(player.messages) }),
-        el("td", { text: player.onlineMs > 0 ? fmtDuration(player.onlineMs) : "unknown" }),
-        el("td", { text: fmtAgo(player.lastSeen) }),
-        el("td", { text: player.uuid ? player.uuid.slice(0, 8) : "—" }),
-        el("td", {}, [player.excluded ? el("span", { class: "muted", text: "excluded" }) : el("span", { class: "muted", text: "tracked" })])
-      ]));
-    }
+    for (const player of players) body.appendChild(row(player));
   };
+
+  const draw = () => {
+    const needle = filter.value.trim().toLowerCase();
+    const sort = PLAYER_SORTS[sortSelect.value] || PLAYER_SORTS.name;
+    const match = list => list
+      .filter(p => !needle || (p.name || "").toLowerCase().includes(needle))
+      .slice()
+      .sort(sort);
+
+    const shownOnline = match(online);
+    const shownOffline = match(offline);
+    fill(onlineBody, shownOnline, needle ? "No online player matches." : "Nobody else is online.");
+    fill(offlineBody, shownOffline, needle ? "No seen player matches." : "No players seen yet.");
+    counts.textContent = online.length + " online · " + offline.length + " seen before";
+    offlineCard.style.display = shownOffline.length || !needle ? "" : "none";
+  };
+
   filter.addEventListener("input", draw);
+  sortSelect.addEventListener("change", draw);
   draw();
 
-  view.appendChild(card("Players (" + snap.players.length + ")", [
-    filter,
-    el("div", { style: "margin-top:10px" }, [
-      el("table", {}, [
-        el("thead", {}, [el("tr", {}, ["Player", "Messages", "Online time", "Last seen", "UUID", "Status"].map(h => el("th", { text: h })))]),
-        body
-      ])
-    ])
+  const head = ["Player", "Ping", "Messages", "Last seen", "UUID", "Status"];
+  onlineCard.appendChild(card("Online now (" + online.length + ")", [
+    table(head, onlineBody)
+  ]));
+  offlineCard.appendChild(card("Seen before (" + offline.length + ")", [
+    table(head, offlineBody)
+  ]));
+
+  view.appendChild(card("Players", [
+    el("div", { class: "row" }, [filter, sortSelect, counts]),
+    el("div", { style: "margin-top:12px" }, [onlineCard, offlineCard])
   ]));
 }
 
@@ -675,35 +1128,72 @@ function renderModules() {
   view.appendChild(card("Client", [nodeSelect()]));
   if (!snap) { view.appendChild(card("Modules", [emptyState("No snapshot yet.")])); return; }
 
+  const all = Array.isArray(snap.modules) ? snap.modules : [];
+  const activeCount = all.filter(m => m.active).length;
+
   const filter = el("input", { placeholder: "Search modules" });
-  const grid = el("div", { class: "grid" });
+  const scope = el("select", {}, [
+    el("option", { value: "all", text: "All modules" }),
+    el("option", { value: "on", text: "Only on" }),
+    el("option", { value: "off", text: "Only off" })
+  ]);
+  const counts = el("span", { class: "muted" });
+  const body = el("div");
+
   const draw = () => {
     const needle = filter.value.trim().toLowerCase();
-    grid.innerHTML = "";
-    const modules = snap.modules.filter(m => !needle
-      || (m.title || "").toLowerCase().includes(needle)
-      || (m.category || "").toLowerCase().includes(needle)
-      || (m.description || "").toLowerCase().includes(needle));
-    if (modules.length === 0) { grid.appendChild(emptyState("No modules match.")); return; }
-    for (const module of modules) {
-      grid.appendChild(el("div", { class: "card" }, [
-        el("h3", {}, [
-          el("span", { text: module.title }),
-          el("span", { class: "spacer" }),
-          el("span", { class: "pill " + (module.active ? "on" : "off"), text: module.active ? "on" : "off" })
-        ]),
-        el("div", { class: "muted", style: "font-size:12px;min-height:32px", text: module.description || "" }),
-        el("div", { class: "row", style: "margin-top:8px" }, [
-          button(module.active ? "Turn off" : "Turn on", () =>
-            act(node, "/api/v1/modules/" + encodeURIComponent(module.name), { active: !module.active }, null, "POST"))
-        ])
+    const only = scope.value;
+    body.innerHTML = "";
+    const shown = all.filter(m => (only === "all" || (only === "on" ? m.active : !m.active))
+      && (!needle
+        || (m.title || "").toLowerCase().includes(needle)
+        || (m.name || "").toLowerCase().includes(needle)
+        || (m.category || "").toLowerCase().includes(needle)
+        || (m.description || "").toLowerCase().includes(needle)));
+    counts.textContent = shown.length + " of " + all.length + " · " + activeCount + " on";
+    if (shown.length === 0) { body.appendChild(emptyState("No modules match.")); return; }
+
+    // Grouping by category keeps a long list navigable: with over a hundred modules a flat grid
+    // gives no clue where one part of the client ends and the next begins.
+    const groups = new Map();
+    for (const module of shown) {
+      const key = module.category || "Other";
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(module);
+    }
+    for (const [category, modules] of [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+      const on = modules.filter(m => m.active).length;
+      body.appendChild(el("h4", { class: "group-head" }, [
+        el("span", { text: category }),
+        el("span", { class: "spacer" }),
+        el("span", { class: "hint", text: on + "/" + modules.length + " on" })
       ]));
+      body.appendChild(el("div", { class: "grid tight" }, modules.map(module =>
+        el("div", { class: "card" }, [
+          el("h3", {}, [
+            el("span", { text: module.title || module.name }),
+            el("span", { class: "spacer" }),
+            el("span", { class: "pill " + (module.active ? "on" : "off"), text: module.active ? "on" : "off" })
+          ]),
+          el("div", { class: "muted", style: "font-size:11.5px;min-height:30px", text: module.description || "" }),
+          el("div", { class: "row", style: "margin-top:8px" }, [
+            button(module.active ? "Turn off" : "Turn on", () =>
+              act(node, "/api/v1/modules/" + encodeURIComponent(module.name), { active: !module.active }, null, "POST"),
+              "btn sm" + (module.active ? "" : " primary"))
+          ])
+        ])
+      )));
     }
   };
+
   filter.addEventListener("input", draw);
+  scope.addEventListener("change", draw);
   draw();
 
-  view.appendChild(card("Modules (" + snap.modules.length + ")", [filter, el("div", { style: "margin-top:10px" }, [grid])]));
+  view.appendChild(card("Modules (" + all.length + ")", [
+    el("div", { class: "row" }, [filter, scope, counts]),
+    el("div", { style: "margin-top:14px" }, [body])
+  ]));
 }
 
 // ---------------------------------------------------------------- storage
@@ -718,21 +1208,39 @@ function renderStorage() {
   if (!snap) { view.appendChild(card("Storage", [emptyState("No snapshot yet.")])); return; }
 
   const storage = snap.storage;
+  const stats = snap.stats || {};
+  const bytes = Number(storage.bytes) || 0;
+  const cap = Number(storage.capBytes) || 0;
+  // A cap of 0 is the client's normal state: nothing is deleted, so there is no denominator to
+  // draw. A bar without one would be decoration that never moves, which is worse than no bar.
+  const used = cap > 0 ? bytes / cap : null;
+  const tone = used === null ? "" : used > 0.9 ? "bad" : used > 0.75 ? "warn" : "good";
+  const capNote = cap > 0 ? "of " + fmtBytes(cap) : "no limit set";
+  const cleanupNote = storage.autoCleanup
+    ? "oldest segments are removed at the limits above"
+    : "nothing is deleted automatically";
+
   view.appendChild(card("Log storage", [
-    kv("Segments", String(storage.segments)),
-    kv("Size on disk", fmtBytes(storage.bytes)),
-    kv("Sessions", String(storage.sessions)),
-    kv("Oldest entry", fmtTime(storage.oldestEpochMs)),
-    kv("Newest entry", fmtTime(storage.newestEpochMs))
+    el("div", { class: "tiles" }, [
+      tile("Size on disk", fmtBytes(bytes), "", tone, used, capNote),
+      tile("Segments", String(storage.segments), "", "", null,
+        storage.sessions !== undefined ? storage.sessions + " sessions" : ""),
+      tile("Oldest entry", storage.oldestEpochMs ? fmtAgo(storage.oldestEpochMs) : "—", "", "", null,
+        storage.oldestEpochMs ? fmtTime(storage.oldestEpochMs) : "nothing logged yet")
+    ]),
+    kv("Newest entry", fmtTime(storage.newestEpochMs)),
+    kv("Retention", cleanupNote)
   ]));
 
   view.appendChild(card("Session statistics", [
-    kv("Messages", String(snap.stats.messages)),
-    kv("Players seen", String(snap.stats.players)),
-    kv("Joins", String(snap.stats.joins)),
-    kv("Leaves", String(snap.stats.leaves)),
-    kv("Deaths", String(snap.stats.deaths)),
-    kv("Session started", fmtTime(snap.stats.sessionStartEpochMs))
+    el("div", { class: "tiles" }, [
+      tile("Messages", String(stats.messages || 0), "", "", null, "this session"),
+      tile("Players seen", String(stats.players || 0), "", "", null, "this session"),
+      tile("Deaths", String(stats.deaths || 0), "", (stats.deaths > 0 ? "warn" : ""), null, "this session")
+    ]),
+    kv("Joins", String(stats.joins || 0)),
+    kv("Leaves", String(stats.leaves || 0)),
+    kv("Session started", fmtTime(stats.sessionStartEpochMs))
   ]));
 }
 
@@ -744,19 +1252,42 @@ function renderEvents() {
   if (nodes.length === 0) { view.appendChild(notConnected()); return; }
   view.appendChild(card("Client", [nodeSelect()]));
 
+  const typeSelect = el("select", {}, [el("option", { value: "", text: "All event types" })]);
+  const seen = [...new Set(feed.map(item => item.type))].sort();
+  for (const type of seen) typeSelect.appendChild(el("option", { value: type, text: type }));
+  // A feed that keeps moving is hard to read. Pausing freezes what is on screen without dropping
+  // events: the buffer keeps filling, so resuming shows everything that arrived while paused.
+  let paused = false;
+  const pauseButton = button("Pause", () => {
+    paused = !paused;
+    pauseButton.textContent = paused ? "Resume" : "Pause";
+    pauseButton.classList.toggle("primary", paused);
+    if (!paused) draw();
+  });
+
   const list = el("div", { class: "log" });
-  if (feed.length === 0) {
-    list.appendChild(emptyState("Waiting for live events…"));
-  } else {
-    for (const item of feed.slice(0, 200)) {
+  const draw = () => {
+    if (paused) return;
+    const only = typeSelect.value;
+    const shown = feed.filter(item => !only || item.type === only).slice(0, 200);
+    list.innerHTML = "";
+    if (shown.length === 0) { list.appendChild(emptyState("Waiting for live events…")); return; }
+    for (const item of shown) {
       list.appendChild(el("div", { class: "line" }, [
         el("span", { class: "t", text: "[" + new Date(item.at).toLocaleTimeString() + "] " }),
-        el("span", { class: "muted", text: item.type + " " }),
-        el("span", { text: typeof item.data === "string" ? item.data : JSON.stringify(item.data) })
+        el("span", { class: "ev-" + item.type, text: item.type }),
+        el("span", { text: " " + (typeof item.data === "string" ? item.data : JSON.stringify(item.data)) })
       ]));
     }
-  }
-  view.appendChild(card("Live feed", [list], [
+  };
+  typeSelect.addEventListener("change", draw);
+  draw();
+
+  view.appendChild(card("Live feed", [
+    el("div", { class: "row", style: "margin-bottom:11px" }, [typeSelect, pauseButton,
+      el("span", { class: "muted", text: feed.length + " events buffered" })]),
+    list
+  ], [
     button("Clear", () => { feed.length = 0; render(); })
   ]));
 }

@@ -59,9 +59,12 @@ public class StorageScreen extends WindowScreen {
 
         add(theme.horizontalSeparator("Retention")).expandX();
         var retention = add(theme.verticalList()).expandX().widget();
-        GuiKit.keyValue(retention, theme, "Max age (days):", Integer.toString(logger.maxAgeDays()));
-        GuiKit.keyValue(retention, theme, "Max size:", ReportFormatting.bytes(logger.maxBytes()));
-        GuiKit.keyValue(retention, theme, "Max segments:", Integer.toString(logger.maxSegmentsSetting()));
+        GuiKit.keyValue(retention, theme, "Max age (days):", limitOrUnlimited(logger.maxAgeDays()));
+        GuiKit.keyValue(retention, theme, "Max size:", logger.maxBytes() <= 0
+            ? "unlimited" : ReportFormatting.bytes(logger.maxBytes()));
+        GuiKit.keyValue(retention, theme, "Max segments:", limitOrUnlimited(logger.maxSegmentsSetting()));
+        GuiKit.keyValue(retention, theme, "Automatic cleanup:",
+            logger.autoCleanupEnabled() ? "on, after each flush" : "off, nothing is deleted for you");
 
         WTable actions = add(theme.table()).expandX().widget();
         WButton cleanup = actions.add(theme.button("Cleanup now")).widget();
@@ -172,5 +175,10 @@ public class StorageScreen extends WindowScreen {
 
     private void info(String message) {
         if (logger != null) logger.feedback(true, message);
+    }
+
+    /** Shows a retention limit the way the player thinks about it: 0 means nothing is deleted. */
+    private static String limitOrUnlimited(long value) {
+        return value <= 0 ? "unlimited" : Long.toString(value);
     }
 }

@@ -5,14 +5,17 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * A bounded, newest-first history of discoveries, so the map has a "recently found" view without
- * growing without limit.
+ * A newest-first history of discoveries, so the map has a "recently found" view.
  *
  * <p>Minecraft-free: it stores plain records and never touches the world, so it is unit testable and
  * cannot itself cause lag.
+ *
+ * <p>Uncapped by default, because this is the list a player scrolls to see what they found. The log
+ * is saved with the world profile, so trimming it to a number would quietly delete discoveries that
+ * are still in the database. {@link #setCapacity} is available; {@code 0} means no cap.
  */
 public final class DiscoveryLog {
-    /** Hard cap on remembered discoveries. */
+    /** The cap this store used before it became configurable, kept as the setting's suggestion. */
     public static final int MAX_EVENTS = 500;
 
     /** What kind of thing was discovered. */
@@ -35,12 +38,28 @@ public final class DiscoveryLog {
     }
 
     private final java.util.Deque<Event> events = new java.util.ArrayDeque<>();
+    private int capacity;
 
-    /** Records a discovery, dropping the oldest once the cap is reached. */
+    /** Records a discovery, dropping the oldest only when a cap has been set. */
     public void add(Kind kind, String dimension, int x, int y, int z, String label, long now) {
         events.addFirst(new Event(now, kind == null ? Kind.LOCATION : kind,
             dimension == null ? "" : dimension, x, y, z, label == null ? "" : label));
-        while (events.size() > MAX_EVENTS) events.removeLast();
+        trim();
+    }
+
+    /** Sets the cap on remembered discoveries; {@code 0} keeps every one. */
+    public void setCapacity(int capacity) {
+        this.capacity = Math.max(0, capacity);
+        trim();
+    }
+
+    public int capacity() {
+        return capacity;
+    }
+
+    private void trim() {
+        if (capacity <= 0) return;
+        while (events.size() > capacity) events.removeLast();
     }
 
     /** The newest {@code limit} discoveries (all of them when {@code limit <= 0}). */
@@ -76,7 +95,7 @@ public final class DiscoveryLog {
             Event event = parsed.get(i);
             events.addLast(event);
         }
-        while (events.size() > MAX_EVENTS) events.removeLast();
+        trim();
     }
 
     public List<java.util.Map<String, Object>> toMaps() {

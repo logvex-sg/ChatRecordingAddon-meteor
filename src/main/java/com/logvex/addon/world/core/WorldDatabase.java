@@ -9,21 +9,25 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * The set of remembered places, bounded so a long-lived session cannot exhaust memory.
+ * The set of remembered places.
  *
  * <p>Minecraft-free and deterministic: recording the same coordinate twice updates the existing
  * entry (bumping its visit count) rather than adding a duplicate, and a new point that lands within
  * {@link #DEDUPE_RADIUS} of an existing one with the same category and name is merged into it, so a
- * repeatedly-visited spot stays a single entry. When the database is full the oldest-seen point is
- * evicted, which keeps the most recently relevant places.
+ * repeatedly-visited spot stays a single entry.
+ *
+ * <p>Uncapped by default. The places in here are written to disk and are the whole point of the
+ * module, so evicting one to stay under a number is losing data the player collected. A cap is
+ * available through {@link #setCapacity} for anyone who wants a bound; {@code 0} means no cap.
  */
 public final class WorldDatabase {
-    /** Hard upper bound on stored points. */
+    /** The cap this store used before it became configurable, kept as the setting's suggestion. */
     public static final int MAX_POINTS = 20_000;
     /** Points closer than this with the same name and category are treated as one place. */
     public static final double DEDUPE_RADIUS = 4.0;
 
     private final Map<String, WorldPoint> points = new LinkedHashMap<>();
+    private int capacity;
 
     /**
      * Records an observation of a place, merging into an existing nearby entry when appropriate.
@@ -49,7 +53,7 @@ public final class WorldDatabase {
         }
 
         candidate.observe(now);
-        if (points.size() >= MAX_POINTS) evictOldest();
+        if (capacity > 0 && points.size() >= capacity) evictOldest();
         points.put(key, candidate);
         return candidate;
     }
@@ -63,6 +67,16 @@ public final class WorldDatabase {
             if (point.within(probe, radius)) return point;
         }
         return null;
+    }
+
+    /** Sets the cap on stored points; {@code 0} keeps every point. */
+    public void setCapacity(int capacity) {
+        this.capacity = Math.max(0, capacity);
+        while (capacity > 0 && points.size() > capacity) evictOldest();
+    }
+
+    public int capacity() {
+        return capacity;
     }
 
     private void evictOldest() {

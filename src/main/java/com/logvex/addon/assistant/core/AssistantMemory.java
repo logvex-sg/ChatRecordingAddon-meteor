@@ -25,7 +25,7 @@ public final class AssistantMemory {
     /** On-disk schema version. Bump on any incompatible change and add a migration step. */
     public static final int CURRENT_VERSION = 1;
 
-    /** Upper bound on stored conversation turns; the oldest are dropped first. */
+    /** The cap this memory used before it became configurable, kept as the setting's suggestion. */
     public static final int MAX_HISTORY = 200;
 
     /** One stored key/value fact. */
@@ -42,6 +42,8 @@ public final class AssistantMemory {
     private final Map<String, Fact> facts = new LinkedHashMap<>();
     private final Map<String, Map<String, Fact>> playerFacts = new LinkedHashMap<>();
     private final List<ConversationEntry> history = new ArrayList<>();
+    /** 0 keeps every remembered turn. */
+    private int historyCapacity;
     private final Map<String, Long> counters = new LinkedHashMap<>();
 
     public int version() {
@@ -190,12 +192,27 @@ public final class AssistantMemory {
 
     // ------------------------------------------------------------------ conversation history
 
-    /** Appends a remembered exchange, trimming the oldest entries past {@link #MAX_HISTORY}. */
+    /** Appends a remembered exchange, trimming only when a history cap has been set. */
     public void recordConversation(String player, String question, String answer, long now) {
         history.add(new ConversationEntry(now, player == null ? "" : player,
             question == null ? "" : question, answer == null ? "" : answer));
-        while (history.size() > MAX_HISTORY) history.remove(0);
+        trimHistory();
         updatedAt = now;
+    }
+
+    /** Sets the cap on remembered turns; {@code 0} keeps every turn. */
+    public void setHistoryCapacity(int capacity) {
+        this.historyCapacity = Math.max(0, capacity);
+        trimHistory();
+    }
+
+    public int historyCapacity() {
+        return historyCapacity;
+    }
+
+    private void trimHistory() {
+        if (historyCapacity <= 0) return;
+        while (history.size() > historyCapacity) history.remove(0);
     }
 
     /** The most recent {@code limit} exchanges, newest first. */
@@ -299,6 +316,7 @@ public final class AssistantMemory {
             copy.playerFacts.put(entry.getKey(), new LinkedHashMap<>(entry.getValue()));
         }
         copy.history.addAll(this.history);
+        copy.historyCapacity = this.historyCapacity;
         copy.counters.putAll(this.counters);
         return copy;
     }

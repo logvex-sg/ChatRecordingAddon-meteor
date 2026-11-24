@@ -38,6 +38,7 @@ public class WorldIntelligenceModule extends AddonModule {
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
     private final SettingGroup sgScan = settings.createGroup("Scanning");
     private final SettingGroup sgWatch = settings.createGroup("Watch List");
+    private final SettingGroup sgStorage = settings.createGroup("Storage");
 
     private final Setting<Boolean> trackChunks = sgGeneral.add(new BoolSetting.Builder()
         .name("track-chunks").description("Record the chunks you visit, so the map can show where you have been.")
@@ -78,6 +79,18 @@ public class WorldIntelligenceModule extends AddonModule {
         .defaultValue("")
         .build());
 
+    private final Setting<Integer> capacity = sgStorage.add(new IntSetting.Builder()
+        .name("max-records-per-world")
+        .description("Upper bound on the places, biomes, resources, chunks and discoveries kept "
+            + "per world. 0 keeps everything, which is the default: this data is saved to disk, so "
+            + "a limit deletes records you collected.")
+        .defaultValue(0)
+        .min(0)
+        .sliderRange(0, 100_000)
+        .onChanged(value -> applyCapacity())
+        .build()
+    );
+
     private long lastScan;
     private boolean spawnMarked;
 
@@ -89,7 +102,13 @@ public class WorldIntelligenceModule extends AddonModule {
     @Override
     public void onActivate() {
         WorldService.get().setEnabled(true);
+        applyCapacity();
         lastScan = 0;
+    }
+
+    /** Pushes the configured cap onto every profile, including ones loaded after the last change. */
+    private void applyCapacity() {
+        WorldService.get().intelligence().setCapacity(capacity.get());
     }
 
     @Override

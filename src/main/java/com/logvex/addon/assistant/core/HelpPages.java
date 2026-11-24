@@ -52,7 +52,7 @@ public final class HelpPages {
         // Grouped rather than left to the automatic pages: an "A-G" heading tells a reader nothing
         // about what is on the page, and these were the commands that landed there.
         out.put("Assistant", List.of("about", "activity", "summary", "history", "triggers",
-            "player", "memories"));
+            "trigger", "player", "memories"));
         out.put("Memory", List.of("fact", "facts", "remember", "forget", "forgetme", "faq"));
         out.put("Reports", List.of("mod", "modcall", "report", "reports"));
         out.put("Social", List.of("hello", "gg"));

@@ -40,7 +40,7 @@ Generated from the source by `tools/build_datasets.py`. Do not edit by hand.
 - **webhook-relay** — One webhook, rich embed output, and cards for sessions, renames and watchlist activity. — _Log Client_
 - **world-intelligence** — Remembers discovered locations, biomes, resources and chunks, per world. — _Log Client_
 
-## Settings (206)
+## Settings (209)
 
 - **auto-bot.auto-start** — Start working as soon as an objective is added. — _default `true`_
 - **auto-bot.pause-on-disconnect** — Pause the bot when the world changes or the connection drops. — _default `true`_
@@ -92,10 +92,10 @@ Generated from the source by `tools/build_datasets.py`. Do not edit by hand.
 - **chat-logger.storage-directory** — Folder for the logs, relative to the game directory. — _default `logclient/logs`_
 - **chat-logger.compression-level** — GZIP level for stored segments (1 fastest, 9 smallest). — _default `6`_
 - **chat-logger.flush-threshold** — Entries buffered before a segment is written to disk. — _default `250`_
-- **chat-logger.auto-cleanup** — Enforce the retention limits automatically after each flush. — _default `true`_
-- **chat-logger.max-age-days** — Delete log segments older than this. 0 disables the age limit. — _default `30`_
-- **chat-logger.max-size-mb** — Maximum total size of the stored logs. Oldest segments are removed first. — _default `100`_
-- **chat-logger.max-segments** — Maximum number of stored segments. 0 disables the count limit. — _default `2000`_
+- **chat-logger.auto-cleanup** — Enforce the limits below automatically after each flush and at startup. Off by default: logs are never deleted unless you ask. — _default `false`_
+- **chat-logger.max-age-days** — Delete log segments older than this. 0 keeps every segment forever. — _default `0`_
+- **chat-logger.max-size-mb** — Maximum total size of the stored logs, oldest segments first. 0 keeps every segment regardless of size. — _default `0`_
+- **chat-logger.max-segments** — Maximum number of stored segments. 0 keeps every segment. — _default `0`_
 - **chat-logger.export-format** — Default format used by the export controls. — _default `a built-in default`_
 - **chat-logger.webhook-url** — Discord webhook URL used by Send Now and periodic reports. Never written to saved logs.
 - **chat-logger.webhook-username** — Display name used for webhook reports. — _default `Log Client`_
@@ -147,13 +147,15 @@ Generated from the source by `tools/build_datasets.py`. Do not edit by hand.
 - **notifications.hud** — Show the recent-notifications HUD. — _default `false`_
 - **player-activity.rebuild-on-activate** — Rebuild the player index from stored logs when the module is enabled. — _default `true`_
 - **player-activity.min-messages** — Hide players below this message count in the overview. — _default `0`_
+- **player-activity.max-players** — How many players to keep in the session summary. 0 keeps every player. — _default `0`_
 - **player-activity.excluded-players** — Players never tracked or listed (one name per line).
 - **player-identity.track-identities** — Record the names each account is seen using. — _default `true`_
+- **player-identity.max-accounts** — How many accounts to remember. 0 keeps every account. — _default `0`_
 - **player-identity.notify-renames** — Raise a notification when an account is seen under a new name. — _default `true`_
 - **player-identity.watched-only** — Only notify for players on the watchlist. — _default `false`_
 - **player-identity.watchlist** — Player names to watch (one per line). Watched renames are always highlighted.
 - **player-notes.notes** — Saved notes, managed from the Notes screen. Editing this by hand is not recommended. — _default `computed at startup`_
-- **player-notes.max-notes** — How many player notes to keep. The oldest note is dropped past this many. — _default `a built-in default size`_
+- **player-notes.max-notes** — How many player notes to keep. 0 keeps every note. — _default `a built-in default size`_
 - **player-notes.chat-feedback** — Print a chat note when a note is saved or removed. — _default `true`_
 - **player-notes.show-activity** — Show a player's observed activity alongside their note. — _default `true`_
 - **repeat-collapse.window** — How soon the same line must arrive to count as a repeat, in milliseconds. — _default `3000`_
@@ -202,12 +204,12 @@ Generated from the source by `tools/build_datasets.py`. Do not edit by hand.
 - **schematic-dropper.checkpoints** — Save progress so an interrupted build can resume safely. — _default `true`_
 - **schematic-dropper.notify-build** — Report build progress and completion in chat. — _default `true`_
 - **schematic-dropper.schematic-file** — Full path to a .schem/.schematic/.litematic file, used by "Load Path".
-- **session-history.history-size** — How many past sessions to keep. Older sessions are dropped first. — _default `500`_
+- **session-history.history-size** — How many past sessions to keep. 0 keeps every session. — _default `0`_
 - **session-stats.summary-on-leave** — Print a short session summary when leaving a world. — _default `true`_
 - **session-timeline.record-joins** — Record player joins on the timeline. — _default `true`_
 - **session-timeline.record-leaves** — Record player leaves on the timeline. — _default `true`_
 - **session-timeline.record-deaths** — Record deaths on the timeline. — _default `true`_
-- **session-timeline.max-events** — How many milestones the timeline keeps before dropping the oldest. — _default `a built-in default size`_
+- **session-timeline.max-events** — How many milestones the timeline keeps. 0 keeps every milestone. — _default `a built-in default size`_
 - **updates.channel** — Stable only offers full releases; Beta also offers pre-releases. — _default `a built-in default`_
 - **updates.check-on-join** — Check for updates once after joining a world. — _default `true`_
 - **updates.auto-download** — Download a newer release automatically when one is found. — _default `false`_
@@ -215,7 +217,7 @@ Generated from the source by `tools/build_datasets.py`. Do not edit by hand.
 - **updates.chat-feedback** — Print a short line when a check finishes or a download completes. — _default `true`_
 - **webhook-monitor.notify-on-failure** — Print a chat note when a webhook delivery fails. — _default `true`_
 - **webhook-monitor.notify-on-recovery** — Print a chat note when a delivery succeeds after a failure. — _default `false`_
-- **webhook-monitor.history-size** — How many delivery attempts to keep in the history. — _default `100`_
+- **webhook-monitor.history-size** — How many delivery attempts to keep in the history. 0 keeps every attempt. — _default `a built-in default size`_
 - **webhook-relay.webhook-url** — Discord webhook URL. Treated as a secret: never written to logs or payloads.
 - **webhook-relay.webhook-username** — Display name used for webhook messages. — _default `Log Client`_
 - **webhook-relay.relay-enabled** — Actually send embeds. Off means the URL is stored but nothing is transmitted. — _default `true`_
@@ -237,7 +239,7 @@ Generated from the source by `tools/build_datasets.py`. Do not edit by hand.
 - **webhook-relay.moderator-role-id** — Discord role to ping on a report: a role id, or plain text to show instead.
 - **webhook-relay.digest** — Send a chat-digest embed on a timer. — _default `false`_
 - **webhook-relay.digest-interval-minutes** — Minutes between digest embeds. — _default `30`_
-- **webhook-relay.report-log-size** — How many filed reports to remember. The oldest is dropped past this many. — _default `a built-in default size`_
+- **webhook-relay.report-log-size** — How many filed reports to remember. 0 keeps every report. — _default `a built-in default size`_
 - **webhook-relay.persist-report-log** — Keep the report log across restarts. — _default `true`_
 - **webhook-relay.reports** — Saved reports, managed by the module. Editing this by hand is not recommended. — _default `computed at startup`_
 - **world-intelligence.track-chunks** — Record the chunks you visit, so the map can show where you have been. — _default `true`_
@@ -248,6 +250,7 @@ Generated from the source by `tools/build_datasets.py`. Do not edit by hand.
 - **world-intelligence.track-resources** — Record watched resource blocks and structure signatures when seen. — _default `true`_
 - **world-intelligence.resources** — Block ids to record as resources, e.g. minecraft:diamond_ore. — _default `minecraft:diamond_oreminecraft:deepslate_diamond_oreminecraft:ancient_debrisminecraft:emerald_oreminecraft:deepslate_emerald_oreminecraft:gold_oreminecraft:deepslate_gold_ore`_
 - **world-intelligence.structure-blocks** — Comma-separated block=name pairs that mark a structure, e.g. minecraft:chest=Village chest. Recorded as a structure when seen.
+- **world-intelligence.max-records-per-world** — Upper bound on the places, biomes, resources, chunks and discoveries kept per world. 0 keeps everything, which is the default: this data is saved to disk, so a limit deletes records you collected. — _default `0`_
 
 ## Commands (37)
 

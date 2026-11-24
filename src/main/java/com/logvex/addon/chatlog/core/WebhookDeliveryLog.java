@@ -13,7 +13,7 @@ import java.util.List;
  * here — a webhook URL is a secret, so a record holds only a host label and the outcome.
  */
 public final class WebhookDeliveryLog {
-    public static final int DEFAULT_CAPACITY = 100;
+    public static final int DEFAULT_CAPACITY = 0;
 
     /** One delivery attempt. */
     public record Record(long timestamp, String host, boolean success, int attempt, String message) {
@@ -31,7 +31,7 @@ public final class WebhookDeliveryLog {
     }
 
     public WebhookDeliveryLog(int capacity) {
-        this.capacity = Math.max(1, capacity);
+        this.capacity = Math.max(0, capacity);
     }
 
     /** The maximum number of records kept. */
@@ -39,15 +39,20 @@ public final class WebhookDeliveryLog {
         return capacity;
     }
 
-    /** Changes the cap, dropping the oldest records when it shrinks. */
+    /** Changes the cap, dropping the oldest records when it shrinks. 0 means no cap. */
     public synchronized void setCapacity(int newCapacity) {
-        this.capacity = Math.max(1, newCapacity);
+        this.capacity = Math.max(0, newCapacity);
+        trim();
+    }
+
+    private void trim() {
+        if (capacity <= 0) return;
         while (records.size() > capacity) records.removeLast();
     }
 
     public synchronized void add(long timestamp, String host, boolean success, int attempt, String message) {
         records.addFirst(new Record(timestamp, host, success, attempt, message));
-        while (records.size() > capacity) records.removeLast();
+        trim();
     }
 
     /** Every record, newest first. */

@@ -51,10 +51,10 @@ public class SessionTimelineModule extends AddonModule {
 
     private final Setting<Integer> maxEvents = sgGeneral.add(new IntSetting.Builder()
         .name("max-events")
-        .description("How many milestones the timeline keeps before dropping the oldest.")
+        .description("How many milestones the timeline keeps. 0 keeps every milestone.")
         .defaultValue(SessionTimeline.DEFAULT_CAPACITY)
-        .min(50)
-        .sliderRange(50, 2000)
+        .min(0)
+        .sliderRange(0, 2000)
         .onChanged(service::setCapacity)
         .build()
     );

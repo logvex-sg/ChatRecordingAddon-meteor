@@ -119,6 +119,11 @@ public final class CommandCatalog {
         out.add(new Command("triggers", List.of("triggerlist", "keywords"),
             "List the trigger rules that are active, one page at a time.",
             PermissionLevel.EVERYONE, false));
+        // Turning a trigger off is a stored change, so it is local-only like the other writers:
+        // a stranger must not be able to silence the operator's assistant.
+        out.add(new Command("trigger", List.of("rule"),
+            "Turn one trigger rule on or off, keeping its reply.",
+            PermissionLevel.LOCAL_ONLY, true));
         return List.copyOf(out);
     }
 

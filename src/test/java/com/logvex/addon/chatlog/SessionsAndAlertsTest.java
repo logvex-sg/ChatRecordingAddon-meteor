@@ -122,12 +122,19 @@ class SessionsAndAlertsTest {
     }
 
     @Test
-    void playerSessionsAreCapped() {
+    void playerSessionsAreOnlyCappedWhenAsked() {
         PlayerSessionTracker tracker = new PlayerSessionTracker();
-        for (int i = 0; i < PlayerSessionTracker.MAX_PLAYERS + 50; i++) {
+        for (int i = 0; i < 500; i++) {
             tracker.record(entry(1000 + i, MessageType.JOIN, "P" + i, "x"));
         }
-        assertEquals(PlayerSessionTracker.MAX_PLAYERS, tracker.size());
+        assertEquals(500, tracker.size(), "no player is dropped by default");
+
+        PlayerSessionTracker capped = new PlayerSessionTracker();
+        capped.setCapacity(PlayerSessionTracker.MAX_PLAYERS);
+        for (int i = 0; i < PlayerSessionTracker.MAX_PLAYERS + 50; i++) {
+            capped.record(entry(1000 + i, MessageType.JOIN, "P" + i, "x"));
+        }
+        assertEquals(PlayerSessionTracker.MAX_PLAYERS, capped.size());
     }
 
     // ------------------------------------------------------------------ DuplicateGrouper

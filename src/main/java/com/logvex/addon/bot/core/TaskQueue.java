@@ -16,12 +16,14 @@ import java.util.Optional;
  * tasks the highest priority (lowest {@link TaskPriority#weight()}) wins, and ties keep insertion
  * order, so a user's plan runs the way it was written.
  *
- * <p>The queue is bounded by {@link #MAX_TASKS}. Adding past the bound is refused rather than
+ * <p>Live work is bounded by {@link #MAX_TASKS}. Adding past the bound is refused rather than
  * silently dropping the oldest task, because silently discarding a user's objective is worse than
- * telling them the queue is full.
+ * telling them the queue is full. Finished tasks do not count toward the bound: they stay visible in
+ * the task manager until the player clears them, so a completed objective is never removed behind
+ * their back.
  */
 public final class TaskQueue {
-    /** Practical upper bound so a runaway planner cannot exhaust memory. */
+    /** Upper bound on *unfinished* tasks, so a runaway planner cannot exhaust memory. */
     public static final int MAX_TASKS = 512;
 
     private final Map<Long, BotTask> tasks = new LinkedHashMap<>();
@@ -30,7 +32,7 @@ public final class TaskQueue {
     /** Adds a task. Returns {@code false} when the queue is full. */
     public boolean add(BotTask task) {
         if (task == null) return false;
-        if (tasks.size() >= MAX_TASKS) return false;
+        if (unfinishedCount() >= MAX_TASKS) return false;
         task.setCreatedAt(System.currentTimeMillis());
         task.setParameter("seq", Long.toString(sequence++));
         tasks.put(task.id(), task);
@@ -40,7 +42,7 @@ public final class TaskQueue {
 
     /** Inserts a task at a specific index among the pending tasks. */
     public boolean insert(int index, BotTask task) {
-        if (task == null || tasks.size() >= MAX_TASKS) return false;
+        if (task == null || unfinishedCount() >= MAX_TASKS) return false;
         List<BotTask> ordered = new ArrayList<>(tasks.values());
         int clamped = Math.max(0, Math.min(index, ordered.size()));
         ordered.add(clamped, task);
@@ -94,7 +96,16 @@ public final class TaskQueue {
     }
 
     public boolean isFull() {
-        return tasks.size() >= MAX_TASKS;
+        return unfinishedCount() >= MAX_TASKS;
+    }
+
+    /** How many tasks have not finished yet, which is what the admission bound applies to. */
+    public int unfinishedCount() {
+        int count = 0;
+        for (BotTask task : tasks.values()) {
+            if (!task.state().isFinished()) count++;
+        }
+        return count;
     }
 
     /** True when no task remains that is not finished. */

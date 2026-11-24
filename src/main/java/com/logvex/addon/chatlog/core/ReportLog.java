@@ -19,7 +19,7 @@ import java.util.Locale;
  * not is exactly the case worth keeping.
  */
 public final class ReportLog {
-    public static final int DEFAULT_CAPACITY = 200;
+    public static final int DEFAULT_CAPACITY = 0;
 
     /** One filed report and what became of it. */
     public record Record(long atMs, String reporter, String reason, String kind, boolean delivered,
@@ -50,7 +50,7 @@ public final class ReportLog {
     }
 
     public ReportLog(int capacity) {
-        this.capacity = Math.max(1, capacity);
+        this.capacity = Math.max(0, capacity);
     }
 
     /** The maximum number of records kept. */
@@ -58,9 +58,14 @@ public final class ReportLog {
         return capacity;
     }
 
-    /** Changes the cap, dropping the oldest records when it shrinks. */
+    /** Changes the cap, dropping the oldest records when it shrinks. 0 means no cap. */
     public synchronized void setCapacity(int newCapacity) {
-        this.capacity = Math.max(1, newCapacity);
+        this.capacity = Math.max(0, newCapacity);
+        trim();
+    }
+
+    private void trim() {
+        if (capacity <= 0) return;
         while (records.size() > capacity) records.removeLast();
     }
 
@@ -68,7 +73,7 @@ public final class ReportLog {
     public synchronized void add(Record record) {
         if (record == null) return;
         records.addFirst(record);
-        while (records.size() > capacity) records.removeLast();
+        trim();
     }
 
     /** The newest records first. */
@@ -179,8 +184,9 @@ public final class ReportLog {
         // Decoded newest-first like the encoding, so a reload preserves the original order.
         for (String line : encoded) {
             Record record = decode(line);
-            if (record != null && records.size() < capacity) records.addLast(record);
+            if (record != null) records.addLast(record);
         }
+        trim();
     }
 
     private static final String SEP = "\u0001";

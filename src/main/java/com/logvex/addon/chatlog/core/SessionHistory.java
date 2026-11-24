@@ -18,8 +18,8 @@ import java.util.Map;
  * <p>Thread-safe: a session is closed on the client thread while the GUI thread reads snapshots.
  */
 public final class SessionHistory {
-    /** How many sessions to keep by default. */
-    public static final int DEFAULT_CAPACITY = 500;
+    /** How many sessions to keep by default. {@code 0} keeps every session. */
+    public static final int DEFAULT_CAPACITY = 0;
 
     private volatile int capacity;
     private final Deque<SessionRecord> records = new ArrayDeque<>();
@@ -30,17 +30,27 @@ public final class SessionHistory {
     }
 
     public SessionHistory(int capacity) {
-        this.capacity = Math.max(1, capacity);
+        this.capacity = Math.max(0, capacity);
     }
 
     public int capacity() {
         return capacity;
     }
 
-    /** Changes the cap, dropping the oldest records if the new cap is smaller. */
+    /**
+     * Changes the cap, dropping the oldest records if the new cap is smaller.
+     *
+     * <p>{@code 0} means no cap: a session record is a few dozen bytes and is written to disk, so
+     * there is no reason to throw one away unless the player asks for a limit.
+     */
     public synchronized void setCapacity(int capacity) {
-        this.capacity = Math.max(1, capacity);
-        while (records.size() > this.capacity) records.removeFirst();
+        this.capacity = Math.max(0, capacity);
+        trimToCapacity();
+    }
+
+    private void trimToCapacity() {
+        if (capacity <= 0) return;
+        while (records.size() > capacity) records.removeFirst();
     }
 
     /** Adds a finished session. A null or already-present record is ignored. */
@@ -50,7 +60,7 @@ public final class SessionHistory {
             if (existing.id().equals(record.id())) return;
         }
         records.addLast(record);
-        while (records.size() > capacity) records.removeFirst();
+        trimToCapacity();
         totalSessions++;
     }
 
@@ -62,7 +72,7 @@ public final class SessionHistory {
             if (record == null || record.id().isBlank()) continue;
             records.addLast(record);
         }
-        while (records.size() > capacity) records.removeFirst();
+        trimToCapacity();
     }
 
     /** Every record, oldest first. */

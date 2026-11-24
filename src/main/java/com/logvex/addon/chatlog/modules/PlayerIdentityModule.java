@@ -11,6 +11,7 @@ import com.logvex.addon.framework.gui.widgets.WWidget;
 import com.logvex.addon.framework.gui.widgets.containers.WVerticalList;
 import com.logvex.addon.framework.gui.widgets.pressable.WButton;
 import meteordevelopment.meteorclient.settings.BoolSetting;
+import meteordevelopment.meteorclient.settings.IntSetting;
 import meteordevelopment.meteorclient.settings.Setting;
 import meteordevelopment.meteorclient.settings.SettingGroup;
 import meteordevelopment.meteorclient.settings.StringListSetting;
@@ -37,6 +38,16 @@ public class PlayerIdentityModule extends AddonModule {
         .description("Record the names each account is seen using.")
         .defaultValue(true)
         .onChanged(value -> PlayerIdentityService.get().setEnabled(value))
+        .build()
+    );
+
+    private final Setting<Integer> maxAccounts = sgGeneral.add(new IntSetting.Builder()
+        .name("max-accounts")
+        .description("How many accounts to remember. 0 keeps every account.")
+        .defaultValue(0)
+        .min(0)
+        .sliderRange(0, 20_000)
+        .onChanged(value -> LogService.get().identities().setCapacity(value))
         .build()
     );
 
@@ -77,6 +88,7 @@ public class PlayerIdentityModule extends AddonModule {
     public void onActivate() {
         identities.setEnabled(track.get());
         service.watchlist().set(watchlist.get());
+        service.identities().setCapacity(maxAccounts.get());
         identities.addListener(listener);
     }
 

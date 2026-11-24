@@ -39,10 +39,10 @@ public class PlayerNotesModule extends AddonModule {
 
     private final Setting<Integer> capacity = sgGeneral.add(new IntSetting.Builder()
         .name("max-notes")
-        .description("How many player notes to keep. The oldest note is dropped past this many.")
+        .description("How many player notes to keep. 0 keeps every note.")
         .defaultValue(PlayerNote.Store.DEFAULT_CAPACITY)
-        .min(10)
-        .sliderRange(10, 5000)
+        .min(0)
+        .sliderRange(0, 5000)
         .onChanged(store::setCapacity)
         .build()
     );

@@ -43,9 +43,12 @@ class ReplyDeliveryTest {
     private static ReplyDelivery.Plan planFor(String command, boolean localSpeaker) {
         AssistantBrain.Decision decision = runtime().handle(
             SenderIdentity.local("Me", null), command, 1000L, ServerStats.OFFLINE, null);
+        // Mirrors AssistantModule.whisperAll: the compact form is built at the wire cap, because a
+        // remote asker's reply is repacked from it and a narrow render would wrap the fields.
+        int wireWidth = Math.max(WIDTH, ReplyDelivery.MAX_MESSAGE_CHARS);
         return ReplyDelivery.plan(decision.delivery(),
             decision.linesCapped(WIDTH, null, CAP),
-            com.logvex.addon.assistant.core.ReplyFormat.oneLine(decision.embed(), WIDTH),
+            com.logvex.addon.assistant.core.ReplyFormat.oneLine(decision.embed(), wireWidth),
             localSpeaker);
     }
 
@@ -74,20 +77,44 @@ class ReplyDeliveryTest {
     }
 
     @Test
-    @DisplayName("a remote asker still gets one message per row, paced")
-    void remoteCardIsPacedLines() {
-        ReplyDelivery.Plan plan = planFor("!cmds1", false);
-        assertEquals(ReplyDelivery.Mode.SERVER_PACED_LINES, plan.mode(),
-            "a remote asker can only be reached through the server");
-        assertTrue(plan.lines().size() > 1, "a page is more than one row");
+    @DisplayName("a remote asker's card is a bounded number of messages, never one per row")
+    void remoteCardIsPacked() {
+        for (String command : List.of("!cmds", "!cmds1", "!cmds2")) {
+            ReplyDelivery.Plan plan = planFor(command, false);
+            assertEquals(ReplyDelivery.Mode.SERVER_PACED_LINES, plan.mode(),
+                "a remote asker can only be reached through the server");
+            // The regression this pins: one message per row meant a stranger typing "!cmds1" made
+            // the operator's account send six /msg, and twelve for "!cmds". A flood filter kicks
+            // the account that sent them, so the count has to be independent of the card's height.
+            assertTrue(plan.lines().size() <= 2,
+                command + " must not scale with its rows, got " + plan.lines().size() + " messages");
+            for (String line : plan.lines()) {
+                assertTrue(line.length() <= ReplyDelivery.MAX_MESSAGE_CHARS,
+                    command + " message is over the wire cap: " + line.length());
+            }
+        }
     }
 
     @Test
-    @DisplayName("a one-line reply to a remote asker is a single message")
-    void remoteSingleLine() {
+    @DisplayName("packing a card keeps every field, not just the ones that fit")
+    void packingKeepsContent() {
+        ReplyDelivery.Plan plan = planFor("!cmds1", false);
+        String all = String.join(" ", plan.lines());
+        // The page's real content has to survive: repacking may move a field to a second message,
+        // but dropping it would answer a help request with a truncated table.
+        for (String verb : List.of("!tps", "!ping", "!players", "!stats")) {
+            assertTrue(all.contains(verb), verb + " was lost from the repacked reply: " + all);
+        }
+    }
+
+    @Test
+    @DisplayName("a one-line reply to a remote asker is unchanged")
+    void remoteSingleLineStaysOneLine() {
         ReplyDelivery.Plan plan = ReplyDelivery.plan(AssistantBrain.Delivery.PRIVATE,
             List.of("just one row"), "just one row", false);
-        assertEquals(ReplyDelivery.Mode.SERVER_ONE_LINE, plan.mode());
+        assertEquals(ReplyDelivery.Mode.SERVER_PACED_LINES, plan.mode());
+        assertEquals(1, plan.lines().size());
+        assertEquals("just one row", plan.lines().get(0));
     }
 
     @Test

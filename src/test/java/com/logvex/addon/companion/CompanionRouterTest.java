@@ -343,7 +343,7 @@ class CompanionRouterTest {
         CompanionRouter.Response response = router.handle(unauthenticated("GET", "health"));
 
         assertEquals(200, response.status());
-        assertTrue(response.body().contains("\"api\":\"12\""));
+        assertTrue(response.body().contains("\"api\":\"" + CompanionSnapshot.API_VERSION + "\""));
         assertFalse(response.body().contains(TOKEN));
     }
 

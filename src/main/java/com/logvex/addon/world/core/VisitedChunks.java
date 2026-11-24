@@ -6,17 +6,20 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * A bounded record of which chunks have been visited, keyed by dimension and chunk coordinate.
+ * A record of which chunks have been visited, keyed by dimension and chunk coordinate.
  *
- * <p>A chunk is recorded once; revisiting it only refreshes the timestamp. When the cap is reached
- * the least-recently-visited chunk is dropped, so the set stays a bounded window over the explored
- * area rather than growing with every step the player takes. Minecraft-free.
+ * <p>A chunk is recorded once; revisiting it only refreshes the timestamp. Minecraft-free.
+ *
+ * <p>Uncapped by default: the visited set is saved to disk and drives the map's "where have I been"
+ * view, so dropping a chunk to stay under a number would erase part of the map. {@link #setCapacity}
+ * is there for anyone who wants a bound; {@code 0} means no cap.
  */
 public final class VisitedChunks {
-    /** Hard cap on tracked chunks. */
+    /** The cap this store used before it became configurable, kept as the setting's suggestion. */
     public static final int MAX_CHUNKS = 40_000;
 
     private final Map<String, long[]> chunks = new LinkedHashMap<>();
+    private int capacity;
 
     /** Records a visit to a chunk; returns true when this was the first time. */
     public boolean visit(String dimension, int chunkX, int chunkZ, long now) {
@@ -26,9 +29,19 @@ public final class VisitedChunks {
             existing[0] = now;
             return false;
         }
-        if (chunks.size() >= MAX_CHUNKS) evictOldest();
+        if (capacity > 0 && chunks.size() >= capacity) evictOldest();
         chunks.put(key, new long[]{now});
         return true;
+    }
+
+    /** Sets the cap on tracked chunks; {@code 0} keeps every chunk. */
+    public void setCapacity(int capacity) {
+        this.capacity = Math.max(0, capacity);
+        while (capacity > 0 && chunks.size() > capacity) evictOldest();
+    }
+
+    public int capacity() {
+        return capacity;
     }
 
     private void evictOldest() {

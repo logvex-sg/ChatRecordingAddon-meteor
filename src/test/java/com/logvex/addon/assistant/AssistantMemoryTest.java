@@ -52,15 +52,34 @@ class AssistantMemoryTest {
     }
 
     @Test
-    @DisplayName("history keeps only the most recent entries")
-    void historyIsBounded() {
+    @DisplayName("history keeps every entry by default")
+    void historyIsUncappedByDefault() {
         AssistantMemory memory = new AssistantMemory();
-        for (int i = 0; i < AssistantMemory.MAX_HISTORY + 25; i++) {
+        int total = AssistantMemory.MAX_HISTORY + 25;
+        for (int i = 0; i < total; i++) {
             memory.recordConversation("p", "q" + i, "a" + i, i);
         }
-        assertEquals(AssistantMemory.MAX_HISTORY, memory.historySize());
-        // The newest entry is the last recorded one.
-        assertEquals("q" + (AssistantMemory.MAX_HISTORY + 24), memory.history(1).get(0).question());
+        assertEquals(total, memory.historySize());
+        assertEquals("q" + (total - 1), memory.history(1).get(0).question());
+        assertEquals("q0", memory.history(total).get(total - 1).question());
+    }
+
+    @Test
+    @DisplayName("a history cap drops the oldest entries, and 0 lifts it again")
+    void historyCapIsOptIn() {
+        AssistantMemory memory = new AssistantMemory();
+        memory.setHistoryCapacity(50);
+        for (int i = 0; i < 75; i++) {
+            memory.recordConversation("p", "q" + i, "a" + i, i);
+        }
+        assertEquals(50, memory.historySize());
+        assertEquals("q74", memory.history(1).get(0).question());
+
+        memory.setHistoryCapacity(0);
+        for (int i = 0; i < 100; i++) {
+            memory.recordConversation("p", "later" + i, "a", i);
+        }
+        assertEquals(150, memory.historySize());
     }
 
     @Test

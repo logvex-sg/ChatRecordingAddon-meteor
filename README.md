@@ -1138,6 +1138,22 @@ anything is acquired.
 
 ## Chat intelligence modules
 
+### Nothing is deleted unless you ask
+
+Every store in this addon keeps everything by default. Chat segments, session history, player
+notes, the report and delivery logs, the session timeline, the player and identity indexes and
+every world record are all uncapped, and `0` on any limit setting means "keep it forever".
+
+The only deletions are the ones you perform: **Cleanup now** in the storage screen, **Clear
+Finished** in the task manager, the delete buttons in the archive browser, and lowering a limit
+yourself. Automatic cleanup is off out of the box; turning it on applies the age, size and
+segment limits after each flush and at startup.
+
+The reason is that most of this data cannot be recreated. A chat segment is a record of something
+that happened; a world record is a place you found; a note is something you typed. A default cap
+destroys it silently and you only find out when you go looking for it. If you want a bound, every
+store exposes one, and the storage screen and companion app both say when nothing will be removed.
+
 These modules extend the chat toolkit. They share the same output formatter (`com.logvex.addon.common.Messages`)
 so every line reads the same way: a `[Log]` prefix, sentence case, readable numbers and proper
 pluralisation.
@@ -1148,15 +1164,15 @@ pluralisation.
 | `chat-timestamps` | Puts a clock time in front of every incoming chat line (`HH:mm`, `HH:mm:ss` or 12-hour), optionally dimmed. Only the displayed text changes: the log keeps its own timestamp field, so nothing is stored twice. |
 | `repeat-collapse` | Folds a run of identical consecutive chat lines into the first one plus a "(N more of the same line)" note. The window and whether your own messages are exempt are configurable. Every line is still written to the log, because the log is evidence. |
 | `chat-digest` | Summarises the last N messages: totals per message type, unique players, joins/leaves/deaths and the most active players. Run it on demand (`!log digest`) or on a timer. Optionally forwards each digest to the webhook. |
-| `session-timeline` | A bounded timeline of milestones the client can actually observe: session start/end, joins, leaves, deaths and keyword hits. Browsable in a GUI (`!log timeline`). |
+| `session-timeline` | A timeline of milestones the client can actually observe: session start/end, joins, leaves, deaths and keyword hits. Browsable in a GUI (`!log timeline`). Keeps every milestone unless you set a limit. |
 | `session-stats` | Live session counters, and a short **session summary printed when you leave a world** (messages, unique players, duration, rate, joins/leaves, deaths, keyword alerts and the most active players). |
-| `webhook-monitor` | Watches the shared webhook queue and reports its health. Keeps a bounded delivery history, warns in chat when a delivery fails and can note a recovery. The URL is never stored or shown — only the host. |
+| `webhook-monitor` | Watches the shared webhook queue and reports its health. Keeps a delivery history, warns in chat when a delivery fails and can note a recovery. The URL is never stored or shown — only the host. |
 | `webhook-relay` | Owns the single webhook target and the embed appearance every other feature sends through, and raises its own cards for session end, renames, watchlist presence, deaths and announcements. Can send a **leaderboard** card and a per-player **profile** card on demand. See **Webhook relay and embeds**. |
 | `mention-alerts` | Alerts when your own name or a watched name is used as a whole word in chat. Raises a notification, an optional sound, an optional chat note and an optional mention embed, and records each hit in the alert log. |
 | `player-notes` | Your own notes about players, with the observed activity shown beside each note. A note is always explicit user input; the addon never infers one. |
 | `player-activity` | Per-player joins, leaves, deaths and message counts, rebuilt from the archive on demand. Supports an **exclude list** so bots or your own alts are never tracked, and shows observed online time per player. |
 | `player-identity` | Tracks the names each **account** (by UUID) is seen using, and reports a rename only when the same UUID is later announced under a different name. Includes a per-account **watchlist**; watched renames are highlighted. Never merges two accounts that share a name. |
-| `session-history` | A bounded, browsable history of past recording sessions (server, duration, message/event counts), with a configurable cap. Each session is folded into a compact record when it ends, so past sessions can be reviewed without re-reading the archive. |
+| `session-history` | A browsable history of past recording sessions (server, duration, message/event counts). Each session is folded into a compact record when it ends, so past sessions can be reviewed without re-reading the archive. Every session is kept unless you set a cap. |
 
 ### Activity graph
 

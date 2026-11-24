@@ -15,16 +15,33 @@ import java.util.List;
 public final class WorldIntelligence {
     private final WorldProfileStore store = new WorldProfileStore();
     private String currentKey = "";
+    /** 0 means every store keeps everything, which is the default. */
+    private int capacity;
 
     public WorldProfileStore store() {
         return store;
+    }
+
+    /**
+     * Applies a record cap to every profile, current and future; {@code 0} removes the cap.
+     *
+     * <p>Held here rather than only in the module so a profile created later — a new world, or a
+     * save loaded after the setting changed — is capped the same way.
+     */
+    public void setCapacity(int capacity) {
+        this.capacity = Math.max(0, capacity);
+        for (WorldProfile profile : store.all()) profile.setCapacity(this.capacity);
+    }
+
+    public int capacity() {
+        return capacity;
     }
 
     /** Switches the active profile, creating it when needed, and stamps a visit. */
     public WorldProfile enterWorld(String serverAddress, String worldName, String label, long now) {
         String key = WorldProfile.buildKey(serverAddress, worldName);
         currentKey = key;
-        WorldProfile profile = store.profileOrCreate(key, label);
+        WorldProfile profile = store.profileOrCreate(key, label).setCapacity(capacity);
         profile.touch(now);
         return profile;
     }
@@ -149,5 +166,8 @@ public final class WorldIntelligence {
     /** Replaces the database from a previously exported map tree. */
     public void importMap(java.util.Map<?, ?> root) {
         store.fromMap(root);
+        // A file can hold more than the current cap. Applying it here means the loaded state
+        // matches the setting, so the stores never disagree with what the screen reports.
+        setCapacity(capacity);
     }
 }

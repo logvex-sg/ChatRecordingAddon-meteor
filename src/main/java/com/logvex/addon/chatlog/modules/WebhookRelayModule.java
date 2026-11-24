@@ -321,10 +321,10 @@ public class WebhookRelayModule extends AddonModule {
 
     private final Setting<Integer> reportLogSize = sgReports.add(new IntSetting.Builder()
         .name("report-log-size")
-        .description("How many filed reports to remember. The oldest is dropped past this many.")
+        .description("How many filed reports to remember. 0 keeps every report.")
         .defaultValue(ReportLog.DEFAULT_CAPACITY)
-        .min(10)
-        .sliderRange(10, 1000)
+        .min(0)
+        .sliderRange(0, 1000)
         .onChanged(reportLog::setCapacity)
         .build()
     );
