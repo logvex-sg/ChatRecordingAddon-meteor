@@ -515,17 +515,21 @@ function activeSnapshot() {
 // one box and then clicking another silently threw the first box's text away on the next refresh,
 // which is data loss from the user's point of view.
 //
-// A field is identified by its position among the fields of its section. Placeholder is not usable
-// as an identity: the two dropdowns on the Players tab both have none, so they collided and
-// restoring the sort order overwrote the selected client with a sort key.
+// A field is identified by its kind plus which field of that kind it is within its section.
+// Placeholder alone is not usable: the two dropdowns on the Players tab both have none, so they
+// collided and restoring the sort order overwrote the selected client with a sort key. A bare
+// position is not usable either, because a field that appears conditionally would shift every
+// position after it and text would land in the wrong box.
 
-/** The identity of a field: its section, and its index among that section's fields. */
+/** The identity of a field: its section, its kind, and which field of that kind it is. */
 function fieldKey(node) {
   const section = node.closest("section");
   if (!section) return null;
-  const fields = [...section.querySelectorAll("input, textarea, select")];
-  const index = fields.indexOf(node);
-  return index < 0 ? null : section.id + "|" + index;
+  const kind = node.tagName + ":" + (node.getAttribute("placeholder") || node.name || node.type || "");
+  const sameKind = [...section.querySelectorAll("input, textarea, select")]
+    .filter(other => other.tagName + ":" + (other.getAttribute("placeholder") || other.name || other.type || "") === kind);
+  const index = sameKind.indexOf(node);
+  return index < 0 ? null : section.id + "|" + kind + "#" + index;
 }
 
 /** Everything needed to restore the fields exactly as the user left them. */

@@ -140,6 +140,22 @@ const check = (name, condition, detail) => { results[name] = { pass: !!condition
   check('chat-filter-text-survives', filter.value === 'zzz-nothing', JSON.stringify(filter.value));
   check('chat-filter-still-applied', d.querySelectorAll('#view-chat .empty').length === empties);
 
+  // A field that is removed and re-added between capture and restore must not shift the text of a
+  // sibling into itself. This is why the key includes the field's kind rather than a bare position.
+  const section = d.getElementById('view-bot');
+  const make = () => { const i = d.createElement('input'); i.setAttribute('placeholder', 'Message to send as you'); return i; };
+  const first = make(); first.value = 'FIRST';
+  const second = make(); second.value = 'SECOND';
+  section.innerHTML = '';
+  section.appendChild(first); section.appendChild(second);
+  const captured = w.captureFields();
+  first.remove();
+  const replacement = make();
+  section.insertBefore(replacement, second);
+  w.restoreFields(captured);
+  const values = [...section.querySelectorAll('input')].map(i => i.value);
+  check('text-stays-in-its-own-box', values[1] === 'SECOND', JSON.stringify(values));
+
   process.stdout.write(JSON.stringify({ results, errors }));
   process.exit(0);
 })();
@@ -192,6 +208,9 @@ class CompanionAppFieldStateTest(unittest.TestCase):
 
     def test_chat_filter_is_still_applied(self):
         self._passes("chat-filter-still-applied")
+
+    def test_text_stays_in_its_own_box_when_a_sibling_is_removed(self):
+        self._passes("text-stays-in-its-own-box")
 
     def _passes(self, name: str) -> None:
         entry = self.report["results"].get(name)
