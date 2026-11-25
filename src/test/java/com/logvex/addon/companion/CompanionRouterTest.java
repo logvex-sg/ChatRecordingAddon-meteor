@@ -328,6 +328,9 @@ class CompanionRouterTest {
     void eventsEndpoint() {
         CompanionRouter router = router(new FakeCompanionApi());
 
+        // The router refusing an unauthenticated call is not enough on its own: the transport
+        // answers the stream before the router sees it, which is why CompanionStreamAuthTest drives
+        // a real socket. This case stays as the unit-level guard on the router's own rule.
         assertEquals(401, router.handle(unauthenticated("GET", "api/v1/events")).status());
 
         CompanionRouter.Response response = router.handle(get("api/v1/events"));

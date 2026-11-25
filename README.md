@@ -1588,7 +1588,8 @@ game, which is the usual case.
   address, so turning it on works even while the address still reads `127.0.0.1`.
 - Every request except the app shell and the health probe needs the token, as an
   `Authorization: Bearer <token>` header or a `?token=` query parameter (the query form is what a
-  browser and an `EventSource` can send).
+  browser and an `EventSource` can send). That includes the live event stream, which carries the
+  same chat lines as the JSON API and is checked the same way.
 - The token is generated on first start and stored in the config. **Generate a new token** (module
   widget, Companion screen or `!log companion regenerate`) replaces it and restarts the server.
 - While a loopback-bound server runs, the same token is also written to

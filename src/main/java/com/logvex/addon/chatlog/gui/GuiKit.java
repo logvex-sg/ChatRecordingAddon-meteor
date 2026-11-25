@@ -1,5 +1,6 @@
 package com.logvex.addon.chatlog.gui;
 
+import com.logvex.addon.common.Messages;
 import com.logvex.addon.framework.gui.GuiTheme;
 import com.logvex.addon.framework.gui.GuiThemes;
 import com.logvex.addon.framework.gui.widgets.WLabel;
@@ -53,6 +54,12 @@ final class GuiKit {
      */
     static void facts(WVerticalList list, GuiTheme theme, String... keyValuePairs) {
         if (keyValuePairs.length < 2) return;
+        if (keyValuePairs.length % 2 != 0) {
+            // Dropping the dangling label would hide a fact from the screen with no trace. Failing
+            // here makes the mistake land on the developer instead of in the user's panel.
+            throw new IllegalArgumentException(
+                "facts needs a value for every key; got " + keyValuePairs.length + " arguments");
+        }
         WTable table = list.add(theme.table()).expandX().widget();
         for (int i = 0; i + 1 < keyValuePairs.length; i += 2) {
             table.add(theme.label(keyValuePairs[i])).widget().color(mutedColor());
@@ -100,7 +107,6 @@ final class GuiKit {
     }
 
     static String truncate(String text, int max) {
-        if (text == null) return "";
-        return text.length() <= max ? text : text.substring(0, max - 1) + "\u2026";
+        return Messages.truncate(text, max);
     }
 }

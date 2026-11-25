@@ -111,6 +111,24 @@ public final class CompanionServer {
             String path = CompanionRouter.normalizePath(uri.getPath());
 
             if ("GET".equalsIgnoreCase(method) && path.equals("api/v1/events")) {
+                // The stream is held open here rather than by the router, so it has to apply the
+                // router's rules itself: without this it was served to any client that could reach
+                // the port, and with allowRemote that is the whole network.
+                CompanionRouter.Request request = new CompanionRouter.Request(
+                    method,
+                    path,
+                    CompanionRouter.parseQuery(uri),
+                    exchange.getRequestHeaders().getFirst("Authorization"),
+                    "",
+                    remoteAddress(exchange));
+                if (!router.rateLimiter().allow(request.remoteAddress())) {
+                    write(exchange, router.errorResponse(429, "Too many requests. Slow down."));
+                    return;
+                }
+                if (!router.isAuthorized(request)) {
+                    write(exchange, router.errorResponse(401, "Not authorised. Check the access token."));
+                    return;
+                }
                 streamEvents(exchange);
                 return;
             }

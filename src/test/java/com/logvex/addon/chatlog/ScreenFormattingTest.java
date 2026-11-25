@@ -81,6 +81,17 @@ class ScreenFormattingTest {
             "the age limit must say what it counts");
     }
 
+    @Test
+    @DisplayName("the GUI has no second copy of the truncate rule")
+    void truncateIsNotDuplicated() throws IOException {
+        String kit = Files.readString(GUI.resolve("GuiKit.java"));
+        assertFalse(kit.contains("substring(0, max - 1)"),
+            "GuiKit grew its own truncate again: that copy had no guard, so a max of 0 or less"
+                + " threw instead of returning an empty string. Delegate to Messages.truncate.");
+        assertTrue(kit.contains("Messages.truncate("),
+            "GuiKit.truncate must delegate to the one guarded implementation");
+    }
+
     private static int count(String haystack, String needle) {
         int total = 0;
         int at = haystack.indexOf(needle);
