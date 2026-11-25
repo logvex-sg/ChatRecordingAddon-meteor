@@ -38,6 +38,9 @@ public final class WebhookEmbeds {
         }
     }
 
+    /** Marks a description that stopped before the end of its messages. */
+    public static final String MORE_MARKER = "\n\u2026 and more";
+
     private WebhookEmbeds() {
     }
 
@@ -73,13 +76,17 @@ public final class WebhookEmbeds {
             .color(style.accentFor(MessageType.PUBLIC_CHAT));
 
         StringBuilder body = new StringBuilder();
+        // Room is reserved for the marker up front. Without that the guard lets the body fill the
+        // description and the marker is then clipped to a bare ellipsis, which reads as a typo.
+        int room = DiscordEmbed.DESCRIPTION_LIMIT - MORE_MARKER.length();
         for (ChatEntry entry : entries) {
             String rendered = line(entry);
-            if (body.length() + rendered.length() + 1 > DiscordEmbed.DESCRIPTION_LIMIT) {
-                body.append("\n\u2026 and more");
+            int separator = body.length() > 0 ? 1 : 0;
+            if (body.length() + separator + rendered.length() > room) {
+                body.append(MORE_MARKER);
                 break;
             }
-            if (body.length() > 0) body.append('\n');
+            if (separator > 0) body.append('\n');
             body.append(rendered);
         }
         embed.description(body.toString());
