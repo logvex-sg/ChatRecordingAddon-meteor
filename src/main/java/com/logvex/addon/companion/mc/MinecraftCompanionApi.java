@@ -1,5 +1,6 @@
 package com.logvex.addon.companion.mc;
 
+import com.google.gson.JsonElement;
 import com.logvex.addon.LogClient;
 import com.logvex.addon.bot.BotModule;
 import com.logvex.addon.bot.core.BotEvent;
@@ -16,7 +17,9 @@ import com.logvex.addon.chatlog.modules.ChatLoggerModule;
 import com.logvex.addon.companion.core.CompanionApi;
 import com.logvex.addon.companion.core.CompanionDispatch;
 import com.logvex.addon.companion.core.CompanionSnapshot;
+import com.logvex.addon.companion.core.ModuleSettings;
 import com.logvex.addon.framework.LogClientContext;
+import com.logvex.addon.framework.systems.config.ConfigManager;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import com.logvex.addon.framework.utils.modules.ModuleLookup;
 import meteordevelopment.meteorclient.systems.modules.Modules;
@@ -428,6 +431,25 @@ public final class MinecraftCompanionApi implements CompanionApi {
         }
         module.toggle();
         return ActionResult.ok(module.title + " turned " + (active ? "on" : "off") + ".");
+    }
+
+    @Override
+    public List<CompanionSnapshot.SettingView> moduleSettings(String name) {
+        Module module = ModuleLookup.find(name);
+        if (module == null) return null;
+        return ModuleSettings.views(module.settings);
+    }
+
+    @Override
+    public ActionResult setModuleSetting(String moduleName, String settingName, JsonElement value) {
+        Module module = ModuleLookup.find(moduleName);
+        if (module == null) return ActionResult.fail("No module is called \"" + moduleName + "\".");
+        ActionResult result = ModuleSettings.apply(module.settings, settingName, value);
+        // A module may react to a setting changing (a listener, a rebuild of its internal state), and
+        // the change is worth keeping: mark the config dirty so the next tick writes it to disk,
+        // exactly as a change made in the GUI would.
+        if (result.ok()) ConfigManager.get().markDirty();
+        return result;
     }
 
     @Override

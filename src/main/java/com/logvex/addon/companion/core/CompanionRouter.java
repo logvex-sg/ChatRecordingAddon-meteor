@@ -1,5 +1,6 @@
 package com.logvex.addon.companion.core;
 
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
 import java.net.URI;
@@ -172,6 +173,41 @@ public final class CompanionRouter {
             boolean active = CompanionJson.bool(body, "active", true);
             String name = request.query().get("__name");
             return Response.json(200, CompanionJson.result(call(() -> api.setModule(name, active))));
+        });
+
+        // Settings are read and written one module at a time, not all at once: a client has over a
+        // hundred modules and several thousand settings between them, and the app only ever shows
+        // one module's settings.
+        route("GET", "/api/v1/modules/{name}/settings", request -> {
+            String name = request.query().get("__name");
+            List<CompanionSnapshot.SettingView> settings = call(() -> api.moduleSettings(name));
+            if (settings == null) {
+                return Response.json(404, error("No module is called \"" + name + "\"."));
+            }
+            Map<String, Object> body = CompanionJson.map();
+            body.put("ok", true);
+            body.put("module", name);
+            body.put("settings", settings);
+            return Response.json(200, body);
+        });
+
+        route("POST", "/api/v1/modules/{name}/settings", request -> {
+            String moduleName = request.query().get("__name");
+            JsonObject body = CompanionJson.parseObject(request.body());
+            String settingName = CompanionJson.string(body, "setting");
+            if (settingName == null || settingName.isBlank()) {
+                return Response.json(400, CompanionJson.result(
+                    CompanionApi.ActionResult.fail("No setting was named.")));
+            }
+            // A present-but-null value is as unusable as a missing one, so both are refused here
+            // rather than being passed down as "set it to null".
+            JsonElement value = body.has("value") ? body.get("value") : null;
+            if (value == null || value.isJsonNull()) {
+                return Response.json(400, CompanionJson.result(
+                    CompanionApi.ActionResult.fail("No value was given.")));
+            }
+            return Response.json(200, CompanionJson.result(
+                call(() -> api.setModuleSetting(moduleName, settingName, value))));
         });
 
         route("POST", "/api/v1/chat", request -> {

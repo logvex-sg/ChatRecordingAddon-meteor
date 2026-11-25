@@ -45,6 +45,24 @@ public interface CompanionApi {
     /** Enables or disables one module by its addon name. */
     ActionResult setModule(String name, boolean active);
 
+    /**
+     * Every setting of one module, or null when no module has that name.
+     *
+     * <p>Ordered as the module declares them, so the app can show them in the same order the in-game
+     * settings screen does.
+     */
+    List<CompanionSnapshot.SettingView> moduleSettings(String name);
+
+    /**
+     * Sets one setting of one module from its JSON value, for example {@code true}, {@code 64},
+     * {@code "text"} or {@code ["a","b"]}.
+     *
+     * <p>The value is converted to the setting's own type and validated by the setting itself, so a
+     * number outside its range or a name that is not one of its options is refused rather than
+     * silently clamped. The change is persisted with the client's config, so it survives a restart.
+     */
+    ActionResult setModuleSetting(String moduleName, String settingName, com.google.gson.JsonElement value);
+
     /** Sends a chat line as the player. Refused when the client is not in a world. */
     ActionResult sendChat(String message);
 

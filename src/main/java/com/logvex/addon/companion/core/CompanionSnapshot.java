@@ -52,6 +52,32 @@ public record CompanionSnapshot(
     ) {
     }
 
+    /**
+     * One setting of one module, in a shape a browser can build a control from without knowing the
+     * setting's Java type.
+     *
+     * <p>{@code type} is one of {@code bool}, {@code int}, {@code double}, {@code enum},
+     * {@code string}, {@code string-list}, {@code color}, {@code keybind} or {@code other}. The
+     * extra fields are only present where they mean something: {@code min}/{@code max} for a number,
+     * {@code options} for an enum, {@code value} always. A setting whose {@code visible} is false is
+     * hidden by the module's own rule, which usually means a sibling setting is set to a value that
+     * makes this one irrelevant.
+     */
+    public record SettingView(
+        String name,
+        String title,
+        String description,
+        String group,
+        String type,
+        Object value,
+        Object defaultValue,
+        Number min,
+        Number max,
+        List<String> options,
+        boolean visible
+    ) {
+    }
+
     /** One queued or running bot task. */
     public record TaskView(
         String id,

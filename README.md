@@ -1577,8 +1577,18 @@ across those refreshes, so a rebuild never discards your input.
   **Pause**, **Resume**, **Stop** and **Emergency stop**.
 - **Tasks** — the queue and the history counters, with **Queue objective** (the same forgiving
   parser the dashboard uses, e.g. `gather 256 oak_log`) and **Cancel** per task.
-- **Modules** — every module with an on/off switch, searched by name.
+- **Modules** — every module with an on/off switch and a **Settings** button, searched by name.
+  **Settings** opens that module's own settings as editable controls: a checkbox for a flag, a slider
+  with a typed box for a number, a dropdown for a choice, a text box for a line and a text area (one
+  entry per line) for a list. Values are grouped the way the module declares them, a setting the
+  module currently hides is dimmed, and a change is sent as soon as the control is released. A value
+  the client refuses — a number outside its range, a choice that does not exist — is reported and the
+  control is put back, so the screen never shows a change that did not happen. Types with no browser
+  control (a colour, a keybind, a block position) are shown read-only and marked *set in game*.
 - **Chat** — the recent chat with a search box and a player filter.
+- **Search** — a search over the client's own stored log rather than the few dozen lines a snapshot
+  carries, so a message from earlier in the session can be found. Filter by words, by player, and by
+  how many results to return; the client does the matching and returns the matches oldest-first.
 - **Players** — observed players with their message counts and last-seen times, marked online when
   the client's player list currently contains them.
 - **Stats** — session message, player, join, leave and death totals.
@@ -1638,6 +1648,8 @@ All responses are JSON. Authenticate with the token unless noted.
 | DELETE | `/api/v1/tasks/{id}` | Cancels one queued task. |
 | GET | `/api/v1/modules` | Every module with its state. |
 | POST | `/api/v1/modules/{name}` | Toggles a module: `{"active":true}`. |
+| GET | `/api/v1/modules/{name}/settings` | Every setting of one module: name, title, description, group, type, current value, default, bounds, options and whether it is currently visible. `404` for an unknown module. |
+| POST | `/api/v1/modules/{name}/settings` | Sets one setting: `{"setting":"log-chat","value":false}`. The value is the setting's own type, so `true`, `64`, `"text"` or `["a","b"]`. A value the setting refuses is answered `{"ok":false,"message":...}` and nothing changes. |
 | GET | `/api/v1/chat` | The recent chat. |
 | POST | `/api/v1/chat` | Sends a chat line: `{"message":"hello"}`. A line starting with `/` is treated as a command. |
 | GET | `/api/v1/players` | The observed players. |

@@ -274,17 +274,53 @@
 
   dialog {
     background: var(--panel); color: var(--text); border: 1px solid var(--line);
-    border-radius: var(--radius); max-width: 560px; width: 92%; padding: 20px;
+    border-radius: var(--radius); max-width: min(560px, calc(100vw - 24px)); width: 92%; padding: 20px;
     box-shadow: 0 24px 60px -20px rgba(0, 0, 0, .8);
   }
   dialog::backdrop { background: rgba(4, 8, 16, .7); backdrop-filter: blur(3px); }
   dialog h3 { margin-top: 0; font-size: 15px; }
+  dialog.wide { max-width: min(780px, calc(100vw - 24px)); }
+
+  /* Settings editor: a label column and a control column, so a long list of mixed control types
+     still lines up and can be scanned. */
+  .settings-list { margin-top: 12px; max-height: 58vh; overflow-y: auto; padding-right: 4px; }
+  .setting {
+    display: grid; grid-template-columns: minmax(150px, 220px) 1fr; gap: 6px 16px;
+    align-items: center; padding: 9px 2px; border-top: 1px solid var(--line-soft);
+  }
+  .setting:first-child { border-top: none; }
+  .setting .label { font-size: 13px; }
+  .setting .label .name { display: block; font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
+  .setting .desc { grid-column: 1 / -1; font-size: 11.5px; color: var(--muted); margin: -2px 0 2px; }
+  .setting .control { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .setting .control input[type="text"], .setting .control input[type="number"],
+  .setting .control select, .setting .control textarea { width: 100%; }
+  .setting .control input[type="range"] { flex: 1; min-width: 110px; accent-color: var(--accent); }
+  .setting .readout { font-family: var(--mono); font-size: 11.5px; color: var(--muted); min-width: 44px; text-align: right; }
+  .setting.hidden-setting { opacity: .45; }
+  .setting.hidden-setting .control { pointer-events: none; }
+  .setting .swatch { width: 26px; height: 22px; border-radius: 6px; border: 1px solid var(--line); }
+  .settings-group-head {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--faint);
+    margin: 16px 0 4px; font-weight: 600;
+  }
+  .settings-group-head:first-child { margin-top: 4px; }
+  .switch { display: inline-flex; align-items: center; gap: 7px; margin: 0; cursor: pointer; font-size: 12px; color: var(--muted); }
+  .switch input { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
+  .search-hit { display: flex; gap: 10px; padding: 7px 2px; border-top: 1px solid var(--line-soft); font-size: 12.5px; align-items: baseline; }
+  .search-hit:first-child { border-top: none; }
+  .search-hit .when { color: var(--faint); font-family: var(--mono); font-size: 11px; white-space: nowrap; }
+  .search-hit .body { flex: 1; word-break: break-word; }
 
   @media (max-width: 620px) {
     header { padding: 10px 13px; }
     main { padding: 13px 13px 48px; }
     nav { padding: 10px 13px 0; overflow-x: auto; flex-wrap: nowrap; }
     .tiles { grid-template-columns: repeat(2, 1fr); }
+    /* Two columns need room for a label and a usable control. Below this the label would leave a
+       slider too short to drag, so each setting stacks instead. */
+    .setting { grid-template-columns: 1fr; }
+    .settings-list { max-height: 62vh; }
   }
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation: none !important; transition: none !important; }
@@ -301,6 +337,7 @@
   <span class="badge" id="link-state">offline</span>
   <span class="spacer"></span>
   <button class="btn" id="btn-nodes">Clients</button>
+  <button class="btn" id="btn-notify">Notify</button>
   <button class="btn" id="btn-refresh">Refresh</button>
 </header>
 
@@ -311,6 +348,7 @@
   <section id="view-bot"></section>
   <section id="view-tasks"></section>
   <section id="view-chat"></section>
+  <section id="view-search"></section>
   <section id="view-players"></section>
   <section id="view-modules"></section>
   <section id="view-storage"></section>
@@ -338,6 +376,17 @@
   </div>
 </dialog>
 
+<dialog id="settings-dialog" class="wide">
+  <h3 id="settings-title" style="margin-top:0">Module settings</h3>
+  <p class="muted" style="font-size:12.5px;margin:0 0 4px" id="settings-sub"></p>
+  <div class="settings-list" id="settings-list"></div>
+  <div class="row" style="margin-top:14px">
+    <button class="btn primary" id="settings-close">Done</button>
+    <span class="spacer" style="flex:1"></span>
+    <span class="faint" style="font-size:11.5px">Changes apply immediately and are saved to the client's config.</span>
+  </div>
+</dialog>
+
 <script>
 "use strict";
 /* The companion app. It talks to one or more Log Client clients over their companion API and never
@@ -347,7 +396,8 @@ const STORE_KEY = "logclient.companion.nodes";
 const TAB_KEY = "logclient.companion.tab";
 const TABS = [
   ["overview", "Overview"], ["bot", "Bot"], ["tasks", "Tasks"], ["chat", "Chat"],
-  ["players", "Players"], ["modules", "Modules"], ["storage", "Storage"], ["events", "Live feed"]
+  ["search", "Search"], ["players", "Players"], ["modules", "Modules"],
+  ["storage", "Storage"], ["events", "Live feed"]
 ];
 
 let nodes = loadNodes();
@@ -644,7 +694,8 @@ function render() {
   show(tab);
   const builders = {
     overview: renderOverview, bot: renderBot, tasks: renderTasks, chat: renderChat,
-    players: renderPlayers, modules: renderModules, storage: renderStorage, events: renderEvents
+    search: renderSearch, players: renderPlayers, modules: renderModules,
+    storage: renderStorage, events: renderEvents
   };
   builders[tab]();
   restoreFields(state);
@@ -1218,7 +1269,8 @@ function renderModules() {
           el("div", { class: "row", style: "margin-top:8px" }, [
             button(module.active ? "Turn off" : "Turn on", () =>
               act(node, "/api/v1/modules/" + encodeURIComponent(module.name), { active: !module.active }, null, "POST"),
-              "btn sm" + (module.active ? "" : " primary"))
+              "btn sm" + (module.active ? "" : " primary")),
+            button("Settings", () => openModuleSettings(node, module), "btn sm")
           ])
         ])
       )));
@@ -1233,6 +1285,335 @@ function renderModules() {
     el("div", { class: "row" }, [filter, scope, counts]),
     el("div", { style: "margin-top:14px" }, [body])
   ]));
+}
+
+// ---------------------------------------------------------------- module settings
+//
+// The editor is a dialog rather than another tab because a module's settings only make sense beside
+// the module they belong to, and there are over a hundred modules: a tab would need its own module
+// picker to say the same thing.
+//
+// A write is sent on its own, immediately, and the dialog is not rebuilt from a snapshot afterwards.
+// Rebuilding it would fight the user: the three-second refresh would replace the control they are
+// dragging, and a half-typed number would be overwritten mid-word. Instead each control reports its
+// own result, and the next time the dialog opens it reads the current values afresh.
+
+/** The module whose settings are open, so a failed write can name it. */
+let openSettings = null;
+
+async function openModuleSettings(node, module) {
+  openSettings = { node, module };
+  document.getElementById("settings-title").textContent = module.title || module.name;
+  document.getElementById("settings-sub").textContent = (module.category || "Module")
+    + (module.description ? " — " + module.description : "");
+  const list = document.getElementById("settings-list");
+  list.innerHTML = "";
+  list.appendChild(emptyState("Loading settings…"));
+  document.getElementById("settings-dialog").showModal();
+
+  const result = await apiCall(node, "/api/v1/modules/" + encodeURIComponent(module.name) + "/settings");
+  if (!result.ok) {
+    list.innerHTML = "";
+    list.appendChild(el("div", { class: "empty error", text: result.error || "Could not read the settings." }));
+    return;
+  }
+  // The user may have closed the dialog or opened another module while this was in flight; a late
+  // answer must not repaint the wrong module's settings.
+  if (!openSettings || openSettings.module.name !== module.name) return;
+  drawModuleSettings(list, node, module, (result.data && result.data.settings) || []);
+}
+
+function drawModuleSettings(list, node, module, settings) {
+  list.innerHTML = "";
+  if (settings.length === 0) {
+    list.appendChild(emptyState("This module has no settings."));
+    return;
+  }
+
+  // Grouped by the module's own setting groups, in the order it declares them, so the browser shows
+  // the same structure as the in-game screen rather than one flat alphabetical list.
+  let currentGroup = null;
+  for (const setting of settings) {
+    const group = setting.group || "General";
+    if (group !== currentGroup) {
+      currentGroup = group;
+      list.appendChild(el("div", { class: "settings-group-head", text: group }));
+    }
+    list.appendChild(settingRow(node, module, setting));
+  }
+}
+
+/** One setting, with the control that fits its type. */
+function settingRow(node, module, setting) {
+  const label = el("div", { class: "label" }, [
+    el("span", { text: setting.title || setting.name }),
+    el("span", { class: "name", text: setting.name })
+  ]);
+  const control = el("div", { class: "control" });
+  const row = el("div", { class: "setting" + (setting.visible === false ? " hidden-setting" : "") }, [label, control]);
+
+  const commit = (value, onDone) => writeSetting(node, module, setting, value, onDone);
+
+  const type = setting.type || "other";
+  if (type === "bool") {
+    const box = el("input", { type: "checkbox" });
+    box.checked = setting.value === true;
+    box.addEventListener("change", () => commit(box.checked, ok => {
+      if (!ok) box.checked = setting.value === true;
+    }));
+    control.appendChild(el("label", { class: "switch" }, [box, el("span", { text: box.checked ? "on" : "off" })]));
+    box.addEventListener("change", () => { control.querySelector(".switch span").textContent = box.checked ? "on" : "off"; });
+  } else if (type === "int" || type === "double") {
+    control.appendChild(numberControl(setting, type, commit));
+  } else if (type === "enum") {
+    const select = el("select", {}, (setting.options || []).map(option =>
+      el("option", { value: option, text: option })));
+    select.value = String(setting.value);
+    select.addEventListener("change", () => commit(select.value, ok => {
+      if (!ok) select.value = String(setting.value);
+    }));
+    control.appendChild(select);
+  } else if (type === "string") {
+    control.appendChild(textControl(setting, commit));
+  } else if (type === "string-list") {
+    control.appendChild(listControl(setting, commit));
+  } else {
+    control.appendChild(el("span", { class: "mono muted", text: describeValue(setting.value) }));
+    control.appendChild(el("span", { class: "faint", style: "font-size:11px", text: "set in game" }));
+  }
+
+  if (setting.description) {
+    row.appendChild(el("div", { class: "desc", text: setting.description }));
+  }
+  return row;
+}
+
+/** A number, as a slider with a typed box beside it when it has bounds. */
+function numberControl(setting, type, commit) {
+  const step = type === "int" ? 1 : Math.pow(10, -Math.max(0, Math.min(6, decimalPlaces(setting.value))));
+  const min = typeof setting.min === "number" ? setting.min : null;
+  const max = typeof setting.max === "number" ? setting.max : null;
+  const wrap = el("div", { class: "control", style: "flex:1" });
+
+  if (min !== null && max !== null && max > min) {
+    const range = el("input", { type: "range", min: min, max: max, step: step });
+    const box = el("input", { type: "number", min: min, max: max, step: step, style: "width:88px" });
+    const readout = el("span", { class: "readout", text: String(setting.value) });
+    range.value = String(setting.value);
+    box.value = String(setting.value);
+    const apply = (value, onDone) => commit(type === "int" ? Math.round(value) : value, onDone);
+    // Dragging a slider fires many events; the value is written on release so a drag is one change,
+    // while the typed box commits on change so the user can finish typing.
+    range.addEventListener("input", () => {
+      box.value = range.value;
+      readout.textContent = range.value;
+    });
+    range.addEventListener("change", () => apply(Number(range.value), ok => {
+      if (!ok) { range.value = String(setting.value); box.value = String(setting.value); readout.textContent = String(setting.value); }
+    }));
+    box.addEventListener("change", () => {
+      const value = Number(box.value);
+      if (!isFinite(value)) { box.value = String(setting.value); return; }
+      range.value = box.value;
+      readout.textContent = box.value;
+      apply(value, ok => {
+        if (!ok) { range.value = String(setting.value); box.value = String(setting.value); readout.textContent = String(setting.value); }
+      });
+    });
+    wrap.appendChild(range);
+    wrap.appendChild(box);
+    wrap.appendChild(readout);
+    return wrap;
+  }
+
+  const box = el("input", { type: "number", step: step });
+  box.value = String(setting.value);
+  box.addEventListener("change", () => {
+    const value = Number(box.value);
+    if (!isFinite(value)) { box.value = String(setting.value); return; }
+    commit(type === "int" ? Math.round(value) : value, ok => { if (!ok) box.value = String(setting.value); });
+  });
+  wrap.appendChild(box);
+  return wrap;
+}
+
+/** How many decimal places a number shows, so a slider steps by a sensible amount. */
+function decimalPlaces(value) {
+  const text = String(value);
+  const dot = text.indexOf(".");
+  return dot < 0 ? 0 : text.length - dot - 1;
+}
+
+/** A single line of text. */
+function textControl(setting, commit) {
+  const box = el("input", { type: "text" });
+  box.value = setting.value === null || setting.value === undefined ? "" : String(setting.value);
+  box.addEventListener("change", () => commit(box.value, ok => {
+    if (!ok) box.value = String(setting.value === null ? "" : setting.value);
+  }));
+  return box;
+}
+
+/** A list of strings, one per line: readable for both a short list and a long one. */
+function listControl(setting, commit) {
+  const items = Array.isArray(setting.value) ? setting.value : [];
+  const box = el("textarea", { rows: "3", placeholder: "One entry per line" });
+  box.value = items.join("\n");
+  box.addEventListener("change", () => {
+    const next = box.value.split("\n").map(line => line.trim()).filter(line => line.length > 0);
+    commit(next, ok => { if (!ok) box.value = items.join("\n"); });
+  });
+  return box;
+}
+
+/** Sends one setting change and reports the outcome without rebuilding the dialog. */
+async function writeSetting(node, module, setting, value, onDone) {
+  const result = await apiCall(node, "/api/v1/modules/" + encodeURIComponent(module.name) + "/settings", {
+    method: "POST",
+    body: { setting: setting.name, value }
+  });
+  if (result.ok) {
+    setting.value = value;
+    toast((result.data && result.data.message) || (setting.title + " updated."), "good");
+  } else {
+    toast(result.error || "The setting was not changed.", "bad");
+  }
+  if (onDone) onDone(result.ok);
+  return result.ok;
+}
+
+/** A value rendered for a setting type the app has no control for. */
+function describeValue(value) {
+  if (value === null || value === undefined) return "—";
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}
+
+// ---------------------------------------------------------------- search
+//
+// The Chat tab only ever shows the few dozen lines the snapshot carries. This tab asks the client to
+// search its own stored log instead, so a message from an hour ago can be found without the app
+// holding the whole log. The client does the matching; the app only sends the words.
+
+/** The last search, so a refresh does not silently throw the results away. */
+const searchState = { q: "", player: "", limit: 50, rows: null, error: null, ran: false, busy: false };
+
+function renderSearch() {
+  const view = document.getElementById("view-search");
+  view.innerHTML = "";
+  if (nodes.length === 0) { view.appendChild(notConnected()); return; }
+  const node = activeNode();
+  view.appendChild(card("Client", [nodeSelect()]));
+
+  const query = el("input", { placeholder: "Words to look for", value: searchState.q });
+  const player = el("input", { placeholder: "Only this player (optional)", value: searchState.player });
+  const limit = el("select", {}, [25, 50, 100, 200].map(n =>
+    el("option", { value: String(n), text: n + " results" })));
+  limit.value = String(searchState.limit);
+  const results = el("div");
+  const status = el("span", { class: "muted" });
+
+  const run = async () => {
+    searchState.q = query.value.trim();
+    searchState.player = player.value.trim();
+    searchState.limit = Number(limit.value) || 50;
+    searchState.busy = true;
+    searchState.ran = true;
+    status.textContent = "Searching…";
+    results.innerHTML = "";
+    const params = new URLSearchParams({ limit: String(searchState.limit) });
+    if (searchState.q) params.set("q", searchState.q);
+    if (searchState.player) params.set("player", searchState.player);
+    const response = await apiCall(node, "/api/v1/query/messages?" + params.toString());
+    searchState.busy = false;
+    if (!response.ok) {
+      searchState.rows = null;
+      searchState.error = response.error || "The search failed.";
+      drawSearchResults(results, status);
+      return;
+    }
+    const data = response.data || {};
+    searchState.rows = Array.isArray(data.entries) ? data.entries : [];
+    searchState.error = null;
+    drawSearchResults(results, status);
+  };
+
+  const form = el("div", { class: "row" }, [query, player, limit, button("Search", run, "btn primary")]);
+  query.addEventListener("keydown", event => { if (event.key === "Enter") run(); });
+  player.addEventListener("keydown", event => { if (event.key === "Enter") run(); });
+
+  view.appendChild(card("Search the stored log", [
+    el("div", { class: "muted", style: "font-size:12px;margin-bottom:10px",
+      text: "Searches this client's own chat log, including lines older than the live feed shows." }),
+    form,
+    el("div", { class: "row", style: "margin-top:10px" }, [status]),
+    el("div", { style: "margin-top:8px" }, [results])
+  ]));
+
+  drawSearchResults(results, status);
+}
+
+function drawSearchResults(results, status) {
+  results.innerHTML = "";
+  if (!searchState.ran) {
+    results.appendChild(emptyState("Enter words and press Search."));
+    status.textContent = "";
+    return;
+  }
+  if (searchState.busy) return;
+  if (searchState.error) {
+    results.appendChild(el("div", { class: "empty error", text: searchState.error }));
+    status.textContent = "";
+    return;
+  }
+  const rows = searchState.rows || [];
+  status.textContent = rows.length === 0 ? "No matches." : rows.length + " match" + (rows.length === 1 ? "" : "es");
+  if (rows.length === 0) {
+    results.appendChild(emptyState("Nothing matched. Try a shorter search."));
+    return;
+  }
+  for (const row of rows) {
+    results.appendChild(el("div", { class: "search-hit" }, [
+      el("span", { class: "when", text: formatWhen(row.ts || row.timestamp) }),
+      el("span", { class: "body", text: (row.sender ? row.sender + ": " : "") + (row.content || row.message || "") })
+    ]));
+  }
+}
+
+/** A timestamp as a short local time, tolerating a missing or unparseable value. */
+function formatWhen(value) {
+  if (!value) return "--:--:--";
+  const date = new Date(value);
+  return isNaN(date.getTime()) ? "--:--:--" : date.toLocaleTimeString();
+}
+
+// ---------------------------------------------------------------- notify
+//
+// A short line pushed to the game's own screen. It is deliberately a one-shot action rather than a
+// form: it exists so the app can say "check this" to the person at the keyboard.
+
+function notifyDialog(node) {
+  const text = el("input", { placeholder: "Message to show in game" });
+  const dialog = el("dialog", {}, [
+    el("h3", { style: "margin-top:0", text: "Notify the player" }),
+    el("p", { class: "muted", style: "font-size:12.5px",
+      text: "Shows a line on the client's screen and in its notification history." }),
+    text,
+    el("div", { class: "row", style: "margin-top:12px" }, [
+      button("Send", async () => {
+        const message = text.value.trim();
+        if (!message) { toast("Enter a message first.", "bad"); return; }
+        const result = await apiCall(node, "/api/v1/notify", { method: "POST", body: { message } });
+        toastResult(result, "Notification sent.");
+        dialog.close();
+        dialog.remove();
+      }, "btn primary"),
+      button("Cancel", () => { dialog.close(); dialog.remove(); })
+    ])
+  ]);
+  document.body.appendChild(dialog);
+  dialog.showModal();
+  text.focus();
 }
 
 // ---------------------------------------------------------------- storage
@@ -1381,6 +1762,17 @@ function wireEvents() {
   document.getElementById("btn-nodes").onclick = () => { renderNodeList(); document.getElementById("nodes-dialog").showModal(); };
   document.getElementById("node-close").onclick = () => document.getElementById("nodes-dialog").close();
   document.getElementById("btn-refresh").onclick = () => refreshAll();
+  document.getElementById("btn-notify").onclick = () => {
+    const node = activeNode();
+    if (!node) { toast("Add a client first.", "bad"); return; }
+    notifyDialog(node);
+  };
+  document.getElementById("settings-close").onclick = () => {
+    // Clearing the marker is what stops a slow response from repainting a closed dialog.
+    openSettings = null;
+    document.getElementById("settings-dialog").close();
+  };
+  document.getElementById("settings-dialog").addEventListener("close", () => { openSettings = null; });
   document.getElementById("node-add").onclick = () => {
     const url = document.getElementById("node-url").value.trim().replace(/\/+$/, "");
     const token = document.getElementById("node-token").value.trim();
