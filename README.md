@@ -1564,6 +1564,10 @@ game, which is the usual case.
 
 ### What the app shows
 
+The app refreshes every three seconds and rebuilds each view from scratch. Anything you have typed
+or selected — a search box, a half-written chat line, a sort order, a chosen client — is kept
+across those refreshes, so a rebuild never discards your input.
+
 - **Overview** — the player, server address, game mode, in-world state and how long the client has
   been running.
 - **Live events** — a server-sent event stream (`/api/v1/events`) that pushes chat lines, bot state

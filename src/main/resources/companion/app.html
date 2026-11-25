@@ -327,7 +327,7 @@
   </p>
   <div id="node-list"></div>
   <label>Client URL</label>
-  <input id="node-url" placeholder="http://127.0.0.1:8765">
+  <input id="node-url" placeholder="http://127.0.0.1:6767">
   <label>Access token</label>
   <input id="node-token" placeholder="paste the token from the addon">
   <label>Label (optional)</label>
@@ -357,6 +357,7 @@ const snapshots = new Map();   // nodeId -> snapshot
 const nodeState = new Map();   // nodeId -> {ok, error, at}
 let eventSource = null;
 const feed = [];
+let feedPaused = false;   // survives the periodic rebuild of the Live feed view
 
 // ---------------------------------------------------------------- storage
 
@@ -371,6 +372,12 @@ function loadNodes() {
 
 function saveNodes() {
   localStorage.setItem(STORE_KEY, JSON.stringify(nodes));
+  // The token is also kept on its own so a reload can reconnect when the node list itself is
+  // unusable (corrupt JSON, which loadNodes() reports as an empty list). Cleared along with the
+  // last client, so removing a client is not undone by the next page load.
+  const last = nodes[nodes.length - 1];
+  if (last && last.token) localStorage.setItem("logclient.companion.lastToken", last.token);
+  else localStorage.removeItem("logclient.companion.lastToken");
 }
 
 function uid() {
@@ -501,58 +508,86 @@ function activeSnapshot() {
 //
 // Every view is rebuilt from scratch on each refresh, and refreshAll() runs every three seconds.
 // That is simple and has no stale-DOM bugs, but it also throws away whatever the user was doing:
-// the element with focus is destroyed, so a half-typed search or chat line vanished mid-word every
-// few seconds. Instead of rebuilding less often, the render remembers the focused field and puts it
-// back. The field is identified by its placeholder plus its view, which is stable across renders and
-// does not need an id on every input.
+// every field is destroyed, so a half-typed search or chat line vanished mid-word every few
+// seconds. Instead of rebuilding less often, the render remembers the fields and puts them back.
+//
+// Every field is captured, not just the focused one. Preserving only the focus meant that typing in
+// one box and then clicking another silently threw the first box's text away on the next refresh,
+// which is data loss from the user's point of view.
+//
+// A field is identified by its position among the fields of its section. Placeholder is not usable
+// as an identity: the two dropdowns on the Players tab both have none, so they collided and
+// restoring the sort order overwrote the selected client with a sort key.
 
+/** The identity of a field: its section, and its index among that section's fields. */
 function fieldKey(node) {
-  return node.tagName + ":" + (node.getAttribute("placeholder") || node.name || "");
+  const section = node.closest("section");
+  if (!section) return null;
+  const fields = [...section.querySelectorAll("input, textarea, select")];
+  const index = fields.indexOf(node);
+  return index < 0 ? null : section.id + "|" + index;
 }
 
-/** Everything needed to restore a field exactly as the user left it. */
+/** Everything needed to restore the fields exactly as the user left them. */
 function captureFields() {
-  const active = document.activeElement;
-  const state = { key: null, value: "", start: 0, end: 0, scroll: new Map() };
+  const state = { values: new Map(), focus: null, start: 0, end: 0, scroll: new Map() };
   for (const section of document.querySelectorAll("section")) {
     state.scroll.set(section.id, { top: section.scrollTop, left: section.scrollLeft });
-  }
-  if (!active || !/^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName)) return state;
-  const section = active.closest("section");
-  state.key = (section ? section.id + "|" : "") + fieldKey(active);
-  state.value = active.value;
-  try {
-    state.start = active.selectionStart ?? active.value.length;
-    state.end = active.selectionEnd ?? active.value.length;
-  } catch {
-    state.start = active.value.length;
-    state.end = state.start;
+    for (const node of section.querySelectorAll("input, textarea, select")) {
+      const key = fieldKey(node);
+      if (key === null) continue;
+      // A checkbox or radio holds its state in `checked`, not in `value`.
+      state.values.set(key, node.type === "checkbox" || node.type === "radio"
+        ? { checked: node.checked }
+        : { value: node.value });
+      if (node !== document.activeElement) continue;
+      state.focus = key;
+      try {
+        state.start = node.selectionStart ?? node.value.length;
+        state.end = node.selectionEnd ?? node.value.length;
+      } catch {
+        state.start = node.value.length;
+        state.end = state.start;
+      }
+    }
   }
   return state;
 }
 
-/** Puts back the value, selection and focus captured before the rebuild. */
+/** Puts back the values, the selection and the focus captured before the rebuild. */
 function restoreFields(state) {
   for (const section of document.querySelectorAll("section")) {
     const saved = state.scroll.get(section.id);
     if (saved) { section.scrollTop = saved.top; section.scrollLeft = saved.left; }
   }
-  if (!state.key) return;
   for (const section of document.querySelectorAll("section")) {
     for (const node of section.querySelectorAll("input, textarea, select")) {
-      const key = section.id + "|" + fieldKey(node);
-      if (key !== state.key) continue;
-      node.value = state.value;
+      const key = fieldKey(node);
+      const saved = key === null ? null : state.values.get(key);
+      if (!saved) continue;
+      if ("checked" in saved) {
+        node.checked = saved.checked;
+        continue;
+      }
+      if (node.value === saved.value) continue;
+      node.value = saved.value;
+      // The rebuilt field is a new element, so its listeners never saw the old value. Replaying the
+      // event makes the fresh view filter on the restored value instead of showing everything until
+      // the next keystroke. A dropdown listens for "change"; a text field for "input".
+      node.dispatchEvent(new Event("input", { bubbles: true }));
+      if (node.tagName === "SELECT") node.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  }
+  if (!state.focus) return;
+  for (const section of document.querySelectorAll("section")) {
+    for (const node of section.querySelectorAll("input, textarea, select")) {
+      if (fieldKey(node) !== state.focus) continue;
       node.focus({ preventScroll: true });
       try {
         if (node.setSelectionRange) node.setSelectionRange(state.start, state.end);
       } catch {
         // Some input types refuse a selection range; the value and focus are what matter.
       }
-      // The rebuilt field is a new element, so its listeners never saw the old value. Replaying an
-      // input event makes the fresh view filter on the restored text instead of showing it unfiltered
-      // until the next keystroke.
-      node.dispatchEvent(new Event("input", { bubbles: true }));
       return;
     }
   }
@@ -1257,17 +1292,19 @@ function renderEvents() {
   for (const type of seen) typeSelect.appendChild(el("option", { value: type, text: type }));
   // A feed that keeps moving is hard to read. Pausing freezes what is on screen without dropping
   // events: the buffer keeps filling, so resuming shows everything that arrived while paused.
-  let paused = false;
-  const pauseButton = button("Pause", () => {
-    paused = !paused;
-    pauseButton.textContent = paused ? "Resume" : "Pause";
-    pauseButton.classList.toggle("primary", paused);
-    if (!paused) draw();
+  // The flag lives outside this function because the view is rebuilt every few seconds; a local
+  // would be reset to "running" on each rebuild and the feed would resume on its own.
+  const pauseButton = button(feedPaused ? "Resume" : "Pause", () => {
+    feedPaused = !feedPaused;
+    pauseButton.textContent = feedPaused ? "Resume" : "Pause";
+    pauseButton.classList.toggle("primary", feedPaused);
+    if (!feedPaused) draw();
   });
+  if (feedPaused) pauseButton.classList.add("primary");
 
   const list = el("div", { class: "log" });
   const draw = () => {
-    if (paused) return;
+    if (feedPaused) return;
     const only = typeSelect.value;
     const shown = feed.filter(item => !only || item.type === only).slice(0, 200);
     list.innerHTML = "";
