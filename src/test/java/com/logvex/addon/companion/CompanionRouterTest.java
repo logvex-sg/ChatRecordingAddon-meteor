@@ -155,6 +155,88 @@ class CompanionRouterTest {
     }
 
     @Test
+    @DisplayName("a module's settings are served with the module name alongside them")
+    void moduleSettingsListing() {
+        FakeCompanionApi api = new FakeCompanionApi();
+        api.settings.put("chat-logger", List.of(new CompanionSnapshot.SettingView(
+            "log-chat", "Log chat", "Whether to log chat.", "General", "bool",
+            true, true, null, null, null, true)));
+        CompanionRouter router = router(api);
+
+        CompanionRouter.Response response = router.handle(get("api/v1/modules/chat-logger/settings"));
+
+        assertEquals(200, response.status());
+        assertTrue(response.body().contains("\"module\":\"chat-logger\""), response.body());
+        assertTrue(response.body().contains("\"log-chat\""), response.body());
+        assertTrue(response.body().contains("\"type\":\"bool\""), response.body());
+        assertTrue(response.body().contains("\"visible\":true"), response.body());
+    }
+
+    @Test
+    @DisplayName("settings for a module that does not exist are a 404, not an empty success")
+    void moduleSettingsUnknownModule() {
+        CompanionRouter router = router(new FakeCompanionApi());
+
+        CompanionRouter.Response response = router.handle(get("api/v1/modules/nope/settings"));
+
+        assertEquals(404, response.status());
+        assertTrue(response.body().contains("nope"), response.body());
+    }
+
+    @Test
+    @DisplayName("a setting write carries the module from the path and the name and value from the body")
+    void moduleSettingWrite() {
+        FakeCompanionApi api = new FakeCompanionApi();
+        api.settings.put("chat-logger", List.of());
+        CompanionRouter router = router(api);
+
+        CompanionRouter.Response response = router.handle(post(
+            "api/v1/modules/chat-logger/settings", "{\"setting\":\"log-chat\",\"value\":false}"));
+
+        assertEquals(200, response.status());
+        assertEquals("chat-logger", api.lastSettingModule);
+        assertEquals("log-chat", api.lastSettingName);
+        assertTrue(api.lastSettingValue.getAsBoolean() == false);
+    }
+
+    @Test
+    @DisplayName("a setting write without a name or a value is a 400 and never reaches the client")
+    void moduleSettingWriteNeedsNameAndValue() {
+        FakeCompanionApi api = new FakeCompanionApi();
+        CompanionRouter router = router(api);
+
+        assertEquals(400, router.handle(post("api/v1/modules/chat-logger/settings",
+            "{\"value\":true}")).status());
+        assertEquals(400, router.handle(post("api/v1/modules/chat-logger/settings",
+            "{\"setting\":\"log-chat\"}")).status());
+        assertEquals(400, router.handle(post("api/v1/modules/chat-logger/settings", "null")).status());
+        assertEquals(400, router.handle(post("api/v1/modules/chat-logger/settings",
+            "{\"setting\":\"log-chat\",\"value\":null}")).status());
+        assertEquals(0, api.calls.stream().filter(call -> call.startsWith("setModuleSetting")).count());
+    }
+
+    @Test
+    @DisplayName("settings need the token like every other data endpoint")
+    void moduleSettingsNeedAuth() {
+        CompanionRouter router = router(new FakeCompanionApi());
+
+        assertEquals(401, router.handle(unauthenticated("GET", "api/v1/modules/chat-logger/settings")).status());
+        assertEquals(401, router.handle(unauthenticated("POST", "api/v1/modules/chat-logger/settings")).status());
+    }
+
+    @Test
+    @DisplayName("the settings route does not shadow the plain module toggle")
+    void settingsRouteDoesNotShadowToggle() {
+        FakeCompanionApi api = new FakeCompanionApi();
+        CompanionRouter router = router(api);
+
+        router.handle(post("api/v1/modules/chat-logger", "{\"active\":false}"));
+
+        assertEquals("chat-logger", api.lastModule, "the toggle route must still be the one that ran");
+        assertEquals(Boolean.FALSE, api.lastModuleActive);
+    }
+
+    @Test
     @DisplayName("a task can be cancelled by id")
     void cancelTask() {
         FakeCompanionApi api = new FakeCompanionApi();
@@ -274,6 +356,17 @@ class CompanionRouterTest {
             }
 
             @Override
+            public List<CompanionSnapshot.SettingView> moduleSettings(String name) {
+                return List.of();
+            }
+
+            @Override
+            public ActionResult setModuleSetting(String moduleName, String settingName,
+                                                 com.google.gson.JsonElement value) {
+                return ActionResult.ok("");
+            }
+
+            @Override
             public ActionResult sendChat(String message) {
                 return ActionResult.ok("");
             }
@@ -328,6 +421,9 @@ class CompanionRouterTest {
     void eventsEndpoint() {
         CompanionRouter router = router(new FakeCompanionApi());
 
+        // The router refusing an unauthenticated call is not enough on its own: the transport
+        // answers the stream before the router sees it, which is why CompanionStreamAuthTest drives
+        // a real socket. This case stays as the unit-level guard on the router's own rule.
         assertEquals(401, router.handle(unauthenticated("GET", "api/v1/events")).status());
 
         CompanionRouter.Response response = router.handle(get("api/v1/events"));
@@ -343,7 +439,7 @@ class CompanionRouterTest {
         CompanionRouter.Response response = router.handle(unauthenticated("GET", "health"));
 
         assertEquals(200, response.status());
-        assertTrue(response.body().contains("\"api\":\"12\""));
+        assertTrue(response.body().contains("\"api\":\"" + CompanionSnapshot.API_VERSION + "\""));
         assertFalse(response.body().contains(TOKEN));
     }
 

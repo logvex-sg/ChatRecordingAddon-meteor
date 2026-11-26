@@ -67,18 +67,18 @@ public class PlayerOverviewScreen extends WindowScreen {
         add(theme.horizontalSeparator("Players (" + players.size() + ")")).expandX();
 
         if (players.isEmpty()) {
-            add(theme.label("No player activity recorded.")).expandX().widget().color(GuiKit.MUTED);
+            add(theme.label("No player activity recorded.")).expandX().widget().color(GuiKit.mutedColor());
             return;
         }
 
         WTable table = add(theme.table()).expandX().widget();
-        table.add(theme.label("Player")).expandCellX().widget().color(GuiKit.MUTED);
-        table.add(theme.label("Msgs")).widget().color(GuiKit.MUTED);
-        table.add(theme.label("Joins")).widget().color(GuiKit.MUTED);
-        table.add(theme.label("Leaves")).widget().color(GuiKit.MUTED);
-        table.add(theme.label("Deaths")).widget().color(GuiKit.MUTED);
-        table.add(theme.label("Last seen")).widget().color(GuiKit.MUTED);
-        table.add(theme.label("Online")).widget().color(GuiKit.MUTED);
+        table.add(theme.label("Player")).expandCellX().widget().color(GuiKit.mutedColor());
+        table.add(theme.label("Msgs")).widget().color(GuiKit.mutedColor());
+        table.add(theme.label("Joins")).widget().color(GuiKit.mutedColor());
+        table.add(theme.label("Leaves")).widget().color(GuiKit.mutedColor());
+        table.add(theme.label("Deaths")).widget().color(GuiKit.mutedColor());
+        table.add(theme.label("Last seen")).widget().color(GuiKit.mutedColor());
+        table.add(theme.label("Online")).widget().color(GuiKit.mutedColor());
         table.add(theme.label("")).widget();
         table.row();
 
@@ -91,12 +91,12 @@ public class PlayerOverviewScreen extends WindowScreen {
             table.add(theme.label(Long.toString(activity.joinCount()))).widget();
             table.add(theme.label(Long.toString(activity.leaveCount()))).widget();
             table.add(theme.label(Long.toString(activity.deathCount()))).widget();
-            table.add(theme.label(ReportFormatting.time(activity.lastSeen()))).widget().color(GuiKit.MUTED);
+            table.add(theme.label(ReportFormatting.time(activity.lastSeen()))).widget().color(GuiKit.mutedColor());
             // A dash, not 0, when no join/leave pair was ever observed.
             String online = session == null || !session.hasMeasuredTime()
                 ? "-" : ReportFormatting.duration(session.onlineMs(now));
             table.add(theme.label(online)).widget().color(
-                session != null && session.online() ? GuiKit.GOOD : GuiKit.MUTED);
+                session != null && session.online() ? GuiKit.goodColor() : GuiKit.mutedColor());
             WButton view = table.add(theme.button("Chat")).widget();
             view.action = () -> {
                 if (storage != null) {

@@ -5,7 +5,8 @@ A Meteor Client addon for Minecraft 1.21.1.
 It runs as an addon on Meteor Client: the addon registers its modules, HUD and commands through
 Meteor's own registries and event bus, so its features appear in Meteor's GUI and keybind system
 alongside the built-in ones. Baritone is used for navigation only when it happens to be installed,
-and is detected at runtime rather than compiled against.
+and is detected at runtime rather than compiled against; without it the addon plans routes with its
+own A* pathfinder.
 
 **Chat toolkit** — `chat-logger` (records chat to compressed, searchable logs),
 `chat-monitor` (live feed with filters and highlighting), `keyword-alerts` (keyword alerts with
@@ -42,6 +43,16 @@ phone or another computer on the same network can watch and control the bots: li
 server-sent events, the bot controls, the task queue, the module switches, chat and player search,
 statistics and storage usage. It is off by default, binds to loopback, and needs an access token.
 See [Companion (web app)](#companion-web-app).
+
+**Discord bridge** — `tools/discord_bridge.py` is a two-way bridge between a Discord channel and
+Minecraft chat, built on the companion API. Chat appears in both directions, a leading `/` from
+Discord is stripped so nobody can run commands through it, and players cannot ping `@everyone`.
+Minecraft chat is posted as a **rich embed** — sender as the author, message as the description,
+teal like ordinary chat in the in-game relay — using the same palette and the same 6000-character
+budget as that relay, so a card fits and sends rather than being dropped by Discord.
+It is a separate Python process, because a bot token must not ship inside a client mod and a bot
+has to stay online when the game is closed. Standard library only. See
+[Discord bridge](docs/discord-bridge.md).
 
 **GUI** — `!log gui` opens the addon window: a Meteor-style interface with a
 navigation rail on the left (Modules, HUD, Theme, About) and a card list on the right. Every module
@@ -301,15 +312,33 @@ confirmed from the world or the server before it is treated as done.
 Navigation goes through the addon's own path-manager abstraction (`PathManagers`), so **no separate
 Baritone mod jar is bundled or required**. When Baritone is installed, the addon detects it at
 runtime (reflection only) and drives it via `IPathManager.moveTo(...)`; when it is not present,
-the path manager is the `none` backend and the bot falls back to a bounded built-in walker
-that walks toward the target and gives up when it stops making progress. The active backend is
-shown on the bot dashboard (`Navigation: Baritone` / `built-in walker`) and, optionally, in the
-HUD (`show-navigation`).
+the bot plans its own route with a built-in **A\* pathfinder** (`bot/core/Pathfinder`) and walks it
+waypoint by waypoint. The active backend is shown on the bot dashboard
+(`Navigation: Baritone` / `built-in A*`) and, optionally, in the HUD (`show-navigation`), together
+with the number of waypoints still to walk.
+
+The built-in planner is a real search, not a straight-line walker:
+
+- It reads the world through a bounded grid (`MinecraftNavGrid`) that classifies each block as open,
+  floor, obstacle, hazard, liquid or unknown, and caches every cell so a search does not re-read the
+  same block repeatedly.
+- Movement follows what a player can actually do: walk level, step up **one** block, or drop up to
+  **three**. Diagonal moves may not squeeze between two blocked corners. Liquid and damage blocks
+  (fire, magma, cactus, sweet berry, powder snow, cobweb) are never routed through.
+- Paths are shortened by string-pulling (`PathSmoother`), so the bot walks long straight runs and
+  only turns where the world forces it, instead of following a staircase.
+- The search is bounded by a node budget and a grid size, because it runs on the game thread. A
+  200-block diagonal across open ground plans in about **1 ms** and expands about 200 cells.
+- A goal past the grid edge is walked in **stages** (`NavReach`): the bot aims for the edge of its
+  reachable area in the goal's direction and re-plans when it arrives, rather than refusing the trip.
+- Every failure is reported with a reason (out of bounds, bad start, no route, budget exhausted) so
+  the task can fail honestly instead of pushing into a wall.
 
 The Navigation settings group exposes the path-manager options — `walk-on-water`, `walk-on-lava`,
 `path-step` and `path-no-fall`. These are written into Baritone's settings, so Baritone and the
-bot agree on how the player may move; they have no effect with the built-in walker. Movement is never teleported or otherwise faked: success requires the player's
-actual position to be within the arrival tolerance.
+bot agree on how the player may move; they have no effect with the built-in planner. Movement is
+never teleported or otherwise faked: success requires the player's actual position to be within the
+arrival tolerance.
 
 ### Profiles
 
@@ -353,7 +382,7 @@ without any setup; clearing the table makes it silent again.
 
 ### What the assistant can hear
 
-Triggers and the local AI only ever see chat that was classified as a player talking. Minecraft
+Triggers only ever see chat that was classified as a player talking. Minecraft
 attaches a signed-chat indicator to properly signed player chat, and an earlier version used that
 indicator as the only proof that a player had spoken. That broke on every server that rewrites
 chat: an offline-mode server, a proxy such as Velocity, or any chat plugin sends the same line
@@ -361,7 +390,7 @@ without the indicator. Those lines were classified as system messages, and with 
 off — the default — every player message was silently dropped. The assistant then worked on some
 servers and not others, which is exactly what "it only works half the time" looked like.
 
-The classifier now recovers the sender from the text as well: `<Steve> hello`, `Steve: hello` and
+The chat classifier now recovers the sender from the text as well: `<Steve> hello`, `Steve: hello` and
 `[MVP+] Steve: hello` all classify as public chat from `Steve`. The recovery is narrow on purpose.
 A name must be 3 to 16 characters and contain a letter, so a clock reading like `12:34` stays a
 system line, and a known tag such as `Server:`, `Note:` or `Announcement:` is never mistaken for a
@@ -374,15 +403,93 @@ single line each, so the whole feature set is editable from the settings list, t
 `!ai triggers` command or the Assistant Manager GUI:
 
 ```
-pattern;sender=;reply=;mode=chat|notify|silent;cooldown=1000;limit=0;sound=false;remember=false;enabled=true;aliases=;pool=
+pattern;sender=;reply=;mode=private;cooldown=3000;limit=0;sound=false;remember=false;enabled=true;aliases=;pool=;whisper=msg;embed=false
 ```
 
-A fresh install ships **19 preconfigured rules**, all enabled, all at the 1000 ms cooldown, and all
-matched on whole words. Greetings, thanks, farewells, `gg`/`wp`, small talk, and the live-figure
-questions (`where am i`, `what is my ping`, `what is the tps`, `what time is it`) answer out of the
-box — no setup step. The table is deliberately free of nested patterns: no rule's pattern is a
-substring of another's, so first-match-wins never has to break a tie. `!ai triggers restore` puts
-the same table back.
+A fresh install ships **106 preconfigured rules** with 76 extra aliases, all enabled, all at the
+3000 ms cooldown, all matched on whole words, and all answered **privately to the person they
+answer** (see *Who the assistant will answer* below for who that is).
+That is 182 phrases answering out of the box — no setup step. They cover greetings, thanks,
+farewells, `gg`/`wp`, small talk, the server-figure questions (`what is the tps`, `what is my ping`,
+`is the server lagging`, `how many players`), the player-figure questions (`where am i`,
+`what is my health`, `what is my armour`, `what is my gamemode`) and the command-shaped set
+(`!tps`, `!status`, `!memory`, `!world`, `!time`, `!ping`, `!fps`, `!ram`, `!session`,
+`!players`, `!hunger`, `!vitals`, `!facing`, `!offhand`, `!environment`, `!help`).
+`!ai triggers restore` puts the same table back.
+
+#### Who the assistant will answer
+
+Because the table is full of courtesies, a client that answered everyone whispered a reply to
+almost every line of ordinary chatter on a busy server: `gg`, `ty`, `lol`, `wb` and `hello` all
+match. That reads as the assistant talking to strangers, so it is now **opt-in**.
+
+| `who-can-trigger` | Behaviour |
+| --- | --- |
+| `ALLOWLIST` (default) | Only you, plus the names in `who-can-trigger-list`. An empty list means only you. |
+| `LOCAL_ONLY` | Only you, whatever the list says. |
+| `EVERYONE` | Anyone in chat, which is how earlier builds behaved. |
+
+The gate covers **triggers only** — the assistant speaking unprompted. A player who types
+`!help` or `!ping` has asked for something, so commands still follow the `Permissions` group and
+are unaffected. The local player is always answered: silencing the person who installed the mod
+would be a bug, and theirs is the only identity the client can actually prove.
+
+If you *want* the assistant to greet your friends, add their names to `who-can-trigger-list`.
+Set `who-can-trigger` to `Everyone` to restore the old behaviour.
+
+Every shipped phrase is **reachable**: no rule's phrase can be answered by an earlier rule, so
+first-match-wins never has to break a tie and the reply never depends on list order. Two tests
+enforce this (`earlierRulesDoNotSwallowLaterOnes`, `everyShippedRuleMatchesItsOwnPattern`), which
+is why near-duplicate phrasings are stored as aliases of one rule rather than as two rules.
+
+### The command pages generate themselves
+
+`!cmds` prints an index of every page, and `!cmds1`, `!cmds2`... list the commands. Both are
+**built at load time** from the live command tables (`HelpPages`), not typed out in the source.
+That distinction is not cosmetic: the pages used to be hand-written, and `!macros` shipped without
+appearing on any of them because nobody remembered to edit the text.
+
+The grouping — `!tps` next to `!ping`, `!biome` next to `!weather` — is still written by hand,
+because no rule infers that. What is automatic is completeness: anything the groups do not claim
+is appended to a catch-all page headed by the letters it spans (`A-G`, `H-P`). Adding a command
+therefore updates the pages on its own, with no edit to the help text. A letter heading is a
+fallback, not the intended result, so every named command is grouped: `Assistant`, `Memory`,
+`Reports` and `Social` exist for exactly that reason.
+
+```
+┌─ !cmds ──────────────────────────────────┐
+│ Server:   !cmds1                         │
+│ World:    !cmds2                         │
+│ Client:   !cmds3                         │
+│ You:      !cmds4                         │
+│ Commands: !cmds5                         │
+│ More:     !cmds6                         │
+│ Assistant:!cmds7                         │
+│ Memory:   !cmds8                         │
+│ Reports:  !cmds9                         │
+│ Social:   !cmds10                        │
+└──────────────────────────────────────────┘
+```
+
+Each page ends by naming the next one, so a reader who lands on any page can walk the rest. Two
+tests keep this honest: one asserts every command the assistant answers appears on some page, and
+another asserts no page advertises a verb nothing answers.
+
+`!help` is separate and always was generated: it reads the permission-filtered catalogue and shows
+only the commands *that caller* may run, six to a page, with `!help 2` for the next page. Naming a
+command instead of a page gives that one command its own card — `!help modcall` answers with the
+usage, the aliases, the access level and whether you may run it. Aliases resolve, so `!help
+shortcuts` and `!help macros` show the same card.
+
+The cooldown is **per player**. A rule paces each speaker separately, so a busy chat cannot use up
+the rule for everyone else: when three players ask `!tps` at once, all three get an answer. The
+global rate limit still caps the total.
+
+A reply may name a **private figure** — coordinates, gear, health, the assistant's own memory — but
+only when the asker is the local player. A stranger who types a trigger whose reply would expose
+one of those gets a refusal instead of the answer, so a trigger can never be used to read the
+operator's position or stats. Coarse world facts (`{biome}`, `{dimension}`) stay public, matching
+`!world`.
 
 A trigger only ever fires on chat. A line that starts with the command prefix is a command, so a
 bare `hello` rule answers chat but never swallows `!hello`.
@@ -393,16 +500,105 @@ bare `hello` rule answers chat but never swallows `!hello`.
 | `case` | Match case-sensitively (`false` by default). |
 | `whole` | Only match whole words, so `cat` does not fire inside `concatenate`. |
 | `sender` | Only fire for this player. Blank matches anyone. |
-| `reply` | What to say. Supports the full placeholder set below, e.g. `{player}`, `{tps}`, `{ping}`, `{biome}`, `{fact:key}`. |
-| `mode` | `chat` says it publicly, `notify` raises a local notification only, `silent` records the match without speaking. |
+| `reply` | What to send. One literal line: supports the full placeholder set below, e.g. `{player}`, `{tps}`, `{ping}`, `{biome}`, `{fact:key}`. |
+| `mode` | `private` whispers the reply to whoever asked — **the default**. `chat` says it publicly, `notify` raises a local notification only, `silent` records the match without speaking. |
+| `whisper` | The private-message verb for `mode=private`: `msg` (default), `tell`, `w` or `whisper`. A wrong verb is silently rejected by the server, so set this to whatever your server uses. |
 | `cooldown` | Minimum milliseconds between two fires of the same rule. |
 | `limit` | Maximum fires per session; `0` is unlimited. |
 | `sound` | Play a chime when the rule fires. |
 | `remember` | Write the exchange to memory. |
 | `enabled` | Turn the rule off without deleting it. |
 | `aliases` | Extra phrases that fire the same rule, comma separated, e.g. `latency,ms`. |
-| `pool` | A closing phrase chosen at random and appended, e.g. `Have fun!\|Good luck!`. |
-| `reply` variants | `reply` may hold alternatives separated by `\|`; one is chosen at random. |
+| `pool` | No longer used. Kept so a rule written by an older build still loads. |
+| `embed` | `auto` (default) renders a block for a command-shaped rule whose reply is all labelled clauses; `on` always renders one; `off` always sends one line. See below. |
+
+#### Block replies (`embed=auto`)
+
+A reply with several figures reads better as a block than as one long sentence, so the assistant
+formats one automatically. A command-shaped rule (`!tps`) whose reply is comma-separated
+`Label value` clauses becomes an aligned row per clause, provided every clause carries a label:
+
+```
+!tps;reply=TPS {tps}, MSPT {mspt} ms, Status {verdict}
+```
+
+```
+┌─ !tps ───────────────────────────────┐
+│ TPS    19.8                          │
+│ MSPT   50.5 ms                       │
+│ Status good                          │
+└──────────────────────────────────────┘
+```
+
+A reply that is a single sentence or a single figure stays on one line, because a border around one
+value is harder to read than the value itself. A phrase trigger such as `hello` is never boxed
+automatically, however many commas its reply has: prose in a border is harder to read, not easier.
+`embed=on` forces a block in either case, and `embed=off` keeps a multi-figure reply on one line.
+
+Minecraft chat cannot carry a newline inside one message, so the block is sent as consecutive
+lines (up to 12). A block too tall for that budget is not cut off mid-frame: it is re-rendered with
+fewer rows and its closing rule carries `+N more`, so a truncated answer still looks like a
+finished one. The one-line form is still built and used wherever only one line fits, so a block
+never loses a figure. The module's **reply-format** setting (`auto`, `box`, `compact`, `plain`,
+`list`) overrides the layout globally; `auto` keeps each reply's own.
+
+Width is measured in columns, not characters, so a name in CJK or an emoji does not pull the right
+frame out of line.
+
+#### Meters and sections
+
+A share of something reads faster as a bar than as two numbers, so a reply can draw one with a bar
+placeholder:
+
+| Placeholder | Value |
+| --- | --- |
+| `{memorybar}` | Heap use out of the maximum, as a ten-cell bar. |
+| `{healthbar}` | Health out of the maximum. |
+| `{hungerbar}` | Food level out of 20. |
+| `{tpsbar}` | Tick rate out of 20. |
+
+```
+!memory;reply=Used {memoryused} MB, Max {memorymax} MB, Load {memorypercent}%, Bar {memorybar}
+```
+
+```
+┌─ !memory ─────────────────────────────────┐
+│ Used   512 MB                             │
+│ Max    4096 MB                            │
+│ Load   12%                                │
+│ Bar    █░░░░░░░░░                         │
+└───────────────────────────────────────────┘
+```
+
+A bar never lies about a figure it cannot read: an unmeasurable share draws an empty bar rather than
+a full one, and the number stays beside it so the bar is a hint and not the only reading.
+
+A long block can also be split into named groups. The built-in `!about` does this, and the renderer
+draws a section as a rule across the block:
+
+```
+┌─ Bot ─────────────────────────────────────┐
+│ ────────────── Memory ──────────────      │
+│ Facts          12                         │
+│ Players known  3                          │
+│ ──────────── This session ──────────      │
+│ Lines seen     84                         │
+│ Answered       11                         │
+│ Reply rate     13% ██░░░░░░░░░░           │
+│ ────────────── Controls ────────────      │
+│ Permissions    on                         │
+└───────────────────────────────────────────┘
+```
+
+**A reply is one literal answer, and it always says the same thing.** Two earlier behaviours are gone
+because they made output look broken:
+
+- **`|` in a reply no longer means "pick one at random".** It never looked like a random-choice
+  marker to a reader — it looks like a field separator, so `TPS {tps} | MSPT {mspt}` appeared to be
+  one line of two fields and then printed *one of them at random*. Use a comma to join fields.
+  A rule stored by an older build still renders its first alternative, so no stored rule prints a
+  raw pipe.
+- **No sentence is appended from `pool`.** A reply is exactly what you wrote.
 
 The first rule that matches wins, so a specific rule can be placed above a broad one. A global
 rate limit (default 20 replies per minute) caps how often the assistant can answer in total, and a
@@ -466,6 +662,7 @@ understood:
 | Command | Effect |
 | --- | --- |
 | `!help [page]` | List every command you may use, one page at a time. |
+| `!help <command>` | One command's usage, aliases and access level. |
 | `!hello` | A greeting that suits the time of day. |
 | `!gg` | The configured good-game line. |
 | `!status` | Assistant state and memory size. |
@@ -487,6 +684,20 @@ so the three can never disagree.
 
 How the assistant answers these is controlled by `memory-reply-mode` (`chat`, `notify` or
 `silent`). The default, `notify`, keeps answers out of public chat.
+
+#### A trigger may not shadow a restricted command
+
+A trigger is matched **before** the command parser, so a rule named `!coords` would take the place
+of the `coords` command. That matters because the two paths gate differently: a command that reads
+your position, gear, effects or target is refused to anyone but you, while a trigger answers
+whoever typed it unless its reply happens to name a private figure. A trigger in front of a gated
+command would therefore hand a stranger what the command refuses them.
+
+No shipped trigger reuses a restricted command's name, and a guard test enforces it. The restricted
+verbs — `!coords`, `!armor`, `!held`, `!health`, `!speed`, `!gamemode`, `!level`, `!absorption`,
+`!effects`, `!target`, `!location`, `!network` — are answered by the status commands, which are
+already gated. If you add your own rule, keep the same rule: use a new word rather than reusing one
+of those.
 
 ### Configuring every prefix command
 
@@ -529,7 +740,7 @@ version keeps working when new commands are added.
 ### Live status commands
 
 The same prefix answers live questions about the server and about you, so `!tps` in chat gets an
-answer without opening a menu. These run before the local AI, so a status question never costs a
+answer without opening a menu. These run before any free-form handling, so a status question never costs a
 model call.
 
 Each command is one entry in a table you can edit: its own on/off switch, its own output mode and
@@ -550,6 +761,14 @@ group, and the **Status** tab previews every command as it would answer right no
 | `!coords` | Your position, rounded to whole blocks. |
 | `!location` | Dimension, biome and the direction you face. |
 | `!health` | Health, absorption and hunger. |
+| `!vitals` | Health, hunger and absorption as a labelled block. |
+| `!hunger` | Your food and saturation. |
+| `!absorption` | The absorption hearts you are carrying. |
+| `!level` | Your experience level. |
+| `!facing` | The compass direction you face. |
+| `!offhand` | What is in your off hand. |
+| `!environment` | The biome you are in and the direction you face. |
+| `!difficulty` | The world difficulty, as the client can see it. |
 | `!armor` | Your armour pieces and their remaining durability. |
 | `!held` | What is in each hand. |
 | `!effects` | Active potion effects, with their remaining time. |
@@ -648,7 +867,32 @@ loop.
 | Command | Effect |
 | --- | --- |
 | `!macros` | List the enabled macros as a block, one row each. |
-| `!macrohelp <name>` | One macro's syntax, the command it sends and its aliases. |
+| `!macro <name>` | One macro's syntax, the command it sends and its aliases. |
+| `!macrohelp <name>` | The same answer, under the longer spelling. |
+| `!share` | The macros other players may run, and how to spell them. |
+
+`!macro` and `!macrohelp` are the same command, so both of these show `!home`:
+
+```
+!macro home
+!macrohelp home
+```
+
+The reply is a block, not a sentence:
+
+```
+┌─ Macro !home ──────────────────────────────┐
+│ Usage   !home <name>                       │
+│ Sends   /home {name}                       │
+│ About   Teleport to one of your homes.     │
+│ Enabled yes                                │
+│ Shared  no                                 │
+└────────────────────────────────────────────┘
+```
+
+The `Shared` row says whether another player may run the macro. Sharing is off by default and is
+only possible once **allow-remote** is on and the macro itself is marked `remote`; `!share` lists
+what is currently reachable, and `!macros` marks those entries with `(shared)`.
 
 `macro-feedback` shows a local note when a macro runs or is refused. `echo-command` shows the
 expanded command in chat as if you had typed it; turn it off to send it silently.
@@ -674,7 +918,7 @@ With no role set the card is posted without a mention — deliberately, rather t
 
 Every command has a permission level. The level is checked **before** the command runs, so a refused
 `!remember` stores nothing, a refused `!forget` deletes nothing, and a refused command never reaches
-the local AI. Refusals are counted separately in `!ai status` so a user can see them.
+any other source. Refusals are counted separately in `!ai status` so a user can see them.
 
 Permissions are **off** by default, which leaves every command exactly as it was before this feature
 existed. Turning them on is a deliberate choice, because it changes who can talk to the assistant.
@@ -733,31 +977,12 @@ and can be edited by hand. A rule written by an older build, which carried only 
 migrated to the matching level. A rule whose level cannot be read resolves to `local-only` rather
 than to the open default, so a typo in the configuration closes a command instead of opening it.
 
-### How a free-form question is answered
+### How an unclaimed line is handled
 
-Anything that is not a trigger and not a command falls through to the local AI, which runs entirely
-on your machine: no network call, no model file. It decides what the message is about, then picks a
-reply from a pool written for that intent.
-
-The decision is a two-stage pipeline. A small ordered table of keyword rules runs first, and a rule
-fires only when *every* one of its tokens is present. That is what keeps the answers honest:
-`is the server lagging` contains `server`, but the tick-rate rule runs before the server-info rule,
-so it gets the tick rate rather than the server's name. The table is matched on raw tokens, including
-the stopwords a bag-of-words model discards, because those words are exactly what separates
-`how are you` from `what are you`.
-
-Anything the table does not claim goes to a naive-Bayes classifier over 8192 hashed buckets. The
-classifier is a fallback, not the primary path. Measured on 63 ordinary chat lines, the classifier
-alone picked the correct intent for 49 of them; on the other 14 it answered wrongly or not at all —
-`is it night` came back as a farewell, `what are you` as the prefix question, `are you a bot` as an
-insult. With the table in front, all 63 get an on-topic reply. A message neither stage understands
-gets no reply at all rather than a guess, and the confidence threshold decides that cutoff.
-
-The bucket count is not arbitrary. A hash table is finite, so an unrelated word can land in a slot
-another intent already counted. At 2048 buckets `night` shared a slot with a game-help feature that
-does not exist, and that intent answered `is it night` with high confidence while naming nothing in
-the sentence. Widening the table to 8192 keeps a word and its bigrams in distinct slots; the cost is
-a constant 32 x 8192 doubles, about 2 MB, allocated once.
+Anything that is not a trigger and not a command is left alone. The assistant answers only what it
+was configured to answer: there is no model in the mod and no guessing at intent. A line that no
+rule and no command claims produces no reply, which is what keeps the assistant predictable — every
+answer it gives can be traced back to a rule you wrote or a command you enabled.
 
 ### Settings
 
@@ -916,9 +1141,37 @@ anything is acquired.
 
 ## Chat intelligence modules
 
+### Nothing is deleted unless you ask
+
+Every store in this addon keeps everything by default. Chat segments, session history, player
+notes, the report and delivery logs, the session timeline, the player and identity indexes and
+every world record are all uncapped, and `0` on any limit setting means "keep it forever".
+
+The only deletions are the ones you perform: **Cleanup now** in the storage screen, **Clear
+Finished** in the task manager, the delete buttons in the archive browser, and lowering a limit
+yourself. Automatic cleanup is off out of the box; turning it on applies the age, size and
+segment limits after each flush and at startup.
+
+The reason is that most of this data cannot be recreated. A chat segment is a record of something
+that happened; a world record is a place you found; a note is something you typed. A default cap
+destroys it silently and you only find out when you go looking for it. If you want a bound, every
+store exposes one, and the storage screen and companion app both say when nothing will be removed.
+
 These modules extend the chat toolkit. They share the same output formatter (`com.logvex.addon.common.Messages`)
 so every line reads the same way: a `[Log]` prefix, sentence case, readable numbers and proper
 pluralisation.
+
+The GUI panels follow one layout too, so a screen you have not seen before is still easy to scan:
+
+- **Stat tiles** sit at the top when a screen exists to show a few figures. The number is the
+  loudest thing on the tile and the caption underneath says what it counts.
+- **Facts** are `label  value` rows in one aligned block, so every value starts in the same
+  column. Counting columns are grouped (`12,861`, not `12861`), and sizes and durations use the
+  same units everywhere (`4.2 MB`, `2m 05s`).
+- **A limit of `0` reads as `unlimited`**, never as `0`, and a table says "none yet" rather than
+  a bare dash when it is empty.
+- Colours come from the active theme preset, so switching preset restyles the panels instead of
+  leaving parts of them on the old palette.
 
 | Module | What it does |
 | --- | --- |
@@ -926,15 +1179,15 @@ pluralisation.
 | `chat-timestamps` | Puts a clock time in front of every incoming chat line (`HH:mm`, `HH:mm:ss` or 12-hour), optionally dimmed. Only the displayed text changes: the log keeps its own timestamp field, so nothing is stored twice. |
 | `repeat-collapse` | Folds a run of identical consecutive chat lines into the first one plus a "(N more of the same line)" note. The window and whether your own messages are exempt are configurable. Every line is still written to the log, because the log is evidence. |
 | `chat-digest` | Summarises the last N messages: totals per message type, unique players, joins/leaves/deaths and the most active players. Run it on demand (`!log digest`) or on a timer. Optionally forwards each digest to the webhook. |
-| `session-timeline` | A bounded timeline of milestones the client can actually observe: session start/end, joins, leaves, deaths and keyword hits. Browsable in a GUI (`!log timeline`). |
+| `session-timeline` | A timeline of milestones the client can actually observe: session start/end, joins, leaves, deaths and keyword hits. Browsable in a GUI (`!log timeline`). Keeps every milestone unless you set a limit. |
 | `session-stats` | Live session counters, and a short **session summary printed when you leave a world** (messages, unique players, duration, rate, joins/leaves, deaths, keyword alerts and the most active players). |
-| `webhook-monitor` | Watches the shared webhook queue and reports its health. Keeps a bounded delivery history, warns in chat when a delivery fails and can note a recovery. The URL is never stored or shown — only the host. |
+| `webhook-monitor` | Watches the shared webhook queue and reports its health. Keeps a delivery history, warns in chat when a delivery fails and can note a recovery. The URL is never stored or shown — only the host. |
 | `webhook-relay` | Owns the single webhook target and the embed appearance every other feature sends through, and raises its own cards for session end, renames, watchlist presence, deaths and announcements. Can send a **leaderboard** card and a per-player **profile** card on demand. See **Webhook relay and embeds**. |
 | `mention-alerts` | Alerts when your own name or a watched name is used as a whole word in chat. Raises a notification, an optional sound, an optional chat note and an optional mention embed, and records each hit in the alert log. |
 | `player-notes` | Your own notes about players, with the observed activity shown beside each note. A note is always explicit user input; the addon never infers one. |
 | `player-activity` | Per-player joins, leaves, deaths and message counts, rebuilt from the archive on demand. Supports an **exclude list** so bots or your own alts are never tracked, and shows observed online time per player. |
 | `player-identity` | Tracks the names each **account** (by UUID) is seen using, and reports a rename only when the same UUID is later announced under a different name. Includes a per-account **watchlist**; watched renames are highlighted. Never merges two accounts that share a name. |
-| `session-history` | A bounded, browsable history of past recording sessions (server, duration, message/event counts), with a configurable cap. Each session is folded into a compact record when it ends, so past sessions can be reviewed without re-reading the archive. |
+| `session-history` | A browsable history of past recording sessions (server, duration, message/event counts). Each session is folded into a compact record when it ends, so past sessions can be reviewed without re-reading the archive. Every session is kept unless you set a cap. |
 
 ### Activity graph
 
@@ -1040,39 +1293,99 @@ It is **local-only** for the same reason as `!modcall`: the card describes your 
 stranger in public chat could otherwise fill your Discord channel. Nothing is sent unless a webhook
 URL is configured, and the module reports a failure rather than claiming the card went out.
 
+### What the assistant can do: `!ai caps`
+
+`!ai caps` lists every ability the assistant has, each with a yes/no and the reason. Every row is
+derived from live state, so it never claims something it cannot do:
+
+| Ability | Decided by |
+|---|---|
+| Triggers | switched on, and at least one rule armed |
+| Memory | `memory-commands` |
+| Reports | webhook-relay configured with `allow-reports` |
+| Permissions | `permissions` |
+| Server figures | being connected (TPS and latency are measured, not reported) |
+| Player list | being in a world |
+| World position | being in a world |
+
+A disconnected client says it cannot see server figures instead of printing `n/a` for a figure it
+never had. The same applies to reports: with no channel configured, the row reads `no - no reports
+channel configured`, which is why `!modcall` refuses rather than silently doing nothing.
+
 ### Modcall
 
-`!modcall <reason>` sends a private message to a moderator you configure, so a request reaches them
-directly instead of being lost in public chat. It sends two messages:
+`!modcall <reason>` files a report **entirely on your own client**: it posts an embed card to the
+reports channel you configured in **webhook-relay**. No server command is sent and nothing is said
+in chat.
+
+That is a deliberate change from earlier builds, which sent a private message to one named
+moderator:
 
 ```
-/msg <modcall-target> Report has been submitted: <reason>
-/msg <you> !report <reason>
+/msg <moderator> Report has been submitted: <reason>   <- removed
+/msg <you> !report <reason>                            <- removed
 ```
 
-The first goes to the moderator; the second is a receipt to the reporter, so they can see what went
-out. Both wordings are settings (`modcall-message`, `modcall-receipt`); leave the receipt blank to
-send only the moderator message.
+Both lines had problems. `/report` is not a vanilla command, so on most servers it silently did
+nothing; and a `/msg` reaches exactly one player, who is often offline, and leaves no record. The
+current build posts to your own channel instead, so a report is written down even when no moderator
+is looking at that moment.
 
 `!modcall` is its own module (**modcall**), so it can be switched on and off on its own. Its
 settings are:
 
-- **target** — the moderator's exact in-game name. Nothing is sent until this is set; a call with no
-  target says so instead of failing silently.
-- **message**, **receipt** — the two wordings. Tokens: `{reason}`, `{reporter}`, `{moderator}`,
-  `{prefix}`.
-- **allow-remote** — off by default, so only you can trigger a call.
-- **feedback** — confirm locally when a call went out.
-- **cooldown-seconds** — per-player gap, 60 s by default, so one person cannot fill an inbox.
+- **kind** — label the card `mod` (a request for help) or `report` (an incident).
+- **allow-remote** — off by default, so only you can file a report through your client.
+- **feedback** — confirm locally when the report was queued.
+- **cooldown-seconds** — per-player gap, 60 s by default, so one person cannot flood the channel.
 
-This command sends from your own account, so it is **local-only**: only you can trigger it. That
-check does not depend on the `permissions` setting, which is off by default — otherwise a stranger
-could type `!modcall` in public chat and have their words delivered to a moderator under your name.
+Reports need the **webhook-relay** module configured with a URL and `allow-reports` on. When it is
+not, `!modcall` says so instead of failing silently, and `!ai caps` shows the reason.
 
-The reason is text from chat pasted into a server command, so it is sanitised before sending: every
-control character becomes a space (a newline would otherwise send a second command), runs of
-whitespace are collapsed, and the reason is capped at 180 characters. The moderator's exact name is
-validated too, so a typo fails loudly instead of messaging a stranger.
+This command posts to your own channel, so it is **local-only**: only you can trigger it. That check
+does not depend on the `permissions` setting, which is off by default — otherwise a stranger could
+type `!modcall` in public chat and have their words appear in your reports under your name.
+
+The reason is text from chat, so it is sanitised before it reaches the card: every control character
+becomes a space (a newline would otherwise break the embed), runs of whitespace are collapsed, and
+the reason is capped at 180 characters.
+
+### Filed reports: `!reports`
+
+Every report your client files is recorded locally, so the log answers "did I already report that,
+and did it go through?" without scrolling Discord.
+
+```
+!reports               the newest reports, newest first
+!reports griefer       only reports whose reporter or reason mentions "griefer"
+```
+
+The log lives in **webhook-relay** under **Report log**:
+
+- **report-log-size** — how many reports to remember, 200 by default.
+- **persist-report-log** — keep the log across restarts.
+
+A report that failed to deliver **stays in the log, marked failed**, because a report you believe
+was filed but was not is exactly the case worth keeping. `!reports` says the log is unavailable when
+the relay module is not loaded, rather than claiming you have filed nothing — those are different
+facts.
+
+### One player, one card: `!player`
+
+`!player <name>` composes everything the client already knows about a player into a single card:
+
+```
+!player Steve
+```
+
+It gathers remembered facts, how many messages they have sent this session, and how often they have
+asked the assistant something. The pieces existed before, but each needed its own command; this
+answers "who is this person" in one go.
+
+Only figures the client actually holds are shown. A player who has never spoken has **no activity
+row at all**, which is not the same as having zero messages. A player the client knows nothing about
+gets a plain "I know nothing about them yet" rather than an empty card, since an empty card implies
+data that does not exist.
 
 ### FAQ entries: `!faq`
 
@@ -1224,7 +1537,39 @@ Enable **Companion** in the addon window (or run `!log companion start`). The se
 **127.0.0.1** by default; the module widget, the Companion screen and the command all offer a
 **Copy address** action that includes the access token, so you can paste one URL into a browser.
 
+### Terminal dashboard (no browser)
+
+`tools/dashboard.py` is a desktop dashboard that runs in a terminal. It is a native application —
+curses drawing, no browser, no JavaScript — and it **connects by itself**:
+
+```sh
+python3 tools/dashboard.py            # connect automatically and open the dashboard
+python3 tools/dashboard.py --once     # print one snapshot and exit
+python3 tools/dashboard.py --json     # print the raw snapshot JSON
+```
+
+There is no URL to paste and no token to copy. While the companion server runs, the mod writes
+`logclient/companion.json` into the game directory, holding the port it actually bound and the
+token it actually uses. The dashboard reads that file and connects. It only publishes the file when
+the server is bound to loopback, because copying a secret to a predictable path next to a
+network-exposed server would widen the exposure for no benefit. A clean stop deletes the file.
+
+If the file is missing, the dashboard probes `127.0.0.1` on ports 6767-6769 and reports what it
+tried. `--url` and `--token` still work for a server you have exposed on purpose.
+
+Keys: `q` quit, `r` refresh, `Tab` or `1`-`5` switch tab, `j`/`k` scroll, `p` pause/resume the bot,
+`e` emergency stop, `s` send chat, `c` run a command. Tabs are Overview, Chat, Players, Modules and
+Bot.
+
+The dashboard needs only the Python standard library. The only files it reads are the discovery
+file and the HTTP API, so it works anywhere Python 3.8+ runs — including the same machine as the
+game, which is the usual case.
+
 ### What the app shows
+
+The app refreshes every three seconds and rebuilds each view from scratch. Anything you have typed
+or selected — a search box, a half-written chat line, a sort order, a chosen client — is kept
+across those refreshes, so a rebuild never discards your input.
 
 - **Overview** — the player, server address, game mode, in-world state and how long the client has
   been running.
@@ -1235,8 +1580,18 @@ Enable **Companion** in the addon window (or run `!log companion start`). The se
   **Pause**, **Resume**, **Stop** and **Emergency stop**.
 - **Tasks** — the queue and the history counters, with **Queue objective** (the same forgiving
   parser the dashboard uses, e.g. `gather 256 oak_log`) and **Cancel** per task.
-- **Modules** — every module with an on/off switch, searched by name.
+- **Modules** — every module with an on/off switch and a **Settings** button, searched by name.
+  **Settings** opens that module's own settings as editable controls: a checkbox for a flag, a slider
+  with a typed box for a number, a dropdown for a choice, a text box for a line and a text area (one
+  entry per line) for a list. Values are grouped the way the module declares them, a setting the
+  module currently hides is dimmed, and a change is sent as soon as the control is released. A value
+  the client refuses — a number outside its range, a choice that does not exist — is reported and the
+  control is put back, so the screen never shows a change that did not happen. Types with no browser
+  control (a colour, a keybind, a block position) are shown read-only and marked *set in game*.
 - **Chat** — the recent chat with a search box and a player filter.
+- **Search** — a search over the client's own stored log rather than the few dozen lines a snapshot
+  carries, so a message from earlier in the session can be found. Filter by words, by player, and by
+  how many results to return; the client does the matching and returns the matches oldest-first.
 - **Players** — observed players with their message counts and last-seen times, marked online when
   the client's player list currently contains them.
 - **Stats** — session message, player, join, leave and death totals.
@@ -1246,12 +1601,19 @@ Enable **Companion** in the addon window (or run `!log companion start`). The se
 
 - The server is **off unless the module is on**, and binds to loopback only by default. Turning on
   **allow-remote** binds every interface and is a deliberate choice: anyone who can reach the port
-  and knows the token can control the client.
+  and knows the token can control the client. The switch is what decides this, not the bind
+  address, so turning it on works even while the address still reads `127.0.0.1`.
 - Every request except the app shell and the health probe needs the token, as an
   `Authorization: Bearer <token>` header or a `?token=` query parameter (the query form is what a
-  browser and an `EventSource` can send).
+  browser and an `EventSource` can send). That includes the live event stream, which carries the
+  same chat lines as the JSON API and is checked the same way.
 - The token is generated on first start and stored in the config. **Generate a new token** (module
   widget, Companion screen or `!log companion regenerate`) replaces it and restarts the server.
+- While a loopback-bound server runs, the same token is also written to
+  `logclient/companion.json` so the terminal dashboard can connect without being told it. The file
+  is created only for a loopback bind and is deleted on a clean stop. It is not a new class of
+  secret: the token is already stored in the Meteor config on the same machine, and the file adds no
+  access that the config did not already grant. It is never written when **allow-remote** is on.
 - Requests are rate limited per client, and every action runs on the client thread, so the app can
   only do what a user could do by hand — it never edits the inventory, never fabricates state and
   never blocks the game.
@@ -1289,18 +1651,104 @@ All responses are JSON. Authenticate with the token unless noted.
 | DELETE | `/api/v1/tasks/{id}` | Cancels one queued task. |
 | GET | `/api/v1/modules` | Every module with its state. |
 | POST | `/api/v1/modules/{name}` | Toggles a module: `{"active":true}`. |
+| GET | `/api/v1/modules/{name}/settings` | Every setting of one module: name, title, description, group, type, current value, default, bounds, options and whether it is currently visible. `404` for an unknown module. |
+| POST | `/api/v1/modules/{name}/settings` | Sets one setting: `{"setting":"log-chat","value":false}`. The value is the setting's own type, so `true`, `64`, `"text"` or `["a","b"]`. A value the setting refuses is answered `{"ok":false,"message":...}` and nothing changes. |
 | GET | `/api/v1/chat` | The recent chat. |
-| POST | `/api/v1/chat` | Sends a chat line or a `/command`: `{"message":"hello"}`. |
+| POST | `/api/v1/chat` | Sends a chat line: `{"message":"hello"}`. A line starting with `/` is treated as a command. |
 | GET | `/api/v1/players` | The observed players. |
 | GET | `/api/v1/storage` | The segment count, compressed size and oldest/newest timestamps. |
 | GET | `/api/v1/queries` | The names the query endpoint accepts. |
 | GET | `/api/v1/query/{name}` | `messages`, `players` or `stats`, with `q`, `player` and `limit` filters. |
-| POST | `/api/v1/command` | Runs a client command: `{"command":"log status"}`. |
+| POST | `/api/v1/command` | Runs a line as if typed: `{"command":"/tpa Steve"}`. It goes through the same send event the game posts for typed input, so a macro such as `!tpa <player>` expands and an addon command such as `!log status` runs. |
 | POST | `/api/v1/notify` | Shows a chat line and a notification: `{"message":"..."}`. |
 
 The server answers with a plain message and the right status code when something is wrong — a
 missing token is `401`, a bad body is `400`, a client thread that never answers is `504` — and it
 never puts an internal exception in the response.
+
+## Headless instances (Debian)
+
+`tools/headless.py` is a separate application that runs Log Client in one or more Minecraft
+instances with no monitor attached — on a server, a VPS or a spare machine. It is not a launcher
+skin over a mod: it resolves the official Mojang manifest, the Fabric loader profile and the mod
+jars itself, so **neither Minecraft nor the official launcher has to be installed**.
+
+It installs nothing into the game and needs nothing from it. The instance downloads its own client,
+libraries and assets into one directory and runs under its own virtual X display.
+
+```sh
+python3 tools/headless.py doctor        # what is missing on this machine
+sudo python3 tools/headless.py setup    # install the Debian packages and a JDK 21
+python3 tools/headless.py create mine   # download the client, libraries, assets and mods
+python3 tools/headless.py start mine    # start it under Xvfb
+python3 tools/headless.py list          # what is running
+python3 tools/headless.py attach mine   # open the terminal dashboard on it
+```
+
+`doctor` is read-only and works before anything is installed. `setup` is the only step that needs
+root: it installs Xvfb and the GL libraries with `apt-get`, then downloads a JDK 21 from Adoptium
+into the app's own directory rather than touching the system Java. Nothing else needs root.
+
+### Commands
+
+| Command | What it does |
+| --- | --- |
+| `doctor` | Reports Java, Xvfb, missing packages, free disk and whether the Mojang manifest is reachable. Changes nothing. `--offline` skips the network check. |
+| `setup` | Installs the Debian packages and a JDK 21. `--no-apt`, `--no-jdk` skip a half. |
+| `create <name>` | Creates an instance and downloads everything it needs. `--mc`, `--loader`, `--memory`, `--username`, `--server`, `--width`, `--height`, `--no-meteor`, `--log-client`, `--configure-only` (write the config only), `--force`. |
+| `start <name>` | Starts the instance under a free X display. `--server` joins on start, `--dry-run` prints the command without running or downloading anything, `--wait-companion 90` waits for the companion and prints its URL, `--detach` leaves the display up. |
+| `stop <name>` | Stops the game and the display it used, politely then firmly, and confirms both are gone. |
+| `list` | One line per instance: version, loader, username, running or stopped. |
+| `status <name>` | Full detail, with `--log` for the end of the console output. |
+| `logs <name>` | The console output, `--follow` to stream it. |
+| `attach <name>` | Opens `tools/dashboard.py` against that instance's companion server. |
+| `remove <name> --yes` | Deletes one instance. Refuses while it is running. |
+
+### Where everything lives
+
+One directory per install, `~/.logclient-headless` by default (`LOGLIENT_HEADLESS_HOME` moves it;
+`setup` under sudo uses the invoking user's home, not `/root`):
+
+```
+jdk/                     the JDK 21 from Adoptium
+cache/                   client jar, libraries, assets and metadata, shared by every instance
+instances/<name>/game/   the game directory: mods, config, logs, logclient/companion.json
+instances/<name>/logs/   one launch-*.log per run
+```
+
+`game/logclient/config.json` holds Log Client's own modules and HUD layout; it is the file
+`create` and `start` edit to switch the companion on (see below). `game/logclient/companion.json`
+is the discovery file the running mod writes, which is how `attach` finds the server.
+
+Instances share the download cache but nothing else, so two instances cannot see each other's
+config or mods.
+
+### What it can and cannot do
+
+A headless client is an ordinary Minecraft client with no window. Two limits come from that and
+from the fact that a launcher cannot sign in for you:
+
+- **The account is offline.** The instance joins as the username you give it and derives the UUID
+  a server would derive for that name. That is correct for singleplayer, a LAN world, or a server
+  you run in offline mode, and **wrong for any server that verifies accounts with Mojang.** There is
+  no way to pass a Microsoft login from a shell script, so this app does not pretend to.
+- **The companion is switched on for you.** The mod only starts its web server while the
+  `companion` module is active. Log Client persists its own modules as plain JSON in
+  `game/logclient/config.json`, and applies `active` when it loads that file, so `create` and
+  `start` set `modules.companion.active = true` directly. An existing config is edited in place —
+  your other modules, HUD layout and companion token are left alone — and a config that is not
+  valid JSON is reported and not touched. (Meteor's own `modules.nbt` is binary and is never
+  written; only Log Client's JSON is.) This is what makes `attach` work on a fresh instance with
+  no window to click in.
+
+### Requirements
+
+Debian or Ubuntu with `apt-get`. Xvfb and Mesa's software rasteriser are what make this work: with
+no GPU the client renders through `llvmpipe`, which is slow but real, so give it a small
+`--width`/`--height` and a modest render distance. The app writes a first `options.txt` with
+`pauseOnLostFocus:false` and the master volume at zero, because a headless window never has focus.
+
+Plan on about 1.5 GB for the client, libraries and assets, plus a JDK, plus the heap you ask for.
 
 ## Updates
 
@@ -1650,6 +2098,10 @@ archive with in-memory doubles (no Minecraft runtime required):
 - `CompanionServerTest` — the real socket: a published event reaches a connected client, the stream
   replays events a client missed on reconnect, a POST body reaches the API, and the server binds a
   real port, serves the app and stops cleanly.
+- `CompanionDispatchTest` — the send path a command takes from the app: the line reaches a real
+  `SendMessageEvent` listener, a listener that claims it stops the line being sent twice, a macro
+  shortcut such as `!tpa Steve` expands rather than being sent verbatim, an empty line is never
+  posted, and a missing bus still yields the line instead of silently dropping it.
 - `CompanionCoreTest` — the event bus (ordered delivery, a bounded ring, backlog replay, a throwing
   subscriber isolated and dropped, monotonic ids, publish never blocking on a subscriber), the rate
   limiter (burst then throttle, per-client buckets, pruning), the client-thread seam (inline,
@@ -1661,23 +2113,17 @@ archive with in-memory doubles (no Minecraft runtime required):
 - `UpdateEngineTest` — the check/download state machine: an up-to-date check, a newer release
   becoming available, a download reaching READY, a checksum mismatch rejected, and a source failure
   reported as FAILED with a message instead of a thrown exception.
-- `AiCoreTest` — the local model: tokenisation, intent classification, the bigram model's
-  teach/generate path, the naive-Bayes classifier, confidence gating and JSON round-trip.
-- `AiRoutingTest` — the router and the classifier measured against each other on the same lines, so
-  the claim that the table is the primary path is checked rather than asserted. Includes a
-  regression for the hash-collision bug: an intent must not gain evidence from a word it was never
-  trained on.
-- `ModCallTest` — the two messages a modcall sends, their order, and that a reason containing a
+- `ModCallTest` — that a modcall builds a client-side report, never a server command, and that a
+  reason containing a
   newline cannot become a second command.
 - `SummaryEmbedTest` — the requested-summary card: title and accent, the requested-by and note
   fields, the counts, and that the note is neutralised so it cannot ping a role or break the
   markdown.
-- `UnsignedChatAndRoutingTest` — the two behaviours that decide whether the assistant answers at
-  all: unsigned and plugin-rewritten chat (`<Steve> hi`, `Steve: hi`, `[MVP+] Steve: hi`) classifies
-  as public chat while clock readings and `Server:` tags stay system, and the keyword router picks
-  the on-topic intent ahead of the classifier. It also pins the measurement that justifies the
-  router — the classifier alone agrees on fewer lines than the router routes — so the claim cannot
-  go stale.
+- `UnsignedChatAndRoutingTest` — the behaviour that decides whether the assistant answers at all:
+  unsigned and plugin-rewritten chat (`<Steve> hi`, `Steve: hi`, `[MVP+] Steve: hi`) classifies as
+  public chat while clock readings and `Server:` tags stay system, join/leave/death lines keep their
+  own types, and the shipped trigger table fires on ordinary chat without nested patterns making
+  rule order decide the answer.
 - `ModuleNameTest` — every module's registered name is unique and none is a name Meteor ships. Meteor
   de-duplicates by name, so a clash silently deletes Meteor's module and crashes the code that looks
   it up by class; this test is the regression for the `auto-reconnect` crash on disconnect. It reads
@@ -1723,12 +2169,25 @@ archive with in-memory doubles (no Minecraft runtime required):
   `Schematic` envelope before detection, so v1/v2/v3 `.schem` files all load.
 - **The HUD element is missing.** Open the addon window (Right Shift), go to the **HUD** tab and
   check the element is on, or press **Show all**. A hidden element costs nothing per frame.
-- **The companion app will not connect.** The server only runs while the **Companion** module is
-  on, and it binds to loopback by default. From another device, turn on **allow-remote** and use the
-  machine's LAN address (`http://<host>:8765/?token=...`), and make sure the port is not blocked by a
-  firewall. If the port is already in use the module says so and does not listen; change the port or
-  free it. A `401` means the token is missing or wrong — copy the address again from the widget, the
-  Companion screen or `!log companion token`.
+- **The companion app will not connect.** The companion is a small web server that runs **inside
+  your game, on your own PC**. It is not hosted on the Minecraft server you play on, so a server
+  address (`play.example.com:25565`, or any IP:port the game shows you) is never the right address
+  for it. Your Minecraft server's address and the companion's address are unrelated.
+
+  Use the address the addon gives you: the **Companion** screen, the module widget, or
+  `!log companion status`. It looks like `http://127.0.0.1:6767/?token=...`.
+
+  Then check, in order:
+  1. **The Companion module is on.** Nothing listens while it is off.
+  2. **Same machine?** `127.0.0.1` only works on the PC running Minecraft. From a phone or another
+     PC, turn on **allow-remote** and reopen the screen — the address shown then becomes your PC's
+     LAN address. `!log companion status` says which of the two you are in.
+  3. **Same network.** A LAN address does not work from outside your home network without a
+     tunnel; the addon does not do that for you.
+  4. **Firewall.** Allow the port through your OS firewall. On Windows, the prompt appears the
+     first time the module starts; if it was dismissed, add the rule by hand.
+  5. **Port already in use.** The module says so and does not listen. Change the port or free it.
+  6. **`401`.** The token is missing or wrong — copy the address again, including `?token=`.
 - **A config written by a newer build.** Unknown keys are preserved on save, so downgrading does not
   truncate them, and a missing or invalid value falls back to its default rather than aborting the
   load. A theme name from an older build (`DARK`, `ROSE`, `FOREST`) migrates to its nearest
@@ -1788,10 +2247,12 @@ archive with in-memory doubles (no Minecraft runtime required):
   and `logs/sessions.json`) and restored on the next launch. A file written by an older build that
   lacks the new keys still loads: unknown or missing fields are skipped rather than rejecting the
   record.
-- The bot uses Baritone only when the user has installed it (detected at runtime by reflection). The
-  addon bundles no pathfinder of its own beyond the bounded fallback walker, and navigation quality
-  with the fallback is limited — it walks in a straight line and stops when blocked rather than
-  solving complex terrain.
+- The bot uses Baritone only when the user has installed it (detected at runtime by reflection). When
+  Baritone is absent, navigation falls back to the addon's own A\* planner, which solves walls, single
+  block steps and short drops within a bounded area around the player. It does **not** mine, pillar,
+  bridge, swim, or plan across hundreds of blocks in one search — a trip past its reach is walked in
+  stages, and terrain that needs a block placed or broken is reported as unreachable rather than
+  attempted. For long or vertical cross-country travel, install Baritone.
 - The companion is a **local** control surface, not a remote-hosting service: it speaks plain HTTP,
   so over an untrusted network the token would travel in the clear. Use it on loopback or a trusted
   LAN; if you enable **allow-remote**, treat the token as a password and rotate it if it leaks.
@@ -1807,21 +2268,21 @@ MIT — see [LICENSE](LICENSE).
 ### Starter knowledge
 
 A fresh install is not empty. The assistant ships with a short set of facts — what it is, what the
-prefix is, how memory works, how macros work, and that player-specific answers stay local — so the
-first question you ask gets a real answer instead of "I do not understand".
+prefix is, how memory works, how macros work, and that player-specific answers stay local — so
+`!fact <key>` answers something useful on the first day instead of returning nothing.
 
 These are ordinary facts: `!facts` lists them, `!forget` removes them, and `!remember` overwrites
 them. The seed is only written when the store has never held anything, so a fact you delete stays
 deleted rather than reappearing at the next launch.
 
-The assistant also answers from what it has stored. Ask a question naming a fact and it replies
-with that fact rather than guessing from its fixed corpus:
+The assistant answers from what it has stored when you ask for it by name. `!fact <key>` reads one
+fact back and `!facts` lists them all:
 
 ```
-you: what is the prefix?
+you: !fact prefix
 bot: prefix: ! by default. Type !help for the command list.
 ```
 
-Matching is on whole words, so `fact` does not match `factory`. If a question names two unrelated
-facts the assistant stays quiet rather than picking one, because a wrong answer it cannot flag is
-worse than no answer.
+It does not answer a free-form question such as "what is the prefix?" on its own: there is no model
+in the mod, so a line that no trigger and no command claims is left alone. That is deliberate — an
+answer you did not configure is an answer you cannot check.

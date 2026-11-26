@@ -9,6 +9,7 @@ import com.logvex.addon.assistant.core.CommandCatalog;
 import com.logvex.addon.assistant.core.DuplicateSuppressor;
 import com.logvex.addon.assistant.core.GreetingPools;
 import com.logvex.addon.assistant.core.SenderIdentity;
+import com.logvex.addon.assistant.core.TriggerAudience;
 import com.logvex.addon.assistant.core.TriggerRule;
 import com.logvex.addon.assistant.core.TriggerSet;
 import org.junit.jupiter.api.DisplayName;
@@ -102,7 +103,7 @@ class ChatHygieneTest {
         AssistantRuntime runtime = new AssistantRuntime(new AssistantMemory());
         runtime.setTriggers(TriggerSet.of(List.of(new TriggerRule("ping", false, false, "", "pong",
             TriggerRule.ReplyMode.CHAT, 0L, 0, false, false, true))));
-        runtime.setConfig(AssistantConfig.DEFAULTS);
+        runtime.setConfig(AssistantConfig.DEFAULTS.withAudience(TriggerAudience.EVERYONE));
 
         assertTrue(runtime.handle("Player", "ping", 1_000L).acts());
         assertFalse(runtime.handle("Player", "ping", 1_500L).acts());
@@ -112,14 +113,16 @@ class ChatHygieneTest {
     // ------------------------------------------------------------------ reply pools and aliases
 
     @Test
-    @DisplayName("a rule with several replies answers with one of them")
-    void ruleWithPoolAnswersFromThePool() {
+    @DisplayName("a pipe in a stored reply is not a random choice")
+    void ruleWithPipeAlwaysAnswersTheSameWay() {
+        // A pipe reads as a field separator, so a legacy "Hi|Hey|Yo" must resolve to one stable
+        // line rather than printing a different alternative on each reply.
         TriggerRule rule = new TriggerRule("hello", false, false, "", "Hi|Hey|Yo",
-            TriggerRule.ReplyMode.CHAT, 0L, 0, false, false, true);
+            TriggerRule.ReplyMode.PRIVATE, 0L, 0, false, false, true);
 
         for (int i = 0; i < 20; i++) {
-            String chosen = rule.chosenReply(null);
-            assertTrue(List.of("Hi", "Hey", "Yo").contains(chosen), "unexpected reply: " + chosen);
+            assertEquals("Hi", rule.chosenReply(null),
+                "the first alternative is used, and the same one every time");
         }
     }
 
@@ -281,7 +284,7 @@ class ChatHygieneTest {
     void activitySummaryNamesBusiestPlayer() {
         AssistantRuntime runtime = new AssistantRuntime(new AssistantMemory());
         runtime.setTriggers(TriggerSet.empty());
-        runtime.setConfig(AssistantConfig.DEFAULTS);
+        runtime.setConfig(AssistantConfig.DEFAULTS.withAudience(TriggerAudience.EVERYONE));
         runtime.setDuplicateFilter(false);
 
         runtime.handle("Alice", "one", 1_000L);
@@ -298,7 +301,7 @@ class ChatHygieneTest {
     @DisplayName("resetting the session clears activity but keeps memory")
     void resetClearsActivityButKeepsMemory() {
         AssistantRuntime runtime = new AssistantRuntime(new AssistantMemory());
-        runtime.setConfig(AssistantConfig.DEFAULTS);
+        runtime.setConfig(AssistantConfig.DEFAULTS.withAudience(TriggerAudience.EVERYONE));
         runtime.setDuplicateFilter(false);
 
         runtime.handle(SenderIdentity.local("Me", null), "!remember a = b", 1_000L, null, null);
@@ -315,7 +318,7 @@ class ChatHygieneTest {
     @DisplayName("help lists every catalogued command")
     void helpListsEveryCommand() {
         AssistantRuntime runtime = new AssistantRuntime(new AssistantMemory());
-        runtime.setConfig(AssistantConfig.DEFAULTS);
+        runtime.setConfig(AssistantConfig.DEFAULTS.withAudience(TriggerAudience.EVERYONE));
         runtime.setDuplicateFilter(false);
 
         AssistantBrain.Decision decision = runtime.handle("Player", "!help", 1_000L);
@@ -338,7 +341,7 @@ class ChatHygieneTest {
     @DisplayName("about reports the memory size")
     void aboutReportsMemorySize() {
         AssistantRuntime runtime = new AssistantRuntime(new AssistantMemory());
-        runtime.setConfig(AssistantConfig.DEFAULTS);
+        runtime.setConfig(AssistantConfig.DEFAULTS.withAudience(TriggerAudience.EVERYONE));
         runtime.setDuplicateFilter(false);
 
         runtime.handle(SenderIdentity.local("Me", null), "!remember a = b", 1_000L, null, null);
@@ -356,7 +359,7 @@ class ChatHygieneTest {
         AssistantRuntime runtime = new AssistantRuntime(new AssistantMemory());
         runtime.setTriggers(TriggerSet.of(List.of(new TriggerRule("ping", false, false, "", "pong",
             TriggerRule.ReplyMode.CHAT, 0L, 0, false, false, true))));
-        runtime.setConfig(AssistantConfig.DEFAULTS);
+        runtime.setConfig(AssistantConfig.DEFAULTS.withAudience(TriggerAudience.EVERYONE));
 
         assertFalse(runtime.handle("Player", "!", 1_000L).acts());
         assertFalse(runtime.handle("Player", "   ", 1_000L).acts());
@@ -369,7 +372,7 @@ class ChatHygieneTest {
     void statsAliasAnswersThroughCanonicalName() {
         AssistantRuntime runtime = new AssistantRuntime(new AssistantMemory());
         runtime.setTriggers(TriggerSet.empty());
-        runtime.setConfig(AssistantConfig.DEFAULTS);
+        runtime.setConfig(AssistantConfig.DEFAULTS.withAudience(TriggerAudience.EVERYONE));
         runtime.setDuplicateFilter(false);
 
         com.logvex.addon.stats.ServerStats stats = com.logvex.addon.stats.ServerStats.OFFLINE;
@@ -390,7 +393,7 @@ class ChatHygieneTest {
     void renamedStatsVerbAnswers() {
         AssistantRuntime runtime = new AssistantRuntime(new AssistantMemory());
         runtime.setTriggers(TriggerSet.empty());
-        runtime.setConfig(AssistantConfig.DEFAULTS);
+        runtime.setConfig(AssistantConfig.DEFAULTS.withAudience(TriggerAudience.EVERYONE));
         runtime.setDuplicateFilter(false);
 
         java.util.Map<String, com.logvex.addon.stats.StatusOutput> commands =

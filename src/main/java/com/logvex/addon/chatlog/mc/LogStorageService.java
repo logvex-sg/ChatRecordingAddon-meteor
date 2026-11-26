@@ -41,6 +41,9 @@ public final class LogStorageService {
      */
     private static final int MAX_QUEUED_WRITES = 4096;
 
+    /** How long the shutdown flush waits for queued writes before giving up. */
+    private static final long FLUSH_TIMEOUT_MS = 5_000L;
+
     private final ThreadPoolExecutor io;
     private final AtomicLong droppedWrites = new AtomicLong();
 
@@ -140,6 +143,30 @@ public final class LogStorageService {
             }
             onClient(onDone);
         });
+    }
+
+    /**
+     * Flushes and waits, for the shutdown hook.
+     *
+     * <p>The queue is drained first so writes submitted before this call are on disk too, not just
+     * the buffer that {@code flush} writes. Bounded by a timeout: a hung disk must not stop the game
+     * from closing.
+     */
+    public void flushBlocking() {
+        try {
+            io.submit(() -> { }).get(FLUSH_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return;
+        } catch (Exception e) {
+            lastError = "Could not drain queued chat log writes: " + describe(e);
+            return;
+        }
+        try {
+            store.flush();
+        } catch (IOException e) {
+            fail("Failed to flush the chat log store", e);
+        }
     }
 
     /** Streams matching entries to {@code consumer} on the client thread, in chunks. */

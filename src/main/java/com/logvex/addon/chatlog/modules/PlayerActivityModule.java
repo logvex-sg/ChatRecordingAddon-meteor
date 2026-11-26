@@ -41,6 +41,16 @@ public class PlayerActivityModule extends AddonModule {
         .build()
     );
 
+    private final Setting<Integer> maxPlayers = sgGeneral.add(new IntSetting.Builder()
+        .name("max-players")
+        .description("How many players to keep in the session summary. 0 keeps every player.")
+        .defaultValue(0)
+        .min(0)
+        .sliderRange(0, 20_000)
+        .onChanged(value -> LogService.get().sessions().setCapacity(value))
+        .build()
+    );
+
     private final Setting<List<String>> excluded = sgGeneral.add(new StringListSetting.Builder()
         .name("excluded-players")
         .description("Players never tracked or listed (one name per line).")
@@ -62,6 +72,7 @@ public class PlayerActivityModule extends AddonModule {
     public void onActivate() {
         service.players().setExcluded(excluded.get());
         service.sessions().setExcluded(excluded.get());
+        service.sessions().setCapacity(maxPlayers.get());
         if (!rebuildOnActivate.get()) return;
         ChatLoggerModule logger = Modules.get().get(ChatLoggerModule.class);
         if (logger == null || logger.storage() == null) return;

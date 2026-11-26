@@ -1,5 +1,6 @@
 package com.logvex.addon.chatlog.core;
 
+import com.logvex.addon.assistant.core.ReplyFormat;
 import com.logvex.addon.common.Messages;
 
 import java.util.ArrayList;
@@ -137,6 +138,54 @@ public final class ChatDigest {
         }
 
         return out;
+    }
+
+    /**
+     * The digest as a card, for the chat log and the {@code .log digest} command.
+     *
+     * <p>The prose form in {@link #lines} reads as four loose sentences in chat. A digest is a set
+     * of labelled figures, so it renders as a block with one row per figure, the same way the
+     * assistant's other answers do.
+     *
+     * @return the card, or null when there is nothing to summarise
+     */
+    public static ReplyFormat.Embed embed(Summary summary, long nowMillis) {
+        if (summary == null || summary.isEmpty()) return null;
+
+        List<ReplyFormat.Field> fields = new ArrayList<>();
+        long window = Math.max(0, summary.toTimestamp() - summary.fromTimestamp());
+        fields.add(new ReplyFormat.Field("Window", Messages.duration(window)));
+        fields.add(new ReplyFormat.Field("Messages", Messages.number(summary.totalMessages())));
+        fields.add(new ReplyFormat.Field("Players", String.valueOf(summary.uniquePlayers())));
+        fields.add(new ReplyFormat.Field("Events", "joins " + summary.joinEvents()
+            + ", leaves " + summary.leaveEvents() + ", deaths " + summary.deathEvents()));
+
+        List<String> types = new ArrayList<>();
+        for (MessageType type : MessageType.values()) {
+            long count = summary.count(type);
+            if (count > 0) types.add(type + " " + Messages.number(count));
+        }
+        if (!types.isEmpty()) {
+            fields.add(ReplyFormat.Field.section("Types"));
+            fields.add(new ReplyFormat.Field("Breakdown", String.join(", ", types)));
+        }
+
+        if (!summary.topPlayers().isEmpty()) {
+            fields.add(ReplyFormat.Field.section("Most active"));
+            for (PlayerLine line : summary.topPlayers()) {
+                fields.add(new ReplyFormat.Field(line.name(),
+                    Messages.plural(line.messages(), "message")));
+            }
+        }
+        if (!summary.keywordHighlights().isEmpty()) {
+            fields.add(ReplyFormat.Field.section("Highlights"));
+            fields.add(new ReplyFormat.Field("Keywords",
+                String.join(", ", summary.keywordHighlights())));
+        }
+
+        return new ReplyFormat.Embed("Chat digest", fields,
+            "at " + ChatTimestampFormat.prefix(nowMillis, ChatTimestampFormat.Style.CLOCK),
+            ReplyFormat.Style.BOX);
     }
 
     /** A compact one-line form suitable for a HUD or a notification title. */

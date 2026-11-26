@@ -173,6 +173,8 @@ class CompanionCoreTest {
             assertTrue(html.contains("/api/v1/snapshot"), "the app must call the snapshot endpoint");
             assertTrue(html.contains("/api/v1/events"), "the app must open the live event stream");
             assertTrue(html.contains("/api/v1/bot/"), "the app must expose the bot controls");
+            assertTrue(html.contains("/api/v1/command"),
+                "the app must let a command such as /tpa be run, not only chat");
             assertTrue(html.contains("Authorization"), "the app must send the token");
             // Self-contained: no external scripts or stylesheets, so it works offline.
             assertFalse(html.contains("http://cdn."), "the app must not pull remote assets");

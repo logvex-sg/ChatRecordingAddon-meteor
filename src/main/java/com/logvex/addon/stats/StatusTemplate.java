@@ -230,6 +230,13 @@ public final class StatusTemplate {
             case "facing" -> orNa(s.facing());
             case "health" -> s.player().absent() ? UNAVAILABLE : s.player().healthLabel();
             case "hunger" -> s.player().absent() ? UNAVAILABLE : String.valueOf(s.food());
+            case "absorption" -> s.player().absent()
+                ? UNAVAILABLE : decimal(s.player().absorption());
+            case "saturation" -> s.player().absent()
+                ? UNAVAILABLE : decimal(s.player().saturation());
+            case "level" -> s.player().absent()
+                ? UNAVAILABLE : String.valueOf(s.player().level());
+            case "difficulty" -> orNa(s.difficulty());
             case "gamemode" -> s.player().gamemodeLabel();
             case "speed" -> s.player().absent()
                 ? UNAVAILABLE : String.format(Locale.ROOT, "%.2f", s.speed());
@@ -277,6 +284,11 @@ public final class StatusTemplate {
 
     private static String orNa(String value) {
         return value == null || value.isBlank() ? UNAVAILABLE : value;
+    }
+
+    /** One decimal place, so {@code 3.0} reads as a figure rather than an integer. */
+    private static String decimal(float value) {
+        return String.format(Locale.ROOT, "%.1f", value);
     }
 
     private static String joinOrNa(List<String> values, String separator) {

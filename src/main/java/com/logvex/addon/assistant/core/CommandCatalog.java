@@ -3,6 +3,7 @@ package com.logvex.addon.assistant.core;
 import com.logvex.addon.stats.StatusCommand;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -86,30 +87,43 @@ public final class CommandCatalog {
             "List the enabled chat command macros.", PermissionLevel.EVERYONE, false));
         out.add(new Command("macrohelp", List.of("macro"),
             "One macro's description and syntax.", PermissionLevel.EVERYONE, false));
+        out.add(new Command("share", List.of("shared", "macroshare"),
+            "List the macros other players may run, or share one.",
+            PermissionLevel.LOCAL_ONLY, false));
         out.add(new Command("mod", List.of("mods"),
             "Ping a moderator through the webhook with a report.", PermissionLevel.EVERYONE, true));
         out.add(new Command("report", List.of("alert"),
             "Send a report to the webhook and ping the moderator role.",
             PermissionLevel.EVERYONE, true));
-        // Local-only by default: this command makes the client send /msg from the local player's
-        // own account. Left open to everyone, a stranger could type it in public chat and have
-        // their words delivered to a moderator under someone else's name.
+        out.add(new Command("reports", List.of("reportlog", "filed"),
+            "List the reports this client has filed, newest first.",
+            PermissionLevel.LOCAL_ONLY, false));
+        out.add(new Command("player", List.of("dossier", "whois"),
+            "Everything this client knows about one player, in one card.",
+            PermissionLevel.LOCAL_ONLY, false));
         // Local-only: this posts a digest of the operator's own chat archive to the webhook. Left
         // open to everyone, a stranger in public chat could fill the operator's Discord channel.
         out.add(new Command("summary", List.of("digest"),
             "Send a chat summary report to the webhook.",
             PermissionLevel.LOCAL_ONLY, true));
         out.add(new Command("modcall", List.of("callmod", "modhelp"),
-            "Privately message the configured moderator with what you need.",
+            "File a report to your own reports channel, client side.",
             PermissionLevel.LOCAL_ONLY, false));
         // The FAQ is its own module and answers its own line, so this entry documents it in help
         // rather than routing it through the assistant's command table.
         out.add(new Command("faq", List.of("qanda"),
             "Add, list, view, remove and count the assistant's stored FAQ entries.",
             PermissionLevel.EVERYONE, false));
-        out.add(new Command("triggers", List.of("rules", "keywords"),
+        // Not "rules": that spelling is the shipped /rules macro, and a command always wins over a
+        // macro, so claiming it here made the default macro dead on arrival.
+        out.add(new Command("triggers", List.of("triggerlist", "keywords"),
             "List the trigger rules that are active, one page at a time.",
             PermissionLevel.EVERYONE, false));
+        // Turning a trigger off is a stored change, so it is local-only like the other writers:
+        // a stranger must not be able to silence the operator's assistant.
+        out.add(new Command("trigger", List.of("rule"),
+            "Turn one trigger rule on or off, keeping its reply.",
+            PermissionLevel.LOCAL_ONLY, true));
         return List.copyOf(out);
     }
 
@@ -208,6 +222,33 @@ public final class CommandCatalog {
     public static List<Command> writingCommands() {
         List<Command> out = new ArrayList<>();
         for (Command command : COMMANDS) if (command.writes()) out.add(command);
+        return List.copyOf(out);
+    }
+
+    /**
+     * The macro shortcuts that can never run because a command already claims the spelling.
+     *
+     * <p>Commands win over macros — a macro must not be able to shadow {@code !mod} — so a macro
+     * whose shortcut is also a command or an alias is silently unreachable. That is how the shipped
+     * {@code !rules} macro came to be dead: {@code rules} was an alias of {@code triggers}. The
+     * catalogue is checked against the default macros rather than fixed once, so adding an alias
+     * that steals a shipped macro fails a test instead of quietly breaking it.
+     *
+     * @param shortcuts the spellings to check, normally every default macro's shortcut
+     * @return the shortcuts that a command already answers to, in the order given
+     */
+    public static List<String> shadowedMacros(Collection<String> shortcuts) {
+        if (shortcuts == null || shortcuts.isEmpty()) return List.of();
+        List<String> out = new ArrayList<>();
+        for (String shortcut : shortcuts) {
+            String word = shortcut == null ? "" : shortcut.strip().toLowerCase(Locale.ROOT);
+            // A macro is typed with the prefix; the catalogue stores bare names.
+            int start = 0;
+            while (start < word.length() && !Character.isLetterOrDigit(word.charAt(start))) start++;
+            if (start > 0) word = word.substring(start);
+            if (word.isEmpty()) continue;
+            if (ALIASES.containsKey(word)) out.add(shortcut);
+        }
         return List.copyOf(out);
     }
 }

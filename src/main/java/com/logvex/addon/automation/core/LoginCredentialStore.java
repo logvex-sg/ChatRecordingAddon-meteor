@@ -7,6 +7,8 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.PosixFilePermission;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.util.LinkedHashMap;
@@ -63,7 +65,14 @@ public final class LoginCredentialStore {
         registerForRedaction();
     }
 
-    /** Writes the current contents, creating the file owner-readable only. */
+    /**
+     * Writes the current contents, creating the file owner-readable only.
+     *
+     * <p>The bytes go to a sibling file that is then renamed over the real one, so a crash or a full
+     * disk can never leave a half-written password file: either the old file or the new one is on
+     * disk, never a mixture. Writing in place would truncate first, and a failure after that point
+     * would destroy every stored password.
+     */
     public synchronized void save() {
         if (file == null) return;
         StringBuilder out = new StringBuilder();
@@ -75,8 +84,17 @@ public final class LoginCredentialStore {
         try {
             Path parent = file.getParent();
             if (parent != null) Files.createDirectories(parent);
-            restrictToOwner(file);
-            Files.writeString(file, out.toString(), StandardCharsets.UTF_8);
+            Path temp = file.resolveSibling(file.getFileName() + ".tmp");
+            Files.deleteIfExists(temp);
+            // The permissions are set when the file is created, not after: a file that appears
+            // world-readable for even a moment has already exposed the passwords in it.
+            createOwnerOnly(temp);
+            Files.writeString(temp, out.toString(), StandardCharsets.UTF_8, StandardOpenOption.WRITE);
+            try {
+                Files.move(temp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (IOException atomicFailed) {
+                Files.move(temp, file, StandardCopyOption.REPLACE_EXISTING);
+            }
             restrictToOwner(file);
         } catch (IOException e) {
             throw new UncheckedIOException("Could not write " + file, e);
@@ -153,6 +171,17 @@ public final class LoginCredentialStore {
     public static String masked(String password) {
         if (password == null || password.isEmpty()) return "not set";
         return "set (" + password.length() + " characters)";
+    }
+
+    /** Creates an empty file that only the owner can read or write. */
+    private static void createOwnerOnly(Path file) throws IOException {
+        try {
+            Files.createFile(file,
+                PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------")));
+        } catch (UnsupportedOperationException e) {
+            // Non-POSIX filesystem (Windows): fall back to a plain create and the later restrict.
+            Files.createFile(file);
+        }
     }
 
     private static void restrictToOwner(Path file) {

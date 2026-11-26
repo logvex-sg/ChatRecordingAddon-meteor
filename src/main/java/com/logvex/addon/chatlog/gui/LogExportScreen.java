@@ -1,5 +1,6 @@
 package com.logvex.addon.chatlog.gui;
 
+import com.logvex.addon.common.Messages;
 import com.logvex.addon.chatlog.core.ChatEntry;
 import com.logvex.addon.chatlog.core.LogExporter;
 import com.logvex.addon.chatlog.core.LogQuery;
@@ -92,7 +93,7 @@ public class LogExportScreen extends WindowScreen {
             return;
         }
 
-        add(theme.label("Scope")).expandX().widget().color(GuiKit.MUTED);
+        add(theme.label("Scope")).expandX().widget().color(GuiKit.mutedColor());
         WTable scopes = add(theme.table()).expandX().widget();
         for (Scope value : Scope.values()) {
             WButton button = scopes.add(theme.button(scope == value ? "> " + value.label : value.label)).widget();
@@ -103,7 +104,7 @@ public class LogExportScreen extends WindowScreen {
         }
         scopes.row();
 
-        add(theme.label("Format")).expandX().widget().color(GuiKit.MUTED);
+        add(theme.label("Format")).expandX().widget().color(GuiKit.mutedColor());
         WTable formats = add(theme.table()).expandX().widget();
         for (LogExporter.Format value : LogExporter.Format.values()) {
             WButton button = formats.add(theme.button(format == value ? "> " + value.name() : value.name())).widget();
@@ -141,10 +142,11 @@ public class LogExportScreen extends WindowScreen {
         typeRow.row();
 
         add(theme.horizontalSeparator("Preview")).expandX();
-        String count = counting ? "counting..." : (matchCount < 0 ? "unknown" : matchCount + " matching messages");
-        GuiKit.keyValue(add(theme.verticalList()).expandX().widget(), theme, "Matches:", count);
-        GuiKit.keyValue(add(theme.verticalList()).expandX().widget(), theme, "Destination:",
-            storage.root().resolve("exports").toString());
+        String count = counting ? "counting..."
+            : (matchCount < 0 ? "not counted yet" : Messages.plural(matchCount, "matching message"));
+        GuiKit.facts(add(theme.verticalList()).expandX().widget(), theme,
+            "Matches", count,
+            "Destination", storage.root().resolve("exports").toString());
 
         WButton export = add(theme.button("Export " + matchCount + " messages")).expandX().widget();
         export.action = () -> {
@@ -159,7 +161,7 @@ public class LogExportScreen extends WindowScreen {
         recount.action = this::refreshCount;
 
         if (matchCount == 0) {
-            add(theme.label("Nothing matches the current filters.")).expandX().widget().color(GuiKit.WARN);
+            add(theme.label("Nothing matches the current filters.")).expandX().widget().color(GuiKit.warnColor());
         }
 
         if (matchCount < 0 && !counting) refreshCount();

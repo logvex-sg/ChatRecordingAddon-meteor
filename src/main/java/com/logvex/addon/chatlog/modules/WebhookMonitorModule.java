@@ -43,10 +43,10 @@ public class WebhookMonitorModule extends AddonModule {
 
     private final Setting<Integer> historySize = sgGeneral.add(new meteordevelopment.meteorclient.settings.IntSetting.Builder()
         .name("history-size")
-        .description("How many delivery attempts to keep in the history.")
-        .defaultValue(100)
-        .min(10)
-        .sliderRange(10, 500)
+        .description("How many delivery attempts to keep in the history. 0 keeps every attempt.")
+        .defaultValue(WebhookDeliveryLog.DEFAULT_CAPACITY)
+        .min(0)
+        .sliderRange(0, 500)
         .build()
     );
 

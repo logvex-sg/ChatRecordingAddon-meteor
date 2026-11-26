@@ -4,6 +4,7 @@ import com.logvex.addon.assistant.core.AssistantConfig;
 import com.logvex.addon.assistant.core.AssistantMemory;
 import com.logvex.addon.assistant.core.AssistantRuntime;
 import com.logvex.addon.assistant.core.PermissionSet;
+import com.logvex.addon.assistant.core.TriggerAudience;
 import com.logvex.addon.assistant.core.TriggerRule;
 import com.logvex.addon.assistant.core.TriggerSet;
 import org.junit.jupiter.api.DisplayName;
@@ -26,7 +27,7 @@ class CooldownDefaultTest {
     private static AssistantRuntime runtime(TriggerRule... rules) {
         AssistantRuntime runtime = new AssistantRuntime(new AssistantMemory());
         runtime.setConfig(AssistantConfig.basic("A", true, false, "!",
-            TriggerRule.ReplyMode.CHAT, true, 0, 200));
+            TriggerRule.ReplyMode.CHAT, true, 0, 200).withAudience(TriggerAudience.EVERYONE));
         runtime.setTriggers(TriggerSet.of(List.of(rules)));
         runtime.setDuplicateFilter(false);
         runtime.setPermissions(PermissionSet.permissive());

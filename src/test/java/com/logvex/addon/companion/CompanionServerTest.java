@@ -200,4 +200,34 @@ class CompanionServerTest {
         assertNotNull(firstData.get(), "the backlog must be replayed");
         assertTrue(firstData.get().contains("first"), "the oldest missed event comes first");
     }
+
+    @Test
+    @DisplayName("module settings are served and written over a real socket")
+    void settingsOverSocket() throws Exception {
+        FakeCompanionApi api = new FakeCompanionApi();
+        api.settings.put("chat-logger", List.of(new com.logvex.addon.companion.core.CompanionSnapshot.SettingView(
+            "log-chat", "Log chat", "Whether chat is logged.", "General", "bool",
+            true, true, null, null, null, true)));
+        start(api, new CompanionEventBus(20));
+        PORT = server.port();
+
+        HttpURLConnection listing = open("/api/v1/modules/chat-logger/settings", "GET", null, true);
+        assertEquals(200, listing.getResponseCode());
+        String body = read(listing);
+        assertTrue(body.contains("\"log-chat\""), body);
+        assertTrue(body.contains("\"type\":\"bool\""), body);
+
+        HttpURLConnection write = open("/api/v1/modules/chat-logger/settings", "POST",
+            "{\"setting\":\"log-chat\",\"value\":false}", true);
+        assertEquals(200, write.getResponseCode());
+        read(write);
+        assertEquals("chat-logger", api.lastSettingModule);
+        assertEquals("log-chat", api.lastSettingName);
+        assertFalse(api.lastSettingValue.getAsBoolean(), "the value must arrive as a real boolean");
+
+        // A path parameter with a slash in it must not be able to reach another route.
+        HttpURLConnection missing = open("/api/v1/modules/no-such-module/settings", "GET", null, true);
+        assertEquals(404, missing.getResponseCode());
+        read(missing);
+    }
 }

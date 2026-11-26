@@ -112,15 +112,75 @@ public final class CompanionConfig {
     /**
      * The address to bind, resolved. A remote bind is refused unless the user opted in, so a stray
      * config edit cannot silently expose the client to the network.
+     *
+     * <p>{@code allowRemote} with a loopback {@code bindAddress} is a contradiction: the switch says
+     * "accept other devices" while the address says "loopback only", and the switch would appear to
+     * do nothing. The explicit opt-in wins, so it binds every interface. Anyone who wants one
+     * specific interface sets that address instead.
      */
     public InetAddress resolveBindAddress() throws UnknownHostException {
-        String address = allowRemote ? bindAddress : "127.0.0.1";
+        String address;
+        if (!allowRemote) {
+            address = "127.0.0.1";
+        } else if (isLoopbackLiteral(bindAddress)) {
+            address = "0.0.0.0";
+        } else {
+            address = bindAddress;
+        }
         return InetAddress.getByName(address);
+    }
+
+    private static boolean isLoopbackLiteral(String address) {
+        return "127.0.0.1".equals(address) || "localhost".equalsIgnoreCase(address)
+            || "::1".equals(address);
     }
 
     /** True when the configured bind is loopback-only, so the GUI can say so plainly. */
     public boolean isLoopbackOnly() {
         return !allowRemote;
+    }
+
+    /**
+     * The host to put in a link the user will open.
+     *
+     * <p>Not simply {@link #bindAddress()}: a wildcard bind such as {@code 0.0.0.0} means "listen on
+     * every interface", which no browser can open, so it is replaced with a concrete local address.
+     * When remote access is off the server only listens on loopback, and advertising anything else
+     * would hand out a link that cannot connect.
+     */
+    public String advertisedHost() {
+        if (!allowRemote) return "127.0.0.1";
+        String address = bindAddress();
+        if (!isWildcard(address)) return address;
+        return localAddressHint();
+    }
+
+    /** A URL the user can open, using {@code boundPort} when the server is listening. */
+    public String advertisedUrl(int boundPort) {
+        int port = boundPort > 0 ? boundPort : this.port;
+        return "http://" + advertisedHost() + ":" + port + "/";
+    }
+
+    private static boolean isWildcard(String address) {
+        return "0.0.0.0".equals(address) || "::".equals(address) || "*".equals(address);
+    }
+
+    /**
+     * A concrete local address to advertise for a wildcard bind.
+     *
+     * <p>Falls back to loopback, which is always openable, rather than guessing a LAN address that
+     * may not exist on this machine.
+     */
+    private static String localAddressHint() {
+        try {
+            InetAddress local = InetAddress.getLocalHost();
+            if (local != null && !local.isAnyLocalAddress() && !local.isLoopbackAddress()) {
+                return local.getHostAddress();
+            }
+        } catch (UnknownHostException ignored) {
+            // No resolvable local name; loopback is still a valid answer.
+        }
+        return "127.0.0.1";
     }
 
     /** A fresh 32-byte URL-safe token. */

@@ -55,13 +55,13 @@ public final class DiscordEmbed {
 
     /** Sets the title, truncated to the limit. */
     public DiscordEmbed title(String value) {
-        this.title = clip(value, TITLE_LIMIT);
+        this.title = clipWithin(value, TITLE_LIMIT, this.title.length());
         return this;
     }
 
     /** Sets the description, truncated to the limit. */
     public DiscordEmbed description(String value) {
-        this.description = clip(value, DESCRIPTION_LIMIT);
+        this.description = clipWithin(value, DESCRIPTION_LIMIT, this.description.length());
         return this;
     }
 
@@ -79,7 +79,7 @@ public final class DiscordEmbed {
 
     /** Sets the footer text, truncated to the limit. */
     public DiscordEmbed footer(String value) {
-        this.footer = clip(value, FOOTER_LIMIT);
+        this.footer = clipWithin(value, FOOTER_LIMIT, this.footer.length());
         return this;
     }
 
@@ -91,7 +91,7 @@ public final class DiscordEmbed {
 
     /** Sets the author line and its optional icon. */
     public DiscordEmbed author(String name, String iconUrl) {
-        this.authorName = clip(name, AUTHOR_LIMIT);
+        this.authorName = clipWithin(name, AUTHOR_LIMIT, this.authorName.length());
         this.authorIconUrl = iconUrl == null ? "" : iconUrl.trim();
         return this;
     }
@@ -103,7 +103,10 @@ public final class DiscordEmbed {
     public DiscordEmbed field(String name, String value, boolean inline) {
         if (name == null || name.isBlank() || value == null || value.isBlank()) return this;
         if (fields.size() >= MAX_FIELDS) return this;
-        fields.add(new Field(clip(name, FIELD_NAME_LIMIT), clip(value, FIELD_VALUE_LIMIT), inline));
+        String clippedName = clip(name, FIELD_NAME_LIMIT);
+        int available = TOTAL_LIMIT - length() - clippedName.length();
+        if (available <= 0) return this;
+        fields.add(new Field(clippedName, clip(value, Math.min(FIELD_VALUE_LIMIT, available)), inline));
         return this;
     }
 
@@ -165,10 +168,26 @@ public final class DiscordEmbed {
         return total;
     }
 
+    /**
+     * Clips a part to its own limit and to whatever remains of the total budget.
+     *
+     * <p>Per-part clipping alone is not enough: a description at its 4096 limit plus a footer at its
+     * 2048 limit is over the combined 6000, and Discord rejects the whole payload with a 400. Because
+     * that is not retryable, the card would be lost rather than delayed, so the total is enforced as
+     * each part is added.
+     *
+     * @param current the length of this part before the call, so its own old text does not count
+     *                against the room it is about to use
+     */
+    private String clipWithin(String value, int partLimit, int current) {
+        int others = length() - current;
+        return clip(value, Math.min(partLimit, Math.max(0, TOTAL_LIMIT - others)));
+    }
+
     private static String clip(String value, int max) {
-        if (value == null) return "";
+        if (value == null || max <= 0) return "";
         String text = value.strip();
         if (text.length() <= max) return text;
-        return text.substring(0, Math.max(0, max - 1)) + "\u2026";
+        return text.substring(0, max - 1) + "\u2026";
     }
 }

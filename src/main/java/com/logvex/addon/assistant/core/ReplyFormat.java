@@ -47,6 +47,41 @@ public final class ReplyFormat {
             if (label == null) label = "";
             if (value == null) value = "";
         }
+
+        /**
+         * A figure with a proportional bar, so a share is readable without doing the arithmetic.
+         *
+         * <p>{@code "Heap  Heap 42% ##########----------"} is a lot to read; a bar shows at a glance
+         * that 42% is not "nearly full". The number stays in the value because a bar alone cannot
+         * be read precisely.
+         */
+        public static Field meter(String label, String value, double fraction) {
+            return new Field(label, value + " " + bar(fraction, METER_CELLS));
+        }
+
+        /** A rule across the block with a name on it, to separate groups of figures. */
+        public static Field section(String name) {
+            return new Field("", SECTION + (name == null ? "" : name));
+        }
+    }
+
+    /** How many cells a meter draws. Short enough to sit inside a 48-column box with a label. */
+    private static final int METER_CELLS = 12;
+
+    /** Marks a field as a section rule rather than a figure. */
+    private static final String SECTION = "\u0000section:";
+
+    /**
+     * A proportional bar, {@code fraction} clamped to 0..1.
+     *
+     * <p>Uses a light and a dark block rather than colour: the chat box is drawn in one colour and a
+     * client may have colour codes disabled, so the bar has to read in plain text.
+     */
+    public static String bar(double fraction, int cells) {
+        int n = Math.max(1, cells);
+        double f = Double.isNaN(fraction) ? 0 : Math.min(1, Math.max(0, fraction));
+        int filled = (int) Math.round(f * n);
+        return "\u2588".repeat(filled) + "\u2591".repeat(n - filled);
     }
 
     /** A block ready to render. */
@@ -110,34 +145,130 @@ public final class ReplyFormat {
         return renderCompact(embed, width <= 0 ? DEFAULT_WIDTH : width);
     }
 
+    /**
+     * Builds a card from a rendered status template such as {@code "TPS: 19.9 | MSPT: 12"}.
+     *
+     * <p>Status answers are user-editable templates, so the card cannot be built from a fixed list
+     * of fields — it has to follow whatever the operator wrote. The template's own separators carry
+     * the structure: {@code |} splits fields and the first {@code :} in a field splits its label
+     * from its value. A segment with no colon keeps its text as an unlabelled value, so a template
+     * like {@code "XYZ: 1, 2, 3 | overworld | plains"} still renders every part instead of
+     * silently dropping the ones without labels.
+     *
+     * @param title the card heading, usually the command name
+     * @param text  the already-rendered template output
+     * @return the card, or null when the text has no content to lay out
+     */
+    public static Embed fromTemplate(String title, String text) {
+        if (text == null || text.isBlank()) return null;
+        List<Field> fields = new ArrayList<>();
+        for (String segment : text.split("\\s*\\|\\s*")) {
+            String part = segment.strip();
+            if (part.isEmpty()) continue;
+            int colon = part.indexOf(':');
+            // A colon in the first position is not a label separator ("10:30"), and a value that
+            // is only punctuation would render as an empty row.
+            if (colon > 0) {
+                String label = part.substring(0, colon).strip();
+                String value = part.substring(colon + 1).strip();
+                if (!value.isEmpty()) {
+                    fields.add(new Field(label, value));
+                    continue;
+                }
+            }
+            fields.add(new Field("", part));
+        }
+        if (fields.isEmpty()) return null;
+        return new Embed(title == null ? "" : title, fields, "", Style.BOX);
+    }
+
+    /**
+     * Renders at most {@code maxLines} lines, keeping the block whole.
+     *
+     * <p>Cutting a rendered list with {@code subList} is the obvious approach and it is wrong: a box
+     * that is cut before its closing rule ends on a {@code │} row, and a list that is cut stops
+     * mid-sentence. Either reads as a message that failed to send. So the cap is applied to the
+     * <em>fields</em> instead and the block is rendered again, and the rows that did not fit are
+     * counted in the footer rather than dropped silently.
+     *
+     * <p>COMPACT and PLAIN collapse to one line, so there is no field to drop there; a single line
+     * that still overflows means the caller's width is too small, and truncating is the only option.
+     *
+     * @param maxLines the most lines the caller can send, at least one
+     */
+    public static List<String> renderCapped(Embed embed, int width, int maxLines) {
+        if (embed == null) return List.of();
+        if (maxLines <= 0) return List.of();
+        int limit = width <= 0 ? DEFAULT_WIDTH : width;
+        List<String> full = render(embed, limit);
+        if (full.size() <= maxLines) return full;
+        if (embed.style() == Style.COMPACT || embed.style() == Style.PLAIN) {
+            return List.copyOf(full.subList(0, maxLines));
+        }
+
+        // Two frame lines for a box, a title line for a list; the loop corrects any guess that was
+        // wrong, because a wrapped value can cost more rows than the field count suggests.
+        List<Field> fields = embed.fields();
+        int keep = Math.min(fields.size(), Math.max(1, maxLines - 2));
+        while (keep > 0) {
+            List<Field> subset = fields.subList(0, keep);
+            String footer = embed.footer();
+            if (keep < fields.size()) {
+                String omitted = "+" + (fields.size() - keep) + " more";
+                footer = footer == null || footer.isBlank() ? omitted : footer + " · " + omitted;
+            }
+            List<String> lines = render(new Embed(embed.title(), subset, footer, embed.style()), limit);
+            if (lines.size() <= maxLines) return lines;
+            keep--;
+        }
+        return List.copyOf(full.subList(0, maxLines));
+    }
+
     private static List<String> renderBox(Embed embed, int width) {
         if (embed.fields().isEmpty() && embed.title().isBlank() && embed.footer().isBlank()) {
             return List.of();
         }
         int labelWidth = 0;
+        boolean anyLabel = false;
         for (Field field : embed.fields()) {
-            labelWidth = Math.max(labelWidth, field.label().length());
+            labelWidth = Math.max(labelWidth, displayWidth(field.label()));
+            if (!field.label().isBlank()) anyLabel = true;
         }
+        // With no labels at all there is no column to align to, so a value starts at the frame
+        // instead of being pushed right by an empty label column.
+        if (!anyLabel) labelWidth = 0;
         // A long label must not squeeze the value to nothing, so it is capped and wrapped instead.
         // The cap is a share of the box, not just "width minus a little": one long label would
         // otherwise take almost the whole row and leave the value a one-word-wide column.
         int labelCap = Math.max(8, (width - 5) * 2 / 5);
-        labelWidth = Math.max(1, Math.min(labelWidth, Math.min(labelCap, width - 6)));
+        if (labelWidth > 0) {
+            labelWidth = Math.max(1, Math.min(labelWidth, Math.min(labelCap, width - 6)));
+        }
 
         List<String> lines = new ArrayList<>(embed.fields().size() + 2);
         if (!embed.title().isBlank()) {
             lines.add(border(TOP_LEFT, TOP_RIGHT, embed.title(), width));
         }
-        // "│ " + label + " " + value + " │" costs five columns of framing.
-        int room = Math.max(1, width - 5 - labelWidth);
+        // "│ " + label + " " + value + " │" costs five columns of framing; without a label
+        // column one of those spaces is not used, so the value gets it.
+        int room = Math.max(1, width - (labelWidth == 0 ? 4 : 5) - labelWidth);
         for (Field field : embed.fields()) {
-            List<String> label = wrap(field.label(), labelWidth);
+            if (field.value().startsWith(SECTION)) {
+                // A section is a rule across the block, so it ignores the label column entirely
+                // rather than starting inside it and looking like an indented figure.
+                lines.add(BAR + " " + rule(field.value().substring(SECTION.length()), width - 4)
+                    + " " + BAR);
+                continue;
+            }
+            List<String> label = labelWidth == 0 ? List.of() : wrap(field.label(), labelWidth);
             List<String> value = wrap(field.value(), room);
             int rows = Math.max(label.size(), value.size());
             for (int i = 0; i < rows; i++) {
                 String left = pad(i < label.size() ? label.get(i) : "", labelWidth);
                 String right = pad(i < value.size() ? value.get(i) : "", room);
-                lines.add(BAR + " " + left + " " + right + " " + BAR);
+                lines.add(labelWidth == 0
+                    ? BAR + " " + right + " " + BAR
+                    : BAR + " " + left + " " + right + " " + BAR);
             }
         }
         // A box is always closed. An open box reads as a truncated message, not a block.
@@ -151,17 +282,34 @@ public final class ReplyFormat {
         // Two corners and one leading rule take three columns; the label and fill take the rest.
         String text = label.isBlank() ? "" : " " + label + " ";
         int room = width - 3;
-        if (text.length() > room) {
+        if (displayWidth(text) > room) {
             text = " " + shorten(label, Math.max(1, room - 2)) + " ";
         }
-        int fill = Math.max(0, room - text.length());
+        int fill = Math.max(0, room - displayWidth(text));
         return left + HORIZONTAL + text + HORIZONTAL.repeat(fill) + right;
+    }
+
+    /** A filled rule with an optional name in the middle of the row. */
+    private static String rule(String name, int width) {
+        int room = Math.max(1, width);
+        String text = name == null || name.isBlank() ? "" : " " + name + " ";
+        int textWidth = displayWidth(text);
+        if (textWidth >= room) {
+            return HORIZONTAL.repeat(room);
+        }
+        int fill = room - textWidth;
+        int left = fill / 2;
+        return HORIZONTAL.repeat(left) + text + HORIZONTAL.repeat(fill - left);
     }
 
     private static List<String> renderList(Embed embed, int width) {
         List<String> lines = new ArrayList<>(embed.fields().size() + 2);
         if (!embed.title().isBlank()) lines.addAll(wrap(embed.title(), width));
         for (Field field : embed.fields()) {
+            if (field.value().startsWith(SECTION)) {
+                lines.addAll(wrap(rule(field.value().substring(SECTION.length()), width), width));
+                continue;
+            }
             String row = field.label().isBlank()
                 ? field.value()
                 : field.label() + " - " + field.value();
@@ -193,15 +341,38 @@ public final class ReplyFormat {
         }
         int limit = Math.max(1, width);
         String rest = text;
-        while (rest.length() > limit) {
-            int cut = rest.lastIndexOf(' ', limit);
-            if (cut <= 0) cut = limit;
-            out.add(rest.substring(0, cut));
-            rest = rest.substring(cut);
-            if (rest.startsWith(" ")) rest = rest.substring(1);
+        while (displayWidth(rest) > limit) {
+            int cut = breakAt(rest, limit);
+            out.add(rest.substring(0, cut).stripTrailing());
+            rest = rest.substring(cut).stripLeading();
         }
         out.add(rest);
         return List.copyOf(out);
+    }
+
+    /**
+     * The index to cut {@code text} at so the head occupies at most {@code limit} columns.
+     *
+     * <p>Prefers the last space inside the budget, so words are not split, and falls back to the
+     * budget itself when a single word is wider than the line. Cutting is by code point so a
+     * surrogate pair is never split, and by column so a wide glyph is never counted as one.
+     */
+    private static int breakAt(String text, int limit) {
+        int used = 0;
+        int lastSpace = -1;
+        int i = 0;
+        while (i < text.length()) {
+            int cp = text.codePointAt(i);
+            int w = codePointWidth(cp);
+            if (used + w > limit) {
+                // A space before the budget is the nicer cut; otherwise cut exactly here.
+                return lastSpace > 0 ? lastSpace : i;
+            }
+            if (cp == ' ') lastSpace = i;
+            used += w;
+            i += Character.charCount(cp);
+        }
+        return i;
     }
 
     private static String renderCompact(Embed embed, int width) {
@@ -231,15 +402,75 @@ public final class ReplyFormat {
     }
 
     private static String pad(String text, int width) {
-        if (text.length() >= width) return text;
-        return text + " ".repeat(width - text.length());
+        int visible = displayWidth(text);
+        if (visible >= width) return text;
+        return text + " ".repeat(width - visible);
+    }
+
+    /**
+     * Columns a string occupies, counting a wide character as two.
+     *
+     * <p>Chat is drawn with a fixed-width font where a CJK ideograph or an emoji is twice as wide as
+     * an ASCII letter, so measuring {@code length()} pads such a row two columns short and the right
+     * frame drifts left. Combining marks take no column at all.
+     */
+    public static int displayWidth(String text) {
+        if (text == null || text.isEmpty()) return 0;
+        int width = 0;
+        for (int i = 0; i < text.length(); ) {
+            int cp = text.codePointAt(i);
+            i += Character.charCount(cp);
+            width += codePointWidth(cp);
+        }
+        return width;
+    }
+
+    /** Columns one code point occupies: 0 for a combining mark, 2 for a wide character, else 1. */
+    private static int codePointWidth(int cp) {
+        if (cp == 0) return 0;
+        if (Character.getType(cp) == Character.NON_SPACING_MARK) return 0;
+        if (isWide(cp)) return 2;
+        return 1;
+    }
+
+    /**
+     * True for the code point ranges a terminal or Minecraft's font draws double width.
+     *
+     * <p>Deliberately a range test rather than a table: the exact east-asian-width database is large
+     * and changes between Unicode versions, while these ranges cover what actually appears in a
+     * player name or a chat line.
+     */
+    private static boolean isWide(int cp) {
+        return (cp >= 0x1100 && cp <= 0x115F)      // Hangul Jamo
+            || (cp >= 0x2E80 && cp <= 0xA4CF)      // CJK radicals .. Yi
+            || (cp >= 0xAC00 && cp <= 0xD7A3)      // Hangul syllables
+            || (cp >= 0xF900 && cp <= 0xFAFF)      // CJK compatibility ideographs
+            || (cp >= 0xFE30 && cp <= 0xFE6F)      // CJK compatibility forms
+            || (cp >= 0xFF00 && cp <= 0xFF60)      // Fullwidth forms
+            || (cp >= 0xFFE0 && cp <= 0xFFE6)
+            || (cp >= 0x1F300 && cp <= 0x1F64F)    // emoji
+            || (cp >= 0x1F900 && cp <= 0x1F9FF)
+            || (cp >= 0x20000 && cp <= 0x3FFFD);   // CJK extension B+
     }
 
     private static String shorten(String text, int width) {
         if (text == null) return "";
         if (width <= 0) return "";
-        if (text.length() <= width) return text;
+        if (displayWidth(text) <= width) return text;
         if (width == 1) return ELLIPSIS;
-        return text.substring(0, width - 1) + ELLIPSIS;
+        // Cut by code point and by column, so a surrogate pair is never split and a wide character
+        // is never counted as one column.
+        int budget = width - 1;
+        StringBuilder sb = new StringBuilder();
+        int used = 0;
+        for (int i = 0; i < text.length(); ) {
+            int cp = text.codePointAt(i);
+            int w = codePointWidth(cp);
+            if (used + w > budget) break;
+            sb.appendCodePoint(cp);
+            used += w;
+            i += Character.charCount(cp);
+        }
+        return sb + ELLIPSIS;
     }
 }

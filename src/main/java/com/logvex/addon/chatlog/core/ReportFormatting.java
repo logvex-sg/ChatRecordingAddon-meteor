@@ -39,22 +39,18 @@ public final class ReportFormatting {
         return SHORT_TIME.format(Instant.ofEpochMilli(timestamp));
     }
 
-    /** Renders a duration as {@code 1h 02m 03s}. */
+    /**
+     * Renders a duration as {@code 1h 02m 03s}, {@code 2m 05s} or {@code 7s}.
+     *
+     * <p>Delegates to {@link com.logvex.addon.common.Messages#duration} so a duration reads the same
+     * whether it came from the archive screen or a chat reply.
+     */
     public static String duration(long millis) {
-        long seconds = Math.max(0, millis) / 1000;
-        long h = seconds / 3600;
-        long m = (seconds % 3600) / 60;
-        long s = seconds % 60;
-        if (h > 0) return String.format(java.util.Locale.ROOT, "%dh %02dm %02ds", h, m, s);
-        if (m > 0) return String.format(java.util.Locale.ROOT, "%dm %02ds", m, s);
-        return s + "s";
+        return com.logvex.addon.common.Messages.duration(millis);
     }
 
+    /** Byte size, matching {@link com.logvex.addon.common.Messages#bytes} (TB-aware). */
     public static String bytes(long bytes) {
-        if (bytes < 1024) return bytes + " B";
-        double kb = bytes / 1024.0;
-        if (kb < 1024) return String.format(java.util.Locale.ROOT, "%.1f KB", kb);
-        double mb = kb / 1024.0;
-        return String.format(java.util.Locale.ROOT, "%.2f MB", mb);
+        return com.logvex.addon.common.Messages.bytes(bytes);
     }
 }

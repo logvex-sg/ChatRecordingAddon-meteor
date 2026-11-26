@@ -1,6 +1,7 @@
 package com.logvex.addon.chatlog.mc;
 
 import com.logvex.addon.chatlog.core.ChatEntry;
+import com.logvex.addon.chatlog.core.FeatureWebhook;
 import com.logvex.addon.chatlog.core.ChatDigest;
 import com.logvex.addon.chatlog.core.DuplicateDetector;
 import com.logvex.addon.chatlog.core.KeywordMatcher;
@@ -88,7 +89,8 @@ public final class LogService {
 
     private volatile LogStorageService storage;
     private volatile LogSession session;
-    private volatile boolean recording;
+    /** On from the start: an addon called "chat recording" must record before anything is toggled. */
+    private volatile boolean recording = true;
     private volatile Set<MessageType> recordedTypes = EnumSet.allOf(MessageType.class);
     private volatile DuplicateDetector duplicates = new DuplicateDetector(0);
     private volatile List<KeywordRule> keywordRules = List.of();
@@ -101,6 +103,10 @@ public final class LogService {
     /** Shared webhook target published by the relay module, or empty when the relay is off. */
     private volatile String relayUrl = "";
     private volatile String relayUsername = "";
+    /** Per-feature overrides published by the relay, so a sender can honour its own route. */
+    private volatile FeatureWebhook relayRoutes = new FeatureWebhook("", java.util.List.of());
+    /** The chat-logger's own keyword webhook, which outranks the relay's keyword route. */
+    private volatile String keywordRoute = "";
 
     private LogService() {
     }
@@ -109,6 +115,24 @@ public final class LogService {
 
     public void attach(LogStorageService storage) {
         this.storage = storage;
+    }
+
+    /**
+     * Attaches disk storage at the default location and loads it.
+     *
+     * <p>Storage used to be attached only from {@code ChatLoggerModule.onActivate}, so a user who
+     * never enabled that module recorded nothing to disk at all: the entries reached the live buffer
+     * and then vanished on quit. The recorder is subscribed unconditionally, so the storage it feeds
+     * has to be too.
+     *
+     * @return the attached service, so a caller can load extra state once it is ready
+     */
+    public LogStorageService attachDefaultStorage(java.nio.file.Path root) {
+        if (storage != null) return storage;
+        LogStorageService attached = new LogStorageService(root);
+        storage = attached;
+        attached.loadAsync(null);
+        return attached;
     }
 
     public LogStorageService storage() {
@@ -229,9 +253,58 @@ public final class LogService {
         this.relayUsername = username == null ? "" : username;
     }
 
+    /**
+     * Publishes the relay's per-feature routes, so a sender can honour its own override.
+     *
+     * <p>Kept separate from {@link #setRelayTarget} because the two answer different questions: the
+     * shared URL says "where do most cards go", the routes say "and where does this one go instead".
+     * A sender that only reads the shared URL silently ignores an override.
+     */
+    public void setRelayRoutes(FeatureWebhook routes) {
+        this.relayRoutes = routes == null ? new FeatureWebhook("", java.util.List.of()) : routes;
+    }
+
+    /**
+     * The webhook URL for one feature, honouring the relay's override.
+     *
+     * <p>Returns blank when neither the override nor the shared URL is set, so a caller tests one
+     * value. This is what makes a route work on its own: reading {@link #relayUrl()} would report
+     * blank and the override would never be consulted.
+     *
+     * <p>Keyword alerts get an extra, earlier source: the chat-logger's own
+     * {@code keyword-webhook-url}. It sits beside the report webhook, where a user already looks, so
+     * splitting noisy alerts from reports does not require finding the relay's route syntax.
+     */
+    public String relayUrlFor(FeatureWebhook.Feature feature) {
+        if (feature == FeatureWebhook.Feature.KEYWORDS && !keywordRoute.isBlank()) {
+            return keywordRoute;
+        }
+        return relayRoutes.url(feature);
+    }
+
+    /**
+     * Sets the chat-logger's own keyword webhook, or clears it with a blank value.
+     *
+     * <p>Blank means "inherit", so clearing this setting falls back to the relay's
+     * {@code keywords} route and then to its shared URL.
+     */
+    public void setKeywordRoute(String url) {
+        this.keywordRoute = url == null ? "" : url.strip();
+    }
+
+    /** True when the chat-logger set a keyword webhook of its own. */
+    public boolean hasKeywordRoute() {
+        return !keywordRoute.isBlank();
+    }
+
     /** True when a shared webhook target is configured. */
     public boolean hasRelay() {
         return relayUrl != null && !relayUrl.isBlank();
+    }
+
+    /** True when anything would be sent for {@code feature}, routed or shared. */
+    public boolean relayConfiguredFor(FeatureWebhook.Feature feature) {
+        return !relayUrlFor(feature).isBlank();
     }
 
     public String lastError() {
@@ -291,6 +364,17 @@ public final class LogService {
             return;
         }
         current.flushAsync(onDone);
+    }
+
+    /**
+     * Writes everything buffered and waits for it.
+     *
+     * <p>Called from the JVM shutdown hook, where an async flush would be abandoned when the process
+     * exits. Bounded so a stalled disk cannot hang the shutdown.
+     */
+    public void flush() {
+        LogStorageService current = storage;
+        if (current != null) current.flushBlocking();
     }
 
     // ------------------------------------------------------------------ recording
@@ -392,6 +476,15 @@ public final class LogService {
     public boolean notifySummary(String url, String username, List<ChatEntry> entries, WebhookQueue.Listener listener) {
         if (url == null || url.isBlank() || entries == null || entries.isEmpty()) return false;
         String payload = WebhookPayload.summary(username, serverName, entries, embedStyle);
+        return webhook.enqueue(url, payload, listener);
+    }
+
+    /** Sends a macro-run card. */
+    public boolean notifyMacroRun(String url, String username, String shortcut, String sender,
+                                  String command, boolean remote, WebhookQueue.Listener listener) {
+        if (url == null || url.isBlank()) return false;
+        String payload = WebhookPayload.macroRun(username, shortcut, sender, command, remote,
+            serverName, embedStyle);
         return webhook.enqueue(url, payload, listener);
     }
 

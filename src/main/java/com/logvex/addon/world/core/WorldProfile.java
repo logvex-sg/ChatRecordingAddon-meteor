@@ -58,6 +58,22 @@ public final class WorldProfile {
         return chunks;
     }
 
+    /**
+     * Applies one capacity to every store in this profile.
+     *
+     * <p>0 means no cap anywhere. The stores are persisted together, so one number is easier to
+     * reason about than four that can disagree, and an uncapped profile is the default.
+     */
+    public WorldProfile setCapacity(int capacity) {
+        int capped = Math.max(0, capacity);
+        locations.setCapacity(capped);
+        discoveries.setCapacity(capped);
+        biomes.setCapacity(capped);
+        resources.setCapacity(capped);
+        chunks.setCapacity(capped);
+        return this;
+    }
+
     public long firstSeen() {
         return firstSeen;
     }

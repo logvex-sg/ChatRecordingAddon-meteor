@@ -2,6 +2,7 @@ package com.logvex.addon.assistant;
 
 import com.logvex.addon.assistant.core.CommandCatalog;
 import com.logvex.addon.assistant.core.PermissionLevel;
+import com.logvex.addon.assistant.core.TriggerAudience;
 import com.logvex.addon.assistant.core.TriggerRule;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -118,7 +119,8 @@ class CommandDefaultsTest {
                 new com.logvex.addon.assistant.core.AssistantMemory());
         runtime.setTriggers(com.logvex.addon.assistant.core.TriggerSet.of(
             List.of(TriggerRule.of("hello", "canned trigger reply"))));
-        runtime.setConfig(com.logvex.addon.assistant.core.AssistantConfig.DEFAULTS);
+        runtime.setConfig(com.logvex.addon.assistant.core.AssistantConfig.DEFAULTS
+            .withAudience(TriggerAudience.EVERYONE));
         runtime.setDuplicateFilter(false);
 
         String bare = runtime.handle("p", "hello", 1_000L).text();
@@ -130,10 +132,13 @@ class CommandDefaultsTest {
     }
 
     @Test
-    @DisplayName("every default trigger carries the one-second cooldown")
-    void defaultsUseTheShortCooldown() {
+    @DisplayName("every default trigger carries the shipped three-second cooldown")
+    void defaultsUseTheShippedCooldown() {
+        // The shipped table is long and every entry answers out of the box, so it paces itself
+        // harder than a hand-written rule does. A rule the user adds still gets the one-second
+        // default; only the preconfigured entries carry the longer gap.
         for (TriggerRule rule : TriggerRule.defaults()) {
-            assertEquals(TriggerRule.DEFAULT_COOLDOWN_MS, rule.cooldownMs(),
+            assertEquals(TriggerRule.TRIGGER_COOLDOWN_MS, rule.cooldownMs(),
                 "default rule '" + rule.pattern() + "' has the wrong cooldown");
         }
     }
@@ -219,5 +224,30 @@ class CommandDefaultsTest {
                     .isPresent(),
                 "default trigger '" + pattern + "' would shadow a command");
         }
+    }
+
+    @Test
+    @DisplayName("a shipped rule never answers in place of a command that knows more")
+    void rulesDoNotShadowRicherCommands() {
+        // A prefixed rule is matched before the command parser, so "!who" as a rule replaces the
+        // !who command entirely. That is acceptable for a one-figure verb, where the rule and the
+        // command carry the same information, but not for a verb whose command answers with more:
+        // !who lists the roster and !whoami reports the memory dossier, and a canned line hid both.
+        // This test names the verbs whose command is the better answer.
+        List<String> richer = List.of("who", "whoami", "history", "facts", "memories", "fact",
+            "triggers", "activity", "macros", "help", "cmds", "about", "summary");
+        List<String> shadowed = new ArrayList<>();
+        for (TriggerRule rule : TriggerRule.preconfigured()) {
+            String pattern = rule.pattern().strip();
+            if (!pattern.startsWith("!")) continue;
+            // Strip the prefix: without this the lookup is for "!who", which is no canonical name,
+            // so the check silently passed for every rule.
+            String verb = pattern.substring(1).split("\\s+", 2)[0].toLowerCase(Locale.ROOT);
+            String canonical = CommandCatalog.canonical(verb).orElse(null);
+            if (canonical != null && richer.contains(canonical)) {
+                shadowed.add(pattern + " replaces !" + canonical);
+            }
+        }
+        assertTrue(shadowed.isEmpty(), "these rules hide a richer command: " + shadowed);
     }
 }

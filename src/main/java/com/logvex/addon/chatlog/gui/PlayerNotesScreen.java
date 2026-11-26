@@ -66,23 +66,23 @@ public class PlayerNotesScreen extends WindowScreen {
         List<PlayerNote> notes = module.notes(filter);
         if (notes.isEmpty()) {
             add(theme.label(filter.isBlank() ? "No notes yet. Add one above." : "No notes match that filter."))
-                .expandX().widget().color(GuiKit.MUTED);
+                .expandX().widget().color(GuiKit.mutedColor());
             return;
         }
 
         WTable table = add(theme.table()).expandX().widget();
-        table.add(theme.label("Player")).widget().color(GuiKit.MUTED);
-        table.add(theme.label("Note")).expandCellX().widget().color(GuiKit.MUTED);
-        table.add(theme.label("Activity")).widget().color(GuiKit.MUTED);
-        table.add(theme.label("Updated")).widget().color(GuiKit.MUTED);
+        table.add(theme.label("Player")).widget().color(GuiKit.mutedColor());
+        table.add(theme.label("Note")).expandCellX().widget().color(GuiKit.mutedColor());
+        table.add(theme.label("Activity")).widget().color(GuiKit.mutedColor());
+        table.add(theme.label("Updated")).widget().color(GuiKit.mutedColor());
         table.row();
 
         long now = System.currentTimeMillis();
         for (PlayerNote note : notes) {
-            table.add(theme.label(note.player())).widget().color(GuiKit.ACCENT);
+            table.add(theme.label(note.player())).widget().color(GuiKit.accentColor());
             table.add(theme.label(GuiKit.truncate(note.text(), 60))).expandCellX().widget();
             table.add(theme.label(activitySummary(note.player()))).widget();
-            table.add(theme.label(Messages.ago(note.updatedAt(), now))).widget().color(GuiKit.MUTED);
+            table.add(theme.label(Messages.ago(note.updatedAt(), now))).widget().color(GuiKit.mutedColor());
             WButton remove = table.add(theme.button("Remove")).widget();
             remove.action = () -> {
                 module.removeNote(note.player());

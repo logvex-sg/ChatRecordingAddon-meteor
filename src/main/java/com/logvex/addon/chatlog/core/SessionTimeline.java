@@ -64,7 +64,7 @@ public final class SessionTimeline {
         }
     }
 
-    public static final int DEFAULT_CAPACITY = 500;
+    public static final int DEFAULT_CAPACITY = 0;
 
     private int capacity;
     private final Deque<Event> events = new ArrayDeque<>();
@@ -74,22 +74,27 @@ public final class SessionTimeline {
     }
 
     public SessionTimeline(int capacity) {
-        this.capacity = Math.max(1, capacity);
+        this.capacity = Math.max(0, capacity);
     }
 
     /** Changes the cap, dropping the oldest milestones when the new cap is smaller. */
     public synchronized void setCapacity(int capacity) {
-        this.capacity = Math.max(1, capacity);
-        while (events.size() > this.capacity) events.removeFirst();
+        this.capacity = Math.max(0, capacity);
+        trim();
     }
 
     public synchronized int capacity() {
         return capacity;
     }
 
+    private void trim() {
+        if (capacity <= 0) return;
+        while (events.size() > capacity) events.removeFirst();
+    }
+
     public synchronized void add(long timestamp, Kind kind, String subject, String detail) {
         events.addLast(new Event(timestamp, kind, subject, detail));
-        while (events.size() > capacity) events.removeFirst();
+        trim();
     }
 
     /** Records a milestone derived from a chat entry, or does nothing for an ordinary message. */
@@ -110,17 +115,18 @@ public final class SessionTimeline {
         return new ArrayList<>(events);
     }
 
-    /** The most recent {@code limit} events, newest first. */
+    /** The most recent {@code limit} events, newest first. {@code limit <= 0} returns all of them. */
     public synchronized List<Event> recent(int limit) {
         List<Event> all = new ArrayList<>(events);
-        List<Event> out = new ArrayList<>(Math.min(limit, all.size()));
-        for (int i = all.size() - 1; i >= 0 && out.size() < limit; i--) out.add(all.get(i));
+        int wanted = limit <= 0 ? all.size() : Math.min(limit, all.size());
+        List<Event> out = new ArrayList<>(wanted);
+        for (int i = all.size() - 1; i >= 0 && out.size() < wanted; i--) out.add(all.get(i));
         return out;
     }
 
     /** Events whose subject, detail or kind label contains {@code filter}, newest first. */
     public synchronized List<Event> search(String filter) {
-        if (filter == null || filter.isBlank()) return recent(capacity);
+        if (filter == null || filter.isBlank()) return recent(0);
         String needle = filter.trim().toLowerCase(Locale.ROOT);
         List<Event> out = new ArrayList<>();
         List<Event> all = new ArrayList<>(events);

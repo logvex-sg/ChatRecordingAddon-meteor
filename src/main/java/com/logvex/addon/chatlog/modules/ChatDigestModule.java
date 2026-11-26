@@ -2,6 +2,7 @@ package com.logvex.addon.chatlog.modules;
 
 import com.logvex.addon.framework.systems.modules.AddonModule;
 import com.logvex.addon.LogClient;
+import com.logvex.addon.assistant.core.ReplyFormat;
 import com.logvex.addon.chatlog.core.ChatDigest;
 import com.logvex.addon.chatlog.core.ChatEntry;
 import com.logvex.addon.chatlog.mc.LogService;
@@ -107,7 +108,9 @@ public class ChatDigestModule extends AddonModule {
             if (manual) info("No messages to summarise yet.");
             return;
         }
-        for (String line : ChatDigest.lines(summary, System.currentTimeMillis())) {
+        long now = System.currentTimeMillis();
+        for (String line : ReplyFormat.render(ChatDigest.embed(summary, now),
+                ReplyFormat.DEFAULT_WIDTH)) {
             info("%s", line);
         }
         if (sendWebhook.get()) {

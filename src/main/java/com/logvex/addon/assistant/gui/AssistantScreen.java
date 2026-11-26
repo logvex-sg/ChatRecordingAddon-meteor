@@ -23,8 +23,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * The assistant manager: triggers, macros, memory, the local AI and the live status commands,
- * one tab each.
+ * The assistant manager: triggers, macros, memory and status, one tab each.
  *
  * <p>Every control is wired to real {@link AssistantModule} methods, so the screen can never drift
  * from the module's behaviour. A rule is edited as its encoded string, which keeps the full feature
@@ -68,15 +67,13 @@ public class AssistantScreen extends WindowScreen {
         tabButton(tabs, "Triggers", 0);
         tabButton(tabs, "Macros", 1);
         tabButton(tabs, "Memory", 2);
-        tabButton(tabs, "Local AI", 3);
-        tabButton(tabs, "Status", 4);
+        tabButton(tabs, "Status", 3);
 
         add(theme.horizontalSeparator()).expandX();
         switch (tab) {
             case 1 -> renderMacros();
             case 2 -> renderMemory();
-            case 3 -> renderAi();
-            case 4 -> renderStatus();
+            case 3 -> renderStatus();
             default -> renderTriggers();
         }
     }
@@ -152,7 +149,8 @@ public class AssistantScreen extends WindowScreen {
             module.replaceRule(index, new TriggerRule(current.pattern(), current.caseSensitive(),
                 current.wholeWord(), current.sender(), current.reply(), current.mode(),
                 current.cooldownMs(), current.sessionLimit(), current.sound(), current.remember(),
-                !current.enabled()).encode());
+                !current.enabled(), current.aliases(), current.pool(), current.whisperCommand(),
+                current.embedMode()).encode());
             taskAfterRender = this::render;
         };
 
@@ -353,72 +351,6 @@ public class AssistantScreen extends WindowScreen {
             taskAfterRender = this::render;
         };
         footer.row();
-    }
-
-    // ------------------------------------------------------------------ local AI
-
-    private void renderAi() {
-        com.logvex.addon.ai.core.AiEngine engine = module.aiEngine();
-
-        WVerticalList info = add(theme.verticalList()).expandX().widget();
-        keyValue(info, "Model:", engine.enabled() ? "enabled" : "disabled");
-        keyValue(info, "Intents:", String.valueOf(engine.model().intentCount()));
-        keyValue(info, "Confidence floor:", Math.round(engine.threshold() * 100) + "%");
-        keyValue(info, "Classified:", String.valueOf(engine.classified()));
-        keyValue(info, "Understood:", engine.understood() + " ("
-            + Math.round(engine.understandingRate() * 100) + "%)");
-        keyValue(info, "Cache hits:", String.valueOf(engine.cacheHits()));
-        keyValue(info, "Runs locally:", "yes \u2014 no network, no external service");
-        keyValue(info, "Model file:", com.logvex.addon.ai.mc.AiService.defaultPath().toString());
-
-        add(theme.horizontalSeparator("Intents")).expandX();
-        add(theme.label(String.join(", ", engine.model().intentNames())))
-            .expandX().widget().color(MUTED);
-
-        add(theme.horizontalSeparator("Ask the model")).expandX();
-        WTextBox ask = add(theme.textBox("", "Type a message to see the AI's intent and reply"))
-            .expandX().widget();
-        WButton run = add(theme.button("Ask")).expandX().widget();
-        run.action = () -> {
-            String text = ask.get();
-            if (text == null || text.isBlank()) return;
-            String intent = engine.intentOf(text);
-            if (intent == null) {
-                add(theme.label("The model does not understand that message."))
-                    .expandX().widget().color(MUTED);
-                return;
-            }
-            String reply = engine.respond(text, "Tester", java.util.Map.of(), System.currentTimeMillis());
-            add(theme.label("Intent '" + intent + "' (" + Math.round(engine.confidence(text) * 100)
-                + "%): " + reply)).expandX().widget().color(ACCENT);
-        };
-
-        add(theme.horizontalSeparator("Teach a phrase")).expandX();
-        WTextBox intentBox = add(theme.textBox("", "intent name, e.g. greeting")).expandX().widget();
-        WTextBox exampleBox = add(theme.textBox("", "an example phrase for that intent")).expandX().widget();
-        WButton teach = add(theme.button("Teach")).expandX().widget();
-        teach.action = () -> {
-            String intent = intentBox.get();
-            String example = exampleBox.get();
-            if (intent == null || intent.isBlank() || example == null || example.isBlank()) return;
-            if (engine.model().teach(intent, example)) {
-                module.saveAi();
-                taskAfterRender = this::render;
-            }
-        };
-
-        WTable actions = add(theme.table()).expandX().widget();
-        WButton clearStats = actions.add(theme.button("Reset stats")).widget();
-        clearStats.action = () -> {
-            engine.resetStats();
-            taskAfterRender = this::render;
-        };
-        WButton save = actions.add(theme.button("Save model")).widget();
-        save.action = () -> {
-            module.saveAi();
-            taskAfterRender = this::render;
-        };
-        actions.row();
     }
 
     // ------------------------------------------------------------------ status

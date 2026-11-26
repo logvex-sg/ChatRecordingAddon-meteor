@@ -1,11 +1,11 @@
 package com.logvex.addon.assistant.core;
 
-import com.logvex.addon.ai.core.AiEngine;
 import com.logvex.addon.stats.ServerStats;
 import com.logvex.addon.stats.StatusCommand;
 import com.logvex.addon.stats.StatusCommands;
 import com.logvex.addon.stats.StatusTemplate;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
@@ -127,6 +127,19 @@ public final class AssistantBrain {
             return ReplyFormat.render(style == null ? embed : withStyle(embed, style), width);
         }
 
+        /**
+         * The lines to deliver, cut to {@code maxLines} without leaving a block open.
+         *
+         * <p>A caller that sends one message per line has to bound the count, and cutting the
+         * rendered list would end a box on a {@code │} row. This renders through
+         * {@link ReplyFormat#renderCapped} so the closing rule always survives.
+         */
+        public java.util.List<String> linesCapped(int width, ReplyFormat.Style style, int maxLines) {
+            if (embed == null) return lines(width, style);
+            return ReplyFormat.renderCapped(style == null ? embed : withStyle(embed, style),
+                width, maxLines);
+        }
+
         private static ReplyFormat.Embed withStyle(ReplyFormat.Embed embed, ReplyFormat.Style style) {
             return new ReplyFormat.Embed(embed.title(), embed.fields(), embed.footer(), style);
         }
@@ -146,17 +159,37 @@ public final class AssistantBrain {
     }
 
     private final AssistantMemory memory;
-    private AiEngine engine;
 
     /** The configured greeting pools, keyed by bucket id; null means the built-in defaults. */
     private java.util.Map<String, String> greetingPools;
     private String goodGameReply = DEFAULT_GOOD_GAME_REPLY;
+
+    /** Refusal for a command that reads the operator's own data, said to a non-local speaker. */
+    private static final String NOT_LOCAL =
+        "That command reads my owner's own notes, so only they can use it.";
+
+    /**
+     * The most rows a list card shows before summarising the rest in the footer.
+     *
+     * <p>A card is capped at 12 delivered lines, so a list longer than this could never be shown in
+     * full anyway. Bounding it here rather than letting the renderer cut means the footer can say
+     * how many are hidden, instead of a page ending on an unexplained "+n more".
+     */
+    private static final int MAX_LIST_ROWS = 8;
 
     /** The macro table, so {@code !macros} and {@code !macrohelp} can describe it. */
     private MacroSet macros = MacroSet.EMPTY;
 
     /** The live trigger table, so {@code !triggers} can list what is actually armed. */
     private TriggerSet triggerSet = TriggerSet.empty();
+
+    /**
+     * Where filed reports are recorded, or null when the webhook module is unavailable.
+     *
+     * <p>A supplier rather than the log itself: the log belongs to the relay module, which may be
+     * reloaded, and the brain must always read the live one.
+     */
+    private java.util.function.Supplier<com.logvex.addon.chatlog.core.ReportLog> reportLogSource;
 
     /**
      * Per-command configuration for the non-status prefix commands.
@@ -181,6 +214,64 @@ public final class AssistantBrain {
 
     public TriggerSet triggerSet() {
         return triggerSet;
+    }
+
+    /** Points the brain at the live report log, so {@code !reports} lists what was really filed. */
+    public void setReportLogSource(
+        java.util.function.Supplier<com.logvex.addon.chatlog.core.ReportLog> source) {
+        this.reportLogSource = source;
+    }
+
+    /** The live report log, or null when none is wired. */
+    private com.logvex.addon.chatlog.core.ReportLog reportLog() {
+        return reportLogSource == null ? null : reportLogSource.get();
+    }
+
+    /**
+     * How a trigger rule's enabled flag is persisted.
+     *
+     * <p>Null means the caller can read rules but not change them, which is what a headless test
+     * wants: {@code !trigger off goodbye} then answers "no way to save that" instead of pretending
+     * the change stuck. The module wires this to its persisted rule list, because the brain owns no
+     * settings and must not start.
+     */
+    public interface TriggerToggle {
+        /**
+         * Turns the rule matching {@code pattern} on or off.
+         *
+         * @return null when it worked, or a sentence explaining why it did not
+         */
+        String setEnabled(String pattern, boolean enabled);
+    }
+
+    private TriggerToggle triggerToggle;
+
+    /**
+     * Every rule, including the disabled ones, for {@code !trigger} to resolve a name against.
+     *
+     * <p>{@link #triggerSet} cannot be used for this: a {@link TriggerSet} holds only the rules that
+     * are on, so a rule that was just switched off would vanish from the lookup and could never be
+     * switched back on.
+     */
+    private java.util.function.Supplier<List<TriggerRule>> triggerCatalog;
+
+    /** Wires the callback that persists a trigger's enabled flag; null disables the command. */
+    public void setTriggerToggle(TriggerToggle toggle) {
+        this.triggerToggle = toggle;
+    }
+
+    /** Wires the full rule list, disabled rules included; null falls back to the active set. */
+    public void setTriggerCatalog(java.util.function.Supplier<List<TriggerRule>> catalog) {
+        this.triggerCatalog = catalog;
+    }
+
+    /** Every rule {@code !trigger} may act on, enabled or not. */
+    private List<TriggerRule> knownRules() {
+        if (triggerCatalog != null) {
+            List<TriggerRule> all = triggerCatalog.get();
+            if (all != null) return all;
+        }
+        return triggerSet == null ? List.of() : triggerSet.rules();
     }
 
     /** Replaces the per-command table; null restores the shipped defaults. */
@@ -220,17 +311,12 @@ public final class AssistantBrain {
             ? DEFAULT_GOOD_GAME_REPLY : reply;
     }
 
-    /** Attaches the local AI. Without one the brain only answers triggers and memory commands. */
-    public void setEngine(AiEngine engine) {
-        this.engine = engine;
-    }
-
     /**
      * Evaluates one incoming message, trying every source in priority order.
      *
      * <p>Kept for callers that want the whole decision in one call (and for tests). The live runtime
-     * uses the granular {@link #trigger}, {@link #command} and {@link #ai} methods instead, because
-     * each source has its own cooldown and rate-limit treatment.
+     * uses the granular {@link #trigger} and {@link #command} methods instead, because each source
+     * has its own cooldown and rate-limit treatment.
      */
     public Decision evaluate(String sender, String content, TriggerSet triggers,
                              AssistantConfig config, long now) {
@@ -245,10 +331,6 @@ public final class AssistantBrain {
         if (cfg.memoryCommands()) {
             Decision command = command(sender, content, cfg, now);
             if (command != null) return command;
-        }
-        if (cfg.localAi()) {
-            Decision ai = ai(sender, content, cfg, now);
-            if (ai != null) return ai;
         }
         return Decision.NONE;
     }
@@ -339,104 +421,6 @@ public final class AssistantBrain {
         return CommandCatalog.canonical(word).filter("help"::equals).isPresent();
     }
 
-    /** Asks the local AI for a reply, or null when it declines. See {@link #fromAi}. */
-    public Decision ai(String sender, String content, AssistantConfig config, long now) {
-        return fromAi(sender, content, config, now, ServerStats.OFFLINE);
-    }
-
-    /** Asks the local AI for a reply, expanding placeholders in it against the live figures. */
-    public Decision ai(String sender, String content, AssistantConfig config, long now,
-                       ServerStats stats) {
-        return fromAi(sender, content, config, now, stats);
-    }
-
-    /**
-     * Asks the local AI for a reply.
-     *
-     * <p>Returns null when the AI is not attached, is not confident enough, or produced nothing, so
-     * the caller falls through to no-op. The reply mode decides whether it is spoken, notified or
-     * kept silent; a chat reply that ends up empty is downgraded to silent rather than sent blank.
-     */
-    private Decision fromAi(String sender, String content, AssistantConfig config, long now,
-                            ServerStats stats) {
-        if (engine == null || !engine.enabled()) return null;
-
-        java.util.Map<String, String> context = new java.util.HashMap<>(4);
-        context.put("name", config.name());
-        context.put("prefix", config.commandPrefix());
-        context.put("factcount", Integer.toString(memory.facts().size()));
-        context.put("time", java.time.LocalTime.now()
-            .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")));
-
-        // Memory is consulted before the classifier. A stored fact is exact, user-authored and
-        // specific to this install, so it beats a guessed intent: if the user taught the assistant
-        // what "prefix" means, answering from the corpus instead would ignore their own data.
-        String text = recallReply(sender, content);
-        if (text == null) text = engine.respond(content, sender, context, now);
-        if (text == null || text.isBlank()) return null;
-        text = ResponseTemplate.expand(text, new ResponseTemplate.Context(
-            sender, content, stats.server(), memory, now, stats));
-        text = clamp(text, config.maxReplyLength());
-
-        Delivery delivery = switch (config.aiReplyMode()) {
-            case CHAT -> Delivery.CHAT;
-            case NOTIFY -> Delivery.NOTIFY;
-            case PRIVATE -> Delivery.PRIVATE;
-            case SILENT -> Delivery.SILENT;
-        };
-        boolean remember = config.rememberConversations();
-        if (remember) {
-            memory.recordConversation(sender, content, text, now);
-            memory.incrementCounter("ai-replies", 1);
-        }
-        return new Decision(delivery, text, null, false, remember, false);
-    }
-
-    /**
-     * Answers from a stored fact when the line names one, or null to let the classifier decide.
-     *
-     * <p>Only a question-shaped line is answered this way. A bare mention is not a request: "the
-     * server lagged" must not make the assistant recite the server fact, so the line has to read as
-     * a question before memory is used. That keeps recall from turning every keyword in normal chat
-     * into an unsolicited lecture.
-     *
-     * <p>The reply names the fact it used, because an answer the user cannot trace back to their own
-     * stored text is one they cannot correct.
-     */
-    private String recallReply(String sender, String content) {
-        if (!looksLikeQuestion(content)) return null;
-        java.util.Optional<AssistantMemory.Fact> found = memory.recall(content);
-        if (found.isEmpty()) return null;
-        AssistantMemory.Fact fact = found.get();
-        if (fact.value() == null || fact.value().isBlank()) return null;
-        memory.incrementCounter("recalls", 1);
-        return fact.key() + ": " + fact.value();
-    }
-
-    /**
-     * True when {@code content} is phrased as a question.
-     *
-     * <p>A question mark or an interrogative opener is enough. This is deliberately shallow: it is a
-     * gate on using memory, not an attempt to parse English, and a false positive costs only a
-     * slightly eager answer while a false negative costs a missed one.
-     */
-    private static boolean looksLikeQuestion(String content) {
-        if (content == null) return false;
-        String text = content.strip().toLowerCase(java.util.Locale.ROOT);
-        if (text.isEmpty()) return false;
-        if (text.indexOf('?') >= 0) return true;
-        for (String opener : QUESTION_OPENERS) {
-            if (text.startsWith(opener + " ")) return true;
-        }
-        return false;
-    }
-
-    /** Openers that make a line a question even without a question mark. */
-    private static final String[] QUESTION_OPENERS = {
-        "what", "whats", "where", "when", "who", "why", "how", "which", "is", "are", "can",
-        "could", "do", "does", "did", "tell me", "explain", "any idea"
-    };
-
     // ------------------------------------------------------------------ triggers
 
     private Decision fromTrigger(TriggerRule rule, String sender, String content,
@@ -460,7 +444,20 @@ public final class AssistantBrain {
             memory.recordConversation(sender, content, text, now);
             memory.incrementCounter("replies", 1);
         }
-        return new Decision(delivery, text, rule, rule.sound(), remember, false);
+        // An embed rule delivers the same figures as a labelled block, so the values line up instead
+        // of running together in one sentence. The one-line text stays as the fallback for a caller
+        // that can only show a single line, and as what memory records. A command-shaped trigger
+        // carries its catalogue description in the footer, so the card says what it reports.
+        ReplyFormat.Embed embed = rule.wantsEmbed(text) ? rule.toEmbed(text, rule.pattern()) : null;
+        if (embed != null && rule.isCommandShaped()) {
+            String description = CommandCatalog.find(rule.pattern().replaceFirst("^[!/]", ""))
+                .map(CommandCatalog.Command::description).orElse("");
+            if (!description.isEmpty()) {
+                embed = new ReplyFormat.Embed(embed.title(), embed.fields(), description,
+                    embed.style());
+            }
+        }
+        return new Decision(delivery, text, rule, rule.sound(), remember, false, false, embed);
     }
 
     // ------------------------------------------------------------------ memory commands
@@ -612,10 +609,30 @@ public final class AssistantBrain {
             case "hello" -> commandHello(sender, config, now, stats);
             case "gg" -> commandGoodGame(sender, config, now, stats);
             case "whoami" -> commandWhoAmI(sender, config);
-            case "macros" -> commandMacros(config);
+            case "macros" -> commandMacros(config, rest);
             case "triggers" -> commandTriggers(identity, config, rest);
+            // Changing the trigger table is an operator action. Without this gate a stranger could
+            // type !trigger off in public chat and silence the operator's answers for everyone.
+            case "trigger" -> identity.local()
+                ? commandTrigger(sender, config, rest)
+                : reply(config.memoryReplyMode(), NOT_LOCAL, false);
             case "macrohelp" -> commandMacroHelp(rest, config);
+            case "share" -> commandShare(config);
             case "mod", "report" -> commandReport(sender, canonical, rest, config);
+            // modcall is its own module for the case where the assistant is off, but it is also in
+            // the command table, so the assistant must answer it too. Without this case the line
+            // fell through to public chat and the player's reason was broadcast to everyone.
+            case "modcall" -> commandReport(sender, "mod", rest, config);
+            // Both read the operator's own private data - who they reported and what they
+            // remember about a player - so they are gated on the local speaker here rather than
+            // left to the permissions setting, which is off by default. Without this a stranger
+            // typing !reports in public chat would be shown the operator's report history.
+            case "reports" -> identity.local()
+                ? commandReports(rest, config)
+                : reply(config.memoryReplyMode(), NOT_LOCAL, false);
+            case "player" -> identity.local()
+                ? commandPlayer(rest, config, activity)
+                : reply(config.memoryReplyMode(), NOT_LOCAL, false);
             case "summary" -> commandSummary(sender, rest, config);
             case "who" -> commandWho(config, stats);
             case "stats" -> commandStats(config, stats);
@@ -658,11 +675,32 @@ public final class AssistantBrain {
         // A local answer is a notification; a chat answer is one line of ordinary chat. Both are
         // non-remembered: a status readout is not part of the conversation.
         Delivery delivery = value.localOnly() ? Delivery.NOTIFY : Delivery.CHAT;
+        // Every figure answers as a card, built from the operator's own template. The template is
+        // still what decides the wording and order, so a customised answer keeps its customisation;
+        // only the layout is imposed. The one-line text stays as the fallback and as what a caller
+        // that can show only one line sends.
+        ReplyFormat.Embed embed = statusEmbed(config, value);
         // Only the overview is mirrored to the admin webhook: a card per figure would flood the
         // channel the moment someone polls two commands in a row.
         String card = "status".equals(value.command()) ? value.command() : null;
-        return new Decision(delivery, value.text(), null, false, false, true, false, null, null,
+        return new Decision(delivery, value.text(), null, false, false, true, false, embed, null,
             card);
+    }
+
+    /**
+     * The card for one status command.
+     *
+     * <p>The footer carries the command's one-line description, so the block explains itself
+     * instead of repeating its own name back at the reader. The description is optional: an
+     * unknown verb still renders, just without a footer.
+     */
+    private static ReplyFormat.Embed statusEmbed(AssistantConfig config, StatusCommands.Answer value) {
+        ReplyFormat.Embed card = ReplyFormat.fromTemplate(
+            config.commandPrefix() + value.command(), value.text());
+        if (card == null) return null;
+        String description = CommandCatalog.find(value.command())
+            .map(CommandCatalog.Command::description).orElse("");
+        return new ReplyFormat.Embed(card.title(), card.fields(), description, card.style());
     }
 
     /**
@@ -703,6 +741,12 @@ public final class AssistantBrain {
     /** {@code !help}: every command the assistant answers, as one row per command. */
     private Decision commandHelp(SenderIdentity identity, AssistantConfig config, String rest,
                                  StatusCommands.Settings statusSettings, PermissionSet perms) {
+        // A name is a request for that one command, not a page. Without this, "!help modcall" was
+        // read as "page 1" and silently answered with the whole list.
+        CommandCatalog.Command single = namedCommand(rest);
+        if (single != null) {
+            return commandHelpDetail(identity, config, single, perms);
+        }
         int page = parsePage(rest);
         ReplyFormat.Embed embed = helpEmbed(identity, config, statusSettings, perms, page);
         if (embed.fields().isEmpty()) {
@@ -712,13 +756,64 @@ public final class AssistantBrain {
     }
 
     /**
+     * The command {@code rest} names, or null when it names none.
+     *
+     * <p>Only a single token is treated as a name. {@code "page 2"} and a bare number stay on the
+     * paging path, so the two ways of using the command do not collide.
+     */
+    private static CommandCatalog.Command namedCommand(String rest) {
+        if (rest == null) return null;
+        String text = rest.strip();
+        if (text.isEmpty()) return null;
+        String word = text.toLowerCase(Locale.ROOT);
+        if (word.startsWith("page")) return null;
+        if (word.chars().allMatch(Character::isDigit)) return null;
+        if (text.indexOf(' ') >= 0) return null;
+        // find() matches canonical names only, so an alias such as "shortcuts" has to be resolved
+        // through the alias table before the lookup or it reads as an unknown command.
+        String canonical = CommandCatalog.canonical(word).orElse(word);
+        return CommandCatalog.find(canonical).orElse(null);
+    }
+
+    /**
+     * One command, in full: what it does, how to spell it, and whether the caller may run it.
+     *
+     * <p>Refused rather than omitted when the caller could not run it, unlike the list: asking about
+     * a named command is not the same as being offered it, and saying so is more useful than an
+     * empty answer.
+     */
+    private Decision commandHelpDetail(SenderIdentity identity, AssistantConfig config,
+                                       CommandCatalog.Command command, PermissionSet perms) {
+        PermissionSet live = perms == null ? PermissionSet.permissive() : perms;
+        PermissionSet.Verdict verdict = live.permits(command.name(), identity);
+        PermissionLevel level = live.effectiveLevel(command.name());
+        String prefix = config.commandPrefix();
+
+        java.util.List<ReplyFormat.Field> fields = new java.util.ArrayList<>();
+        fields.add(new ReplyFormat.Field("Usage", prefix + command.name()));
+        fields.add(new ReplyFormat.Field("About", command.description()));
+        if (!command.aliases().isEmpty()) {
+            java.util.List<String> spelled = new java.util.ArrayList<>();
+            for (String alias : command.aliases()) spelled.add(prefix + alias);
+            fields.add(new ReplyFormat.Field("Also", String.join(", ", spelled)));
+        }
+        fields.add(new ReplyFormat.Field("Access", levelLabel(level)));
+        if (!verdict.allowed()) {
+            fields.add(new ReplyFormat.Field("You", "may not run this"));
+        }
+        return embedReply(config.memoryReplyMode(),
+            new ReplyFormat.Embed(prefix + command.name(), fields, "", ReplyFormat.Style.BOX), false);
+    }
+
+    /**
      * How many command rows one help page holds.
      *
-     * <p>Six, not eight: a row with its description and aliases can still wrap to two lines in a
-     * narrow chat window, and a page has to stay inside the delivery cap or the tail is cut off. The
-     * level is no longer repeated per row, which is what made six fit where four did.
+     * <p>Five, not eight or six: a row carrying aliases wraps to two lines at the default width, and
+     * the delivery cap is twelve lines including both frame rules. Six rows meant a page could need
+     * fourteen lines, so the tail was cut and reported as "+1 more" — a command the reader was told
+     * about but never shown. Five rows is the largest count that always fits.
      */
-    public static final int HELP_PAGE_SIZE = 6;
+    public static final int HELP_PAGE_SIZE = 5;
 
     /** The page number in {@code rest} ({@code "2"} or {@code "page 2"}), clamped to 1 or more. */
     static int parsePage(String rest) {
@@ -817,12 +912,19 @@ public final class AssistantBrain {
                                    PermissionSet perms) {
         ChatActivity seen = activity == null ? new ChatActivity() : activity;
         PermissionSet live = perms == null ? PermissionSet.permissive() : perms;
-        java.util.List<ReplyFormat.Field> fields = java.util.List.of(
-            new ReplyFormat.Field("Facts", String.valueOf(memory.facts().size())),
-            new ReplyFormat.Field("Players known", String.valueOf(memory.knownPlayers().size())),
-            new ReplyFormat.Field("Lines seen", String.valueOf(seen.seen())),
-            new ReplyFormat.Field("Answered", String.valueOf(seen.answered())),
-            new ReplyFormat.Field("Permissions", live.enabled() ? "on" : "off"));
+        java.util.List<ReplyFormat.Field> fields = new java.util.ArrayList<>();
+        fields.add(ReplyFormat.Field.section("Memory"));
+        fields.add(new ReplyFormat.Field("Facts", String.valueOf(memory.facts().size())));
+        fields.add(new ReplyFormat.Field("Players known", String.valueOf(memory.knownPlayers().size())));
+        fields.add(ReplyFormat.Field.section("This session"));
+        fields.add(new ReplyFormat.Field("Lines seen", String.valueOf(seen.seen())));
+        fields.add(new ReplyFormat.Field("Answered", String.valueOf(seen.answered())));
+        // A share of the lines it chose to answer reads faster as a bar than as two counts.
+        double share = seen.seen() <= 0 ? 0 : (double) seen.answered() / seen.seen();
+        fields.add(ReplyFormat.Field.meter("Reply rate",
+            Math.round(share * 100) + "%", share));
+        fields.add(ReplyFormat.Field.section("Controls"));
+        fields.add(new ReplyFormat.Field("Permissions", live.enabled() ? "on" : "off"));
         return embedReply(config.memoryReplyMode(),
             new ReplyFormat.Embed(config.name(), fields, "", ReplyFormat.Style.BOX), false);
     }
@@ -892,7 +994,9 @@ public final class AssistantBrain {
         if (value == null) {
             return reply(config.memoryReplyMode(), "I do not know " + key + ".", false);
         }
-        return reply(config.memoryReplyMode(), key + " = " + value, false);
+        return embedReply(config.memoryReplyMode(), key + " = " + value,
+            new ReplyFormat.Embed(config.commandPrefix() + "fact",
+                List.of(new ReplyFormat.Field(key, value)), "", ReplyFormat.Style.BOX), false);
     }
 
     private Decision commandFacts(AssistantConfig config) {
@@ -900,25 +1004,34 @@ public final class AssistantBrain {
         if (facts.isEmpty()) {
             return reply(config.memoryReplyMode(), "I have no stored facts.", false);
         }
-        StringBuilder sb = new StringBuilder("I know " + facts.size() + " fact"
-            + (facts.size() == 1 ? "" : "s") + ": ");
+        List<ReplyFormat.Field> rows = new ArrayList<>(facts.size());
         int shown = 0;
         for (AssistantMemory.Fact fact : facts) {
-            if (shown == 8) {
-                sb.append(", ...");
+            if (shown == MAX_LIST_ROWS) {
                 break;
             }
-            if (shown > 0) sb.append(", ");
-            sb.append(fact.key()).append('=').append(clamp(fact.value(), 24));
+            rows.add(new ReplyFormat.Field(fact.key(), clamp(fact.value(), 24)));
             shown++;
         }
-        return reply(config.memoryReplyMode(), sb.toString(), false);
+        String footer = facts.size() > shown
+            ? "+" + (facts.size() - shown) + " more"
+            : "";
+        return embedReply(config.memoryReplyMode(),
+            new ReplyFormat.Embed("Stored facts", rows, footer, ReplyFormat.Style.BOX), false);
     }
 
     private Decision commandMemories(String sender, AssistantConfig config) {
-        String summary = memory.facts().size() + " facts, " + memory.knownPlayers().size() + " players, "
-            + memory.historySize() + " remembered lines";
-        return reply(config.memoryReplyMode(), summary, false);
+        List<ReplyFormat.Field> rows = new ArrayList<>(4);
+        rows.add(new ReplyFormat.Field("Facts", String.valueOf(memory.facts().size())));
+        rows.add(new ReplyFormat.Field("Players", String.valueOf(memory.knownPlayers().size())));
+        rows.add(new ReplyFormat.Field("Remembered lines",
+            String.valueOf(memory.historySize())));
+        if (sender != null && !sender.isBlank()) {
+            rows.add(new ReplyFormat.Field("Your facts",
+                String.valueOf(memory.playerFacts(sender).size())));
+        }
+        return embedReply(config.memoryReplyMode(),
+            new ReplyFormat.Embed("What I remember", rows, "", ReplyFormat.Style.BOX), false);
     }
 
     private Decision commandForgetMe(String sender, AssistantConfig config, long now) {
@@ -934,24 +1047,42 @@ public final class AssistantBrain {
     }
 
     private Decision commandHistory(AssistantConfig config) {
-        List<AssistantMemory.ConversationEntry> recent = memory.history(5);
+        List<AssistantMemory.ConversationEntry> recent = memory.history(MAX_LIST_ROWS);
         if (recent.isEmpty()) {
             return reply(config.memoryReplyMode(), "Nothing remembered yet.", false);
         }
-        StringBuilder sb = new StringBuilder("Recent: ");
-        for (int i = 0; i < recent.size(); i++) {
-            if (i > 0) sb.append(" | ");
-            sb.append(clamp(recent.get(i).question(), 30));
+        List<ReplyFormat.Field> rows = new ArrayList<>(recent.size());
+        for (AssistantMemory.ConversationEntry entry : recent) {
+            rows.add(new ReplyFormat.Field(clamp(entry.question(), 28),
+                clamp(entry.answer(), 28)));
         }
-        return reply(config.memoryReplyMode(), sb.toString(), false);
+        String footer = memory.historySize() > recent.size()
+            ? "+" + (memory.historySize() - recent.size()) + " older"
+            : "";
+        return embedReply(config.memoryReplyMode(),
+            new ReplyFormat.Embed("Recent exchanges", rows, footer, ReplyFormat.Style.BOX), false);
     }
 
     private Decision commandWhoAmI(String sender, AssistantConfig config) {
         String name = sender == null || sender.isBlank() ? "someone" : sender;
         List<AssistantMemory.Fact> perPlayer = memory.playerFacts(name);
-        return reply(config.memoryReplyMode(),
-            "You are " + name + (perPlayer.isEmpty() ? "." : ", and I know " + perPlayer.size()
-                + " thing" + (perPlayer.size() == 1 ? "" : "s") + " about you."), false);
+        // history(0) is empty by contract, so ask for everything and count this player's share.
+        long asked = memory.allHistory().stream()
+            .filter(entry -> entry.player() != null && entry.player().equalsIgnoreCase(name))
+            .count();
+        List<ReplyFormat.Field> rows = new ArrayList<>(3);
+        rows.add(new ReplyFormat.Field("Player", name));
+        rows.add(new ReplyFormat.Field("Your facts", String.valueOf(perPlayer.size())));
+        rows.add(new ReplyFormat.Field("Asked me", asked + (asked == 1 ? " time" : " times")));
+        String text = "You are " + name + (perPlayer.isEmpty() ? "."
+            : ", and I know " + perPlayer.size() + " thing"
+                + (perPlayer.size() == 1 ? "" : "s") + " about you.");
+        return embedReply(config.memoryReplyMode(), text,
+            new ReplyFormat.Embed("About you", rows,
+                perPlayer.isEmpty()
+                    ? config.commandPrefix() + "remember " + name + " <key> = <value> to add one"
+                    : "",
+                ReplyFormat.Style.BOX), false);
     }
 
     private Decision reply(TriggerRule.ReplyMode mode, String text, boolean remember) {
@@ -970,8 +1101,10 @@ public final class AssistantBrain {
      * @param rest the page number, or a word to filter by
      */
     private Decision commandTriggers(SenderIdentity identity, AssistantConfig config, String rest) {
+        // The full catalog, so a rule that was switched off still appears to the local player,
+        // marked "[off]". A remote player is only shown what is actually running.
         java.util.List<TriggerRule> armed = new java.util.ArrayList<>();
-        for (TriggerRule rule : triggerSet.rules()) {
+        for (TriggerRule rule : knownRules()) {
             if (!visibleTo(rule, identity)) continue;
             armed.add(rule);
         }
@@ -1009,25 +1142,164 @@ public final class AssistantBrain {
     }
 
     /**
+     * {@code !trigger on|off <pattern>}: flips one rule's enabled flag and saves it.
+     *
+     * <p>The trigger table is what makes the assistant answer, and the shipped one is full of
+     * courtesies a player may not want ("cya" answers goodbye, "gg" answers good game). Without this
+     * command the only way to silence one was to delete it in the settings screen, which also threw
+     * away its reply text. Disabling keeps the rule and its wording, so it can be turned back on.
+     *
+     * <p>The pattern is matched the way the list shows it: a bare name that is a prefix of exactly
+     * one rule is enough ({@code !trigger off goodbye} for the {@code goodbye} rule), and an
+     * ambiguous prefix lists the candidates rather than guessing.
+     */
+    private Decision commandTrigger(String sender, AssistantConfig config, String rest) {
+        String body = rest == null ? "" : rest.strip();
+        String verb = body.split("\\s+", 2)[0].toLowerCase(Locale.ROOT);
+        String target = body.length() > verb.length() ? body.substring(verb.length()).strip() : "";
+
+        List<TriggerRule> rules = knownRules();
+        if (body.isEmpty() || target.isEmpty()) {
+            return reply(config.memoryReplyMode(), "Usage: " + config.commandPrefix()
+                + "trigger on|off <name>, for example " + config.commandPrefix()
+                + "trigger off goodbye", false);
+        }
+        boolean enable;
+        switch (verb) {
+            case "on", "enable", "true" -> enable = true;
+            case "off", "disable", "false" -> enable = false;
+            case "toggle" -> {
+                TriggerRule found = findRule(rules, target);
+                if (found == null || ambiguous(rules, target)) {
+                    return triggerLookupFailure(rules, config, target);
+                }
+                enable = !found.enabled();
+            }
+            default -> {
+                return reply(config.memoryReplyMode(), "Say on or off: " + config.commandPrefix()
+                    + "trigger off goodbye", false);
+            }
+        }
+
+        TriggerRule found = findRule(rules, target);
+        if (found == null || ambiguous(rules, target)) return triggerLookupFailure(rules, config, target);
+
+        if (triggerToggle == null) {
+            return reply(config.memoryReplyMode(),
+                "Triggers can only be changed from the assistant's settings screen.", false);
+        }
+        String problem = triggerToggle.setEnabled(found.pattern(), enable);
+        if (problem != null) return reply(config.memoryReplyMode(), problem, false);
+
+        return reply(config.memoryReplyMode(), "Trigger '" + found.pattern() + "' is now "
+            + (enable ? "on" : "off") + ".", true);
+    }
+
+    /**
+     * The rule {@code target} names: its pattern, one of its aliases, or a unique prefix of either.
+     *
+     * <p>Aliases are included because that is how a rule is usually known. A player sees "cya" in
+     * chat, not the {@code goodbye} rule that answers it, so a name-only lookup would answer "no
+     * trigger is called 'cya'" for the very word they want to silence. A pattern always wins over an
+     * alias, so an exact name is never ambiguous.
+     */
+    private static TriggerRule findRule(List<TriggerRule> rules, String target) {
+        String needle = target.strip().toLowerCase(Locale.ROOT);
+        if (needle.isEmpty()) return null;
+
+        for (TriggerRule rule : rules) {
+            if (rule.pattern().strip().toLowerCase(Locale.ROOT).equals(needle)) return rule;
+        }
+        for (TriggerRule rule : rules) {
+            if (hasAlias(rule, needle)) return rule;
+        }
+        TriggerRule prefix = null;
+        int hits = 0;
+        for (TriggerRule rule : rules) {
+            if (rule.pattern().toLowerCase(Locale.ROOT).startsWith(needle) || aliasStartsWith(rule, needle)) {
+                if (++hits > 1) return null;
+                prefix = rule;
+            }
+        }
+        return prefix;
+    }
+
+    /** True when {@code rule} lists {@code needle} as one of its aliases. */
+    private static boolean hasAlias(TriggerRule rule, String needle) {
+        String aliases = rule.aliases() == null ? "" : rule.aliases();
+        for (String alias : aliases.split(",")) {
+            if (alias.strip().toLowerCase(Locale.ROOT).equals(needle)) return true;
+        }
+        return false;
+    }
+
+    /** True when one of {@code rule}'s aliases starts with {@code needle}. */
+    private static boolean aliasStartsWith(TriggerRule rule, String needle) {
+        String aliases = rule.aliases() == null ? "" : rule.aliases();
+        for (String alias : aliases.split(",")) {
+            if (alias.strip().toLowerCase(Locale.ROOT).startsWith(needle)) return true;
+        }
+        return false;
+    }
+
+    /** True when {@code target} matches more than one rule, so acting on it would be a guess. */
+    private static boolean ambiguous(List<TriggerRule> rules, String target) {
+        String needle = target.strip().toLowerCase(Locale.ROOT);
+        if (needle.isEmpty()) return false;
+        int exact = 0;
+        int hits = 0;
+        for (TriggerRule rule : rules) {
+            String pattern = rule.pattern().strip().toLowerCase(Locale.ROOT);
+            if (pattern.equals(needle) || hasAlias(rule, needle)) exact++;
+            else if (pattern.startsWith(needle) || aliasStartsWith(rule, needle)) hits++;
+        }
+        if (exact >= 1) return exact > 1;
+        return hits > 1;
+    }
+
+    /** Says why a name could not be resolved, naming the candidates when it was only ambiguous. */
+    private Decision triggerLookupFailure(List<TriggerRule> rules, AssistantConfig config,
+                                          String target) {
+        List<String> candidates = new java.util.ArrayList<>();
+        String needle = target.strip().toLowerCase(Locale.ROOT);
+        for (TriggerRule rule : rules) {
+            if (rule.pattern().toLowerCase(Locale.ROOT).startsWith(needle)) {
+                candidates.add(rule.pattern());
+            }
+        }
+        if (candidates.isEmpty()) {
+            return reply(config.memoryReplyMode(), "No trigger is called '" + target
+                + "'. " + config.commandPrefix() + "triggers lists them.", false);
+        }
+        return reply(config.memoryReplyMode(), "Which one? " + String.join(", ", candidates), false);
+    }
+
+    /**
      * True when {@code rule} is worth showing to this speaker.
      *
      * <p>A rule pinned to someone else is not their business, and a rule whose reply is a command
      * only the local player may run would be a false promise in the list, so both are hidden.
      */
     private static boolean visibleTo(TriggerRule rule, SenderIdentity identity) {
-        if (rule == null || !rule.enabled() || rule.pattern().isBlank()) return false;
+        if (rule == null || rule.pattern().isBlank()) return false;
         boolean local = identity != null && identity.local();
+        // A rule that is off is shown to the local player only, marked "[off]": it is how they find
+        // the name to switch back on. A remote player is told only what is actually running.
+        if (!rule.enabled() && !local) return false;
         if (!rule.allowsCommandFrom(local)) return false;
         return rule.sender().isBlank() || rule.senderAllowed(identity == null ? "" : identity.name());
     }
 
-    /** The left column: the word to type, with the delivery mode when it is not plain chat. */
+    /** The left column: the word to type, annotated when it is not the default whisper. */
     private static String triggerLabel(TriggerRule rule) {
         String label = rule.pattern();
+        // A rule that is off is still listed, marked as such: it is the only place the operator can
+        // see what "!trigger on <name>" would bring back.
+        if (!rule.enabled()) return label + " [off]";
         return switch (rule.mode()) {
-            case CHAT -> label;
+            case PRIVATE -> label;
+            case CHAT -> label + " [chat]";
             case NOTIFY -> label + " [local]";
-            case PRIVATE -> label + " [" + rule.whisperCommand() + "]";
             case SILENT -> label + " [silent]";
         };
     }
@@ -1054,37 +1326,57 @@ public final class AssistantBrain {
     }
 
     /**
+     * How many macro rows one {@code !macros} page holds.
+     *
+     * <p>Six, matching a help page: the reply cap is twelve lines and a row with a wrapped
+     * description can take two, so a larger page would be cut and the tail lost.
+     */
+    public static final int MACROS_PAGE_SIZE = 6;
+
+    /**
      * {@code !macros}: the shortcuts the local player can type, as one row per macro.
      *
      * <p>Only enabled, valid macros are listed, and a disabled or broken one is simply absent rather
      * than shown as a shortcut that would not work. The rows carry the usage and the description, so
      * the list doubles as a reference card.
+     *
+     * <p>Paged, because the shipped set is fifteen macros and a single block is cut at twelve lines:
+     * the tail used to be reported as "+9 more" with no way to see it. The page number is the same
+     * argument {@code !help} takes.
      */
-    private Decision commandMacros(AssistantConfig config) {
+    private Decision commandMacros(AssistantConfig config, String rest) {
         java.util.List<ChatMacro> enabled = macros.enabled();
         if (enabled.isEmpty()) {
             return reply(config.memoryReplyMode(),
                 "No chat command macros are enabled. Add one in the assistant's Macro screen.", false);
         }
+        int wanted = parsePage(rest);
+        int pages = Math.max(1, (enabled.size() + MACROS_PAGE_SIZE - 1) / MACROS_PAGE_SIZE);
+        int page = Math.min(wanted, pages);
+        int from = (page - 1) * MACROS_PAGE_SIZE;
+        int to = Math.min(from + MACROS_PAGE_SIZE, enabled.size());
+
         java.util.List<ReplyFormat.Field> fields = new java.util.ArrayList<>();
-        for (ChatMacro macro : enabled) {
+        for (ChatMacro macro : enabled.subList(from, to)) {
             String label = macro.args().isEmpty() ? "no arguments" : macro.usageLine();
-            fields.add(new ReplyFormat.Field(macro.usageLine(),
-                macro.description().isBlank() ? label : macro.description()));
+            String about = macro.description().isBlank() ? label : macro.description();
+            // A shared macro runs as the operator, so it is called out here: the list is what a
+            // user scans, and "why did someone else run /spawn" is answered by seeing the marker.
+            if (macro.remote()) about = about + " (shared)";
+            fields.add(new ReplyFormat.Field(macro.usageLine(), about));
         }
-        String footer = enabled.size() + (enabled.size() == 1 ? " macro" : " macros")
-            + " - " + config.commandPrefix() + "macrohelp <name> for one";
+        String footer;
+        if (pages > 1) {
+            footer = "Page " + page + " of " + pages + " - " + config.commandPrefix() + "macros "
+                + (page < pages ? (page + 1) : 1) + " for the next.";
+        } else {
+            footer = enabled.size() + (enabled.size() == 1 ? " macro" : " macros")
+                + " - " + config.commandPrefix() + "macrohelp <name> for one";
+        }
         return embedReply(config.memoryReplyMode(),
             new ReplyFormat.Embed("Chat command macros", fields, footer, ReplyFormat.Style.BOX), false);
     }
 
-    /**
-     * {@code !who}: the players the client can see, laid out as a block that fits the reply width.
-     *
-     * <p>Names are grouped into lines rather than crammed into one, so a busy server reads as a list
-     * instead of a paragraph. The count is carried as its own field so it stays legible even when the
-     * names wrap.
-     */
     /**
      * {@code !stats}: every figure the client can see, as a labelled block.
      *
@@ -1102,6 +1394,13 @@ public final class AssistantBrain {
             new ReplyFormat.Embed("Server stats", fields, "", ReplyFormat.Style.BOX), false);
     }
 
+    /**
+     * {@code !who}: the players the client can see, laid out as a block that fits the reply width.
+     *
+     * <p>Names are grouped into lines rather than crammed into one, so a busy server reads as a list
+     * instead of a paragraph. The count is carried as its own field so it stays legible even when the
+     * names wrap.
+     */
     private Decision commandWho(AssistantConfig config, ServerStats stats) {
         ServerStats live = stats == null ? ServerStats.OFFLINE : stats;
         if (!live.inWorld()) {
@@ -1146,9 +1445,38 @@ public final class AssistantBrain {
             fields.add(new ReplyFormat.Field("Aliases", String.join(", ", macro.aliases())));
         }
         fields.add(new ReplyFormat.Field("Enabled", macro.enabled() ? "yes" : "no"));
+        fields.add(new ReplyFormat.Field("Shared",
+            macro.remote() ? "yes, other players may run it" : "no"));
         return embedReply(config.memoryReplyMode(),
             new ReplyFormat.Embed("Macro " + macro.shortcut(), fields, "", ReplyFormat.Style.BOX),
             false);
+    }
+
+    /**
+     * {@code !share}: which macros other players may run.
+     *
+     * <p>Read-only. Sharing is a security decision — a shared macro runs a command as the operator —
+     * so it is made in the module, where the allow-list and the on/off switch live, and this command
+     * only reports the result. A command that could silently flip sharing on would make that
+     * decision reachable from public chat.
+     */
+    private Decision commandShare(AssistantConfig config) {
+        java.util.List<ChatMacro> shared = macros.remote();
+        String prefix = config.commandPrefix();
+        if (shared.isEmpty()) {
+            return reply(config.memoryReplyMode(),
+                "No macros are shared. Mark one 'remote' in the assistant's Macro screen to let "
+                    + "other players run it.", false);
+        }
+        java.util.List<ReplyFormat.Field> fields = new java.util.ArrayList<>();
+        for (ChatMacro macro : shared) {
+            fields.add(new ReplyFormat.Field(macro.usageLine(),
+                macro.description().isBlank() ? macro.template() : macro.description()));
+        }
+        String footer = shared.size() + (shared.size() == 1 ? " shared macro" : " shared macros")
+            + " - " + prefix + "macrohelp <name> for one";
+        return embedReply(config.memoryReplyMode(),
+            new ReplyFormat.Embed("Shared macros", fields, footer, ReplyFormat.Style.BOX), false);
     }
 
     /**
@@ -1181,6 +1509,91 @@ public final class AssistantBrain {
     }
 
     /**
+     * {@code !player <name>}: everything this client knows about one player, in one card.
+     *
+     * <p>The pieces already existed - remembered facts, conversation history, session activity,
+     * notes, renames - but each was only reachable through its own command, so answering "who is
+     * this person" meant four commands. This composes them and states which are absent rather than
+     * showing empty rows.
+     *
+     * <p>Only figures the client actually holds are shown. A player who has never spoken has no
+     * activity row at all, which is different from having zero messages.
+     */
+    private Decision commandPlayer(String rest, AssistantConfig config, ChatActivity activity) {
+        String name = rest == null ? "" : rest.strip();
+        if (name.isEmpty()) {
+            return reply(config.memoryReplyMode(),
+                "Usage: " + config.commandPrefix() + "player <name>", false);
+        }
+        java.util.List<ReplyFormat.Field> fields = new java.util.ArrayList<>();
+
+        java.util.List<AssistantMemory.Fact> facts = memory.playerFacts(name);
+        for (AssistantMemory.Fact fact : facts) {
+            fields.add(new ReplyFormat.Field(fact.key(), clamp(fact.value(), 60)));
+        }
+
+        if (activity != null) {
+            long messages = activity.messagesFrom(name);
+            if (messages > 0) {
+                fields.add(new ReplyFormat.Field("Messages", Long.toString(messages)));
+            }
+        }
+
+        // history(0) is empty by contract (it is "at most zero"), so ask for everything.
+        long lines = memory.allHistory().stream()
+            .filter(entry -> entry.player() != null && entry.player().equalsIgnoreCase(name))
+            .count();
+        if (lines > 0) {
+            fields.add(new ReplyFormat.Field("Asked me", lines + (lines == 1 ? " time" : " times")));
+        }
+
+        if (fields.isEmpty()) {
+            return reply(config.memoryReplyMode(),
+                "I know nothing about " + name + " yet. Nothing was remembered and they have not "
+                    + "spoken since I started watching.", false);
+        }
+        String footer = facts.size() + (facts.size() == 1 ? " fact" : " facts")
+            + " - " + config.commandPrefix() + "remember " + name + " <key> <value> to add more";
+        return embedReply(config.memoryReplyMode(),
+            new ReplyFormat.Embed(name, fields, footer, ReplyFormat.Style.BOX), false);
+    }
+
+    /**
+     * {@code !reports [filter]}: what this client has filed, newest first.
+     *
+     * <p>Reads the live log rather than a copy, and says plainly when the log is unavailable rather
+     * than answering "no reports" - those are different facts and only one of them is true.
+     */
+    private Decision commandReports(String rest, AssistantConfig config) {
+        com.logvex.addon.chatlog.core.ReportLog log = reportLog();
+        if (log == null) {
+            return reply(config.memoryReplyMode(),
+                "The report log is unavailable: the webhook relay module is not loaded.", false);
+        }
+        java.util.List<com.logvex.addon.chatlog.core.ReportLog.Record> found =
+            log.search(rest == null ? "" : rest);
+        if (found.isEmpty()) {
+            String what = rest == null || rest.isBlank() ? "" : " matching \"" + rest.strip() + "\"";
+            return reply(config.memoryReplyMode(), "No reports" + what + " in the log.", false);
+        }
+        java.util.List<ReplyFormat.Field> fields = new java.util.ArrayList<>();
+        int shown = 0;
+        for (com.logvex.addon.chatlog.core.ReportLog.Record record : found) {
+            if (shown == 8) break;
+            String label = record.delivered() ? record.kind() : record.kind() + " (failed)";
+            fields.add(new ReplyFormat.Field(
+                com.logvex.addon.chatlog.core.ReportFormatting.shortTime(record.atMs()) + " " + label,
+                record.reporter() + ": " + clamp(record.reason(), 60)));
+            shown++;
+        }
+        String footer = found.size() + (found.size() == 1 ? " report" : " reports")
+            + (log.failures() > 0 ? ", " + log.failures() + " failed" : "")
+            + (found.size() > shown ? ", showing " + shown : "");
+        return embedReply(config.memoryReplyMode(),
+            new ReplyFormat.Embed("Filed reports", fields, footer, ReplyFormat.Style.BOX), false);
+    }
+
+    /**
      * {@code !summary [note]}: send a chat summary report to the configured webhook.
      *
      * <p>Encoded through the same {@code kind|who|note} channel as a report, with a distinct kind,
@@ -1196,14 +1609,6 @@ public final class AssistantBrain {
             false, null, "summary|" + who + "|" + note);
     }
 
-    /**
-     * {@code !modcall <reason>}: ask the caller to privately message the configured moderator.
-     *
-     * <p>The target and the enable switch are settings on the module, so they are not visible here.
-     * This method therefore only validates what it can see - that a reason was given and that it
-     * contains readable text - and hands the payload on. The module refuses when no target is
-     * configured, which is the one check that needs its settings.
-     */
     /** A reply carried as a block, so the caller can render it one line per field. */
     private Decision embedReply(TriggerRule.ReplyMode mode, ReplyFormat.Embed embed,
                                 boolean remember) {
@@ -1211,6 +1616,18 @@ public final class AssistantBrain {
         // can only show one line still get every field. The chat path renders the block instead.
         return new Decision(deliveryFor(mode), ReplyFormat.oneLine(embed, Integer.MAX_VALUE), null,
             false, remember, true, false, embed);
+    }
+
+    /**
+     * A card with a hand-written one-line fallback.
+     *
+     * <p>{@link #embedReply} derives the fallback by flattening the block, which reads as
+     * {@code "Title | label value"} — fine for a table, poor for an answer that has a natural
+     * sentence of its own. Those callers pass it here so a single-line consumer still gets prose.
+     */
+    private Decision embedReply(TriggerRule.ReplyMode mode, String text, ReplyFormat.Embed embed,
+                                boolean remember) {
+        return new Decision(deliveryFor(mode), text, null, false, remember, true, false, embed);
     }
 
     private static Delivery deliveryFor(TriggerRule.ReplyMode mode) {

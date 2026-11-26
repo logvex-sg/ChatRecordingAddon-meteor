@@ -21,7 +21,6 @@ import java.util.Deque;
  *   <li>a duplicate of a line already answered inside the window is dropped;</li>
  *   <li>a configured trigger is tried, under its own cooldown;</li>
  *   <li>a command is parsed and authorised by {@link PermissionSet} <em>before</em> it runs;</li>
- *   <li>the local AI is asked, if it is enabled;</li>
  *   <li>the global per-minute budget gates whichever of the above produced a reply.</li>
  * </ol>
  */
@@ -62,7 +61,6 @@ public final class AssistantRuntime {
     private long handled;
     private long ignored;
     private long rateLimited;
-    private long aiReplies;
     private long denied;
 
     public AssistantRuntime(AssistantMemory memory) {
@@ -211,6 +209,14 @@ public final class AssistantRuntime {
             : null;
 
         if (rule != null) {
+            // A trigger is the assistant speaking unprompted, so who may fire one is a separate
+            // decision from who may run a command. Ordinary chatter ("gg", "ty") matches the shipped
+            // table constantly, so answering strangers by default is noise, not a feature. A line
+            // from someone out of earshot is ignored, not refused: nothing was asked of the assistant.
+            if (!cfg.triggerAudience().allows(sender, cfg.triggerAllowList())) {
+                ignored++;
+                return AssistantBrain.Decision.NONE;
+            }
             // A rule whose reply is a server command is gated by who is asking: a state-changing
             // command may only run for the local player, so a stranger cannot type a trigger word
             // and make this client run /tpaccept or /pay. A message-carrying command is safe.
@@ -218,9 +224,18 @@ public final class AssistantRuntime {
                 denied++;
                 return AssistantBrain.Decision.NONE;
             }
-            if (!cooldowns.tryFire(rule, now)) {
+            if (!cooldowns.tryFire(rule, sender.name(), now)) {
                 ignored++;
                 return AssistantBrain.Decision.NONE;
+            }
+            // A reply built from the operator's position, gear or memory describes this client, not
+            // the person who asked. A trigger is answered for whoever typed it, so without this
+            // check a stranger typing "where am i" would be handed the operator's coordinates - the
+            // command path already refuses exactly that, and the two paths must agree.
+            if (!sender.local() && Placeholders.mentionsPrivateFigure(rule.reply())) {
+                denied++;
+                return AssistantBrain.Decision.refusal(rule.mode(),
+                    "That answer describes the local player, so only they can ask for it.");
             }
             if (!allowGlobalReply(cfg, now)) {
                 rateLimited++;
@@ -234,8 +249,8 @@ public final class AssistantRuntime {
         }
 
         if (cfg.memoryCommands()) {
-            // Only the command parser runs here: the trigger path already declined, and the AI must
-            // not be reached from this branch or its reply would be counted as a command.
+            // Only the command parser runs here: the trigger path already declined, and a command
+            // reply is counted separately from a trigger reply.
             AssistantBrain.Decision command =
                 brain.command(sender, content, cfg, now, liveStats, statusSettings, permissions,
                     activity, helpEnabled, requesterPing);
@@ -259,19 +274,6 @@ public final class AssistantRuntime {
                 handled++;
                 activity.recordReply();
                 return command;
-            }
-        }
-        if (cfg.localAi()) {
-            AssistantBrain.Decision ai = brain.ai(sender.name(), content, cfg, now, liveStats);
-            if (ai != null && ai.acts()) {
-                if (!allowGlobalReply(cfg, now)) {
-                    rateLimited++;
-                    return AssistantBrain.Decision.NONE;
-                }
-                handled++;
-                aiReplies++;
-                activity.recordReply();
-                return ai;
             }
         }
         ignored++;
@@ -340,11 +342,6 @@ public final class AssistantRuntime {
         return denied;
     }
 
-    /** How many of the handled messages were answered by the local AI. */
-    public long aiReplies() {
-        return aiReplies;
-    }
-
     /** Clears session state (cooldowns, rate window, activity) but keeps the persistent memory. */
     public void resetSession() {
         cooldowns.reset();
@@ -356,7 +353,6 @@ public final class AssistantRuntime {
         handled = 0;
         ignored = 0;
         rateLimited = 0;
-        aiReplies = 0;
         denied = 0;
     }
 

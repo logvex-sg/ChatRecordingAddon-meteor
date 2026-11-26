@@ -88,6 +88,31 @@ public final class FakeCompanionApi implements CompanionApi {
         return ActionResult.ok("Module updated.");
     }
 
+    /** Module name -> settings, so a test can drive the settings routes without a game. */
+    public final Map<String, List<CompanionSnapshot.SettingView>> settings = new LinkedHashMap<>();
+    public String lastSettingModule;
+    public String lastSettingName;
+    public com.google.gson.JsonElement lastSettingValue;
+
+    @Override
+    public List<CompanionSnapshot.SettingView> moduleSettings(String name) {
+        calls.add("moduleSettings:" + name);
+        return settings.get(name);
+    }
+
+    @Override
+    public ActionResult setModuleSetting(String moduleName, String settingName,
+                                         com.google.gson.JsonElement value) {
+        calls.add("setModuleSetting:" + moduleName + ":" + settingName);
+        lastSettingModule = moduleName;
+        lastSettingName = settingName;
+        lastSettingValue = value;
+        if (!settings.containsKey(moduleName)) {
+            return ActionResult.fail("No module is called \"" + moduleName + "\".");
+        }
+        return ActionResult.ok("Setting updated.");
+    }
+
     @Override
     public ActionResult sendChat(String message) {
         calls.add("sendChat:" + message);

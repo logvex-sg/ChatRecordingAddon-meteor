@@ -78,7 +78,11 @@ public final class ReportEmbed {
         if (trimmed.startsWith("<@&") && trimmed.endsWith(">")) return trimmed;
         if (trimmed.matches("\\d{5,25}")) return "<@&" + trimmed + ">";
         // Anything else is not an id; use it as plain text rather than sending a broken mention.
-        return trimmed;
+        // Bounded because the value is free text and Discord rejects a body over 2000 characters,
+        // which would lose the report rather than just shorten the greeting.
+        return trimmed.length() <= WebhookPayload.CONTENT_LIMIT
+            ? trimmed
+            : trimmed.substring(0, WebhookPayload.CONTENT_LIMIT - 1) + "\u2026";
     }
 
     /**

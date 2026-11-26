@@ -8,6 +8,7 @@ import com.logvex.addon.assistant.core.PermissionSet;
 import com.logvex.addon.assistant.core.ReplyFormat;
 import com.logvex.addon.assistant.core.SelfReplyGuard;
 import com.logvex.addon.assistant.core.SenderIdentity;
+import com.logvex.addon.assistant.core.TriggerAudience;
 import com.logvex.addon.assistant.core.TriggerRule;
 import com.logvex.addon.assistant.core.TriggerSet;
 import org.junit.jupiter.api.DisplayName;
@@ -30,7 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ReplyFormatTest {
 
     private static final AssistantConfig CONFIG = AssistantConfig.basic("Bot", true, true, "!",
-        TriggerRule.ReplyMode.CHAT, true, 20, 200);
+        TriggerRule.ReplyMode.CHAT, true, 20, 200).withAudience(TriggerAudience.EVERYONE);
 
     private static AssistantBrain brain() {
         return new AssistantBrain(new AssistantMemory());
@@ -49,6 +50,19 @@ class ReplyFormatTest {
     }
 
     // ------------------------------------------------------------------ layout
+
+    @Test
+    @DisplayName("a box of values with no labels starts each value at the frame")
+    void boxWithoutLabelsDoesNotIndentValues() {
+        ReplyFormat.Embed embed = new ReplyFormat.Embed("!ping", List.of(
+            new ReplyFormat.Field("", "42 ms")), "", ReplyFormat.Style.BOX);
+
+        List<String> lines = ReplyFormat.render(embed, 40);
+
+        assertEquals(3, lines.size(), "a title, one value and the closing rule");
+        assertEquals("│ 42 ms" + " ".repeat(32) + "│", lines.get(1),
+            "an unlabelled value must not be pushed into an empty label column");
+    }
 
     @Test
     @DisplayName("a box aligns values, is closed, and never exceeds the requested width")
@@ -177,6 +191,131 @@ class ReplyFormatTest {
             ReplyFormat.Style.BOX), 40).isEmpty());
         assertEquals(2, ReplyFormat.render(new ReplyFormat.Embed("Empty", List.of(), "",
             ReplyFormat.Style.BOX), 40).size(), "only the opening and closing rules");
+    }
+
+    @Test
+    @DisplayName("a capped block is closed, never cut mid-frame")
+    void cappedBlockKeepsItsClosingRule() {
+        // Cutting a rendered list at the line cap is the obvious implementation and it ends the
+        // message on a "|" row, which reads as a send that was truncated. Every size here is over
+        // the cap, so every one must still come back closed and within the budget.
+        for (int fields = 11; fields <= 30; fields += 19) {
+            List<ReplyFormat.Field> rows = new java.util.ArrayList<>();
+            for (int i = 1; i <= fields; i++) rows.add(new ReplyFormat.Field("F" + i, "v" + i));
+            List<String> lines = ReplyFormat.renderCapped(new ReplyFormat.Embed("!big", rows, "",
+                ReplyFormat.Style.BOX), 44, 12);
+
+            assertTrue(lines.size() <= 12, fields + " fields exceeded the cap: " + lines.size());
+            assertTrue(lines.get(lines.size() - 1).startsWith("\u2514"),
+                "a capped box must still end on its closing rule: '" + lines.get(lines.size() - 1) + "'");
+            assertTrue(lines.get(lines.size() - 1).contains("more"),
+                "the dropped rows must be reported: '" + lines.get(lines.size() - 1) + "'");
+        }
+    }
+
+    @Test
+    @DisplayName("a block under the cap is rendered untouched")
+    void cappedBlockBelowLimitIsUnchanged() {
+        ReplyFormat.Embed embed = new ReplyFormat.Embed("!small", List.of(
+            new ReplyFormat.Field("TPS", "19.94"), new ReplyFormat.Field("MSPT", "12.4 ms")),
+            "", ReplyFormat.Style.BOX);
+        assertEquals(ReplyFormat.render(embed, 44), ReplyFormat.renderCapped(embed, 44, 12),
+            "a block that already fits must not be re-rendered into a different shape");
+    }
+
+    @Test
+    @DisplayName("a wide character is measured as two columns so the frame stays square")
+    void wideCharactersDoNotBreakTheFrame() {
+        // A CJK name is drawn double width. Measuring length() pads the row two columns short, so
+        // the right-hand frame drifts left by two per wide character.
+        ReplyFormat.Embed embed = new ReplyFormat.Embed("!u", List.of(
+            new ReplyFormat.Field("Name", "\u30b9\u30c6\u30a3\u30fc\u30d6"),
+            new ReplyFormat.Field("Ok", "fine")), "", ReplyFormat.Style.BOX);
+
+        List<String> lines = ReplyFormat.render(embed, 32);
+
+        for (String line : lines) {
+            assertEquals(32, ReplyFormat.displayWidth(line),
+                "every row must occupy the same columns: '" + line + "'");
+        }
+        assertEquals(4, ReplyFormat.displayWidth("\u30b9\u30c6"), "two CJK glyphs are four columns");
+        assertEquals(1, ReplyFormat.displayWidth("a"), "an ASCII letter is one column");
+    }
+
+    @Test
+    @DisplayName("a wide title and a wide value still fit the frame")
+    void wideTextWrapsWithinTheFrame() {
+        // The first attempt at column-aware rendering padded rows correctly but still wrapped and
+        // measured the border by length(), so a CJK title produced a 39-column line inside a
+        // 30-column box. Wrapping and border fill must use the same column measure as padding.
+        ReplyFormat.Embed titled = new ReplyFormat.Embed(
+            "\u30c6\u30b9\u30c8\u30c6\u30b9\u30c8\u30c6\u30b9\u30c8",
+            List.of(new ReplyFormat.Field("A", "1")), "", ReplyFormat.Style.BOX);
+        for (String line : ReplyFormat.render(titled, 30)) {
+            assertEquals(30, ReplyFormat.displayWidth(line),
+                "the title rule must fit too: '" + line + "'");
+        }
+
+        ReplyFormat.Embed valued = new ReplyFormat.Embed("!x", List.of(new ReplyFormat.Field("T",
+            "\u4f60\u597d\u4e16\u754c\u4f60\u597d\u4e16\u754c\u4f60\u597d\u4e16\u754c")),
+            "", ReplyFormat.Style.BOX);
+        for (String line : ReplyFormat.render(valued, 24)) {
+            assertEquals(24, ReplyFormat.displayWidth(line),
+                "a wide value must wrap inside the frame: '" + line + "'");
+        }
+    }
+
+    @Test
+    @DisplayName("a meter bar is proportional and clamps out-of-range shares")
+    void meterBarIsProportional() {
+        assertEquals("\u2591\u2591\u2591\u2591\u2591\u2591", ReplyFormat.bar(0, 6));
+        assertEquals("\u2588\u2588\u2588\u2591\u2591\u2591", ReplyFormat.bar(0.5, 6));
+        assertEquals("\u2588\u2588\u2588\u2588\u2588\u2588", ReplyFormat.bar(1, 6));
+        // A share outside 0..1, or one that is not a number, must not draw a broken bar: a meter
+        // that overflows its own cells would push the frame out, and a NaN one would be empty.
+        assertEquals(6, ReplyFormat.bar(2.0, 6).length(), "an over-full share clamps to full");
+        assertEquals(6, ReplyFormat.bar(-1, 6).length(), "a negative share clamps to empty");
+        assertEquals(ReplyFormat.bar(0, 6), ReplyFormat.bar(Double.NaN, 6), "NaN draws empty");
+    }
+
+    @Test
+    @DisplayName("a meter field keeps the figure next to its bar")
+    void meterFieldKeepsTheFigure() {
+        ReplyFormat.Field f = ReplyFormat.Field.meter("Heap", "42%", 0.42);
+        assertEquals("Heap", f.label());
+        assertTrue(f.value().startsWith("42% "), "the number must survive: " + f.value());
+        assertTrue(f.value().contains("\u2588"), "and the bar must be drawn: " + f.value());
+    }
+
+    @Test
+    @DisplayName("a section rule spans the block and ignores the label column")
+    void sectionRuleSpansTheBlock() {
+        List<ReplyFormat.Field> fields = List.of(
+            ReplyFormat.Field.section("Memory"),
+            new ReplyFormat.Field("Facts", "3"));
+        List<String> lines = ReplyFormat.render(new ReplyFormat.Embed("!about", fields, "",
+            ReplyFormat.Style.BOX), 40);
+
+        String sectionRow = lines.get(1);
+        assertTrue(sectionRow.contains("Memory"), "the name is shown: '" + sectionRow + "'");
+        assertTrue(sectionRow.contains("\u2500\u2500\u2500"), "and a rule is drawn: '" + sectionRow + "'");
+        for (String line : lines) {
+            assertEquals(40, ReplyFormat.displayWidth(line), "every row keeps the width: '" + line + "'");
+        }
+    }
+
+    @Test
+    @DisplayName("a section rule also works in the list style")
+    void sectionRuleWorksInListStyle() {
+        List<ReplyFormat.Field> fields = List.of(
+            ReplyFormat.Field.section("Commands"),
+            new ReplyFormat.Field("!tps", "tick rate"));
+        List<String> lines = ReplyFormat.render(new ReplyFormat.Embed("Help", fields, "",
+            ReplyFormat.Style.LIST), 30);
+
+        assertTrue(lines.get(1).contains("Commands"), "section header rendered: " + lines);
+        assertTrue(lines.get(2).startsWith("!tps - "), "the row below is unaffected: " + lines);
+        assertFalse(lines.get(1).contains("\u0000"), "the marker must never reach the chat box");
     }
 
     // ------------------------------------------------------------------ self-reply guard
@@ -361,7 +500,7 @@ class ReplyFormatTest {
         TriggerSet triggers = TriggerSet.of(List.of(
             TriggerRule.of("hello bot", "Hi {player}!")));
         runtime.setConfig(AssistantConfig.basic("Bot", true, false, "!",
-            TriggerRule.ReplyMode.CHAT, true, 0, 200));
+            TriggerRule.ReplyMode.CHAT, true, 0, 200).withAudience(TriggerAudience.EVERYONE));
         // The same trigger text is used once only; the duplicate filter is irrelevant here.
         runtime.setTriggers(triggers);
         runtime.setDuplicateFilter(false);

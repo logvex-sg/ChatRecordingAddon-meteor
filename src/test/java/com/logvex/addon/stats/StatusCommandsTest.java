@@ -1,8 +1,10 @@
 package com.logvex.addon.stats;
 
+import com.logvex.addon.assistant.core.Placeholders;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -247,6 +249,47 @@ class StatusCommandsTest {
             .orElseThrow();
         assertEquals(StatusOutput.Output.CHAT, answer.output());
         assertFalse(answer.localOnly());
+    }
+
+    @Test
+    @DisplayName("a status command's sensitivity flag matches the figures its template reads")
+    void sensitivityFlagMatchesTemplate() {
+        // The flag decides whether a stranger may run the command and whether the answer may be
+        // sent to chat; the template decides what is actually read. If the two disagree the flag is
+        // simply wrong, and a player figure reaches a stranger.
+        //
+        // Two commands are exempt because their tokens are in the *status* namespace, where the
+        // names mean something else: `memory` is the JVM heap there (not the assistant's notes, which
+        // is what makes {memory} private on the trigger path), and `network` prints the address the
+        // operator is connected to, which is private for a reason the figure list cannot see.
+        List<String> mismatches = new ArrayList<>();
+        for (StatusCommand.Definition command : StatusCommand.all()) {
+            if (command.name().equals("network") || command.name().equals("memory")) continue;
+            boolean readsPlayer = Placeholders.mentionsPrivateFigure(command.template());
+            if (readsPlayer != command.sensitive()) {
+                mismatches.add(command.name() + " sensitive=" + command.sensitive()
+                    + " but template reads a private figure=" + readsPlayer);
+            }
+        }
+        assertTrue(mismatches.isEmpty(),
+            "a status command's sensitivity flag disagrees with its template: " + mismatches);
+    }
+
+    @Test
+    @DisplayName("every status command renders from a live snapshot with no token left behind")
+    void everyStatusCommandRenders() {
+        ServerStats stats = live();
+        List<String> broken = new ArrayList<>();
+        for (StatusCommand.Definition command : StatusCommand.all()) {
+            String text = StatusTemplate.expand(command.template(), stats, "Alex");
+            if (text.contains("{") || text.contains("}")) {
+                broken.add(command.name() + " -> " + text);
+            }
+            assertFalse(text.isBlank(), command.name() + " renders to nothing");
+            assertTrue(StatusTemplate.isValid(command.template()),
+                command.name() + " uses a token the template engine does not know");
+        }
+        assertTrue(broken.isEmpty(), "a status command leaves a token unexpanded: " + broken);
     }
 
     @Test

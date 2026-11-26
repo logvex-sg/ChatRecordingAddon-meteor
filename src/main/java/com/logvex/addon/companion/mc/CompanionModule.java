@@ -1,6 +1,7 @@
 package com.logvex.addon.companion.mc;
 
 import com.logvex.addon.framework.systems.modules.AddonModule;
+import com.logvex.addon.framework.LogClientContext;
 import com.logvex.addon.framework.SafeEventHandler;
 import com.logvex.addon.LogClient;
 import com.logvex.addon.bot.BotModule;
@@ -9,6 +10,7 @@ import com.logvex.addon.chatlog.core.ChatEntry;
 import com.logvex.addon.chatlog.mc.LogService;
 import com.logvex.addon.companion.core.CompanionClientThread;
 import com.logvex.addon.companion.core.CompanionConfig;
+import com.logvex.addon.companion.core.CompanionDiscovery;
 import com.logvex.addon.companion.core.CompanionEventBus;
 import com.logvex.addon.companion.core.CompanionJson;
 import com.logvex.addon.companion.core.CompanionServer;
@@ -121,6 +123,9 @@ public class CompanionModule extends AddonModule {
 
     private final CompanionConfig config = new CompanionConfig();
     private CompanionServer server;
+
+    /** Publishes this server's address so a local dashboard connects without a URL. */
+    private CompanionDiscovery discovery;
     private CompanionEventBus events;
     private MinecraftCompanionApi api;
 
@@ -204,6 +209,7 @@ public class CompanionModule extends AddonModule {
         server = new CompanionServer(config, api, clientThread, events, loadAppHtml());
         try {
             server.start();
+            publishDiscovery();
         } catch (IOException e) {
             LogClient.LOG.warn("Companion could not bind port {}: {}", config.port(), e.getMessage());
             warning("Could not start the companion on port %d. Is it already in use?", config.port());
@@ -212,11 +218,45 @@ public class CompanionModule extends AddonModule {
     }
 
     private void stopServer() {
+        withdrawDiscovery();
         if (server != null) {
             server.stop();
             server = null;
         }
         events = null;
+    }
+
+    /**
+     * Writes the discovery file for a server a local client can reach.
+     *
+     * <p>Only a loopback bind is published. When the user has exposed the server to a network, the
+     * token is already a wider secret, and copying it to a predictable file on disk would widen the
+     * exposure for no benefit: a remote client is configured by hand anyway.
+     */
+    private void publishDiscovery() {
+        if (!isLoopbackBind()) return;
+        if (discovery == null) {
+            discovery = new CompanionDiscovery(
+                new java.io.File(LogClientContext.dataFolder(), CompanionDiscovery.FILE_NAME).toPath());
+        }
+        boolean ok = discovery.publish("127.0.0.1", config.port(), config.token());
+        if (!ok) LogClient.LOG.warn("Companion discovery: {}", discovery.lastError());
+    }
+
+    private void withdrawDiscovery() {
+        if (discovery != null) discovery.withdraw();
+    }
+
+    /** True when the server only accepts connections from this machine. */
+    private boolean isLoopbackBind() {
+        if (config.allowRemote()) return false;
+        try {
+            return config.resolveBindAddress().isLoopbackAddress();
+        } catch (java.net.UnknownHostException e) {
+            // An unresolvable bind address never reaches here in practice: startServer() would have
+            // failed to bind first. Treat it as non-loopback so a secret is not published on a guess.
+            return false;
+        }
     }
 
     private void runOnClientThread(Runnable runnable) {
@@ -331,15 +371,22 @@ public class CompanionModule extends AddonModule {
         return config.token();
     }
 
-    /** The URL a browser can open on this machine. */
+    /**
+     * The URL a browser can open. With remote access on this is the machine's LAN address, so the
+     * link works from another device; with it off it is loopback, which is all that is listening.
+     */
     public String url() {
-        int bound = boundPort();
-        return "http://127.0.0.1:" + (bound > 0 ? bound : config.port()) + "/";
+        return config.advertisedUrl(boundPort());
     }
 
     /** The URL with the token, ready to paste into a phone or a browser. */
     public String urlWithToken() {
         return url() + "?token=" + accessToken();
+    }
+
+    /** True when the server only accepts connections from this machine. */
+    public boolean isLoopbackOnly() {
+        return config.isLoopbackOnly();
     }
 
     public String statusLine() {

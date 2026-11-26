@@ -39,7 +39,7 @@ public class KeywordManagerScreen extends WindowScreen {
         }
 
         add(theme.label("Format: pattern;case=false;whole=false;sound=true;webhook=false;enabled=true;color=0xFFD166"))
-            .expandX().widget().color(GuiKit.MUTED);
+            .expandX().widget().color(GuiKit.mutedColor());
         add(theme.horizontalSeparator()).expandX();
 
         List<String> rules = new ArrayList<>(rulesSetting().get());

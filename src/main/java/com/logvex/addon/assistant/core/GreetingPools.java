@@ -12,9 +12,9 @@ import java.util.Locale;
  * The boundaries are local clock time, which is what a player experiences; a server in another
  * timezone is irrelevant to how a greeting reads.
  *
- * <p>Each bucket holds a small pool of variants and one is picked at random, so a busy chat does not
- * get the identical line every time. A blank bucket falls back to a neutral greeting rather than
- * sending nothing.
+ * <p>Each bucket holds one greeting. The pool field is still read, but only its first alternative is
+ * used, so a greeting stored by an older build keeps working without randomising. A blank bucket
+ * falls back to a neutral greeting rather than sending nothing.
  */
 public final class GreetingPools {
     /** One time-of-day bucket with its greeting alternatives. */
@@ -35,14 +35,10 @@ public final class GreetingPools {
     /** The four buckets, in the order they are documented. */
     public static List<Bucket> buckets() {
         return List.of(
-            new Bucket("morning", "Morning (05:00-11:59)", 5, 11,
-                "Good morning, {player}!|Morning, {player}.|Rise and shine, {player}!"),
-            new Bucket("afternoon", "Afternoon (12:00-16:59)", 12, 16,
-                "Good afternoon, {player}!|Afternoon, {player}.|Hello there, {player}!"),
-            new Bucket("evening", "Evening (17:00-21:59)", 17, 21,
-                "Good evening, {player}!|Evening, {player}.|Nice to see you, {player}."),
-            new Bucket("night", "Night (22:00-04:59)", 22, 4,
-                "Up late, {player}?|Good night, {player}.|Still awake, {player}?")
+            new Bucket("morning", "Morning (05:00-11:59)", 5, 11, "Good morning, {player}!"),
+            new Bucket("afternoon", "Afternoon (12:00-16:59)", 12, 16, "Good afternoon, {player}!"),
+            new Bucket("evening", "Evening (17:00-21:59)", 17, 21, "Good evening, {player}!"),
+            new Bucket("night", "Night (22:00-04:59)", 22, 4, "Good night, {player}.")
         );
     }
 

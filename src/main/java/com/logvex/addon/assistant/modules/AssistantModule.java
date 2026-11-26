@@ -1,7 +1,5 @@
 package com.logvex.addon.assistant.modules;
 
-import com.logvex.addon.ai.core.AiEngine;
-import com.logvex.addon.ai.mc.AiService;
 import com.logvex.addon.assistant.core.AssistantBrain;
 import com.logvex.addon.assistant.core.AssistantConfig;
 import com.logvex.addon.assistant.core.CommandDefaults;
@@ -14,16 +12,22 @@ import com.logvex.addon.assistant.core.GreetingPools;
 import com.logvex.addon.assistant.core.MacroSet;
 import com.logvex.addon.assistant.core.PermissionLevel;
 import com.logvex.addon.assistant.core.PermissionSet;
+import com.logvex.addon.assistant.core.RemoteMacroGate;
+import com.logvex.addon.assistant.core.ReplyDelivery;
 import com.logvex.addon.assistant.core.ReplyFormat;
 import com.logvex.addon.assistant.core.SelfReplyGuard;
+import com.logvex.addon.assistant.core.SendPacer;
 import com.logvex.addon.assistant.core.SenderIdentity;
+import com.logvex.addon.assistant.core.TriggerAudience;
 import com.logvex.addon.assistant.core.TriggerRule;
 import com.logvex.addon.assistant.core.TriggerSet;
 import com.logvex.addon.assistant.gui.AssistantScreen;
 import com.logvex.addon.assistant.mc.AssistantService;
 import com.logvex.addon.automation.modules.AutomationModule;
 import com.logvex.addon.chatlog.core.ChatClassifier;
+import com.logvex.addon.chatlog.core.ChatEntry;
 import com.logvex.addon.chatlog.core.MessageType;
+import com.logvex.addon.chatlog.mc.LogService;
 import com.logvex.addon.chatlog.modules.WebhookRelayModule;
 import com.logvex.addon.common.Messages;
 import com.logvex.addon.stats.McServerStats;
@@ -51,6 +55,7 @@ import meteordevelopment.meteorclient.systems.modules.Modules;
 import meteordevelopment.meteorclient.utils.player.ChatUtils;
 import com.logvex.addon.notify.core.NotificationType;
 import net.minecraft.sound.SoundEvents;
+import net.minecraft.text.Text;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -74,6 +79,9 @@ public class AssistantModule extends AutomationModule {
     /** How many block lines one reply may occupy before the rest is summarised. */
     private static final int MAX_EMBED_LINES = 12;
 
+    /** How many reply lines may wait to be sent before the oldest is dropped. */
+    private static final int PACER_CAPACITY = 40;
+
     /** How the user wants blocks laid out; {@link #AUTO} keeps whatever the reply was written for. */
     public enum ReplyLayout {
         AUTO, BOX, COMPACT, PLAIN, LIST;
@@ -93,8 +101,8 @@ public class AssistantModule extends AutomationModule {
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
     private final SettingGroup sgTriggers = settings.createGroup("Triggers");
     private final SettingGroup sgMemory = settings.createGroup("Memory");
-    private final SettingGroup sgAi = settings.createGroup("Local AI");
     private final SettingGroup sgLimits = settings.createGroup("Limits");
+    private final SettingGroup sgPacing = settings.createGroup("Send pacing");
     private final SettingGroup sgStatus = settings.createGroup("Live Status");
     private final SettingGroup sgMacros = settings.createGroup("Chat Command Macros");
     private final SettingGroup sgGreetings = settings.createGroup("Greetings");
@@ -163,15 +171,6 @@ public class AssistantModule extends AutomationModule {
             .build()
         );
 
-    private final Setting<Boolean> statusChatConfirmation = sgStatus.add(new BoolSetting.Builder()
-        .name("chat-confirmation")
-        .description("Say a status answer in chat only after you confirm it, so a misconfigured "
-            + "command cannot flood the server.")
-        .defaultValue(false)
-        .visible(statusEnabled::get)
-        .build()
-    );
-
     private final Setting<Boolean> statusWebhook = sgStatus.add(new BoolSetting.Builder()
         .name("status-webhook")
         .description("Post a status card to the webhook when you run !status locally. "
@@ -181,17 +180,53 @@ public class AssistantModule extends AutomationModule {
         .build()
     );
 
-    private final Setting<Integer> statusRefreshSeconds = sgStatus.add(new IntSetting.Builder()
-        .name("refresh-seconds")
-        .description("How often the status preview refreshes, in seconds.")
-        .defaultValue(5)
-        .range(1, 60)
-        .sliderRange(1, 30)
-        .visible(statusEnabled::get)
+    // ------------------------------------------------------------------ send pacing
+
+    private final Setting<Boolean> pacingEnabled = sgPacing.add(new BoolSetting.Builder()
+        .name("pace-replies")
+        .description("Release multi-line replies a line at a time instead of all at once. "
+            + "A block such as !cmds is a dozen lines, and servers kick for that burst.")
+        .defaultValue(true)
+        .onChanged(ignored -> rebuildPacer())
         .build()
     );
 
-    // ------------------------------------------------------------------ modcall
+    private final Setting<Integer> pacingGapMs = sgPacing.add(new IntSetting.Builder()
+        .name("line-gap-ms")
+        .description("Shortest gap between two reply lines. Servers allow a few lines a second; "
+            + "1000 is safe on the strictest ones.")
+        .defaultValue(1_000)
+        .min(0)
+        .max(10_000)
+        .sliderRange(250, 3_000)
+        .visible(pacingEnabled::get)
+        .onChanged(ignored -> rebuildPacer())
+        .build()
+    );
+
+    private final Setting<Integer> pacingBurst = sgPacing.add(new IntSetting.Builder()
+        .name("burst-lines")
+        .description("Most lines allowed in one burst window, however fast they are released.")
+        .defaultValue(3)
+        .min(1)
+        .max(50)
+        .sliderRange(1, 10)
+        .visible(pacingEnabled::get)
+        .onChanged(ignored -> rebuildPacer())
+        .build()
+    );
+
+    private final Setting<Integer> pacingBurstWindowMs = sgPacing.add(new IntSetting.Builder()
+        .name("burst-window-ms")
+        .description("The window the burst limit applies to.")
+        .defaultValue(5_000)
+        .min(1_000)
+        .max(60_000)
+        .sliderRange(1_000, 15_000)
+        .visible(pacingEnabled::get)
+        .onChanged(ignored -> rebuildPacer())
+        .build()
+    );
 
     // ------------------------------------------------------------------ chat command macros
 
@@ -228,6 +263,37 @@ public class AssistantModule extends AutomationModule {
         .build()
     );
 
+    private final Setting<Boolean> macrosRemote = sgMacros.add(new BoolSetting.Builder()
+        .name("allow-remote")
+        .description("Let other players run macros marked 'remote'. A macro sends a command as you, "
+            + "so this is off by default and only shared macros are reachable.")
+        .defaultValue(false)
+        .visible(macrosEnabled::get)
+        .onChanged(ignored -> rebuildRemoteGate())
+        .build()
+    );
+
+    private final Setting<List<String>> macrosAllowList = sgMacros.add(new StringListSetting.Builder()
+        .name("remote-allow-list")
+        .description("Players allowed to run shared macros. Empty means everyone, once allow-remote is on.")
+        .defaultValue(List.of())
+        .visible(() -> macrosEnabled.get() && macrosRemote.get())
+        .onChanged(ignored -> rebuildRemoteGate())
+        .build()
+    );
+
+    private final Setting<Integer> macrosRemoteCooldownMs = sgMacros.add(new IntSetting.Builder()
+        .name("remote-cooldown-ms")
+        .description("Shortest gap between two remote macro runs by the same player.")
+        .defaultValue(5_000)
+        .min(0)
+        .max(120_000)
+        .sliderRange(0, 30_000)
+        .visible(() -> macrosEnabled.get() && macrosRemote.get())
+        .onChanged(ignored -> rebuildRemoteGate())
+        .build()
+    );
+
     private final Setting<Boolean> watchPublicChat = sgTriggers.add(new BoolSetting.Builder()
         .name("watch-public-chat")
         .description("Watch public player chat for triggers.")
@@ -257,6 +323,27 @@ public class AssistantModule extends AutomationModule {
         .build()
     );
 
+    private final Setting<TriggerAudience> triggerAudience = sgTriggers.add(
+        new EnumSetting.Builder<TriggerAudience>()
+            .name("who-can-trigger")
+            .description("Who may fire a keyword trigger. Triggers are the assistant speaking unprompted, "
+                + "so by default only you are answered. Commands (!help, !ping) are unaffected and "
+                + "follow the Permissions group instead.")
+            .defaultValue(TriggerAudience.ALLOWLIST)
+            .onChanged(ignored -> rebuild())
+            .build()
+    );
+
+    private final Setting<List<String>> triggerAllowList = sgTriggers.add(new StringListSetting.Builder()
+        .name("who-can-trigger-list")
+        .description("Player names allowed to fire triggers when 'who-can-trigger' is ALLOWLIST. "
+            + "Empty means only you.")
+        .defaultValue(List.of())
+        .visible(() -> triggerAudience.get() == TriggerAudience.ALLOWLIST)
+        .onChanged(ignored -> rebuild())
+        .build()
+    );
+
     private final Setting<Boolean> rememberConversations = sgMemory.add(new BoolSetting.Builder()
         .name("remember-conversations")
         .description("Remember recent exchanges in memory, so !history and {fact:...} stay useful.")
@@ -278,6 +365,17 @@ public class AssistantModule extends AutomationModule {
         .name("persist")
         .description("Save memory to disk so it survives a restart.")
         .defaultValue(true)
+        .build()
+    );
+
+    private final Setting<Integer> historySize = sgMemory.add(new IntSetting.Builder()
+        .name("history-size")
+        .description("How many remembered exchanges to keep on disk and in memory. "
+            + "0 keeps every exchange.")
+        .defaultValue(0)
+        .min(0)
+        .sliderRange(0, 2000)
+        .onChanged(ignored -> rebuild())
         .build()
     );
 
@@ -321,61 +419,6 @@ public class AssistantModule extends AutomationModule {
         .name("match-feedback")
         .description("Print a short note when a trigger matches or the assistant starts.")
         .defaultValue(false)
-        .build()
-    );
-
-    // Local AI. Off by default: an assistant that starts talking on its own would surprise an
-    // existing user, and the model is only worth enabling when someone actually wants a chatbot.
-
-    private final Setting<Boolean> localAi = sgAi.add(new BoolSetting.Builder()
-        .name("local-ai")
-        .description("Answer simple chat with a small on-device model. Runs locally; nothing is sent anywhere.")
-        .defaultValue(false)
-        .onChanged(ignored -> {
-            syncEngine();
-            rebuild();
-        })
-        .build()
-    );
-
-    private final Setting<Double> aiThreshold = sgAi.add(new DoubleSetting.Builder()
-        .name("ai-confidence")
-        .description("How sure the AI must be before it answers. Higher is quieter and safer.")
-        .defaultValue(0.45)
-        .min(0.05)
-        .max(0.95)
-        .sliderRange(0.05, 0.95)
-        .visible(localAi::get)
-        .onChanged(ignored -> {
-            syncEngine();
-            rebuild();
-        })
-        .build()
-    );
-
-    private final Setting<TriggerRule.ReplyMode> aiReplyMode = sgAi.add(new EnumSetting.Builder<TriggerRule.ReplyMode>()
-        .name("ai-reply-mode")
-        .description("How the AI delivers its replies: chat, notify, or silent.")
-        .defaultValue(TriggerRule.ReplyMode.CHAT)
-        .visible(localAi::get)
-        .onChanged(ignored -> rebuild())
-        .build()
-    );
-
-    private final Setting<Boolean> aiLearnFromChat = sgAi.add(new BoolSetting.Builder()
-        .name("ai-learn-from-chat")
-        .description("Let the AI learn new phrasings from chat it already understands. Off keeps it fixed.")
-        .defaultValue(false)
-        .visible(localAi::get)
-        .onChanged(ignored -> syncEngine())
-        .build()
-    );
-
-    private final Setting<Boolean> aiPersist = sgAi.add(new BoolSetting.Builder()
-        .name("ai-persist")
-        .description("Save what the AI has learned to disk so it survives a restart.")
-        .defaultValue(true)
-        .visible(localAi::get)
         .build()
     );
 
@@ -491,7 +534,6 @@ public class AssistantModule extends AutomationModule {
     );
 
     private final AssistantService service = AssistantService.get();
-    private final AiService aiService = AiService.get();
     private final AssistantRuntime runtime;
     private TriggerSet parsed = TriggerSet.empty();
     private AssistantConfig config = AssistantConfig.DEFAULTS;
@@ -507,7 +549,6 @@ public class AssistantModule extends AutomationModule {
 
     private long lastSaveAt;
     private boolean memoryDirty;
-    private boolean aiDirty;
     /** When the current session began, for the stats uptime figure. */
     private long sessionStart = System.currentTimeMillis();
     private final SpeedTracker speed = new SpeedTracker();
@@ -521,7 +562,6 @@ public class AssistantModule extends AutomationModule {
      */
     private MacroSet macros = MacroSet.EMPTY;
 
-    /** Last modcall per speaker, for the per-player cooldown. */
     /**
      * Set while this module is itself sending a line.
      *
@@ -531,17 +571,25 @@ public class AssistantModule extends AutomationModule {
      */
     private boolean sendingMacro;
 
+    /**
+     * Holds reply lines that must not all leave in one tick.
+     *
+     * <p>Rebuilt when the pacing settings change. A block is a dozen lines and a server kicks for
+     * that burst, so the lines are released a few at a time from the tick handler instead.
+     */
+    private SendPacer pacer = SendPacer.defaults();
+
+    /** Decides whether a stranger may run one of this client's shared macros. */
+    private RemoteMacroGate remoteGate = RemoteMacroGate.disabled();
+
     public AssistantModule() {
-        super("assistant", "A configurable chat assistant with keyword triggers, persistent memory and a small local AI.");
+        super("assistant", "A configurable chat assistant with keyword triggers and persistent memory.");
         runtime = new AssistantRuntime(service.memory());
-        runtime.brain().setEngine(aiService.engine());
     }
 
     @Override
     public void onActivate() {
         service.loadAsync(this::rebuild);
-        aiService.loadAsync(this::syncEngine);
-        syncEngine();
         rebuild();
         ownName = localPlayerName();
         lastSaveAt = System.currentTimeMillis();
@@ -551,7 +599,6 @@ public class AssistantModule extends AutomationModule {
     @Override
     public void onDeactivate() {
         flushMemory();
-        flushAi();
         info("%s disabled.", config.name());
     }
 
@@ -581,8 +628,10 @@ public class AssistantModule extends AutomationModule {
     protected void onWorldLeave() {
         runtime.resetSession();
         selfReplies.reset();
+        // A backlog would arrive in the next world out of context, and its recipients are no longer
+        // verifiable there.
+        pacer.clear();
         flushMemory();
-        flushAi();
     }
 
     @EventHandler
@@ -590,11 +639,29 @@ public class AssistantModule extends AutomationModule {
         if (mc.player != null) {
             speed.sample(mc.player.getX(), mc.player.getZ(), System.currentTimeMillis());
         }
+        drainPacer();
         // Persist on a slow cadence rather than on every memory write, so a busy chat cannot cause
         // a disk write storm. The dirty flag makes this a no-op when nothing changed.
         if (System.currentTimeMillis() - lastSaveAt < 30_000L) return;
         if (memoryDirty && persist.get()) flushMemory();
-        if (aiDirty && aiPersist.get()) flushAi();
+    }
+
+    /**
+     * Releases at most one queued reply line, when the pacer allows it.
+     *
+     * <p>Driven from the tick so the pacing survives a tick that renders no lines: the queue is a
+     * property of the module, not of the reply that filled it.
+     */
+    private void drainPacer() {
+        if (pacer.isEmpty() || mc.player == null || mc.player.networkHandler == null) return;
+        long now = System.currentTimeMillis();
+        for (SendPacer.Line line : pacer.ready(now)) {
+            if (line.isWhisper()) {
+                whisper(line.verb(), line.recipient(), line.text());
+            } else {
+                speak(line.text());
+            }
+        }
     }
 
     @EventHandler
@@ -619,22 +686,84 @@ public class AssistantModule extends AutomationModule {
         if (isOwnMessage(sender, content)) return;
 
         long now = System.currentTimeMillis();
+        // A shared macro is answered before triggers: the sender typed a command, and a trigger
+        // rule that happened to match the same words must not answer it instead.
+        if (tryRemoteMacro(sender, content, now)) return;
+
         SenderIdentity identity = identify(sender);
         AssistantBrain.Decision decision = runtime.handle(identity, content, now,
             McServerStats.snapshot(mc, now, sessionStart, speed.blocksPerSecond()),
             statusSettings(), requesterPing(identity, sender));
         if (!decision.acts()) return;
         deliver(decision, sender);
-        // Learning is deliberately conservative: the AI only absorbs a line it already understood, so
-        // it cannot drift on noise. A trigger has a rule and a memory command sets its flag, so a
-        // decision with neither is unambiguously an AI reply. The dirty flag defers the disk write.
-        if (localAi.get() && aiLearnFromChat.get() && decision.rule() == null && !decision.command()) {
-            String intent = aiService.engine().intentOf(content);
-            if (intent != null && aiService.engine().model().teach(intent, content)) aiDirty = true;
+    }
+
+    // ------------------------------------------------------------------ remote macros
+
+    /**
+     * Runs a shared macro on behalf of another player, when the gate allows it.
+     *
+     * <p>The command still leaves as the operator, so the gate is the only thing standing between a
+     * stranger and the operator's account. Every refusal is silent to the sender — a reply would
+     * confirm which shortcuts exist — and is only reported locally, where the operator can see that
+     * someone tried.
+     *
+     * @return true when the line was a shared macro and has been handled, whether or not it ran
+     */
+    private boolean tryRemoteMacro(String sender, String content, long now) {
+        if (!macrosEnabled.get() || !macros.anyRemote()) return false;
+        if (!macros.hasPrefix(content)) return false;
+        java.util.Optional<MacroSet.Call> found = macros.resolveRemote(content);
+        if (found.isEmpty()) return false;
+
+        MacroSet.Call call = found.get();
+        ChatMacro macro = call.macro();
+        RemoteMacroGate.Verdict verdict = remoteGate.check(sender, macro, now);
+        if (!verdict.allowed()) {
+            if (matchFeedback.get()) {
+                info("Remote macro %s from %s refused: %s.", macro.shortcut(),
+                    Messages.player(sender), verdict.reason());
+            }
+            return true;
         }
+
+        ChatMacro.Outcome outcome = macro.run(call.input());
+        if (!outcome.ok()) {
+            if (macroFeedback.get()) {
+                info("Remote macro %s from %s was malformed: %s", macro.shortcut(),
+                    Messages.player(sender), outcome.problem());
+            }
+            return true;
+        }
+        if (macros.wouldRecurse(macro, outcome.command())) return true;
+
+        remoteGate.record(sender, now);
+        if (macroFeedback.get()) {
+            info("Running macro %s for %s.", macro.shortcut(), Messages.player(sender));
+        }
+        postMacroCard(macro, sender, outcome.command(), true);
+        sendMacroCommand(outcome.command(), macro);
+        return true;
     }
 
     // ------------------------------------------------------------------ reports
+
+    /**
+     * Mirrors a macro run to the macros webhook, when the user opted in.
+     *
+     * <p>Off by default: a macro is a command the user typed, so most people do not want every one
+     * of them posted to a channel. The card exists for the case where it is useful — an operator
+     * letting others run shared macros wants a record of who ran what.
+     */
+    private void postMacroCard(ChatMacro macro, String sender, String command, boolean remote) {
+        WebhookRelayModule relay = Modules.get().get(WebhookRelayModule.class);
+        if (relay == null || !relay.macroCardsAllowed()) return;
+        relay.sendMacroRun(macro.shortcut(), sender, command, remote, (success, message) -> {
+            if (!success) {
+                info("Macro card could not be delivered: %s", message);
+            }
+        });
+    }
 
     /**
      * Posts a report to the webhook, pinging the moderator role.
@@ -739,13 +868,44 @@ public class AssistantModule extends AutomationModule {
      * a long list must not turn into a wall of chat.
      */
     private void speakAll(AssistantBrain.Decision decision) {
-        java.util.List<String> lines = decision.lines(replyWidth.get(), replyFormat.get().style());
-        if (lines.isEmpty()) return;
-        int limit = Math.min(lines.size(), MAX_EMBED_LINES);
-        for (int i = 0; i < limit; i++) speak(lines.get(i));
-        if (lines.size() > limit) {
-            speak("(" + (lines.size() - limit) + " more lines; narrow the list with a command.)");
-        }
+        ReplyDelivery.Plan plan = ReplyDelivery.plan(AssistantBrain.Delivery.CHAT,
+            decision.linesCapped(replyWidth.get(), replyFormat.get().style(), MAX_EMBED_LINES),
+            ReplyFormat.oneLine(decision.embed(), replyWidth.get()), false);
+        for (String line : plan.lines()) speak(line);
+    }
+
+    /**
+     * Prints a block to the local chat box as a single message.
+     *
+     * <p>The lines are joined with {@code \n}, which {@code ChatHud} breaks on, so the block keeps
+     * its shape while costing one chat line in the history rather than a dozen. Nothing leaves the
+     * client, so no server-side flood filter can see it.
+     *
+     * <p>{@code ChatHud.addMessage} is used directly rather than {@code ChatUtils.sendMsg} because
+     * the latter always prepends Meteor's {@code [Meteor]} prefix, which would indent the first row
+     * of the card and push it out of line with the rest.
+     */
+    private void printLocally(java.util.List<String> lines) {
+        if (lines == null || lines.isEmpty()) return;
+        var mc = com.logvex.addon.framework.LogClientContext.mc;
+        if (mc == null || mc.inGameHud == null) return;
+        String text = String.join("\n", lines);
+        rememberOwnReply(text);
+        mc.inGameHud.getChatHud().addMessage(Text.literal(text));
+        recordLocally(text);
+    }
+
+    /**
+     * Records a locally printed reply in the chat log.
+     *
+     * <p>Printing straight to the chat box skips {@code ReceiveMessageEvent}, which is the only
+     * place {@code ChatRecorder} sees a line. Without this the card would be visible but absent from
+     * the archive, the export and any webhook — a silent hole in a chat-recording addon.
+     */
+    private void recordLocally(String text) {
+        if (text == null || text.isBlank()) return;
+        LogService.get().record(new ChatEntry(System.currentTimeMillis(),
+            MessageType.SYSTEM, localPlayerName(), text, LogService.get().serverName(), ""));
     }
 
     /**
@@ -764,10 +924,31 @@ public class AssistantModule extends AutomationModule {
         }
         String verb = decision.rule() == null ? TriggerRule.DEFAULT_WHISPER
             : decision.rule().whisperCommand();
-        java.util.List<String> lines = decision.lines(replyWidth.get(), replyFormat.get().style());
-        int limit = Math.min(lines.size(), MAX_EMBED_LINES);
-        for (int i = 0; i < limit; i++) {
-            whisper(verb, sender, lines.get(i));
+        // The compact form is built at the message cap rather than at the display width: it is what
+        // a remote asker's reply is repacked from, and rendering it narrow first would wrap the
+        // fields into fragments that read as rubble once joined ("Server: | !cmds1 | World: ...").
+        int wireWidth = Math.max(replyWidth.get(), ReplyDelivery.MAX_MESSAGE_CHARS);
+        ReplyDelivery.Plan plan = ReplyDelivery.plan(AssistantBrain.Delivery.PRIVATE,
+            decision.linesCapped(replyWidth.get(), replyFormat.get().style(), MAX_EMBED_LINES),
+            ReplyFormat.oneLine(decision.embed(), wireWidth), isLocalSpeaker(sender));
+        switch (plan.mode()) {
+            // Whispering to yourself is a round trip through the server to reach the screen you are
+            // already looking at. Printed locally instead, so a twelve-row block costs no /msg at
+            // all and cannot trip a flood filter.
+            case LOCAL_ONE_MESSAGE -> printLocally(plan.lines());
+            case SERVER_ONE_LINE -> {
+                for (String line : plan.lines()) whisper(verb, sender, line);
+            }
+            case SERVER_PACED_LINES -> {
+                // A remote asker only ever sees what the server relays, so the packed messages go
+                // out one at a time rather than as a burst. Paced, but also few: the count is what
+                // a flood filter acts on, and pacing alone never reduced it.
+                java.util.List<SendPacer.Line> queued = new java.util.ArrayList<>(plan.lines().size());
+                for (String line : plan.lines()) queued.add(new SendPacer.Line(sender, verb, line));
+                pacer.enqueue(queued);
+            }
+            case NONE -> {
+            }
         }
     }
 
@@ -973,6 +1154,8 @@ public class AssistantModule extends AutomationModule {
     /** Rebuilds the runtime's rules, config and permissions from the current settings. */
     public void rebuild() {
         parsed = TriggerSet.of(parseRules());
+        rebuildPacer();
+        rebuildRemoteGate();
         config = new AssistantConfig(
             assistantName.get(),
             respondToTriggers.get(),
@@ -982,11 +1165,10 @@ public class AssistantModule extends AutomationModule {
             rememberConversations.get(),
             rateLimit.get(),
             maxReplyLength.get(),
-            localAi.get(),
-            aiThreshold.get(),
-            aiReplyMode.get(),
-            aiLearnFromChat.get()
+            triggerAudience.get(),
+            TriggerAudience.normalise(triggerAllowList.get())
         );
+        service.memory().setHistoryCapacity(historySize.get());
         runtime.setTriggers(parsed);
         runtime.brain().setTriggerSet(parsed);
         runtime.setConfig(config);
@@ -1000,6 +1182,58 @@ public class AssistantModule extends AutomationModule {
             ? MacroSet.decode(macroLines.get(), commandPrefix.get())
             : MacroSet.EMPTY;
         runtime.brain().setMacros(macros);
+        // A supplier, so !reports reads the relay's live log rather than a snapshot taken at
+        // rebuild time; the relay may be reloaded after this runs.
+        runtime.brain().setReportLogSource(() -> {
+            WebhookRelayModule relay = Modules.get().get(WebhookRelayModule.class);
+            return relay == null ? null : relay.reportLog();
+        });
+        runtime.brain().setTriggerToggle(this::setTriggerEnabled);
+        // The catalog is the saved list merged with the shipped rules, disabled entries included:
+        // the active set cannot answer "what can I switch back on?".
+        runtime.brain().setTriggerCatalog(() -> TriggerRule.loadSaved(rules.get()));
+    }
+
+    /**
+     * Turns one saved rule's enabled flag on or off, and rebuilds.
+     *
+     * <p>Written through the same persisted list the settings screen edits, so {@code !trigger off}
+     * survives a restart. A disabled rule stays in the list: it is not re-added by the shipped-rule
+     * merge, and its reply text is kept for when it is turned back on.
+     *
+     * @return null when the change was saved, otherwise a sentence saying why it was not
+     */
+    private String setTriggerEnabled(String pattern, boolean enabled) {
+        if (pattern == null || pattern.isBlank()) return "That trigger has no name.";
+        List<String> saved = new ArrayList<>(rules.get());
+        String needle = pattern.strip();
+        for (int i = 0; i < saved.size(); i++) {
+            TriggerRule rule = TriggerRule.decode(saved.get(i));
+            if (rule == null || !rule.pattern().strip().equalsIgnoreCase(needle)) continue;
+            if (rule.enabled() == enabled) {
+                return null;
+            }
+            saved.set(i, new TriggerRule(rule.pattern(), rule.caseSensitive(), rule.wholeWord(),
+                rule.sender(), rule.reply(), rule.mode(), rule.cooldownMs(), rule.sessionLimit(),
+                rule.sound(), rule.remember(), enabled, rule.aliases(), rule.pool(),
+                rule.whisper(), rule.embedMode()).encode());
+            rules.set(saved);
+            rebuild();
+            return null;
+        }
+        // A rule that only exists in the merged defaults is not in the saved list yet, so it is
+        // added in its disabled form rather than the command silently doing nothing.
+        for (TriggerRule shipped : TriggerRule.preconfigured()) {
+            if (!shipped.pattern().strip().equalsIgnoreCase(needle)) continue;
+            saved.add(new TriggerRule(shipped.pattern(), shipped.caseSensitive(), shipped.wholeWord(),
+                shipped.sender(), shipped.reply(), shipped.mode(), shipped.cooldownMs(),
+                shipped.sessionLimit(), shipped.sound(), shipped.remember(), enabled,
+                shipped.aliases(), shipped.pool(), shipped.whisper(), shipped.embedMode()).encode());
+            rules.set(saved);
+            rebuild();
+            return null;
+        }
+        return "No trigger is called '" + pattern + "'.";
     }
 
     /** The default macro table, as configuration lines. */
@@ -1007,7 +1241,22 @@ public class AssistantModule extends AutomationModule {
         return ChatMacro.defaults().stream().map(ChatMacro::encode).toList();
     }
 
-    /** The macro table as it stands, for the GUI and for a test. */
+    /** Rebuilds the send pacer from the pacing settings. */
+    private void rebuildPacer() {
+        if (!pacingEnabled.get()) {
+            pacer = SendPacer.immediate();
+            return;
+        }
+        pacer = new SendPacer(pacingGapMs.get(), pacingBurst.get(), pacingBurstWindowMs.get(),
+            PACER_CAPACITY);
+    }
+
+    /** Rebuilds the remote-macro gate from its settings. */
+    private void rebuildRemoteGate() {
+        remoteGate = new RemoteMacroGate(macrosEnabled.get() && macrosRemote.get(),
+            macrosAllowList.get(), macrosRemoteCooldownMs.get());
+    }
+
     /** The widest line a formatted reply may use, so other commands can match the assistant. */
     public int replyWidth() {
         return replyWidth.get();
@@ -1113,6 +1362,9 @@ public class AssistantModule extends AutomationModule {
     private void sendStep(SendMessageEvent event) {
         if (!isActive() || event == null) return;
         if (!ready() || sendingMacro) return;
+        // ModCallModule also handles this command, and it cancels the event as it files. Whichever
+        // listener Meteor dispatches first claims the report; the other must not file it again.
+        if (event.isCancelled()) return;
 
         String message = event.message;
         if (message == null) return;
@@ -1143,6 +1395,7 @@ public class AssistantModule extends AutomationModule {
             }
             return;
         }
+        postMacroCard(macro, ownName, outcome.command(), false);
         sendMacroCommand(outcome.command(), macro);
     }
 
@@ -1213,31 +1466,12 @@ public class AssistantModule extends AutomationModule {
         return java.util.Map.copyOf(pools);
     }
 
-    /** Pushes the AI tunables into the engine. Cheap; safe to call from a settings listener. */
-    public void syncEngine() {
-        AiEngine engine = aiService.engine();
-        engine.setEnabled(localAi.get());
-        engine.setThreshold(aiThreshold.get());
-        engine.setMaxReplyLength(maxReplyLength.get());
-        engine.setLearnFromChat(aiLearnFromChat.get());
-    }
-
-    private void flushAi() {
-        if (!aiPersist.get() || !localAi.get()) {
-            aiDirty = false;
-            return;
-        }
-        aiService.saveAsync();
-        aiDirty = false;
-    }
-
     private List<TriggerRule> parseRules() {
-        List<TriggerRule> out = new ArrayList<>();
-        for (String encoded : rules.get()) {
-            TriggerRule rule = TriggerRule.decode(encoded);
-            if (rule != null) out.add(rule);
-        }
-        return out;
+        // loadSaved is the one load path: it merges the shipped rules into the saved list, because
+        // the list is persisted and an install saved before a command shipped would never gain it.
+        // Merging at parse time leaves the setting as the user left it and cannot recurse through
+        // its onChanged.
+        return TriggerRule.loadSaved(rules.get());
     }
 
     private void flushMemory() {
@@ -1282,6 +1516,24 @@ public class AssistantModule extends AutomationModule {
     /** This session's chat activity, for {@code !activity} and the status tab. */
     public ChatActivity activity() {
         return runtime.activity();
+    }
+
+    /**
+     * What the assistant can and cannot do right now, derived from live state.
+     *
+     * <p>Read on demand rather than cached: the answer depends on the connection, the settings and
+     * whether a reports channel exists, all of which change without the module being rebuilt.
+     */
+    public com.logvex.addon.assistant.core.Capabilities capabilities() {
+        WebhookRelayModule relay = Modules.get().get(WebhookRelayModule.class);
+        boolean reports = relay != null && relay.reportsAllowed();
+        return com.logvex.addon.assistant.core.Capabilities.of(
+            McServerStats.snapshot(mc, System.currentTimeMillis(),
+                com.logvex.addon.LogClient.sessionStartMs()),
+            config(), reports, permissionsEnabled(),
+            (int) triggers().rules().stream()
+                .filter(com.logvex.addon.assistant.core.TriggerRule::enabled).count(),
+            memory().facts().size());
     }
 
     public boolean permissionsEnabled() {
@@ -1412,20 +1664,6 @@ public class AssistantModule extends AutomationModule {
         administratorsSetting().set(updated);
         rebuild();
         return true;
-    }
-
-    /** The local AI engine, for the GUI and the {@code .ai} command. */
-    public AiEngine aiEngine() {
-        return aiService.engine();
-    }
-
-    public AiService aiService() {
-        return aiService;
-    }
-
-    /** Persists the AI immediately (GUI and command use this). */
-    public void saveAi() {
-        aiService.saveAsync();
     }
 
     /** The encoded rule list, for the GUI to edit in place. */

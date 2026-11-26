@@ -1,5 +1,6 @@
 package com.logvex.addon.companion.core;
 
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
 import java.net.URI;
@@ -94,6 +95,35 @@ public final class CompanionRouter {
         return rateLimiter;
     }
 
+    /**
+     * Whether a request may proceed without a token, i.e. whether it is the app shell or a health
+     * probe. Both are needed before the UI has a token to send.
+     */
+    public static boolean isPublicPath(String path) {
+        String normalised = normalizePath(path);
+        return normalised.isEmpty() || normalised.equals("index.html") || normalised.equals("health");
+    }
+
+    /**
+     * Checks a request against the access token.
+     *
+     * <p>Exposed so a caller that answers a request without going through {@link #handle} can apply
+     * the same rule. The event stream is one: it is held open by the transport, so it never reaches
+     * the router's own dispatch and would otherwise be served to anyone who could connect.
+     */
+    public boolean isAuthorized(Request request) {
+        if (request == null) return false;
+        return auth.isAuthorized(request.authorization(), request.queryToken());
+    }
+
+    /**
+     * An error response in the shape every endpoint uses, so a caller that answers a request itself
+     * returns the same body as {@link #handle} would instead of a bare JSON string.
+     */
+    public Response errorResponse(int status, String message) {
+        return Response.json(status, error(message));
+    }
+
     public CompanionEventBus events() {
         return events;
     }
@@ -143,6 +173,41 @@ public final class CompanionRouter {
             boolean active = CompanionJson.bool(body, "active", true);
             String name = request.query().get("__name");
             return Response.json(200, CompanionJson.result(call(() -> api.setModule(name, active))));
+        });
+
+        // Settings are read and written one module at a time, not all at once: a client has over a
+        // hundred modules and several thousand settings between them, and the app only ever shows
+        // one module's settings.
+        route("GET", "/api/v1/modules/{name}/settings", request -> {
+            String name = request.query().get("__name");
+            List<CompanionSnapshot.SettingView> settings = call(() -> api.moduleSettings(name));
+            if (settings == null) {
+                return Response.json(404, error("No module is called \"" + name + "\"."));
+            }
+            Map<String, Object> body = CompanionJson.map();
+            body.put("ok", true);
+            body.put("module", name);
+            body.put("settings", settings);
+            return Response.json(200, body);
+        });
+
+        route("POST", "/api/v1/modules/{name}/settings", request -> {
+            String moduleName = request.query().get("__name");
+            JsonObject body = CompanionJson.parseObject(request.body());
+            String settingName = CompanionJson.string(body, "setting");
+            if (settingName == null || settingName.isBlank()) {
+                return Response.json(400, CompanionJson.result(
+                    CompanionApi.ActionResult.fail("No setting was named.")));
+            }
+            // A present-but-null value is as unusable as a missing one, so both are refused here
+            // rather than being passed down as "set it to null".
+            JsonElement value = body.has("value") ? body.get("value") : null;
+            if (value == null || value.isJsonNull()) {
+                return Response.json(400, CompanionJson.result(
+                    CompanionApi.ActionResult.fail("No value was given.")));
+            }
+            return Response.json(200, CompanionJson.result(
+                call(() -> api.setModuleSetting(moduleName, settingName, value))));
         });
 
         route("POST", "/api/v1/chat", request -> {
@@ -217,11 +282,10 @@ public final class CompanionRouter {
         }
 
         String path = normalizePath(request.path());
-        boolean isAppShell = path.isEmpty() || path.equals("index.html") || path.equals("health");
 
         // The app shell and the health probe are reachable without a token so a browser can load the
         // UI; the UI then sends the token on every data request. Everything under /api requires it.
-        if (!isAppShell && !auth.isAuthorized(request.authorization(), request.queryToken())) {
+        if (!isPublicPath(path) && !auth.isAuthorized(request.authorization(), request.queryToken())) {
             return Response.json(401, error("Not authorised. Check the access token."));
         }
 

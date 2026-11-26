@@ -4,8 +4,11 @@ import com.logvex.addon.framework.systems.modules.AddonModule;
 import com.logvex.addon.LogClient;
 import com.logvex.addon.chatlog.core.ChatDigest;
 import com.logvex.addon.chatlog.core.EmbedAccent;
+import com.logvex.addon.chatlog.core.FeatureWebhook;
+import com.logvex.addon.chatlog.core.ReportLog;
 import com.logvex.addon.chatlog.core.SessionRecord;
 import com.logvex.addon.chatlog.core.WebhookEmbeds;
+import com.logvex.addon.chatlog.core.WebhookQueue;
 import com.logvex.addon.chatlog.gui.EmbedPreviewScreen;
 import com.logvex.addon.chatlog.mc.LogService;
 import com.logvex.addon.chatlog.mc.PlayerIdentityService;
@@ -17,11 +20,14 @@ import com.logvex.addon.framework.gui.widgets.containers.WHorizontalList;
 import com.logvex.addon.framework.gui.widgets.containers.WVerticalList;
 import com.logvex.addon.framework.gui.widgets.pressable.WButton;
 import meteordevelopment.orbit.EventHandler;
+import java.util.List;
+
 import meteordevelopment.meteorclient.settings.BoolSetting;
 import meteordevelopment.meteorclient.settings.EnumSetting;
 import meteordevelopment.meteorclient.settings.IntSetting;
 import meteordevelopment.meteorclient.settings.Setting;
 import meteordevelopment.meteorclient.settings.SettingGroup;
+import meteordevelopment.meteorclient.settings.StringListSetting;
 import meteordevelopment.meteorclient.settings.StringSetting;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.systems.modules.Modules;
@@ -46,6 +52,7 @@ public class WebhookRelayModule extends AddonModule {
     private final SettingGroup sgAppearance = settings.createGroup("Appearance");
     private final SettingGroup sgEvents = settings.createGroup("Events");
     private final SettingGroup sgDigest = settings.createGroup("Digest");
+    private final SettingGroup sgReports = settings.createGroup("Report log");
 
     private final Setting<String> webhookUrl = sgTarget.add(new StringSetting.Builder()
         .name("webhook-url")
@@ -68,6 +75,16 @@ public class WebhookRelayModule extends AddonModule {
         .name("relay-enabled")
         .description("Actually send embeds. Off means the URL is stored but nothing is transmitted.")
         .defaultValue(true)
+        .onChanged(value -> publishTarget())
+        .build()
+    );
+
+    private final Setting<List<String>> featureWebhooks = sgTarget.add(new StringListSetting.Builder()
+        .name("feature-webhooks")
+        .description("Send one feature to its own Discord webhook. One per line: "
+            + "keywords=URL, macros=URL, modcall=URL, help=URL, status=URL. "
+            + "Unset features use the URL above.")
+        .defaultValue(List.of())
         .onChanged(value -> publishTarget())
         .build()
     );
@@ -175,6 +192,13 @@ public class WebhookRelayModule extends AddonModule {
         .build()
     );
 
+    private final Setting<Boolean> allowMacroCards = sgEvents.add(new BoolSetting.Builder()
+        .name("allow-macro-cards")
+        .description("Post a card for each macro run. Off keeps macro runs out of the webhook.")
+        .defaultValue(false)
+        .build()
+    );
+
     private final Setting<String> moderatorRoleId = sgEvents.add(new StringSetting.Builder()
         .name("moderator-role-id")
         .description("Discord role to ping on a report: a role id, or plain text to show instead.")
@@ -224,11 +248,16 @@ public class WebhookRelayModule extends AddonModule {
         identities.addListener(renameListener);
         service.addListener(presenceListener);
         lastDigestAt = System.currentTimeMillis();
+        // Apply the cap before loading so a config value loaded after construction, or a changed
+        // setting, is honoured on the first activate rather than only when it changes.
+        reportLog.setCapacity(reportLogSize.get());
+        if (reportLogPersist.get()) reportLog.loadAll(reportLogStored.get());
     }
 
     @Override
     public void onDeactivate() {
         service.setRelayTarget("", "");
+        service.setRelayRoutes(new FeatureWebhook("", List.of()));
         service.setEmbedStyle(WebhookEmbeds.Style.defaults());
         service.removeSessionListener(sessionListener);
         identities.removeListener(renameListener);
@@ -238,6 +267,9 @@ public class WebhookRelayModule extends AddonModule {
     private void publishTarget() {
         boolean on = isActive() && enabled.get();
         service.setRelayTarget(on ? url() : "", webhookUsername.get());
+        // The routes are published with the target: a sender reads the route for its own feature, so
+        // a feature-only override has to reach it even when the shared URL is blank.
+        service.setRelayRoutes(on ? routes() : new FeatureWebhook("", List.of()));
     }
 
     private void publishStyle() {
@@ -259,6 +291,21 @@ public class WebhookRelayModule extends AddonModule {
         return webhookUrl.get() == null ? "" : webhookUrl.get();
     }
 
+    /**
+     * The routing table: the shared URL plus any per-feature override.
+     *
+     * <p>Rebuilt on read so a change to either setting takes effect without a restart, and so the
+     * caller never holds a stale copy of a URL that may be a secret.
+     */
+    public FeatureWebhook routes() {
+        return new FeatureWebhook(url(), featureWebhooks.get());
+    }
+
+    /** The URL for one feature, honouring its override. */
+    public String urlFor(FeatureWebhook.Feature feature) {
+        return routes().url(feature);
+    }
+
     public String username() {
         return webhookUsername.get() == null ? "" : webhookUsername.get();
     }
@@ -267,9 +314,94 @@ public class WebhookRelayModule extends AddonModule {
         return !url().isBlank();
     }
 
+    // ---------------------------------------------------------------- report log
+
+    /** Every report this client filed, so a repeat report or a failed one is still visible. */
+    private final ReportLog reportLog = new ReportLog();
+
+    private final Setting<Integer> reportLogSize = sgReports.add(new IntSetting.Builder()
+        .name("report-log-size")
+        .description("How many filed reports to remember. 0 keeps every report.")
+        .defaultValue(ReportLog.DEFAULT_CAPACITY)
+        .min(0)
+        .sliderRange(0, 1000)
+        .onChanged(reportLog::setCapacity)
+        .build()
+    );
+
+    private final Setting<Boolean> reportLogPersist = sgReports.add(new BoolSetting.Builder()
+        .name("persist-report-log")
+        .description("Keep the report log across restarts.")
+        .defaultValue(true)
+        .build()
+    );
+
+    private final Setting<List<String>> reportLogStored = sgReports.add(new StringListSetting.Builder()
+        .name("reports")
+        .description("Saved reports, managed by the module. Editing this by hand is not recommended.")
+        .defaultValue(List.of())
+        .visible(reportLogPersist::get)
+        .build()
+    );
+
+    /** The log of reports this client filed. */
+    public ReportLog reportLog() {
+        return reportLog;
+    }
+
+    /** Records a filed report and returns the record, so its outcome can be settled later. */
+    private ReportLog.Record recordReport(String reporter, String reason, String kind,
+                                          boolean delivered, String note) {
+        ReportLog.Record record = new ReportLog.Record(System.currentTimeMillis(), reporter, reason,
+            kind, delivered, note);
+        reportLog.add(record);
+        persistReportLog();
+        return record;
+    }
+
+    /**
+     * Settles a record with the outcome the network worker reported, then persists.
+     *
+     * <p>Runs on the client thread: the callback arrives on the webhook daemon, and a Meteor
+     * setting written from there races the config save.
+     */
+    private void settleReport(ReportLog.Record record, boolean delivered, String note) {
+        if (record == null) return;
+        mc.execute(() -> {
+            if (reportLog.settle(record, delivered, note)) persistReportLog();
+        });
+    }
+
+    private void persistReportLog() {
+        if (reportLogPersist.get()) reportLogStored.set(reportLog.encodeAll());
+    }
+
     /** True when reports may be posted through this webhook. */
     public boolean reportsAllowed() {
-        return allowReports.get() && configured() && enabled.get();
+        // Checked against the modcall route, not the shared URL: a user may point reports at their
+        // own channel and leave the shared URL blank.
+        return allowReports.get() && enabled.get()
+            && routes().configured(FeatureWebhook.Feature.MODCALL);
+    }
+
+    /** True when macro-run cards may be posted. */
+    public boolean macroCardsAllowed() {
+        return allowMacroCards.get() && enabled.get()
+            && routes().configured(FeatureWebhook.Feature.MACROS);
+    }
+
+    /**
+     * Posts a macro-run card to the macros route.
+     *
+     * <p>The URL comes from the routing table, so a user who keeps macro runs in a separate channel
+     * gets that channel without a second module. Nothing is sent unless the user opted in.
+     */
+    public boolean sendMacroRun(String shortcut, String sender, String command, boolean remote,
+                                WebhookQueue.Listener listener) {
+        if (!macroCardsAllowed()) return false;
+        return service.notifyMacroRun(
+            urlFor(FeatureWebhook.Feature.MACROS), username(),
+            shortcut, sender, command, remote, listener);
     }
 
     /** The role id (or plain text) to ping on a report; may be blank. */
@@ -295,17 +427,37 @@ public class WebhookRelayModule extends AddonModule {
      * who wants those in a private channel sets this URL and nothing else changes.
      */
     public boolean sendAdminStatus(com.logvex.addon.stats.ServerStats stats,
-                                   com.logvex.addon.chatlog.core.WebhookQueue.Listener listener) {
+                                   WebhookQueue.Listener listener) {
         if (!adminStatusAllowed() || stats == null) return false;
         return service.notifyStatus(adminUrl(), username(), stats, listener);
     }
 
-    /** Posts a report card, pinging the configured moderator role. */
+    /**
+     * Posts a report card, pinging the configured moderator role.
+     *
+     * <p>Every attempt is written to the report log, including one that could not be posted: a
+     * report the user believes was filed but was not is the case most worth keeping.
+     */
     public boolean sendReport(String reporter, String reason, String kind,
-                              com.logvex.addon.chatlog.core.WebhookQueue.Listener listener) {
-        if (!reportsAllowed()) return false;
-        return service.notifyReport(url(), username(), reporter, reason, moderatorRole(), kind,
-            listener);
+                              WebhookQueue.Listener listener) {
+        if (!reportsAllowed()) {
+            recordReport(reporter, reason, kind, false, "reports not allowed");
+            return false;
+        }
+        // Written before queueing, so the record exists even if the queue invokes the listener
+        // immediately; a report that was attempted must never be missing from the log.
+        ReportLog.Record record = recordReport(reporter, reason, kind, false, "queued");
+        boolean queued = service.notifyReport(
+            urlFor(FeatureWebhook.Feature.MODCALL), username(),
+            reporter, reason, moderatorRole(),
+            kind, (success, message) -> {
+                // Delivery happens on the network worker, after this method has returned, so the
+                // log is settled here with what really happened rather than with "queued".
+                settleReport(record, success, message);
+                if (listener != null) listener.onResult(success, message);
+            });
+        if (!queued) settleReport(record, false, "could not be queued");
+        return queued;
     }
 
     // ------------------------------------------------------------------ events

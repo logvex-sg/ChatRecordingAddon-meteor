@@ -1,16 +1,17 @@
 package com.logvex.addon.assistant.modules;
 
 import com.logvex.addon.assistant.core.ModCall;
-import com.logvex.addon.assistant.core.SenderIdentity;
 import com.logvex.addon.automation.modules.AutomationModule;
+import com.logvex.addon.chatlog.modules.WebhookRelayModule;
 import com.logvex.addon.framework.SafeEventHandler;
 import com.logvex.addon.notify.core.NotificationType;
 import meteordevelopment.meteorclient.events.game.SendMessageEvent;
 import meteordevelopment.meteorclient.settings.BoolSetting;
+import meteordevelopment.meteorclient.settings.EnumSetting;
 import meteordevelopment.meteorclient.settings.IntSetting;
 import meteordevelopment.meteorclient.settings.Setting;
 import meteordevelopment.meteorclient.settings.SettingGroup;
-import meteordevelopment.meteorclient.settings.StringSetting;
+import meteordevelopment.meteorclient.systems.modules.Modules;
 import meteordevelopment.orbit.EventHandler;
 
 import java.util.HashMap;
@@ -18,17 +19,16 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * Owns {@code !modcall}: sends one private message to a moderator the user configured.
+ * Owns {@code !modcall}: files a report through this client's own report channel.
  *
- * <p>This is a module of its own rather than a corner of the assistant for one reason: it makes the
- * client send {@code /msg} from the local player's own account, so it needs a permission story and
- * a switch that stand on their own. With the assistant disabled, this feature is disabled too,
- * which is the behaviour a user expects from a switch labelled "modcall".
+ * <p>Everything happens client side. The report is posted as an embed card to the webhook the user
+ * configured in {@code webhook-relay}; no server command is sent and nothing is said in chat. That
+ * is deliberate: {@code /report} is not a vanilla command, and the old implementation's
+ * {@code /msg <moderator>} reached exactly one named player, who was frequently offline.
  *
- * <p>Every refusal is reported to the speaker. A call that quietly did nothing — the old
- * behaviour, where a missing target produced no visible output at all — is worse than one that
- * says why it could not be sent, because the player believes a moderator has been told when nobody
- * has.
+ * <p>Every refusal is reported to the caller. A call that quietly did nothing is worse than one
+ * that says why it could not be filed, because the player believes a moderator has been told when
+ * nobody has.
  */
 public class ModCallModule extends AutomationModule {
     /** The command the module answers. */
@@ -36,50 +36,32 @@ public class ModCallModule extends AutomationModule {
 
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
 
-    private final Setting<String> target = sgGeneral.add(new StringSetting.Builder()
-        .name("target")
-        .description("Moderator's exact in-game name. A typo sends the request to nobody, so this "
-            + "must be spelled exactly.")
-        .defaultValue("")
-        .wide()
-        .build()
-    );
-
-    private final Setting<String> moderatorFormat = sgGeneral.add(new StringSetting.Builder()
-        .name("message")
-        .description("What the moderator is sent. Tokens: {reason}, {reporter}, {moderator}, {prefix}.")
-        .defaultValue(ModCall.DEFAULT_MODERATOR_FORMAT)
-        .wide()
-        .build()
-    );
-
-    private final Setting<String> reporterFormat = sgGeneral.add(new StringSetting.Builder()
-        .name("receipt")
-        .description("Receipt messaged back to the caller. Leave blank to send no receipt.")
-        .defaultValue(ModCall.DEFAULT_REPORTER_FORMAT)
-        .wide()
+    private final Setting<Kind> kind = sgGeneral.add(new EnumSetting.Builder<Kind>()
+        .name("kind")
+        .description("How the report is labelled in the reports channel.")
+        .defaultValue(Kind.MOD)
         .build()
     );
 
     private final Setting<Boolean> allowRemote = sgGeneral.add(new BoolSetting.Builder()
         .name("allow-remote")
-        .description("Let other players call a moderator through this client. Off by default: "
-            + "otherwise a stranger's words are delivered to a moderator under your name.")
+        .description("Let other players file a report through this client. Off by default: "
+            + "otherwise a stranger's words appear in your reports channel under your name.")
         .defaultValue(false)
         .build()
     );
 
     private final Setting<Boolean> feedback = sgGeneral.add(new BoolSetting.Builder()
         .name("feedback")
-        .description("Confirm locally when a call was sent.")
+        .description("Confirm locally when a report was queued.")
         .defaultValue(true)
         .build()
     );
 
     private final Setting<Integer> cooldownSeconds = sgGeneral.add(new IntSetting.Builder()
         .name("cooldown-seconds")
-        .description("Shortest gap between two calls from the same player, so one person cannot "
-            + "fill a moderator's inbox.")
+        .description("Shortest gap between two reports from the same player, so one person cannot "
+            + "flood the reports channel.")
         .defaultValue(60)
         .min(0)
         .max(86_400)
@@ -88,12 +70,37 @@ public class ModCallModule extends AutomationModule {
     );
 
     private final Map<String, Long> lastCallAt = new HashMap<>();
-    private boolean sending;
 
     public ModCallModule() {
         super("modcall",
-            "Sends !modcall <reason> as a private message to a configured moderator.",
+            "Files !modcall <reason> to your reports channel, client side.",
             "callmod", "modhelp");
+    }
+
+    /** How a report is labelled in the channel. */
+    public enum Kind {
+        /** A request for a moderator to attend. */
+        MOD("mod", ModCall.KIND_MOD),
+        /** A report about a player or an incident. */
+        REPORT("report", ModCall.KIND_REPORT);
+
+        private final String label;
+        private final String wire;
+
+        Kind(String label, String wire) {
+            this.label = label;
+            this.wire = wire;
+        }
+
+        /** The name shown in the settings UI. */
+        public String label() {
+            return label;
+        }
+
+        /** The value the embed builder expects. */
+        public String wire() {
+            return wire;
+        }
     }
 
     @EventHandler
@@ -103,7 +110,10 @@ public class ModCallModule extends AutomationModule {
     }
 
     private void sendStep(SendMessageEvent event) {
-        if (!isActive() || event == null || sending) return;
+        if (!isActive() || event == null) return;
+        // The assistant answers modcall too, when it is enabled. Cancellation is the arbiter, so
+        // only the listener that gets there first files the report.
+        if (event.isCancelled()) return;
         String message = event.message;
         if (message == null) return;
         String prefix = commandPrefix();
@@ -116,62 +126,58 @@ public class ModCallModule extends AutomationModule {
     }
 
     /**
-     * Builds and sends the call, or explains why it could not be sent.
+     * Files the report, or explains why it could not be filed.
      *
      * @return true when the line was a modcall command, whether or not it succeeded
      */
     private boolean handle(String reason) {
         String sender = localName();
-        // Hard local-only gate, independent of the allow-remote setting: this sends from the local
-        // player's own account, so it must never be reachable from someone else's chat line.
+        // Hard local-only gate, independent of the allow-remote setting: this posts to the local
+        // user's own reports channel, so it must never be reachable from someone else's chat line.
         if (!allowRemote.get() && !isLocalSpeaker(sender)) {
             return true;
         }
-        if (reason.isEmpty()) {
+        ModCall.Report report = ModCall.build(sender, reason, commandPrefix(), kind.get().wire());
+        if (!report.ok()) {
             notifyUser(NotificationType.IMPORTANT_CHAT, "Modcall",
-                ModCall.Problem.NO_REASON.message(commandPrefix()));
-            return true;
-        }
-        ModCall.Call call = ModCall.build(target.get(), reason, commandPrefix(),
-            moderatorFormat.get(), reporterFormat.get(), sender);
-        if (!call.ok()) {
-            notifyUser(NotificationType.IMPORTANT_CHAT, "Modcall",
-                call.problem().message(commandPrefix()));
+                report.problem().message(commandPrefix()));
             return true;
         }
         if (blocked(sender)) {
             notifyUser(NotificationType.IMPORTANT_CHAT, "Modcall",
-                "You called a moderator recently. Wait " + cooldownSeconds.get()
-                    + "s before calling again.");
+                "You filed a report recently. Wait " + cooldownSeconds.get()
+                    + "s before filing again.");
             return true;
         }
-        if (mc.getNetworkHandler() == null) {
+        WebhookRelayModule relay = Modules.get().get(WebhookRelayModule.class);
+        if (relay == null || !relay.reportsAllowed()) {
             notifyUser(NotificationType.IMPORTANT_CHAT, "Modcall",
-                "Not connected, so the call could not be sent.");
+                "Reports are not configured. Enable reports on the webhook-relay module and set "
+                    + "its URL.");
             return true;
         }
-        sending = true;
-        try {
-            for (String command : call.commands()) {
-                mc.getNetworkHandler().sendChatCommand(command);
-            }
-        } catch (RuntimeException failure) {
+        boolean queued = relay.sendReport(report.reporter(), report.reason(), report.kind(),
+            (success, message) -> {
+                if (!success) {
+                    notifyUser(NotificationType.IMPORTANT_CHAT, "Modcall",
+                        "The report could not be delivered: " + message);
+                }
+            });
+        if (!queued) {
             notifyUser(NotificationType.IMPORTANT_CHAT, "Modcall",
-                "The modcall could not be sent: " + failure.getMessage());
+                "The report could not be queued.");
             return true;
-        } finally {
-            sending = false;
         }
-        // Recorded only after the send: charging the cooldown for a call that failed would lock the
-        // player out of retrying something they never sent.
+        // Recorded only after the queue accepts it: charging the cooldown for a report that never
+        // left would lock the player out of retrying something they never sent.
         lastCallAt.put(key(sender), System.currentTimeMillis());
         if (feedback.get()) {
-            info("Modcall sent to %s.", call.target());
+            info("Report filed to the reports channel.");
         }
         return true;
     }
 
-    /** True when {@code sender} called too recently to call again. */
+    /** True when {@code sender} filed a report too recently to file another. */
     private boolean blocked(String sender) {
         int seconds = cooldownSeconds.get();
         if (seconds <= 0) return false;
@@ -197,19 +203,8 @@ public class ModCallModule extends AutomationModule {
 
     /** The assistant's configured prefix, so both features spell the command the same way. */
     private String commandPrefix() {
-        var assistant = meteordevelopment.meteorclient.systems.modules.Modules.get()
-            .get(AssistantModule.class);
+        AssistantModule assistant = Modules.get().get(AssistantModule.class);
         String prefix = assistant == null ? "!" : assistant.config().commandPrefix();
         return prefix == null || prefix.isBlank() ? "!" : prefix;
-    }
-
-    /**
-     * True when a target is configured and is a legal player name.
-     *
-     * <p>Deliberately not called {@code ready}: the base class already owns that name for its own
-     * "player and world are present" check, and overriding it would silently break that.
-     */
-    public boolean configured() {
-        return !target.get().isBlank() && SenderIdentity.validName(target.get().strip());
     }
 }

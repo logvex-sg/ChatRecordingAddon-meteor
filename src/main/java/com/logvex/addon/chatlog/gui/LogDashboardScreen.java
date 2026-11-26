@@ -7,6 +7,7 @@ import com.logvex.addon.chatlog.core.LogSegmentMeta;
 import com.logvex.addon.chatlog.core.MessageType;
 import com.logvex.addon.chatlog.core.ReportFormatting;
 import com.logvex.addon.chatlog.core.StatsSnapshot;
+import com.logvex.addon.common.Messages;
 import com.logvex.addon.chatlog.mc.LogService;
 import com.logvex.addon.chatlog.mc.LogStorageService;
 import com.logvex.addon.chatlog.modules.ChatLoggerModule;
@@ -96,22 +97,18 @@ public class LogDashboardScreen extends WindowScreen {
         add(theme.horizontalSeparator("Webhook embeds")).expandX();
 
         if (relay == null) {
-            add(theme.label("The webhook-relay module is not registered.")).expandX().widget().color(GuiKit.BAD);
+            add(theme.label("The webhook-relay module is not registered.")).expandX().widget().color(GuiKit.badColor());
             return;
         }
 
         WVerticalList overview = add(theme.verticalList()).expandX().widget();
-        GuiKit.keyValue(overview, theme, "Status:",
-            relay.isActive() ? (relay.configured() ? "on" : "no URL") : "module off");
-        GuiKit.keyValue(overview, theme, "Target:",
-            relay.configured()
+        GuiKit.facts(overview, theme,
+            "Status", relay.isActive() ? (relay.configured() ? "on" : "no URL") : "module off",
+            "Target", relay.configured()
                 ? com.logvex.addon.chatlog.core.WebhookDeliveryLog.hostOf(relay.url())
-                : "not configured");
-        GuiKit.keyValue(overview, theme, "Accent:", relay.style().accent());
-
-        if (monitor != null) {
-            GuiKit.keyValue(overview, theme, "Delivery:", monitor.statusLine());
-        }
+                : "not configured",
+            "Accent", relay.style().accent(),
+            "Delivery", monitor == null ? "monitor off" : monitor.statusLine());
 
         WTable actions = add(theme.table()).expandX().widget();
         WButton preview = actions.add(theme.button("Preview Embeds...")).expandX().widget();
@@ -121,7 +118,7 @@ public class LogDashboardScreen extends WindowScreen {
 
         if (!relay.configured()) {
             add(theme.label("Set a webhook URL on the webhook-relay module to start sending."))
-                .expandX().widget().color(GuiKit.MUTED);
+                .expandX().widget().color(GuiKit.mutedColor());
         }
     }
 
@@ -139,11 +136,11 @@ public class LogDashboardScreen extends WindowScreen {
         LogService service = LogService.get();
 
         var status = add(theme.verticalList()).expandX().widget();
-        GuiKit.keyValue(status, theme, "Recording:",
-            (service.isRecording() ? "Yes" : "No") + "  (" + service.liveCount() + " live)");
-        GuiKit.keyValue(status, theme, "Session:",
-            service.session() == null ? "-" : service.session().id());
-        GuiKit.keyValue(status, theme, "Server:", service.serverName());
+        GuiKit.facts(status, theme,
+            "Recording", service.isRecording() ? "on" : "off",
+            "Buffered", Messages.plural(service.liveCount(), "message"),
+            "Session", service.session() == null ? "none" : service.session().id(),
+            "Server", service.serverName());
 
         WTable controls = add(theme.table()).expandX().widget();
         if (logger != null) {
@@ -192,19 +189,19 @@ public class LogDashboardScreen extends WindowScreen {
         }
 
         if (feed.isEmpty()) {
-            add(theme.label("No messages recorded yet.")).expandX().widget().color(GuiKit.MUTED);
+            add(theme.label("No messages recorded yet.")).expandX().widget().color(GuiKit.mutedColor());
             return;
         }
 
         WTable table = add(theme.table()).expandX().widget();
-        table.add(theme.label("Time")).widget().color(GuiKit.MUTED);
-        table.add(theme.label("Type")).widget().color(GuiKit.MUTED);
-        table.add(theme.label("Sender")).widget().color(GuiKit.MUTED);
-        table.add(theme.label("Message")).expandCellX().widget().color(GuiKit.MUTED);
+        table.add(theme.label("Time")).widget().color(GuiKit.mutedColor());
+        table.add(theme.label("Type")).widget().color(GuiKit.mutedColor());
+        table.add(theme.label("Sender")).widget().color(GuiKit.mutedColor());
+        table.add(theme.label("Message")).expandCellX().widget().color(GuiKit.mutedColor());
         table.row();
 
         for (ChatEntry entry : feed) {
-            table.add(theme.label(ReportFormatting.shortTime(entry.timestamp()))).widget().color(GuiKit.MUTED);
+            table.add(theme.label(ReportFormatting.shortTime(entry.timestamp()))).widget().color(GuiKit.mutedColor());
             table.add(theme.label(entry.type().toString())).widget().color(typeColor(entry));
             table.add(theme.label(entry.sender().isBlank() ? "-" : entry.sender())).widget();
             table.add(theme.label(GuiKit.truncate(entry.content(), 90))).expandCellX().widget();
@@ -259,7 +256,7 @@ public class LogDashboardScreen extends WindowScreen {
                 error -> info("Export failed: " + error));
         };
 
-        add(theme.label("Use Search to load matching messages.")).expandX().widget().color(GuiKit.MUTED);
+        add(theme.label("Use Search to load matching messages.")).expandX().widget().color(GuiKit.mutedColor());
     }
 
     private void runSearch(LogStorageService storage) {
@@ -296,19 +293,19 @@ public class LogDashboardScreen extends WindowScreen {
 
         List<com.logvex.addon.chatlog.core.PlayerActivity> top = module.players("").stream().limit(10).toList();
         if (top.isEmpty()) {
-            add(theme.label("No player activity recorded.")).expandX().widget().color(GuiKit.MUTED);
+            add(theme.label("No player activity recorded.")).expandX().widget().color(GuiKit.mutedColor());
             return;
         }
 
         WTable table = add(theme.table()).expandX().widget();
-        table.add(theme.label("Player")).expandCellX().widget().color(GuiKit.MUTED);
-        table.add(theme.label("Messages")).widget().color(GuiKit.MUTED);
-        table.add(theme.label("Last seen")).widget().color(GuiKit.MUTED);
+        table.add(theme.label("Player")).expandCellX().widget().color(GuiKit.mutedColor());
+        table.add(theme.label("Messages")).widget().color(GuiKit.mutedColor());
+        table.add(theme.label("Last seen")).widget().color(GuiKit.mutedColor());
         table.row();
         for (var activity : top) {
             table.add(theme.label(activity.name())).expandCellX().widget();
-            table.add(theme.label(Long.toString(activity.messageCount()))).widget();
-            table.add(theme.label(ReportFormatting.time(activity.lastSeen()))).widget().color(GuiKit.MUTED);
+            table.add(theme.label(Messages.number(activity.messageCount()))).widget();
+            table.add(theme.label(ReportFormatting.time(activity.lastSeen()))).widget().color(GuiKit.mutedColor());
             table.row();
         }
     }
@@ -343,14 +340,14 @@ public class LogDashboardScreen extends WindowScreen {
         }
 
         var rules = module.currentRules();
-        GuiKit.keyValue(add(theme.verticalList()).expandX().widget(), theme, "Active rules:", Integer.toString(rules.size()));
-        GuiKit.keyValue(add(theme.verticalList()).expandX().widget(), theme, "Webhook:",
-            module.webhookUrl().isBlank() ? "not configured" : "configured");
+        GuiKit.facts(add(theme.verticalList()).expandX().widget(), theme,
+            "Active rules", Messages.number(rules.size()),
+            "Webhook", module.webhookUrl().isBlank() ? "not configured" : "configured");
 
         WTable table = add(theme.table()).expandX().widget();
-        table.add(theme.label("Pattern")).expandCellX().widget().color(GuiKit.MUTED);
-        table.add(theme.label("Sound")).widget().color(GuiKit.MUTED);
-        table.add(theme.label("Webhook")).widget().color(GuiKit.MUTED);
+        table.add(theme.label("Pattern")).expandCellX().widget().color(GuiKit.mutedColor());
+        table.add(theme.label("Sound")).widget().color(GuiKit.mutedColor());
+        table.add(theme.label("Webhook")).widget().color(GuiKit.mutedColor());
         table.row();
         for (var rule : rules) {
             table.add(theme.label(rule.pattern())).expandCellX().widget();
@@ -363,18 +360,21 @@ public class LogDashboardScreen extends WindowScreen {
     // ------------------------------------------------------------------ stats
 
     private void renderStats() {
-        SessionStatsModule module = Modules.get().get(SessionStatsModule.class);
         StatsSnapshot snapshot = LogService.get().snapshot();
 
-        GuiKit.keyValue(add(theme.verticalList()).expandX().widget(), theme, "Total messages:", Long.toString(snapshot.totalMessages()));
-        GuiKit.keyValue(add(theme.verticalList()).expandX().widget(), theme, "Rate:",
-            String.format(java.util.Locale.ROOT, "%.1f/min", snapshot.messagesPerMinute()));
-        GuiKit.keyValue(add(theme.verticalList()).expandX().widget(), theme, "Unique players:", Integer.toString(snapshot.uniquePlayers()));
-        GuiKit.keyValue(add(theme.verticalList()).expandX().widget(), theme, "Joins / leaves:",
-            snapshot.joinEvents() + " / " + snapshot.leaveEvents());
-        GuiKit.keyValue(add(theme.verticalList()).expandX().widget(), theme, "Deaths:", Long.toString(snapshot.deathEvents()));
-        GuiKit.keyValue(add(theme.verticalList()).expandX().widget(), theme, "Keyword alerts:", Long.toString(snapshot.keywordAlerts()));
-        GuiKit.keyValue(add(theme.verticalList()).expandX().widget(), theme, "Duration:", ReportFormatting.duration(snapshot.durationMs()));
+        var tiles = add(theme.verticalList()).expandX().widget();
+        GuiKit.tiles(tiles, theme,
+            GuiKit.Tile.of(Messages.number(snapshot.totalMessages()), "messages"),
+            GuiKit.Tile.of(String.format(java.util.Locale.ROOT, "%.1f/min", snapshot.messagesPerMinute()), "rate"),
+            GuiKit.Tile.of(Messages.number(snapshot.uniquePlayers()), "players seen"),
+            GuiKit.Tile.of(Messages.duration(snapshot.durationMs()), "session"));
+
+        var facts = add(theme.verticalList()).expandX().widget();
+        GuiKit.facts(facts, theme,
+            "Joins", Messages.number(snapshot.joinEvents()),
+            "Leaves", Messages.number(snapshot.leaveEvents()),
+            "Deaths", Messages.number(snapshot.deathEvents()),
+            "Keyword alerts", Messages.number(snapshot.keywordAlerts()));
 
         add(theme.horizontalSeparator("By type")).expandX();
         WTable table = add(theme.table()).expandX().widget();
@@ -382,9 +382,10 @@ public class LogDashboardScreen extends WindowScreen {
             long count = snapshot.count(type);
             if (count == 0) continue;
             table.add(theme.label(type.toString())).expandCellX().widget();
-            table.add(theme.label(Long.toString(count))).widget();
+            table.add(theme.label(Messages.number(count))).widget();
             table.row();
         }
+        table.finish();
 
         if (!snapshot.topPlayers().isEmpty()) {
             add(theme.horizontalSeparator("Top players")).expandX();
@@ -396,11 +397,10 @@ public class LogDashboardScreen extends WindowScreen {
         if (logger != null && logger.storage() != null) {
             LogStorageService storage = logger.storage();
             List<LogSegmentMeta> segments = storage.segments();
-            GuiKit.keyValue(add(theme.verticalList()).expandX().widget(), theme, "Segments:", Integer.toString(segments.size()));
-            GuiKit.keyValue(add(theme.verticalList()).expandX().widget(), theme, "Stored entries:",
-                Long.toString(storage.store().totalEntries()));
-            GuiKit.keyValue(add(theme.verticalList()).expandX().widget(), theme, "Compressed:",
-                ReportFormatting.bytes(storage.store().totalCompressedBytes()));
+            GuiKit.facts(add(theme.verticalList()).expandX().widget(), theme,
+                "Segments", Messages.number(segments.size()),
+                "Stored entries", Messages.number(storage.store().totalEntries()),
+                "On disk", Messages.bytes(storage.store().totalCompressedBytes()));
         }
     }
 
@@ -410,17 +410,17 @@ public class LogDashboardScreen extends WindowScreen {
         var log = LogService.get().alerts();
 
         WTable summary = add(theme.table()).expandX().widget();
-        summary.add(theme.label("Keyword")).widget().color(GuiKit.MUTED);
-        summary.add(theme.label("Webhook")).widget().color(GuiKit.MUTED);
-        summary.add(theme.label("Error")).widget().color(GuiKit.MUTED);
-        summary.add(theme.label("Total")).widget().color(GuiKit.MUTED);
+        summary.add(theme.label("Keyword")).widget().color(GuiKit.mutedColor());
+        summary.add(theme.label("Webhook")).widget().color(GuiKit.mutedColor());
+        summary.add(theme.label("Error")).widget().color(GuiKit.mutedColor());
+        summary.add(theme.label("Total")).widget().color(GuiKit.mutedColor());
         summary.row();
         summary.add(theme.label(Integer.toString(log.count(com.logvex.addon.chatlog.core.AlertLog.Kind.KEYWORD))))
-            .widget().color(GuiKit.ACCENT);
+            .widget().color(GuiKit.accentColor());
         summary.add(theme.label(Integer.toString(log.count(com.logvex.addon.chatlog.core.AlertLog.Kind.WEBHOOK))))
-            .widget().color(GuiKit.WARN);
+            .widget().color(GuiKit.warnColor());
         summary.add(theme.label(Integer.toString(log.count(com.logvex.addon.chatlog.core.AlertLog.Kind.ERROR))))
-            .widget().color(GuiKit.BAD);
+            .widget().color(GuiKit.badColor());
         summary.add(theme.label(Long.toString(log.totalRecorded()))).widget();
 
         WButton open = add(theme.button("Open full alert history")).expandX().widget();
@@ -429,16 +429,16 @@ public class LogDashboardScreen extends WindowScreen {
         add(theme.horizontalSeparator("Recent")).expandX();
         var recent = log.recent("", 15);
         if (recent.isEmpty()) {
-            add(theme.label("No alerts recorded yet.")).expandX().widget().color(GuiKit.MUTED);
+            add(theme.label("No alerts recorded yet.")).expandX().widget().color(GuiKit.mutedColor());
             return;
         }
         WTable table = add(theme.table()).expandX().widget();
-        table.add(theme.label("Time")).widget().color(GuiKit.MUTED);
-        table.add(theme.label("Kind")).widget().color(GuiKit.MUTED);
-        table.add(theme.label("Detail")).expandCellX().widget().color(GuiKit.MUTED);
+        table.add(theme.label("Time")).widget().color(GuiKit.mutedColor());
+        table.add(theme.label("Kind")).widget().color(GuiKit.mutedColor());
+        table.add(theme.label("Detail")).expandCellX().widget().color(GuiKit.mutedColor());
         table.row();
         for (var alert : recent) {
-            table.add(theme.label(ReportFormatting.shortTime(alert.timestamp()))).widget().color(GuiKit.MUTED);
+            table.add(theme.label(ReportFormatting.shortTime(alert.timestamp()))).widget().color(GuiKit.mutedColor());
             table.add(theme.label(alert.kind().toString())).widget();
             table.add(theme.label(GuiKit.truncate(alert.title() + ": " + alert.detail(), 70)))
                 .expandCellX().widget();
@@ -450,11 +450,11 @@ public class LogDashboardScreen extends WindowScreen {
 
     private static meteordevelopment.meteorclient.utils.render.color.Color typeColor(ChatEntry entry) {
         return switch (entry.type()) {
-            case PUBLIC_CHAT, PLAYER_MESSAGE -> GuiKit.ACCENT;
-            case JOIN -> GuiKit.GOOD;
-            case LEAVE -> GuiKit.WARN;
-            case DEATH -> GuiKit.BAD;
-            default -> GuiKit.MUTED;
+            case PUBLIC_CHAT, PLAYER_MESSAGE -> GuiKit.accentColor();
+            case JOIN -> GuiKit.goodColor();
+            case LEAVE -> GuiKit.warnColor();
+            case DEATH -> GuiKit.badColor();
+            default -> GuiKit.mutedColor();
         };
     }
 

@@ -63,9 +63,20 @@ class WorldIntelligenceTest {
     }
 
     @Test
-    @DisplayName("the database is bounded and evicts the least recently seen")
-    void databaseIsBounded() {
+    @DisplayName("the database keeps every point until a cap is asked for")
+    void databaseIsUncappedByDefault() {
         WorldDatabase db = new WorldDatabase();
+        for (int i = 0; i < 5_000; i++) {
+            db.record("d", i * 100, 64, 0, "", LocationCategory.OTHER, i + 1);
+        }
+        assertEquals(5_000, db.size(), "no point is dropped behind the player's back");
+    }
+
+    @Test
+    @DisplayName("an explicit cap evicts the least recently seen")
+    void databaseEvictsOnlyWhenCapped() {
+        WorldDatabase db = new WorldDatabase();
+        db.setCapacity(WorldDatabase.MAX_POINTS);
         for (int i = 0; i < WorldDatabase.MAX_POINTS + 10; i++) {
             db.record("d", i * 100, 64, 0, "", LocationCategory.OTHER, i + 1);
         }
@@ -148,10 +159,18 @@ class WorldIntelligenceTest {
         assertEquals(1, chunks.size());
         assertTrue(chunks.visited("d", 0, 0));
 
-        for (int i = 0; i < VisitedChunks.MAX_CHUNKS + 5; i++) {
+        // Uncapped by default: every visited chunk stays.
+        for (int i = 0; i < 2_000; i++) {
             chunks.visit("d", i, 0, i + 10);
         }
-        assertEquals(VisitedChunks.MAX_CHUNKS, chunks.size());
+        assertEquals(2_000, chunks.size());
+
+        VisitedChunks capped = new VisitedChunks();
+        capped.setCapacity(VisitedChunks.MAX_CHUNKS);
+        for (int i = 0; i < VisitedChunks.MAX_CHUNKS + 5; i++) {
+            capped.visit("d", i, 0, i + 10);
+        }
+        assertEquals(VisitedChunks.MAX_CHUNKS, capped.size());
     }
 
     @Test
@@ -168,15 +187,22 @@ class WorldIntelligenceTest {
     }
 
     @Test
-    @DisplayName("discovery log keeps newest first and is bounded")
-    void discoveryLogIsBounded() {
+    @DisplayName("discovery log keeps newest first and drops nothing until capped")
+    void discoveryLogKeepsEverythingByDefault() {
         DiscoveryLog log = new DiscoveryLog();
-        for (int i = 0; i < DiscoveryLog.MAX_EVENTS + 5; i++) {
+        int total = DiscoveryLog.MAX_EVENTS + 5;
+        for (int i = 0; i < total; i++) {
             log.add(DiscoveryLog.Kind.LOCATION, "d", i, 64, 0, "p" + i, i + 1);
         }
-        assertEquals(DiscoveryLog.MAX_EVENTS, log.size());
-        assertEquals("p" + (DiscoveryLog.MAX_EVENTS + 4), log.recent(1).get(0).label(),
-            "the newest discovery is first");
+        assertEquals(total, log.size());
+        assertEquals("p" + (total - 1), log.recent(1).get(0).label(), "the newest discovery is first");
+
+        DiscoveryLog capped = new DiscoveryLog();
+        capped.setCapacity(DiscoveryLog.MAX_EVENTS);
+        for (int i = 0; i < total; i++) {
+            capped.add(DiscoveryLog.Kind.LOCATION, "d", i, 64, 0, "p" + i, i + 1);
+        }
+        assertEquals(DiscoveryLog.MAX_EVENTS, capped.size());
     }
 
     @Test

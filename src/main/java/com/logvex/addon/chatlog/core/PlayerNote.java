@@ -106,9 +106,15 @@ public final class PlayerNote {
         }
     }
 
-    /** A case-insensitive player-name index, capped so notes cannot grow without bound. */
+    /**
+     * A case-insensitive player-name index.
+     *
+     * <p>Uncapped by default: a note is a line of text the player typed about someone, so silently
+     * dropping the oldest one is data loss, not housekeeping. A cap is still available for anyone
+     * who wants one; {@code 0} means keep every note.
+     */
     public static final class Store {
-        public static final int DEFAULT_CAPACITY = 1000;
+        public static final int DEFAULT_CAPACITY = 0;
 
         private int capacity;
         private final Map<String, PlayerNote> byPlayer = new LinkedHashMap<>();
@@ -118,12 +124,12 @@ public final class PlayerNote {
         }
 
         public Store(int capacity) {
-            this.capacity = Math.max(1, capacity);
+            this.capacity = Math.max(0, capacity);
         }
 
-        /** Changes the cap, dropping the oldest notes when the new cap is smaller. */
+        /** Changes the cap, dropping the oldest notes when the new cap is smaller. 0 means no cap. */
         public synchronized void setCapacity(int capacity) {
-            this.capacity = Math.max(1, capacity);
+            this.capacity = Math.max(0, capacity);
             trim();
         }
 
@@ -191,6 +197,7 @@ public final class PlayerNote {
         }
 
         private void trim() {
+            if (capacity <= 0) return;
             while (byPlayer.size() > capacity) {
                 String oldest = byPlayer.keySet().iterator().next();
                 byPlayer.remove(oldest);

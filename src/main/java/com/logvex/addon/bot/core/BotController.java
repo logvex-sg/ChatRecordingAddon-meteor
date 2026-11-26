@@ -467,7 +467,8 @@ public final class BotController {
         for (BotTask task : queue.tasks()) {
             if (task.state() == TaskState.FAILED) anyFailed = true;
         }
-        queue.pruneFinished();
+        // Finished tasks stay in the queue so the task manager still shows what was done; the
+        // player clears them with the Clear Finished button. TaskHistory keeps the outcome either way.
         boolean success = !anyFailed;
         String summary = goals.active() == null ? "done" : goals.active().description();
         goals.completeActive(success, success ? "done" : "incomplete", memory());

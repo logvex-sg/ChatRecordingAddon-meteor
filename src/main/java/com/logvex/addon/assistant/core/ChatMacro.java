@@ -46,8 +46,14 @@ public record ChatMacro(
     String template,
     String description,
     boolean enabled,
-    List<String> aliases
+    List<String> aliases,
+    boolean remote
 ) {
+    /** A macro that is not shared with other players, which is the default for every macro. */
+    public ChatMacro(String shortcut, String usage, String template, String description,
+                     boolean enabled, List<String> aliases) {
+        this(shortcut, usage, template, description, enabled, aliases, false);
+    }
     /** The separator between the usage and the command template. */
     public static final String ARROW = "=>";
 
@@ -297,6 +303,7 @@ public record ChatMacro(
         if (!description.isBlank()) out.append(" ; ").append(description);
         if (!enabled) out.append(" ; off");
         if (!aliases.isEmpty()) out.append(" ; aliases=").append(String.join(",", aliases));
+        if (remote) out.append(" ; remote");
         return out.toString();
     }
 
@@ -313,6 +320,7 @@ public record ChatMacro(
 
         String description = "";
         boolean enabled = true;
+        boolean remote = false;
         List<String> aliases = List.of();
 
         int arrow = text.indexOf(ARROW);
@@ -329,6 +337,8 @@ public record ChatMacro(
                 String lower = segment.toLowerCase(Locale.ROOT);
                 if (lower.equals("off") || lower.equals("disabled")) {
                     enabled = false;
+                } else if (lower.equals("remote") || lower.equals("shared")) {
+                    remote = true;
                 } else if (lower.startsWith("aliases=")) {
                     String list = segment.substring("aliases=".length()).strip();
                     List<String> parsed = new ArrayList<>();
@@ -352,13 +362,18 @@ public record ChatMacro(
         if (usage.isEmpty() || template.isEmpty()) return null;
 
         String shortcut = usage.split("\\s+", 2)[0];
-        return new ChatMacro(shortcut, usage, template, description, enabled, aliases);
+        return new ChatMacro(shortcut, usage, template, description, enabled, aliases, remote);
     }
 
     /** A copy with different values, so the GUI can edit a macro without mutating the original. */
     public ChatMacro with(String shortcut, String usage, String template, String description,
                           boolean enabled, List<String> aliases) {
-        return new ChatMacro(shortcut, usage, template, description, enabled, aliases);
+        return new ChatMacro(shortcut, usage, template, description, enabled, aliases, remote);
+    }
+
+    /** A copy shared with other players, or not. */
+    public ChatMacro withRemote(boolean shared) {
+        return new ChatMacro(shortcut, usage, template, description, enabled, aliases, shared);
     }
 
     /**

@@ -59,6 +59,11 @@ public class LogClient extends MeteorAddon {
         // timeline must be complete from the first join. AddonEvents draws the HUD and flushes the
         // config on Meteor's own tick and render events.
         LogClientContext.EVENT_BUS.subscribe(new ChatRecorder());
+        // Attached here, not in a module, for the same reason the recorder is: storage that only
+        // existed while `chat-logger` was enabled meant a fresh install recorded to memory and lost
+        // it on quit. The logger module still re-points this when the user picks another folder.
+        com.logvex.addon.chatlog.mc.LogService.get()
+            .attachDefaultStorage(LogClientContext.FOLDER().toPath().resolve("logclient/logs"));
         LogClientContext.EVENT_BUS.subscribe(new com.logvex.addon.framework.AddonEvents());
         // Subscribed before any command can be typed so `!log ...` is intercepted from the first
         // message, not only after some other event happens to build the router.
@@ -211,11 +216,13 @@ public class LogClient extends MeteorAddon {
      */
     public static void shutdown() {
         flush("config", () -> com.logvex.addon.framework.systems.config.ConfigManager.get().save());
+        // Before the services that feed it are torn down: the store buffers writes, so anything
+        // still in the buffer at this point is the last stretch of the session and would be lost.
+        flush("chat-log", () -> com.logvex.addon.chatlog.mc.LogService.get().flush());
         flush("session-timeline", () -> com.logvex.addon.chatlog.mc.SessionTimelineService.get().shutdown());
         flush("player-identity", () -> com.logvex.addon.chatlog.mc.PlayerIdentityService.get().shutdown());
         flush("world", () -> com.logvex.addon.world.mc.WorldService.get().shutdown());
         flush("assistant", () -> com.logvex.addon.assistant.mc.AssistantService.get().shutdown());
-        flush("ai", () -> com.logvex.addon.ai.mc.AiService.get().shutdown());
         flush("update", () -> com.logvex.addon.update.mc.UpdateService.get().engine().shutdown());
     }
 

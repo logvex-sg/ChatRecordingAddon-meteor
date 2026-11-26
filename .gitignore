@@ -8,3 +8,7 @@ out/
 .user/
 .agent_tmp/
 logs/
+
+# Python
+__pycache__/
+*.pyc

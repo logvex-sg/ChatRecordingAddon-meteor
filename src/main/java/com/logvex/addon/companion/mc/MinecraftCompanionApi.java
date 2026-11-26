@@ -1,5 +1,6 @@
 package com.logvex.addon.companion.mc;
 
+import com.google.gson.JsonElement;
 import com.logvex.addon.LogClient;
 import com.logvex.addon.bot.BotModule;
 import com.logvex.addon.bot.core.BotEvent;
@@ -8,12 +9,17 @@ import com.logvex.addon.bot.core.BotTask;
 import com.logvex.addon.chatlog.core.ChatEntry;
 import com.logvex.addon.chatlog.core.LogSegmentMeta;
 import com.logvex.addon.chatlog.core.PlayerActivity;
+import com.logvex.addon.chatlog.core.PlayerTracker;
 import com.logvex.addon.chatlog.core.StatsSnapshot;
 import com.logvex.addon.chatlog.mc.LogService;
 import com.logvex.addon.chatlog.mc.LogStorageService;
+import com.logvex.addon.chatlog.modules.ChatLoggerModule;
 import com.logvex.addon.companion.core.CompanionApi;
+import com.logvex.addon.companion.core.CompanionDispatch;
 import com.logvex.addon.companion.core.CompanionSnapshot;
+import com.logvex.addon.companion.core.ModuleSettings;
 import com.logvex.addon.framework.LogClientContext;
+import com.logvex.addon.framework.systems.config.ConfigManager;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import com.logvex.addon.framework.utils.modules.ModuleLookup;
 import meteordevelopment.meteorclient.systems.modules.Modules;
@@ -69,7 +75,7 @@ public final class MinecraftCompanionApi implements CompanionApi {
             players(log),
             chat(log),
             stats(log),
-            storage(log),
+            storage(log, Modules.get().get(ChatLoggerModule.class)),
             bot(bot),
             capabilities());
     }
@@ -154,35 +160,95 @@ public final class MinecraftCompanionApi implements CompanionApi {
         return out;
     }
 
+    /**
+     * Every player the client can name, online first.
+     *
+     * <p>Reading only the activity tracker was the bug: it is fed by the chat log, so with logging
+     * off the Players tab was empty, and a player who is online but silent never appeared at all.
+     * The tab list is the authoritative "who is here", so it is merged in and marked online. The
+     * tracker then fills in the history for the names it has seen.
+     *
+     * <p>Online rows come first, each group ordered by name, so the app can show "online" and
+     * "seen before" as two blocks without sorting again. A player known only from the tab list
+     * carries zeros for the counters the client has no evidence for.
+     */
     private List<CompanionSnapshot.PlayerView> players(LogService log) {
-        List<CompanionSnapshot.PlayerView> out = new ArrayList<>();
-        java.util.Set<String> online = onlinePlayerNames();
-        for (PlayerActivity activity : log.players().search("")) {
-            out.add(new CompanionSnapshot.PlayerView(
-                activity.name(),
-                "",
-                activity.firstSeen(),
-                activity.lastSeen(),
-                (int) activity.messageCount(),
-                activity.sessionCount() > 0 ? activity.lastSeen() - activity.firstSeen() : 0,
-                online.contains(activity.name().toLowerCase(java.util.Locale.ROOT)),
-                log.players().isExcluded(activity.name())));
-            if (out.size() >= PLAYER_LIMIT) break;
+        Map<String, CompanionSnapshot.PlayerView> byName = new LinkedHashMap<>();
+        for (TabListPlayer live : tabListPlayers()) {
+            byName.put(live.key(), new CompanionSnapshot.PlayerView(
+                live.name(), live.uuid(), 0L, 0L, 0, 0L, true, false,
+                live.ping(), live.gameMode()));
+        }
+
+        PlayerTracker tracker = log == null ? null : log.players();
+        if (tracker != null) {
+            for (PlayerActivity activity : tracker.search("")) {
+                String key = activity.name().toLowerCase(java.util.Locale.ROOT);
+                boolean excluded = tracker.isExcluded(activity.name());
+                CompanionSnapshot.PlayerView live = byName.get(key);
+                if (live != null) {
+                    // The tab list has the identity and the live figures; the tracker has the
+                    // history. Merging keeps both instead of letting the later source win.
+                    byName.put(key, new CompanionSnapshot.PlayerView(
+                        live.name(), live.uuid(), activity.firstSeen(), activity.lastSeen(),
+                        (int) activity.messageCount(), onlineMs(activity), true, excluded,
+                        live.ping(), live.gameMode()));
+                    continue;
+                }
+                byName.put(key, new CompanionSnapshot.PlayerView(
+                    activity.name(), "",
+                    activity.firstSeen(), activity.lastSeen(),
+                    (int) activity.messageCount(), onlineMs(activity),
+                    false, excluded, -1, ""));
+            }
+        }
+
+        List<CompanionSnapshot.PlayerView> out = new ArrayList<>(byName.values());
+        out.sort((a, b) -> {
+            if (a.online() != b.online()) return a.online() ? -1 : 1;
+            return String.CASE_INSENSITIVE_ORDER.compare(a.name(), b.name());
+        });
+        return out.size() > PLAYER_LIMIT ? List.copyOf(out.subList(0, PLAYER_LIMIT)) : List.copyOf(out);
+    }
+
+    /** How long the tracker watched this player, or 0 when it has no span to report. */
+    private static long onlineMs(PlayerActivity activity) {
+        if (activity.sessionCount() <= 0 || activity.firstSeen() <= 0) return 0L;
+        return Math.max(0L, activity.lastSeen() - activity.firstSeen());
+    }
+
+    /** One row of the server's tab list. */
+    private record TabListPlayer(String name, String uuid, int ping, String gameMode) {
+        String key() {
+            return name.toLowerCase(java.util.Locale.ROOT);
+        }
+    }
+
+    /**
+     * The players the server currently lists, or an empty list when there is no connection.
+     *
+     * <p>The tab list is the only client-side source of "who is online" that does not depend on
+     * anything this addon records, which is why the Players tab is built on it.
+     */
+    private static List<TabListPlayer> tabListPlayers() {
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc == null || mc.getNetworkHandler() == null) return List.of();
+        List<TabListPlayer> out = new ArrayList<>();
+        for (net.minecraft.client.network.PlayerListEntry entry : mc.getNetworkHandler().getPlayerList()) {
+            if (entry == null || entry.getProfile() == null) continue;
+            String name = entry.getProfile().getName();
+            if (name == null || name.isBlank()) continue;
+            String uuid = entry.getProfile().getId() == null
+                ? "" : entry.getProfile().getId().toString();
+            out.add(new TabListPlayer(name, uuid, entry.getLatency(), gameMode(entry)));
         }
         return out;
     }
 
-    /** The lower-cased names the client currently has on the player list, or an empty set. */
-    private static java.util.Set<String> onlinePlayerNames() {
-        MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc == null || mc.getNetworkHandler() == null) return java.util.Set.of();
-        java.util.Set<String> names = new java.util.HashSet<>();
-        for (net.minecraft.client.network.PlayerListEntry entry : mc.getNetworkHandler().getPlayerList()) {
-            if (entry != null && entry.getProfile() != null) {
-                names.add(entry.getProfile().getName().toLowerCase(java.util.Locale.ROOT));
-            }
-        }
-        return names;
+    /** The player's game mode in lower case, or "" when the server does not report one. */
+    private static String gameMode(net.minecraft.client.network.PlayerListEntry entry) {
+        if (entry.getGameMode() == null) return "";
+        return entry.getGameMode().getName();
     }
 
     private List<CompanionSnapshot.ChatEntryView> chat(LogService log) {
@@ -208,10 +274,15 @@ public final class MinecraftCompanionApi implements CompanionApi {
             snapshot.startedAt());
     }
 
-    private CompanionSnapshot.StorageView storage(LogService log) {
+    private CompanionSnapshot.StorageView storage(LogService log, ChatLoggerModule logger) {
+        // The retention cap is what makes a size meaningful: 12 MB is fine against a 200 MB cap and
+        // a problem against 16 MB. It comes from the logger's own setting, so the app shows the
+        // limit that is actually enforced rather than a number of its own.
+        long capBytes = logger == null ? 0L : logger.maxBytes();
+        boolean autoCleanup = logger != null && logger.autoCleanupEnabled();
         LogStorageService storage = log.storage();
         if (storage == null || storage.store() == null) {
-            return new CompanionSnapshot.StorageView(0, 0, 0, 0, 0);
+            return new CompanionSnapshot.StorageView(0, 0, 0, 0, 0, capBytes, autoCleanup);
         }
         List<LogSegmentMeta> segments = storage.segments();
         return new CompanionSnapshot.StorageView(
@@ -219,7 +290,9 @@ public final class MinecraftCompanionApi implements CompanionApi {
             storage.store().totalCompressedBytes(),
             log.sessionHistory() == null ? 0 : log.sessionHistory().size(),
             storage.store().oldestTimestamp(),
-            storage.store().newestTimestamp());
+            storage.store().newestTimestamp(),
+            capBytes,
+            autoCleanup);
     }
 
     private CompanionSnapshot.BotView bot(BotModule bot) {
@@ -249,6 +322,7 @@ public final class MinecraftCompanionApi implements CompanionApi {
         out.add("bot-control");
         out.add("task-queue");
         out.add("chat");
+        out.add("command");
         out.add("modules");
         out.add("events");
         out.add("storage");
@@ -360,6 +434,25 @@ public final class MinecraftCompanionApi implements CompanionApi {
     }
 
     @Override
+    public List<CompanionSnapshot.SettingView> moduleSettings(String name) {
+        Module module = ModuleLookup.find(name);
+        if (module == null) return null;
+        return ModuleSettings.views(module.settings);
+    }
+
+    @Override
+    public ActionResult setModuleSetting(String moduleName, String settingName, JsonElement value) {
+        Module module = ModuleLookup.find(moduleName);
+        if (module == null) return ActionResult.fail("No module is called \"" + moduleName + "\".");
+        ActionResult result = ModuleSettings.apply(module.settings, settingName, value);
+        // A module may react to a setting changing (a listener, a rebuild of its internal state), and
+        // the change is worth keeping: mark the config dirty so the next tick writes it to disk,
+        // exactly as a change made in the GUI would.
+        if (result.ok()) ConfigManager.get().markDirty();
+        return result;
+    }
+
+    @Override
     public ActionResult sendChat(String message) {
         String text = message == null ? "" : message.trim();
         if (text.isEmpty()) return ActionResult.fail("The message was empty.");
@@ -367,11 +460,11 @@ public final class MinecraftCompanionApi implements CompanionApi {
         if (mc == null || mc.player == null || mc.getNetworkHandler() == null) {
             return ActionResult.fail("You are not in a world.");
         }
-        if (text.startsWith("/")) {
-            mc.getNetworkHandler().sendChatCommand(text.substring(1));
-        } else {
-            mc.getNetworkHandler().sendChatMessage(text);
-        }
+        if (text.startsWith("/")) return sendCommand(text);
+        // Meteor's own hook on sendChatMessage posts SendMessageEvent, so the line must go in through
+        // this method and not through a manual post: posting here as well would offer every line to
+        // the listeners twice, and a macro would then run twice.
+        mc.getNetworkHandler().sendChatMessage(text);
         return ActionResult.ok("Sent.");
     }
 
@@ -379,12 +472,18 @@ public final class MinecraftCompanionApi implements CompanionApi {
     public ActionResult sendCommand(String command) {
         String text = command == null ? "" : command.trim();
         if (text.isEmpty()) return ActionResult.fail("The command was empty.");
-        if (text.startsWith("/")) text = text.substring(1);
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc == null || mc.getNetworkHandler() == null) {
             return ActionResult.fail("You are not in a world.");
         }
-        mc.getNetworkHandler().sendChatCommand(text);
+        // Nothing hooks sendChatCommand, so the event is posted here to give a macro or an addon
+        // command the same chance it gets when the player types the line. A listener that claims it
+        // has already sent its own command.
+        CompanionDispatch.Outcome outcome = CompanionDispatch.command(LogClientContext.EVENT_BUS, text);
+        if (outcome.handled()) return ActionResult.ok("Handled by a macro or command.");
+        String out = outcome.text();
+        if (out.startsWith("/")) out = out.substring(1);
+        mc.getNetworkHandler().sendChatCommand(out);
         return ActionResult.ok("Command sent.");
     }
 

@@ -24,7 +24,7 @@ public record CompanionSnapshot(
     BotView bot,
     List<String> capabilities
 ) {
-    public static final String API_VERSION = "12";
+    public static final String API_VERSION = "13";
 
     /** Identity and connection state of this client. */
     public record NodeInfo(
@@ -52,6 +52,32 @@ public record CompanionSnapshot(
     ) {
     }
 
+    /**
+     * One setting of one module, in a shape a browser can build a control from without knowing the
+     * setting's Java type.
+     *
+     * <p>{@code type} is one of {@code bool}, {@code int}, {@code double}, {@code enum},
+     * {@code string}, {@code string-list}, {@code color}, {@code keybind} or {@code other}. The
+     * extra fields are only present where they mean something: {@code min}/{@code max} for a number,
+     * {@code options} for an enum, {@code value} always. A setting whose {@code visible} is false is
+     * hidden by the module's own rule, which usually means a sibling setting is set to a value that
+     * makes this one irrelevant.
+     */
+    public record SettingView(
+        String name,
+        String title,
+        String description,
+        String group,
+        String type,
+        Object value,
+        Object defaultValue,
+        Number min,
+        Number max,
+        List<String> options,
+        boolean visible
+    ) {
+    }
+
     /** One queued or running bot task. */
     public record TaskView(
         String id,
@@ -65,7 +91,18 @@ public record CompanionSnapshot(
     ) {
     }
 
-    /** One observed player, with only what the client actually saw. */
+    /**
+     * One player, as the client can see them.
+     *
+     * <p>Two sources feed this list and they are not the same thing. The tab list is who the server
+     * says is online right now, which is complete even when chat logging is off. The activity
+     * tracker is what this client has actually observed, which survives a player leaving and is
+     * empty for a player who has said nothing. A row can come from either, so {@code messages},
+     * {@code firstSeen} and {@code lastSeen} are 0 for someone who is only known from the tab list.
+     *
+     * @param ping     latency in milliseconds, or -1 when the server does not report one
+     * @param gameMode "survival", "creative", "spectator", "adventure" or "" when unknown
+     */
     public record PlayerView(
         String name,
         String uuid,
@@ -74,7 +111,9 @@ public record CompanionSnapshot(
         int messages,
         long onlineMs,
         boolean online,
-        boolean excluded
+        boolean excluded,
+        int ping,
+        String gameMode
     ) {
     }
 
@@ -104,8 +143,19 @@ public record CompanionSnapshot(
         long bytes,
         int sessions,
         long oldestEpochMs,
-        long newestEpochMs
+        long newestEpochMs,
+        long capBytes,
+        boolean autoCleanup
     ) {
+        /** Kept for callers that predate the retention cap being reported. */
+        public StorageView(int segments, long bytes, int sessions, long oldestEpochMs, long newestEpochMs) {
+            this(segments, bytes, sessions, oldestEpochMs, newestEpochMs, 0L, false);
+        }
+
+        public StorageView(int segments, long bytes, int sessions, long oldestEpochMs, long newestEpochMs,
+                           long capBytes) {
+            this(segments, bytes, sessions, oldestEpochMs, newestEpochMs, capBytes, false);
+        }
     }
 
     /** The bot's live state. */

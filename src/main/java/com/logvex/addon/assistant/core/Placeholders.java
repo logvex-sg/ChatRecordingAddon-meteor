@@ -147,6 +147,58 @@ public final class Placeholders {
         return out.toString();
     }
 
+    /**
+     * True when {@code template} names a figure that describes the player personally.
+     *
+     * <p>A template is authored once but can be spoken for anyone in chat, so a reply built from
+     * "where am i" would answer with the <em>operator's</em> coordinates when a stranger types it.
+     * The command path refuses such an answer to a remote sender; a trigger has no such check of its
+     * own, so it asks this question instead of keeping a second list of sensitive words that could
+     * drift from the first.
+     *
+     * <p>Position, vitals, inventory and the client's own memory are private: they say where the
+     * operator is, what they carry, or what this client has stored. Server-wide figures (tps, ping,
+     * player count) are not, because everyone can see them anyway.
+     */
+    public static boolean mentionsPrivateFigure(String template) {
+        if (template == null || template.isEmpty()) return false;
+        int i = 0;
+        while (i < template.length()) {
+            int open = template.indexOf('{', i);
+            if (open < 0) return false;
+            int close = template.indexOf('}', open + 1);
+            if (close < 0) return false;
+            String token = normalize(template.substring(open + 1, close));
+            String family = token.contains(":") ? token.substring(0, token.indexOf(':')) : token;
+            if (PRIVATE_FIGURES.contains(token) || PRIVATE_FAMILIES.contains(family)) return true;
+            i = close + 1;
+        }
+        return false;
+    }
+
+    /**
+     * Placeholders that read the local player or this client's own store.
+     *
+     * <p>Deliberately a list of names rather than a prefix rule: {@code {ping}} is the speaker's own
+     * latency and is safe to answer anyone, while {@code {coords}} is not, and a prefix test would
+     * have to treat them the same.
+     *
+     * <p>The set mirrors the {@code sensitive} flag the command catalogue already puts on its own
+     * entries — position, gear, inventory, vitals, target — and adds the assistant's own memory,
+     * which is the operator's private notes. Coarse world facts ({@code {biome}}, {@code {dimension}})
+     * stay public, matching {@code !world}, because knowing the biome says nothing about where in it
+     * the operator is standing.
+     */
+    private static final java.util.Set<String> PRIVATE_FIGURES = java.util.Set.of(
+        "coords", "x", "y", "z", "facing", "location", "target",
+        "health", "maxhealth", "absorption", "saturation", "food", "hunger", "air", "armor",
+        "totems", "held", "offhand", "effects", "gamemode", "level", "xp", "speed",
+        "factcount", "fact", "memory"
+    );
+
+    /** Families whose argument names a stored fact, so the value is the operator's own note. */
+    private static final java.util.Set<String> PRIVATE_FAMILIES = java.util.Set.of("fact");
+
     /** The replacement for one token, or null when no placeholder claims it. */
     public String resolve(String token, ResponseTemplate.Context context) {
         if (token == null || token.isEmpty()) return null;
@@ -275,6 +327,23 @@ public final class Placeholders {
             long used = ctx.stats().usedMemoryMb();
             return String.format(Locale.ROOT, "%.0f", 100.0 * used / max);
         });
+        // A bar makes a share readable at a glance, which is the whole point of a block reply.
+        // A figure the client cannot measure yields an empty bar rather than a misleading full one.
+        grouped("Meters", "memorybar", ctx -> bar(ctx.stats().usedMemoryMb(),
+            ctx.stats().maxMemoryMb()));
+        grouped("Meters", "healthbar", ctx -> bar(ctx.stats().player().health(),
+            ctx.stats().player().maxHealth()));
+        grouped("Meters", "hungerbar", ctx -> bar(ctx.stats().player().food(), 20));
+        grouped("Meters", "tpsbar", ctx -> {
+            double tps = ctx.stats().tps5();
+            return tps < 0 ? ReplyFormat.bar(0, 10) : ReplyFormat.bar(tps / 20.0, 10);
+        });
+    }
+
+    /** A bar for {@code value} out of {@code max}, or an empty bar when {@code max} is unusable. */
+    private static String bar(double value, double max) {
+        if (max <= 0 || value < 0) return ReplyFormat.bar(0, 10);
+        return ReplyFormat.bar(value / max, 10);
     }
 
     /** Player figures, all read from the local player's own entity. */

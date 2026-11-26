@@ -148,7 +148,36 @@ class EmbedPayloadTest {
         DiscordEmbed embed = WebhookEmbeds.summary(WebhookEmbeds.Style.defaults(), "mc.example.com", entries);
         String description = String.valueOf(embed.toMap().get("description"));
         assertTrue(description.length() <= DiscordEmbed.DESCRIPTION_LIMIT);
-        assertTrue(description.endsWith("and more"));
+        // The whole marker has to survive. It used to be appended after the limit was already
+        // reached, so the description was re-clipped and the reader saw a bare ellipsis instead of
+        // "and more" - which looks like a typo, not a truncation.
+        assertTrue(description.endsWith(WebhookEmbeds.MORE_MARKER.strip()),
+            "the truncation marker must be complete, got the tail: "
+                + description.substring(Math.max(0, description.length() - 40)));
+    }
+
+    @Test
+    void truncationMarkerSurvivesEveryFilledLength() {
+        // The marker is appended when the next line no longer fits. If the guard only checks that
+        // the *line* fits, the body can reach the limit and the appended marker is then re-clipped,
+        // so the reader sees a bare ellipsis. Sweeping the line length walks the body through every
+        // residue against the limit, which is what catches that boundary.
+        String marker = WebhookEmbeds.MORE_MARKER.strip();
+        for (int contentLength = 1; contentLength <= 120; contentLength++) {
+            List<ChatEntry> entries = new ArrayList<>();
+            String content = "x".repeat(contentLength);
+            for (int i = 0; i < 200; i++) {
+                entries.add(entry(1000 + i, MessageType.PUBLIC_CHAT, "Steve", content));
+            }
+            String description = String.valueOf(WebhookEmbeds
+                .summary(WebhookEmbeds.Style.defaults(), "mc.example.com", entries)
+                .toMap().get("description"));
+            assertTrue(description.length() <= DiscordEmbed.DESCRIPTION_LIMIT,
+                "description over the limit at line length " + contentLength);
+            assertTrue(description.endsWith(marker),
+                "at line length " + contentLength + " the truncation marker was cut to: "
+                    + description.substring(Math.max(0, description.length() - 20)));
+        }
     }
 
     @Test

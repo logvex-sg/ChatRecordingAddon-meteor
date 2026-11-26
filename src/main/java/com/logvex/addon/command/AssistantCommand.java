@@ -29,7 +29,7 @@ public class AssistantCommand extends Command {
     @Override
     public void build(LiteralArgumentBuilder<CommandSource> builder) {
         builder.executes(context -> {
-            status();
+            summary();
             return SINGLE_SUCCESS;
         });
 
@@ -40,6 +40,11 @@ public class AssistantCommand extends Command {
 
         builder.then(literal("help").executes(context -> {
             help();
+            return SINGLE_SUCCESS;
+        }));
+
+        builder.then(literal("caps").executes(context -> {
+            capabilities();
             return SINGLE_SUCCESS;
         }));
 
@@ -120,7 +125,7 @@ public class AssistantCommand extends Command {
         }));
 
         builder.then(literal("triggers").executes(context -> {
-            triggers();
+            triggerSummary();
             return SINGLE_SUCCESS;
         }).then(literal("list").executes(context -> {
             triggers();
@@ -201,37 +206,6 @@ public class AssistantCommand extends Command {
             info("Assistant memory saved.");
             return SINGLE_SUCCESS;
         }));
-
-        builder.then(literal("model").executes(context -> {
-            modelStatus();
-            return SINGLE_SUCCESS;
-        })
-            .then(literal("status").executes(context -> {
-                modelStatus();
-                return SINGLE_SUCCESS;
-            }))
-            .then(literal("ask")
-                .then(argument("message", StringArgumentType.greedyString()).executes(context -> {
-                    modelAsk(StringArgumentType.getString(context, "message"));
-                    return SINGLE_SUCCESS;
-                })))
-            .then(literal("teach")
-                .then(argument("intent", StringArgumentType.word())
-                    .then(argument("example", StringArgumentType.greedyString()).executes(context -> {
-                        modelTeach(StringArgumentType.getString(context, "intent"),
-                            StringArgumentType.getString(context, "example"));
-                        return SINGLE_SUCCESS;
-                    }))))
-            .then(literal("save").executes(context -> {
-                AssistantModule module = assistant();
-                if (module == null) {
-                    error("The assistant module is not available.");
-                    return SINGLE_SUCCESS;
-                }
-                module.saveAi();
-                info("Local AI model saved.");
-                return SINGLE_SUCCESS;
-            })));
     }
 
     /** The addon's configured command prefix, so this list matches what the user actually types. */
@@ -250,8 +224,6 @@ public class AssistantCommand extends Command {
         addHelp(fields, "forget <key>", "remove a fact.");
         addHelp(fields, "test <message>", "see what the assistant would do.");
         addHelp(fields, "history", "recent remembered exchanges.");
-        addHelp(fields, "model [status|ask <text>|teach <intent> <example>|save]",
-            "the local intent model.");
         addHelp(fields, "placeholders [section]", "the reply placeholders, one section at a time.");
         addHelp(fields, "perms [list|gui|set|allow|deny|admin|reset]", "who may run each command.");
         addHelp(fields, "clear", "clear all memory.");
@@ -458,57 +430,26 @@ public class AssistantCommand extends Command {
         }
     }
 
-    private void modelStatus() {
-        AssistantModule module = assistant();
-        com.logvex.addon.ai.core.AiEngine engine = module.aiEngine();
-        List<com.logvex.addon.assistant.core.ReplyFormat.Field> fields = new java.util.ArrayList<>();
-        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Model",
-            engine.enabled() ? "on" : "off"));
-        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Confidence",
-            Math.round(engine.threshold() * 100) + "%"));
-        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Intent count",
-            Messages.plural(engine.model().intentCount(), "intent")));
-        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Classified",
-            Messages.number(engine.classified()) + " lines"));
-        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Understood",
-            Messages.number(engine.understood()) + " ("
-                + Math.round(engine.understandingRate() * 100) + "%)"));
-        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Cache hits",
-            Messages.number(engine.cacheHits())));
-        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Intents",
-            String.join(", ", engine.model().intentNames())));
-        CommandOutput.sendLong(this, "Local AI model", fields, "");
-    }
-
-    private void modelAsk(String message) {
+    /**
+     * A one-line answer for a bare {@code !ai}.
+     *
+     * <p>The full block is ten fields, which is twelve chat lines: typing the command to see whether
+     * the assistant is on should not bury the conversation. The detail is one explicit
+     * {@code !ai status} away.
+     */
+    private void summary() {
         AssistantModule module = assistant();
         if (module == null) {
             error("The assistant module is not available.");
             return;
         }
-        com.logvex.addon.ai.core.AiEngine engine = module.aiEngine();
-        String intent = engine.intentOf(message);
-        if (intent == null) {
-            warning("The model does not understand \"%s\".", Messages.truncate(message, 60));
-            return;
-        }
-        String reply = engine.respond(message, "Tester", java.util.Map.of(), System.currentTimeMillis());
-        info("Intent '%s' (%.0f%%): %s", intent, engine.confidence(message) * 100,
-            Messages.truncate(reply, 120));
-    }
-
-    private void modelTeach(String intent, String example) {
-        AssistantModule module = assistant();
-        if (module == null) {
-            error("The assistant module is not available.");
-            return;
-        }
-        if (module.aiEngine().model().teach(intent, example)) {
-            module.saveAi();
-            info("Taught '%s' the phrase \"%s\".", intent, Messages.truncate(example, 60));
-        } else {
-            warning("Could not teach that; the model may be full.");
-        }
+        info("%s: %s, %s, %s facts, %s handled. %sai status for detail.",
+            module.config().name(),
+            module.isActive() ? "on" : "off",
+            Messages.plural(module.triggers().rules().size(), "trigger"),
+            Messages.number(module.memory().facts().size()),
+            Messages.number(module.runtime().handled()),
+            pfx());
     }
 
     private void status() {
@@ -541,6 +482,49 @@ public class AssistantCommand extends Command {
         fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Permissions",
             module.permissionsEnabled() ? "on" : "off"));
         CommandOutput.send(this, module.config().name(), fields, "");
+    }
+
+    /**
+     * A one-line count for a bare {@code !ai triggers}.
+     *
+     * <p>The table is 27 rows and each row is a line, so printing it unasked floods chat. The full
+     * list is {@code !ai triggers list}.
+     */
+    private void triggerSummary() {
+        AssistantModule module = assistant();
+        if (module == null) {
+            error("The assistant module is not available.");
+            return;
+        }
+        List<TriggerRule> rules = module.triggers().rules();
+        if (rules.isEmpty()) {
+            warning("No triggers configured.");
+            return;
+        }
+        long armed = rules.stream().filter(TriggerRule::enabled).count();
+        info("%s, %s armed. %sai triggers list to show them.",
+            Messages.plural(rules.size(), "trigger"), Messages.number(armed), pfx());
+    }
+
+    /**
+     * Shows what the assistant can and cannot do right now.
+     *
+     * <p>Every row is derived from live state, so a disconnected client reports that it cannot see
+     * TPS rather than printing a stale or invented figure.
+     */
+    private void capabilities() {
+        AssistantModule module = assistant();
+        if (module == null) {
+            error("The assistant module is not available.");
+            return;
+        }
+        var caps = module.capabilities();
+        List<com.logvex.addon.assistant.core.ReplyFormat.Field> fields = new java.util.ArrayList<>();
+        for (var ability : caps.abilities()) {
+            fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field(
+                ability.name(), (ability.available() ? "yes - " : "no - ") + ability.detail()));
+        }
+        CommandOutput.send(this, "Capabilities", fields, caps.summary());
     }
 
     private void triggers() {

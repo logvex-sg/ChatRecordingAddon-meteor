@@ -63,10 +63,9 @@ public class PlayerIdentityScreen extends WindowScreen {
             taskAfterRender = this::render;
         };
 
-        GuiKit.keyValue(add(theme.verticalList()).expandX().widget(), theme, "Accounts:",
-            Integer.toString(com.logvex.addon.chatlog.mc.LogService.get().identities().size()));
-        GuiKit.keyValue(add(theme.verticalList()).expandX().widget(), theme, "Renames:",
-            Integer.toString(com.logvex.addon.chatlog.mc.LogService.get().identities().renameCount()));
+        GuiKit.facts(add(theme.verticalList()).expandX().widget(), theme,
+            "Accounts", Messages.number(com.logvex.addon.chatlog.mc.LogService.get().identities().size()),
+            "Renames", Messages.number(com.logvex.addon.chatlog.mc.LogService.get().identities().renameCount()));
 
         List<PlayerIdentity> identities = renamedOnly ? module.renamed() : module.identities(filter);
         if (!filter.isBlank() && renamedOnly) {
@@ -78,16 +77,16 @@ public class PlayerIdentityScreen extends WindowScreen {
         add(theme.horizontalSeparator("Accounts (" + identities.size() + ")")).expandX();
 
         if (identities.isEmpty()) {
-            add(theme.label("No accounts observed yet.")).expandX().widget().color(GuiKit.MUTED);
+            add(theme.label("No accounts observed yet.")).expandX().widget().color(GuiKit.mutedColor());
             return;
         }
 
         WTable table = add(theme.table()).expandX().widget();
-        table.add(theme.label("Current name")).expandCellX().widget().color(GuiKit.MUTED);
-        table.add(theme.label("Previous name")).widget().color(GuiKit.MUTED);
-        table.add(theme.label("Changes")).widget().color(GuiKit.MUTED);
-        table.add(theme.label("Last seen")).widget().color(GuiKit.MUTED);
-        table.add(theme.label("Watch")).widget().color(GuiKit.MUTED);
+        table.add(theme.label("Current name")).expandCellX().widget().color(GuiKit.mutedColor());
+        table.add(theme.label("Previous name")).widget().color(GuiKit.mutedColor());
+        table.add(theme.label("Changes")).widget().color(GuiKit.mutedColor());
+        table.add(theme.label("Last seen")).widget().color(GuiKit.mutedColor());
+        table.add(theme.label("Watch")).widget().color(GuiKit.mutedColor());
         table.row();
 
         long now = System.currentTimeMillis();
@@ -95,10 +94,10 @@ public class PlayerIdentityScreen extends WindowScreen {
             table.add(theme.label(identity.currentName())).expandCellX().widget();
             String previous = identity.previousName();
             table.add(theme.label(previous.isEmpty() ? "-" : previous)).widget()
-                .color(previous.isEmpty() ? GuiKit.MUTED : GuiKit.ACCENT);
+                .color(previous.isEmpty() ? GuiKit.mutedColor() : GuiKit.accentColor());
             table.add(theme.label(Integer.toString(identity.changeCount()))).widget();
             table.add(theme.label(identity.lastSeen() > 0 ? Messages.ago(identity.lastSeen(), now) : "-"))
-                .widget().color(GuiKit.MUTED);
+                .widget().color(GuiKit.mutedColor());
 
             boolean watched = com.logvex.addon.chatlog.mc.LogService.get().watchlist().contains(identity.currentName());
             WButton watch = table.add(theme.button(watched ? "Unwatch" : "Watch")).widget();
@@ -114,7 +113,7 @@ public class PlayerIdentityScreen extends WindowScreen {
         add(theme.horizontalSeparator("Recent renames")).expandX();
         List<PlayerIdentityTracker.Rename> renames = module.renames();
         if (renames.isEmpty()) {
-            add(theme.label("No renames observed.")).expandX().widget().color(GuiKit.MUTED);
+            add(theme.label("No renames observed.")).expandX().widget().color(GuiKit.mutedColor());
             return;
         }
         for (PlayerIdentityTracker.Rename rename : renames.subList(0, Math.min(10, renames.size()))) {
