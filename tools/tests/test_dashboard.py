@@ -8,6 +8,7 @@ only stand-in is the mod itself, which cannot run outside Minecraft.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import sys
@@ -174,12 +175,28 @@ class DashboardTest(unittest.TestCase):
         self.assertEqual("typed", endpoint.token)
         self.assertEqual("given", endpoint.source)
 
+    @contextlib.contextmanager
+    def _without_a_local_server(self):
+        """Temporarily declares that there are no usual ports to probe.
+
+        ``connect`` falls back to scanning ``DEFAULT_PORTS``, so a developer with a headless
+        instance up would otherwise see these 'nothing is running' tests pass and fail at random.
+        Emptying the list states the test's premise directly: nothing is listening on this machine.
+        """
+        original = dashboard.DEFAULT_PORTS
+        dashboard.DEFAULT_PORTS = ()
+        try:
+            yield
+        finally:
+            dashboard.DEFAULT_PORTS = original
+
     def test_connect_fails_with_a_useful_message(self):
         old = os.environ.get("LOGLIENT_COMPANION_FILE")
         os.environ["LOGLIENT_COMPANION_FILE"] = str(Path(self.tmp.name) / "absent.json")
         try:
-            with self.assertRaises(dashboard.ConnectError) as caught:
-                dashboard.connect(None, None)
+            with self._without_a_local_server():
+                with self.assertRaises(dashboard.ConnectError) as caught:
+                    dashboard.connect(None, None)
         finally:
             if old is None:
                 os.environ.pop("LOGLIENT_COMPANION_FILE", None)
@@ -309,8 +326,9 @@ class DashboardTest(unittest.TestCase):
             import contextlib
             import io
             err = io.StringIO()
-            with contextlib.redirect_stderr(err):
-                code = dashboard.main(["--once"])
+            with self._without_a_local_server():
+                with contextlib.redirect_stderr(err):
+                    code = dashboard.main(["--once"])
         finally:
             if old is None:
                 os.environ.pop("LOGLIENT_COMPANION_FILE", None)

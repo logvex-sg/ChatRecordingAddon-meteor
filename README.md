@@ -47,6 +47,9 @@ See [Companion (web app)](#companion-web-app).
 **Discord bridge** — `tools/discord_bridge.py` is a two-way bridge between a Discord channel and
 Minecraft chat, built on the companion API. Chat appears in both directions, a leading `/` from
 Discord is stripped so nobody can run commands through it, and players cannot ping `@everyone`.
+Minecraft chat is posted as a **rich embed** — sender as the author, message as the description,
+teal like ordinary chat in the in-game relay — using the same palette and the same 6000-character
+budget as that relay, so a card fits and sends rather than being dropped by Discord.
 It is a separate Python process, because a bot token must not ship inside a client mod and a bot
 has to stay online when the game is closed. Standard library only. See
 [Discord bridge](docs/discord-bridge.md).
@@ -1662,6 +1665,90 @@ All responses are JSON. Authenticate with the token unless noted.
 The server answers with a plain message and the right status code when something is wrong — a
 missing token is `401`, a bad body is `400`, a client thread that never answers is `504` — and it
 never puts an internal exception in the response.
+
+## Headless instances (Debian)
+
+`tools/headless.py` is a separate application that runs Log Client in one or more Minecraft
+instances with no monitor attached — on a server, a VPS or a spare machine. It is not a launcher
+skin over a mod: it resolves the official Mojang manifest, the Fabric loader profile and the mod
+jars itself, so **neither Minecraft nor the official launcher has to be installed**.
+
+It installs nothing into the game and needs nothing from it. The instance downloads its own client,
+libraries and assets into one directory and runs under its own virtual X display.
+
+```sh
+python3 tools/headless.py doctor        # what is missing on this machine
+sudo python3 tools/headless.py setup    # install the Debian packages and a JDK 21
+python3 tools/headless.py create mine   # download the client, libraries, assets and mods
+python3 tools/headless.py start mine    # start it under Xvfb
+python3 tools/headless.py list          # what is running
+python3 tools/headless.py attach mine   # open the terminal dashboard on it
+```
+
+`doctor` is read-only and works before anything is installed. `setup` is the only step that needs
+root: it installs Xvfb and the GL libraries with `apt-get`, then downloads a JDK 21 from Adoptium
+into the app's own directory rather than touching the system Java. Nothing else needs root.
+
+### Commands
+
+| Command | What it does |
+| --- | --- |
+| `doctor` | Reports Java, Xvfb, missing packages, free disk and whether the Mojang manifest is reachable. Changes nothing. `--offline` skips the network check. |
+| `setup` | Installs the Debian packages and a JDK 21. `--no-apt`, `--no-jdk` skip a half. |
+| `create <name>` | Creates an instance and downloads everything it needs. `--mc`, `--loader`, `--memory`, `--username`, `--server`, `--width`, `--height`, `--no-meteor`, `--log-client`, `--configure-only` (write the config only), `--force`. |
+| `start <name>` | Starts the instance under a free X display. `--server` joins on start, `--dry-run` prints the command without running or downloading anything, `--wait-companion 90` waits for the companion and prints its URL, `--detach` leaves the display up. |
+| `stop <name>` | Stops the game and the display it used, politely then firmly, and confirms both are gone. |
+| `list` | One line per instance: version, loader, username, running or stopped. |
+| `status <name>` | Full detail, with `--log` for the end of the console output. |
+| `logs <name>` | The console output, `--follow` to stream it. |
+| `attach <name>` | Opens `tools/dashboard.py` against that instance's companion server. |
+| `remove <name> --yes` | Deletes one instance. Refuses while it is running. |
+
+### Where everything lives
+
+One directory per install, `~/.logclient-headless` by default (`LOGLIENT_HEADLESS_HOME` moves it;
+`setup` under sudo uses the invoking user's home, not `/root`):
+
+```
+jdk/                     the JDK 21 from Adoptium
+cache/                   client jar, libraries, assets and metadata, shared by every instance
+instances/<name>/game/   the game directory: mods, config, logs, logclient/companion.json
+instances/<name>/logs/   one launch-*.log per run
+```
+
+`game/logclient/config.json` holds Log Client's own modules and HUD layout; it is the file
+`create` and `start` edit to switch the companion on (see below). `game/logclient/companion.json`
+is the discovery file the running mod writes, which is how `attach` finds the server.
+
+Instances share the download cache but nothing else, so two instances cannot see each other's
+config or mods.
+
+### What it can and cannot do
+
+A headless client is an ordinary Minecraft client with no window. Two limits come from that and
+from the fact that a launcher cannot sign in for you:
+
+- **The account is offline.** The instance joins as the username you give it and derives the UUID
+  a server would derive for that name. That is correct for singleplayer, a LAN world, or a server
+  you run in offline mode, and **wrong for any server that verifies accounts with Mojang.** There is
+  no way to pass a Microsoft login from a shell script, so this app does not pretend to.
+- **The companion is switched on for you.** The mod only starts its web server while the
+  `companion` module is active. Log Client persists its own modules as plain JSON in
+  `game/logclient/config.json`, and applies `active` when it loads that file, so `create` and
+  `start` set `modules.companion.active = true` directly. An existing config is edited in place —
+  your other modules, HUD layout and companion token are left alone — and a config that is not
+  valid JSON is reported and not touched. (Meteor's own `modules.nbt` is binary and is never
+  written; only Log Client's JSON is.) This is what makes `attach` work on a fresh instance with
+  no window to click in.
+
+### Requirements
+
+Debian or Ubuntu with `apt-get`. Xvfb and Mesa's software rasteriser are what make this work: with
+no GPU the client renders through `llvmpipe`, which is slow but real, so give it a small
+`--width`/`--height` and a modest render distance. The app writes a first `options.txt` with
+`pauseOnLostFocus:false` and the master volume at zero, because a headless window never has focus.
+
+Plan on about 1.5 GB for the client, libraries and assets, plus a JDK, plus the heap you ask for.
 
 ## Updates
 
