@@ -8,6 +8,7 @@ import meteordevelopment.meteorclient.settings.BoolSetting;
 import meteordevelopment.meteorclient.settings.IntSetting;
 import meteordevelopment.meteorclient.settings.Setting;
 import meteordevelopment.meteorclient.settings.SettingGroup;
+import com.logvex.addon.framework.SafeEventHandler;
 
 /**
  * Keeps the player sprinting while they are moving forward.
@@ -64,15 +65,17 @@ public class AutoSprintModule extends AutomationModule {
 
     @EventHandler
     private void onTick(TickEvent.Post event) {
-        if (!ready()) return;
-        controller.setRequireHunger(requireHunger.get());
-        controller.setMinFood(minFood.get());
+        SafeEventHandler.guard("AutoSprintModule.onTick", () -> {
+            if (!ready()) return;
+            controller.setRequireHunger(requireHunger.get());
+            controller.setMinFood(minFood.get());
 
-        boolean forward = mc.options != null && mc.options.forwardKey.isPressed();
-        boolean sneaking = mc.player.isSneaking();
-        boolean inWater = mc.player.isTouchingWater();
-        boolean should = controller.shouldSprint(forward, AutomationSupport.foodLevel(), sneaking, inWater);
-        if (should != mc.player.isSprinting()) mc.player.setSprinting(should);
+            boolean forward = mc.options != null && mc.options.forwardKey.isPressed();
+            boolean sneaking = mc.player.isSneaking();
+            boolean inWater = mc.player.isTouchingWater();
+            boolean should = controller.shouldSprint(forward, AutomationSupport.foodLevel(), sneaking, inWater);
+            if (should != mc.player.isSprinting()) mc.player.setSprinting(should);
+        }).run();
     }
 
     @Override

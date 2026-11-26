@@ -349,6 +349,7 @@
   <section id="view-tasks"></section>
   <section id="view-chat"></section>
   <section id="view-search"></section>
+  <section id="view-world"></section>
   <section id="view-players"></section>
   <section id="view-modules"></section>
   <section id="view-storage"></section>
@@ -396,7 +397,7 @@ const STORE_KEY = "logclient.companion.nodes";
 const TAB_KEY = "logclient.companion.tab";
 const TABS = [
   ["overview", "Overview"], ["bot", "Bot"], ["tasks", "Tasks"], ["chat", "Chat"],
-  ["search", "Search"], ["players", "Players"], ["modules", "Modules"],
+  ["search", "Search"], ["world", "World"], ["players", "Players"], ["modules", "Modules"],
   ["storage", "Storage"], ["events", "Live feed"]
 ];
 
@@ -694,7 +695,7 @@ function render() {
   show(tab);
   const builders = {
     overview: renderOverview, bot: renderBot, tasks: renderTasks, chat: renderChat,
-    search: renderSearch, players: renderPlayers, modules: renderModules,
+    search: renderSearch, world: renderWorld, players: renderPlayers, modules: renderModules,
     storage: renderStorage, events: renderEvents
   };
   builders[tab]();
@@ -1114,6 +1115,219 @@ const PLAYER_SORTS = {
   messages: (a, b) => b.messages - a.messages,
   lastSeen: (a, b) => (b.lastSeen || 0) - (a.lastSeen || 0)
 };
+
+function renderWorld() {
+  const view = document.getElementById("view-world");
+  view.innerHTML = "";
+  if (nodes.length === 0) { view.appendChild(notConnected()); return; }
+  const snap = activeSnapshot();
+  view.appendChild(card("Client", [nodeSelect()]));
+  if (!snap) { view.appendChild(card("World", [emptyState("No snapshot yet.")])); return; }
+
+  const world = snap.world || {};
+  if (!world.inWorld) {
+    view.appendChild(card("World", [emptyState("This client is not in a world.")]));
+    return;
+  }
+
+  const blocks = Array.isArray(world.blocks) ? world.blocks : [];
+  const entities = Array.isArray(world.entities) ? world.entities : [];
+
+  view.appendChild(card("Position", [
+    el("div", { class: "grid tight" }, [
+      tile("X", fmt(world.x), null, "", null, "block " + world.blockX),
+      tile("Y", fmt(world.y), null, "", null, "block " + world.blockY),
+      tile("Z", fmt(world.z), null, "", null, "block " + world.blockZ),
+      tile("Health", String(world.health ?? 0), "/ 20", healthTone(world.health), (world.health || 0) / 20, null),
+      tile("Light", String(world.lightLevel ?? 0), "/ 15", "", (world.lightLevel || 0) / 15, null),
+      tile("Time", clockOf(world.timeOfDay), null, "", null, world.raining ? (world.thundering ? "thunder" : "rain") : "clear")
+    ]),
+    kv("Dimension", shortId(world.dimension), "mono"),
+    kv("Facing", compass(world.yaw), "mono"),
+    kv("Standing on", shortId(world.blockBelow), "mono")
+  ]));
+
+  // A top-down map, drawn rather than listed: a wall of coordinates tells a user nothing about
+  // where the lava is, and the whole point of a viewer is to answer that at a glance.
+  const mapCard = card("Nearby map", [worldCanvas(world, blocks, entities)]);
+  mapCard.appendChild(el("p", {
+    class: "muted",
+    style: "font-size:11.5px;margin:8px 0 0",
+    text: "Top-down, " + blocks.length + " blocks and " + entities.length
+      + " entities within view. Up is +Z, the arrow is you."
+  }));
+  view.appendChild(mapCard);
+
+  const entityCard = card("Entities", [entities.length
+    ? el("div", { class: "grid tight" }, entities.slice(0, 12).map(e =>
+        el("div", { class: "card", style: "padding:9px 11px" }, [
+          el("div", { class: "kv" }, [
+            el("span", { text: e.name || shortId(e.id) }),
+            el("span", { class: "badge " + entityTone(e.kind), text: e.kind })
+          ]),
+          el("div", { class: "muted mono", text: fmt(e.distance) + " blocks · " + e.health + " hp" })
+        ])))
+    : emptyState("Nothing living nearby.")]);
+  view.appendChild(entityCard);
+
+  const byBlock = new Map();
+  for (const b of blocks) {
+    const id = shortId(b.id);
+    byBlock.set(id, (byBlock.get(id) || 0) + 1);
+  }
+  const counts = [...byBlock.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12);
+  view.appendChild(card("What is around you", [counts.length
+    ? el("div", { class: "grid tight" }, counts.map(([id, count]) =>
+        el("div", { class: "kv" }, [
+          el("span", { class: "mono", text: id }),
+          el("span", { class: "badge", text: String(count) })
+        ])))
+    : emptyState("No blocks reported. Move to load the area.")]));
+}
+
+/** Draws the nearby blocks as a top-down grid with the player at the centre. */
+function worldCanvas(world, blocks, entities) {
+  const size = 340;
+  const canvas = el("canvas", { width: String(size), height: String(size) });
+  canvas.style.width = "100%";
+  canvas.style.maxWidth = size + "px";
+  canvas.style.imageRendering = "pixelated";
+  canvas.style.borderRadius = "10px";
+  canvas.style.background = "rgba(0,0,0,.28)";
+  canvas.style.display = "block";
+
+  const ctx = canvas.getContext("2d");
+  const centre = world.blockX;
+  const centreZ = world.blockZ;
+  let span = 1;
+  for (const b of blocks) {
+    span = Math.max(span, Math.abs(b.x - centre), Math.abs(b.z - centreZ));
+  }
+  span = Math.max(span, 4) + 1;
+  const cell = size / (span * 2 + 1);
+  const toX = x => (x - centre + span) * cell;
+  const toY = z => (z - centreZ + span) * cell;
+
+  // The highest block at each column, so a wall reads as one colour rather than flickering layers.
+  const top = new Map();
+  for (const b of blocks) {
+    const key = b.x + "," + b.z;
+    const previous = top.get(key);
+    if (!previous || b.y > previous.y) top.set(key, b);
+  }
+  for (const b of top.values()) {
+    ctx.fillStyle = blockColour(b.id);
+    ctx.fillRect(toX(b.x), toY(b.z), Math.ceil(cell), Math.ceil(cell));
+  }
+
+  ctx.strokeStyle = "rgba(255,255,255,.05)";
+  for (let i = -span; i <= span; i++) {
+    ctx.beginPath();
+    ctx.moveTo(toX(centre + i), 0);
+    ctx.lineTo(toX(centre + i), size);
+    ctx.moveTo(0, toY(centreZ + i));
+    ctx.lineTo(size, toY(centreZ + i));
+    ctx.stroke();
+  }
+
+  for (const e of entities) {
+    // Entities are only given a distance, not a position, so they are placed on a ring in the
+    // direction the player faces: near the centre is close, far out is far away.
+    const radius = Math.min(span, Math.max(1, e.distance)) * cell;
+    const angle = (world.yaw || 0) * Math.PI / 180;
+    ctx.beginPath();
+    ctx.arc(size / 2 + Math.sin(angle) * radius, size / 2 - Math.cos(angle) * radius,
+      Math.max(2.5, cell * 0.3), 0, Math.PI * 2);
+    ctx.fillStyle = entityColour(e.kind);
+    ctx.fill();
+  }
+
+  ctx.fillStyle = "#8fe3ff";
+  ctx.beginPath();
+  const cx = size / 2;
+  const cy = size / 2;
+  ctx.arc(cx, cy, Math.max(3, cell * 0.42), 0, Math.PI * 2);
+  ctx.fill();
+
+  return canvas;
+}
+
+const BLOCK_COLOURS = {
+  water: "#2b6cb0", lava: "#e05a1e", grass_block: "#4f9a42", dirt: "#8b6a45",
+  stone: "#7d7d86", cobblestone: "#6a6a72", sand: "#d9c98a", gravel: "#8a8a90",
+  oak_log: "#8a6a3f", spruce_log: "#6b4f33", birch_log: "#c9bfa3", oak_leaves: "#3f7a37",
+  deepslate: "#4b4b52", netherrack: "#7a2f2f", obsidian: "#241f33", glass: "#9fd8e6",
+  snow: "#e8f0f5", ice: "#9fc8e8", coal_ore: "#5c5c63", iron_ore: "#9a8878",
+  diamond_ore: "#5fc9c1", gold_ore: "#b09a52", redstone_ore: "#8f2f2f",
+  chest: "#a9743c", crafting_table: "#8a6a3f", furnace: "#6f6f76", torch: "#e8c86a"
+};
+
+/** A stable colour per block id: known blocks get a real palette, anything else a hash. */
+function blockColour(id) {
+  const path = shortId(id);
+  if (BLOCK_COLOURS[path]) return BLOCK_COLOURS[path];
+  if (path.endsWith("_leaves")) return "#3f7a37";
+  if (path.endsWith("_log") || path.endsWith("_wood")) return "#7d5c36";
+  if (path.endsWith("_planks")) return "#a8813f";
+  if (path.endsWith("_ore")) return "#6d6a63";
+  if (path.endsWith("_wool")) return "#b9b2c9";
+  if (path.includes("water")) return "#2b6cb0";
+  let hash = 0;
+  for (let i = 0; i < path.length; i++) hash = (hash * 31 + path.charCodeAt(i)) | 0;
+  const hue = Math.abs(hash) % 360;
+  return "hsl(" + hue + " 32% 46%)";
+}
+
+function entityColour(kind) {
+  if (kind === "player") return "#8fe3ff";
+  if (kind === "hostile") return "#fb8a8a";
+  if (kind === "passive") return "#7fe3a2";
+  return "#c8b6ff";
+}
+
+function entityTone(kind) {
+  if (kind === "hostile") return "bad";
+  if (kind === "player") return "warn";
+  return "good";
+}
+
+function healthTone(health) {
+  if (health === undefined || health === null) return "";
+  if (health >= 14) return "good";
+  if (health >= 7) return "warn";
+  return "bad";
+}
+
+/** The last part of a namespaced id, so `minecraft:oak_log` reads as `oak_log`. */
+function shortId(id) {
+  if (!id) return "—";
+  const text = String(id);
+  const colon = text.indexOf(":");
+  return colon < 0 ? text : text.slice(colon + 1);
+}
+
+function fmt(value) {
+  if (value === undefined || value === null) return "—";
+  const number = Number(value);
+  return Number.isFinite(number) ? (Math.round(number * 10) / 10).toString() : String(value);
+}
+
+/** A yaw in degrees as the nearest of eight compass names. */
+function compass(yaw) {
+  if (yaw === undefined || yaw === null) return "—";
+  const names = ["south", "south-west", "west", "north-west", "north", "north-east", "east", "south-east"];
+  const index = Math.round((((yaw % 360) + 360) % 360) / 45) % 8;
+  return names[index] + " (" + Math.round(yaw) + "°)";
+}
+
+/** World time as a 24-hour clock; a Minecraft day is 24000 ticks from 06:00. */
+function clockOf(ticks) {
+  if (ticks === undefined || ticks === null) return "—";
+  const total = ((ticks / 1000 + 6) % 24 + 24) % 24;
+  const hours = Math.floor(total);
+  const minutes = Math.floor((total - hours) * 60);
+  return String(hours).padStart(2, "0") + ":" + String(minutes).padStart(2, "0");
+}
 
 function renderPlayers() {
   const view = document.getElementById("view-players");

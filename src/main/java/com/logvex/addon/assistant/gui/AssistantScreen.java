@@ -89,15 +89,14 @@ public class AssistantScreen extends WindowScreen {
     // ------------------------------------------------------------------ triggers
 
     private void renderTriggers() {
-        add(theme.label("Format: pattern;sender=;reply=;mode=chat|notify|silent;cooldown="
-            + com.logvex.addon.assistant.core.TriggerRule.DEFAULT_COOLDOWN_MS
-            + ";limit=0;sound=false;remember=false;enabled=true"))
-            .expandX().widget().color(MUTED);
+        add(theme.label("Every reply the assistant gives is listed here and every field is editable. "
+            + "Nothing is hard-coded: switch a rule off, change what it says, who may fire it, how it "
+            + "is delivered and how often.")).expandX().widget().color(MUTED);
 
         WTable addRow = add(theme.table()).expandX().widget();
-        WTextBox pattern = addRow.add(theme.textBox(newPattern, "keyword")).expandCellX().widget();
+        WTextBox pattern = addRow.add(theme.textBox(newPattern, "keyword or !command")).expandCellX().widget();
         pattern.action = () -> newPattern = pattern.get();
-        WTextBox reply = addRow.add(theme.textBox(newReply, "reply")).expandCellX().widget();
+        WTextBox reply = addRow.add(theme.textBox(newReply, "reply ({player} = speaker)")).expandCellX().widget();
         reply.action = () -> newReply = reply.get();
         WButton add = addRow.add(theme.button("Add")).widget();
         add.action = () -> {
@@ -134,33 +133,169 @@ public class AssistantScreen extends WindowScreen {
         footer.row();
     }
 
+    /**
+     * One rule, shown as a header row and an editable panel.
+     *
+     * <p>The header carries the two things a user scans for — what fires it and what it says — plus
+     * the buttons that act on the whole rule. The panel below exposes every remaining field, so no
+     * behaviour is reachable only by typing the encoded string. Each edit replaces the stored rule
+     * immediately, because a rule list is small and an unsaved edit that is lost on a tab switch is
+     * exactly the "it will not let me configure it" complaint.
+     */
     private void renderRule(int index, String encoded) {
-        WTable row = add(theme.table()).expandX().widget();
-
-        WTextBox box = row.add(theme.textBox(encoded)).expandCellX().widget();
-        box.action = () -> module.replaceRule(index, box.get());
-
         TriggerRule rule = TriggerRule.decode(encoded);
-        WButton enable = row.add(theme.button(rule == null || rule.enabled() ? "Disable" : "Enable")).widget();
+        if (rule == null) return;
+
+        WTable row = add(theme.table()).expandX().widget();
+        WTextBox patternBox = row.add(theme.textBox(rule.pattern(), "keyword")).expandCellX().widget();
+        patternBox.action = () -> {
+            TriggerRule current = TriggerRule.decode(encodedAt(index, rule));
+            TriggerRule edited = (current == null ? rule : current).withPattern(patternBox.get().strip());
+            module.replaceRule(index, edited.encode());
+        };
+        WTextBox replyBox = row.add(theme.textBox(rule.reply(), "reply")).expandCellX().widget();
+        replyBox.action = () -> {
+            TriggerRule current = TriggerRule.decode(encodedAt(index, rule));
+            TriggerRule edited = (current == null ? rule : current).withReply(replyBox.get());
+            module.replaceRule(index, edited.encode());
+        };
+        WButton enable = row.add(theme.button(rule.enabled() ? "On" : "Off")).widget();
         enable.action = () -> {
-            // Read the box, not the text captured when the row was built: after an edit the box is
-            // newer, and toggling the stale copy would silently undo what the user just typed.
-            TriggerRule current = TriggerRule.decode(box.get());
-            if (current == null) return;
-            module.replaceRule(index, new TriggerRule(current.pattern(), current.caseSensitive(),
-                current.wholeWord(), current.sender(), current.reply(), current.mode(),
-                current.cooldownMs(), current.sessionLimit(), current.sound(), current.remember(),
-                !current.enabled(), current.aliases(), current.pool(), current.whisperCommand(),
-                current.embedMode()).encode());
+            TriggerRule current = TriggerRule.decode(encodedAt(index, rule));
+            module.setRuleEnabled(index, !(current == null ? rule : current).enabled());
             taskAfterRender = this::render;
         };
-
         WButton remove = row.add(theme.button("Remove")).widget();
         remove.action = () -> {
             module.removeRule(index);
             taskAfterRender = this::render;
         };
         row.row();
+
+        // Delivery and pacing. A picker rather than a text field for the mode, because a typo there
+        // silently falls back to the default and the user only finds out when a reply goes public.
+        WTable behaviour = add(theme.table()).expandX().widget();
+        WButton mode = behaviour.add(theme.button("Where: " + modeLabel(rule.mode()))).widget();
+        mode.action = () -> {
+            TriggerRule current = TriggerRule.decode(encodedAt(index, rule));
+            TriggerRule base = current == null ? rule : current;
+            module.replaceRule(index, base.withMode(nextMode(base.mode())).encode());
+            taskAfterRender = this::render;
+        };
+        WButton embed = behaviour.add(theme.button("Box: " + rule.embedMode().encoded())).widget();
+        embed.action = () -> {
+            TriggerRule current = TriggerRule.decode(encodedAt(index, rule));
+            TriggerRule base = current == null ? rule : current;
+            module.replaceRule(index, base.withEmbedMode(nextEmbed(base.embedMode())).encode());
+            taskAfterRender = this::render;
+        };
+        addNumberBox(behaviour, "Cooldown ms", Long.toString(rule.cooldownMs()), value -> {
+            TriggerRule current = TriggerRule.decode(encodedAt(index, rule));
+            module.replaceRule(index,
+                (current == null ? rule : current).withCooldownMs(parseLong(value, rule.cooldownMs())).encode());
+        });
+        addNumberBox(behaviour, "Per session (0 = no limit)", Integer.toString(rule.sessionLimit()), value -> {
+            TriggerRule current = TriggerRule.decode(encodedAt(index, rule));
+            module.replaceRule(index,
+                (current == null ? rule : current).withSessionLimit((int) parseLong(value, rule.sessionLimit())).encode());
+        });
+        behaviour.row();
+
+        WTable toggles = add(theme.table()).expandX().widget();
+        toggles.add(theme.toggle("Case sensitive", rule::caseSensitive, value -> {
+            TriggerRule current = TriggerRule.decode(encodedAt(index, rule));
+            module.replaceRule(index, (current == null ? rule : current).withCaseSensitive(value).encode());
+        })).expandCellX();
+        toggles.add(theme.toggle("Whole word", rule::wholeWord, value -> {
+            TriggerRule current = TriggerRule.decode(encodedAt(index, rule));
+            module.replaceRule(index, (current == null ? rule : current).withWholeWord(value).encode());
+        })).expandCellX();
+        toggles.add(theme.toggle("Sound", rule::sound, value -> {
+            TriggerRule current = TriggerRule.decode(encodedAt(index, rule));
+            module.replaceRule(index, (current == null ? rule : current).withSound(value).encode());
+        })).expandCellX();
+        toggles.add(theme.toggle("Remember", rule::remember, value -> {
+            TriggerRule current = TriggerRule.decode(encodedAt(index, rule));
+            module.replaceRule(index, (current == null ? rule : current).withRemember(value).encode());
+        })).expandCellX();
+        toggles.row();
+
+        WTable identity = add(theme.table()).expandX().widget();
+        WTextBox senderBox = identity.add(theme.textBox(rule.sender(), "only from player (blank = anyone)"))
+            .expandCellX().widget();
+        senderBox.action = () -> {
+            TriggerRule current = TriggerRule.decode(encodedAt(index, rule));
+            module.replaceRule(index, (current == null ? rule : current).withSender(senderBox.get().strip()).encode());
+        };
+        WTextBox aliasBox = identity.add(theme.textBox(rule.aliases(), "aliases, comma separated"))
+            .expandCellX().widget();
+        aliasBox.action = () -> {
+            TriggerRule current = TriggerRule.decode(encodedAt(index, rule));
+            module.replaceRule(index, (current == null ? rule : current).withAliases(aliasBox.get()).encode());
+        };
+        WTextBox poolBox = identity.add(theme.textBox(rule.pool(), "reply variants, separated by |"))
+            .expandCellX().widget();
+        poolBox.action = () -> {
+            TriggerRule current = TriggerRule.decode(encodedAt(index, rule));
+            module.replaceRule(index, (current == null ? rule : current).withPool(poolBox.get()).encode());
+        };
+        identity.row();
+
+        WTable delivery = add(theme.table()).expandX().widget();
+        WTextBox whisperBox = delivery.add(theme.textBox(rule.whisper(), "whisper command, e.g. /msg"))
+            .expandCellX().widget();
+        whisperBox.action = () -> {
+            TriggerRule current = TriggerRule.decode(encodedAt(index, rule));
+            module.replaceRule(index, (current == null ? rule : current).withWhisper(whisperBox.get().strip()).encode());
+        };
+        delivery.row();
+
+        add(theme.horizontalSeparator()).expandX();
+    }
+
+    /**
+     * Re-reads the rule at {@code index} so an edit builds on the latest stored value.
+     *
+     * <p>Without this, typing in the pattern box and then in the reply box would write the reply over
+     * a rule rebuilt from the text captured when the row was drawn, silently discarding the pattern.
+     */
+    private String encodedAt(int index, TriggerRule fallback) {
+        List<String> current = module.rulesSetting().get();
+        if (index < 0 || index >= current.size()) return fallback.encode();
+        return current.get(index);
+    }
+
+    private void addNumberBox(WTable table, String placeholder, String value,
+                              java.util.function.Consumer<String> onEdit) {
+        WTextBox box = table.add(theme.textBox(value, placeholder)).widget();
+        box.action = () -> onEdit.accept(box.get());
+    }
+
+    private static long parseLong(String value, long fallback) {
+        try {
+            return Long.parseLong(value == null ? "" : value.strip());
+        } catch (NumberFormatException e) {
+            return fallback;
+        }
+    }
+
+    private static String modeLabel(TriggerRule.ReplyMode mode) {
+        return switch (mode) {
+            case CHAT -> "public chat";
+            case PRIVATE -> "private message";
+            case NOTIFY -> "notification only";
+            case SILENT -> "silent";
+        };
+    }
+
+    private static TriggerRule.ReplyMode nextMode(TriggerRule.ReplyMode mode) {
+        TriggerRule.ReplyMode[] all = TriggerRule.ReplyMode.values();
+        return all[(mode.ordinal() + 1) % all.length];
+    }
+
+    private static TriggerRule.EmbedMode nextEmbed(TriggerRule.EmbedMode mode) {
+        TriggerRule.EmbedMode[] all = TriggerRule.EmbedMode.values();
+        return all[(mode.ordinal() + 1) % all.length];
     }
 
     // ------------------------------------------------------------------ macros

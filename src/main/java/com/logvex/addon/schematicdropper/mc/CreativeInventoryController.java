@@ -15,6 +15,7 @@ import net.minecraft.screen.ScreenHandler;
 import net.minecraft.util.Identifier;
 
 import static com.logvex.addon.framework.LogClientContext.mc;
+import com.logvex.addon.framework.SafeEventHandler;
 
 /**
  * Performs real, server-synchronised Creative inventory gives.
@@ -92,19 +93,21 @@ public final class CreativeInventoryController implements AcquisitionAction {
 
     @EventHandler
     private void onReceive(PacketEvent.Receive event) {
-        if (mc.player == null) return;
+        SafeEventHandler.guard("CreativeInventoryController.onReceive", () -> {
+            if (mc.player == null) return;
 
-        if (event.packet instanceof ScreenHandlerSlotUpdateS2CPacket packet) {
-            if (packet.getSyncId() != PLAYER_INVENTORY_SYNC_ID) return;
-            sequence++;
-            lastSlot = packet.getSlot();
-            lastSlotSequence = sequence;
-        } else if (event.packet instanceof InventoryS2CPacket packet) {
-            if (packet.getSyncId() != PLAYER_INVENTORY_SYNC_ID) return;
-            sequence++;
-            lastSlot = -1;
-            lastSlotSequence = sequence;
-        }
+            if (event.packet instanceof ScreenHandlerSlotUpdateS2CPacket packet) {
+                if (packet.getSyncId() != PLAYER_INVENTORY_SYNC_ID) return;
+                sequence++;
+                lastSlot = packet.getSlot();
+                lastSlotSequence = sequence;
+            } else if (event.packet instanceof InventoryS2CPacket packet) {
+                if (packet.getSyncId() != PLAYER_INVENTORY_SYNC_ID) return;
+                sequence++;
+                lastSlot = -1;
+                lastSlotSequence = sequence;
+            }
+        }).run();
     }
 
     /** Resets the observation counter, e.g. on reconnect. */

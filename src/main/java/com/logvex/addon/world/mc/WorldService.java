@@ -71,12 +71,14 @@ public final class WorldService {
 
     @EventHandler
     private void onGameJoined(GameJoinedEvent event) {
-        if (!enabled) return;
-        var mc = LogClientContext.mc;
-        if (mc == null) return;
-        String server = serverAddress();
-        String world = worldName();
-        intelligence.enterWorld(server, world, world, System.currentTimeMillis());
+        SafeEventHandler.guard("WorldService.onGameJoined", () -> {
+            if (!enabled) return;
+            var mc = LogClientContext.mc;
+            if (mc == null) return;
+            String server = serverAddress();
+            String world = worldName();
+            intelligence.enterWorld(server, world, world, System.currentTimeMillis());
+        }).run();
     }
 
     @EventHandler

@@ -333,12 +333,14 @@ public class CompanionModule extends AddonModule {
 
     @EventHandler
     private void onGameJoined(GameJoinedEvent event) {
-        if (events == null) return;
-        lastChatTimestamp = 0;
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("event", "joined");
-        payload.put("server", LogService.get().serverName());
-        events.publish("session", CompanionJson.write(payload));
+        SafeEventHandler.guard("CompanionModule.onGameJoined", () -> {
+            if (events == null) return;
+            lastChatTimestamp = 0;
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("event", "joined");
+            payload.put("server", LogService.get().serverName());
+            events.publish("session", CompanionJson.write(payload));
+        }).run();
     }
 
     @EventHandler

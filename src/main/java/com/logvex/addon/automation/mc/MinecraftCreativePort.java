@@ -12,6 +12,7 @@ import net.minecraft.screen.ScreenHandler;
 import net.minecraft.util.Identifier;
 
 import static com.logvex.addon.framework.LogClientContext.mc;
+import com.logvex.addon.framework.SafeEventHandler;
 
 /**
  * {@link CreativePort} backed by real, server-synchronised Creative inventory gives.
@@ -127,18 +128,20 @@ public final class MinecraftCreativePort implements CreativePort {
 
     @EventHandler
     private void onReceive(PacketEvent.Receive event) {
-        if (mc.player == null) return;
-        if (event.packet instanceof ScreenHandlerSlotUpdateS2CPacket packet) {
-            if (packet.getSyncId() != PLAYER_INVENTORY_SYNC_ID) return;
-            sequence++;
-            lastSlot = packet.getSlot();
-            lastSlotSequence = sequence;
-        } else if (event.packet instanceof InventoryS2CPacket packet) {
-            if (packet.getSyncId() != PLAYER_INVENTORY_SYNC_ID) return;
-            sequence++;
-            lastSlot = -1;
-            lastSlotSequence = sequence;
-        }
+        SafeEventHandler.guard("MinecraftCreativePort.onReceive", () -> {
+            if (mc.player == null) return;
+            if (event.packet instanceof ScreenHandlerSlotUpdateS2CPacket packet) {
+                if (packet.getSyncId() != PLAYER_INVENTORY_SYNC_ID) return;
+                sequence++;
+                lastSlot = packet.getSlot();
+                lastSlotSequence = sequence;
+            } else if (event.packet instanceof InventoryS2CPacket packet) {
+                if (packet.getSyncId() != PLAYER_INVENTORY_SYNC_ID) return;
+                sequence++;
+                lastSlot = -1;
+                lastSlotSequence = sequence;
+            }
+        }).run();
     }
 
     /** Maps a player-inventory index (0..35) to its screen-handler slot id. */

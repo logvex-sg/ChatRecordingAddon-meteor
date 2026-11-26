@@ -16,6 +16,7 @@ import meteordevelopment.meteorclient.settings.Setting;
 import meteordevelopment.meteorclient.settings.SettingGroup;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.systems.modules.Modules;
+import com.logvex.addon.framework.SafeEventHandler;
 
 /**
  * Watches the shared webhook queue and reports its health.
@@ -83,39 +84,41 @@ public class WebhookMonitorModule extends AddonModule {
 
     @EventHandler
     private void onTick(TickEvent.Post event) {
-        WebhookQueue current = queue;
-        if (current == null) return;
+        SafeEventHandler.guard("WebhookMonitorModule.onTick", () -> {
+            WebhookQueue current = queue;
+            if (current == null) return;
 
-        // Apply the history cap only when it actually changed, so a tick costs one int compare.
-        if (history.capacity() != historySize.get()) history.setCapacity(historySize.get());
+            // Apply the history cap only when it actually changed, so a tick costs one int compare.
+            if (history.capacity() != historySize.get()) history.setCapacity(historySize.get());
 
-        int delivered = current.delivered();
-        int failed = current.failed();
-        int retries = current.retries();
+            int delivered = current.delivered();
+            int failed = current.failed();
+            int retries = current.retries();
 
-        if (delivered != lastDelivered) {
-            record(current, true, delivered - lastDelivered, "Delivered");
-            lastDelivered = delivered;
-            if (hadFailure && notifyOnRecovery.get()) {
-                hadFailure = false;
-                info("Webhook deliveries are succeeding again.");
+            if (delivered != lastDelivered) {
+                record(current, true, delivered - lastDelivered, "Delivered");
+                lastDelivered = delivered;
+                if (hadFailure && notifyOnRecovery.get()) {
+                    hadFailure = false;
+                    info("Webhook deliveries are succeeding again.");
+                }
             }
-        }
-        if (failed != lastFailed) {
-            record(current, false, failed - lastFailed, current.lastMessage());
-            lastFailed = failed;
-            hadFailure = true;
-            com.logvex.addon.chatlog.mc.LogService.get().alerts().record(
-                com.logvex.addon.chatlog.core.AlertLog.Kind.WEBHOOK, "Delivery failed",
-                safeMessage(current.lastMessage()));
-            if (notifyOnFailure.get()) {
-                warning("Webhook delivery failed. %s", safeMessage(current.lastMessage()));
+            if (failed != lastFailed) {
+                record(current, false, failed - lastFailed, current.lastMessage());
+                lastFailed = failed;
+                hadFailure = true;
+                com.logvex.addon.chatlog.mc.LogService.get().alerts().record(
+                    com.logvex.addon.chatlog.core.AlertLog.Kind.WEBHOOK, "Delivery failed",
+                    safeMessage(current.lastMessage()));
+                if (notifyOnFailure.get()) {
+                    warning("Webhook delivery failed. %s", safeMessage(current.lastMessage()));
+                }
             }
-        }
-        if (retries != lastRetries) {
-            lastRetries = retries;
-            dirty = true;
-        }
+            if (retries != lastRetries) {
+                lastRetries = retries;
+                dirty = true;
+            }
+        }).run();
     }
 
     private void record(WebhookQueue current, boolean success, int count, String message) {

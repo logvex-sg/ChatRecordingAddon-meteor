@@ -6,6 +6,7 @@ import meteordevelopment.meteorclient.events.packets.PacketEvent;
 import meteordevelopment.orbit.IEventBus;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.network.packet.s2c.play.PlayerListS2CPacket;
+import com.logvex.addon.framework.SafeEventHandler;
 
 /**
  * Feeds observed account names into the shared {@link PlayerIdentityTracker}.
@@ -99,10 +100,12 @@ public final class PlayerIdentityService {
 
     @EventHandler
     private void onReceive(PacketEvent.Receive event) {
-        if (!enabled || event == null) return;
-        if (event.packet instanceof PlayerListS2CPacket packet) {
-            onPlayerList(packet);
-        }
+        SafeEventHandler.guard("PlayerIdentityService.onReceive", () -> {
+            if (!enabled || event == null) return;
+            if (event.packet instanceof PlayerListS2CPacket packet) {
+                onPlayerList(packet);
+            }
+        }).run();
     }
 
     private void onPlayerList(PlayerListS2CPacket packet) {

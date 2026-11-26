@@ -13,6 +13,7 @@ import net.minecraft.registry.Registries;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import com.logvex.addon.framework.SafeEventHandler;
 
 /**
  * Keeps the hotbar stocked with the items the player wants to hand.
@@ -80,28 +81,30 @@ public class AutoReplenishModule extends AutomationModule {
 
     @EventHandler
     private void onTick(TickEvent.Post event) {
-        if (!ready()) return;
-        controller.setRefillFromInventory(refillFromInventory.get());
+        SafeEventHandler.guard("AutoReplenishModule.onTick", () -> {
+            if (!ready()) return;
+            controller.setRefillFromInventory(refillFromInventory.get());
 
-        if (onlyWhenIdle.get() && isBusy()) return;
+            if (onlyWhenIdle.get() && isBusy()) return;
 
-        // Re-checking every tick would thrash the inventory; a short interval is plenty for a
-        // rearrangement that only matters between tasks.
-        long now = System.currentTimeMillis();
-        if (now - lastAttemptAt < 1000) return;
+            // Re-checking every tick would thrash the inventory; a short interval is plenty for a
+            // rearrangement that only matters between tasks.
+            long now = System.currentTimeMillis();
+            if (now - lastAttemptAt < 1000) return;
 
-        Map<Integer, String> desired = desiredSlots();
-        if (desired.isEmpty()) return;
+            Map<Integer, String> desired = desiredSlots();
+            if (desired.isEmpty()) return;
 
-        List<AutoReplenishController.Assignment> plan =
-            controller.plan(desired, hotbarContents(), inventoryContents());
-        if (plan.isEmpty()) return;
+            List<AutoReplenishController.Assignment> plan =
+                controller.plan(desired, hotbarContents(), inventoryContents());
+            if (plan.isEmpty()) return;
 
-        AutoReplenishController.Assignment first = plan.get(0);
-        if (moveToHotbar(first.hotbarSlot(), first.sourceSlot())) {
-            settled.put(first.hotbarSlot(), first.itemId());
-        }
-        lastAttemptAt = now;
+            AutoReplenishController.Assignment first = plan.get(0);
+            if (moveToHotbar(first.hotbarSlot(), first.sourceSlot())) {
+                settled.put(first.hotbarSlot(), first.itemId());
+            }
+            lastAttemptAt = now;
+        }).run();
     }
 
     private boolean isBusy() {

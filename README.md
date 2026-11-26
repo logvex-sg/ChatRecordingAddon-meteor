@@ -340,6 +340,24 @@ bot agree on how the player may move; they have no effect with the built-in plan
 never teleported or otherwise faked: success requires the player's actual position to be within the
 arrival tolerance.
 
+### Search and retries
+
+A block search answers in the tick that asks for it. The first version used Meteor's
+`BlockIterator`, which only queues a callback for the next tick; the executor read the list
+immediately, always saw an empty one, and asked again — a scan of the whole radius on every tick,
+which froze the client. The scan now walks the box itself, stops at a result cap, skips unloaded
+chunks, and sorts nearest-first so the bot heads for the closest ore rather than one that merely
+came first in the loop order.
+
+An empty answer is a soft retry, not a fail: the task stays active and waits, with the wait doubling
+up to a ceiling. Without that backoff a hopeless search would rescan the same box every tick, which
+is the other half of the same freeze.
+
+Every tick of the bot runs inside a guard. Meteor's event bus (orbit) calls listeners with no
+try/catch, so a handler that throws unwinds out of the tick loop and takes the client with it. The
+guard logs the failure and the client carries on, and a build-time test walks the source tree so a
+new handler cannot be added without one.
+
 ### Profiles
 
 A **profile** is a named snapshot of the bot's settings. **Profiles...** on the bot dashboard (or
@@ -372,6 +390,13 @@ dashboard and HUD use, so a command never diverges from the GUI:
 | `!bot tasks [clear]` | Lists the queue, or empties it. |
 | `!bot waypoint add\|del\|list <name>` | Manages named waypoints. |
 | `!bot profile [list\|apply\|save\|delete] <name>` | Manages bot profiles. |
+
+An objective that names an item is checked against the game's item registry before it is queued.
+`!log gather 256 oak_logg` is refused with `Unknown item id 'oak_logg'` and, when a close match
+exists, a suggestion (`did you mean oak_log?`), rather than being accepted and left to fail later in
+the field. The same check backs the dashboard's **Queue objective** box and the companion's
+`POST /api/v1/tasks`, so a typo is caught wherever it is typed. A task that cannot be carried out is
+therefore refused at the point of entry instead of sitting in the queue retrying.
 
 
 ## Assistant
@@ -436,7 +461,12 @@ candidates instead of guessing. Disabling keeps the reply text, so `!trigger on`
 wording.
 
 The same rules are editable in the Assistant Manager GUI, where **Remove** deletes a rule and
-**Remove all** empties the table. A deletion is recorded in the `removed-rules` setting so the
+**Remove all** empties the table. Selecting a rule opens a full editor for that one rule rather than
+a single cramped line: the phrase, whether case and whole words matter, who it answers, the reply
+text, the delivery mode, the cooldown, the session limit, the sound and memory flags, whether it is
+enabled, its aliases, its random-reply pool and its embed setting. Every field writes back to the
+same stored line the settings list and `.ai triggers` use, so a change made in the GUI shows up in
+chat immediately and survives a restart. A deletion is recorded in the `removed-rules` setting so the
 shipped table is not merged straight back in on the next load — without that record the merge that
 exists to deliver newly shipped rules could not tell "deleted on purpose" from "shipped after this
 config was written", and every deletion would be silently undone. Rules shipped *after* your config
@@ -1053,6 +1083,13 @@ answer it gives can be traced back to a rule you wrote or a command you enabled.
 The widget also has an "Assistant Permissions..." button, which opens the permissions screen
 described above.
 
+Every text box in the addon — the trigger editor, the memory and status boxes, the webhook and
+profile fields — behaves like a normal text field. Click to place the caret where you clicked,
+drag to select, and `Shift`+click or `Shift`+arrow to extend the selection. `Ctrl+A` selects
+everything, `Ctrl+C` copies the selection, `Ctrl+X` cuts it and `Ctrl+V` pastes at the caret,
+replacing any selection. Pasted text is cleaned of control characters and line breaks first, so a
+paste into a one-line box always stays one line.
+
 ### Greetings
 
 With `greetings` on, the assistant greets the local player when they join a world, choosing a
@@ -1624,6 +1661,12 @@ across those refreshes, so a rebuild never discards your input.
 - **Search** — a search over the client's own stored log rather than the few dozen lines a snapshot
   carries, so a message from earlier in the session can be found. Filter by words, by player, and by
   how many results to return; the client does the matching and returns the matches oldest-first.
+- **World** — where the client is and what is around it, for a player who is not at that machine.
+  Coordinates, health, light level, the clock and the dimension sit beside a drawn top-down map of
+  the nearby blocks, coloured by material (water blue, lava orange, leaves green, and so on), with
+  the player marked at the centre. Below it are the nearby entities with their kind, distance and
+  health, and a count of the blocks you are standing among. The map answers the question a list of
+  coordinates cannot: *where* the lava is.
 - **Players** — observed players with their message counts and last-seen times, marked online when
   the client's player list currently contains them.
 - **Stats** — session message, player, join, leave and death totals.
@@ -1688,6 +1731,7 @@ All responses are JSON. Authenticate with the token unless noted.
 | GET | `/api/v1/chat` | The recent chat. |
 | POST | `/api/v1/chat` | Sends a chat line: `{"message":"hello"}`. A line starting with `/` is treated as a command. |
 | GET | `/api/v1/players` | The observed players. |
+| GET | `/api/v1/world` | Where the client is: dimension, position, yaw/pitch, the block it stands on, health, light level, world time and weather, plus the nearby blocks and entities. `inWorld` is `false` and the lists are empty when no world is loaded. |
 | GET | `/api/v1/storage` | The segment count, compressed size and oldest/newest timestamps. |
 | GET | `/api/v1/queries` | The names the query endpoint accepts. |
 | GET | `/api/v1/query/{name}` | `messages`, `players` or `stats`, with `q`, `player` and `limit` filters. |

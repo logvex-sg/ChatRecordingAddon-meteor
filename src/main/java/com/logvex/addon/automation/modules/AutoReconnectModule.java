@@ -93,8 +93,10 @@ public class AutoReconnectModule extends AutomationModule {
 
     @EventHandler
     private void onJoined(GameJoinedEvent event) {
-        waitingToReconnect = false;
-        controller.onConnected();
+        SafeEventHandler.guard("AutoReconnectModule.onJoined", () -> {
+            waitingToReconnect = false;
+            controller.onConnected();
+        }).run();
     }
 
     @EventHandler
@@ -116,20 +118,22 @@ public class AutoReconnectModule extends AutomationModule {
 
     @EventHandler
     private void onTick(TickEvent.Post event) {
-        if (!waitingToReconnect || target == null) return;
-        pushSettings();
-        if (!controller.shouldAttempt(System.currentTimeMillis())) {
-            if (controller.gaveUp()) {
-                waitingToReconnect = false;
-                warning("Gave up reconnecting after %d attempts.", controller.attempts());
-                notifyUser(NotificationType.CONNECTION, "Auto Reconnect", "Gave up reconnecting.");
+        SafeEventHandler.guard("AutoReconnectModule.onTick", () -> {
+            if (!waitingToReconnect || target == null) return;
+            pushSettings();
+            if (!controller.shouldAttempt(System.currentTimeMillis())) {
+                if (controller.gaveUp()) {
+                    waitingToReconnect = false;
+                    warning("Gave up reconnecting after %d attempts.", controller.attempts());
+                    notifyUser(NotificationType.CONNECTION, "Auto Reconnect", "Gave up reconnecting.");
+                }
+                return;
             }
-            return;
-        }
 
-        int attempt = controller.markAttempt(System.currentTimeMillis());
-        info("Reconnect attempt %d.", attempt);
-        connect(target);
+            int attempt = controller.markAttempt(System.currentTimeMillis());
+            info("Reconnect attempt %d.", attempt);
+            connect(target);
+        }).run();
     }
 
     private void connect(ServerInfo entry) {

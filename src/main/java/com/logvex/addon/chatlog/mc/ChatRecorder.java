@@ -21,22 +21,26 @@ public final class ChatRecorder {
 
     @EventHandler
     private void onReceiveMessage(ReceiveMessageEvent event) {
-        if (event.getMessage() == null) return;
+        SafeEventHandler.guard("ChatRecorder.onReceiveMessage", () -> {
+            if (event.getMessage() == null) return;
 
-        boolean fromPlayer = event.getIndicator() != null;
-        String content = event.getMessage().getString();
-        if (content == null || content.isBlank()) return;
+            boolean fromPlayer = event.getIndicator() != null;
+            String content = event.getMessage().getString();
+            if (content == null || content.isBlank()) return;
 
-        ChatClassifier.Result result = ChatClassifier.classify(fromPlayer, content);
-        if (!service.shouldRecord(result.type())) return;
+            ChatClassifier.Result result = ChatClassifier.classify(fromPlayer, content);
+            if (!service.shouldRecord(result.type())) return;
 
-        service.record(new ChatEntry(System.currentTimeMillis(), result.type(), result.sender(),
-            content, service.serverName(), ""));
+            service.record(new ChatEntry(System.currentTimeMillis(), result.type(), result.sender(),
+                content, service.serverName(), ""));
+        }).run();
     }
 
     @EventHandler
     private void onGameJoined(GameJoinedEvent event) {
-        service.startSession(serverAddress(), System.currentTimeMillis());
+        SafeEventHandler.guard("ChatRecorder.onGameJoined", () -> {
+            service.startSession(serverAddress(), System.currentTimeMillis());
+        }).run();
     }
 
     @EventHandler

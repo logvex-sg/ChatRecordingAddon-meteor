@@ -170,52 +170,54 @@ public class AutoLoginModule extends AutomationModule {
 
     @EventHandler
     private void onTick(TickEvent.Post event) {
-        if (!enabledPerServer.get()) return;
-        if (pendingPrompt.getAndSet(null) == null) return;
-        if (mc.player == null || mc.getNetworkHandler() == null) return;
+        SafeEventHandler.guard("AutoLoginModule.onTick", () -> {
+            if (!enabledPerServer.get()) return;
+            if (pendingPrompt.getAndSet(null) == null) return;
+            if (mc.player == null || mc.getNetworkHandler() == null) return;
 
-        String password = store.get(serverKey());
-        if (password == null || password.isEmpty()) {
-            // A missing password is not a rejection: leave the policy alone so setting one takes
-            // effect on the very next prompt. Warn once, or a prompt every second would spam chat.
-            if (!warnedMissing) {
-                warnedMissing = true;
-                warning("This server asked for a login but no password is stored. Use %sautologin gui to set one.",
-                    com.logvex.addon.framework.systems.config.ClientConfig.get().prefix());
+            String password = store.get(serverKey());
+            if (password == null || password.isEmpty()) {
+                // A missing password is not a rejection: leave the policy alone so setting one takes
+                // effect on the very next prompt. Warn once, or a prompt every second would spam chat.
+                if (!warnedMissing) {
+                    warnedMissing = true;
+                    warning("This server asked for a login but no password is stored. Use %sautologin gui to set one.",
+                        com.logvex.addon.framework.systems.config.ClientConfig.get().prefix());
+                }
+                return;
             }
-            return;
-        }
 
-        // A stored value can predate the validation on the setup screen, or arrive from a file the
-        // user edited by hand. Sending it would either fail as a wrong password or, with a newline,
-        // run a second command — so refuse it and say why instead of burning an attempt.
-        LoginPassword.Problem problem = LoginPassword.check(password);
-        if (problem != LoginPassword.Problem.OK) {
-            if (!warnedInvalid) {
-                warnedInvalid = true;
-                warning("The stored password for %s cannot be sent: %s Fix it with %sautologin gui.",
-                    serverKey(), problem.message(),
-                    com.logvex.addon.framework.systems.config.ClientConfig.get().prefix());
+            // A stored value can predate the validation on the setup screen, or arrive from a file the
+            // user edited by hand. Sending it would either fail as a wrong password or, with a newline,
+            // run a second command — so refuse it and say why instead of burning an attempt.
+            LoginPassword.Problem problem = LoginPassword.check(password);
+            if (problem != LoginPassword.Problem.OK) {
+                if (!warnedInvalid) {
+                    warnedInvalid = true;
+                    warning("The stored password for %s cannot be sent: %s Fix it with %sautologin gui.",
+                        serverKey(), problem.message(),
+                        com.logvex.addon.framework.systems.config.ClientConfig.get().prefix());
+                }
+                return;
             }
-            return;
-        }
 
-        long now = System.currentTimeMillis();
-        if (!policy.shouldSend(now)) {
-            if (policy.exhausted()) {
-                warning("Gave up after %d login attempts.", policy.attempts());
-                notifyUser(NotificationType.CONNECTION, "Auto Login", "Gave up after repeated prompts.");
+            long now = System.currentTimeMillis();
+            if (!policy.shouldSend(now)) {
+                if (policy.exhausted()) {
+                    warning("Gave up after %d login attempts.", policy.attempts());
+                    notifyUser(NotificationType.CONNECTION, "Auto Login", "Gave up after repeated prompts.");
+                }
+                return;
             }
-            return;
-        }
 
-        policy.markSent(now);
-        // sendChatCommand strips the leading slash itself, so the password goes out as a command
-        // rather than as public chat. This is the one place the value is used, and it is not logged.
-        mc.getNetworkHandler().sendChatCommand("login " + password);
-        if (announce.get()) {
-            info("Sent login for %s (attempt %d of %d).", serverKey(), policy.attempts(), maxAttempts.get());
-        }
+            policy.markSent(now);
+            // sendChatCommand strips the leading slash itself, so the password goes out as a command
+            // rather than as public chat. This is the one place the value is used, and it is not logged.
+            mc.getNetworkHandler().sendChatCommand("login " + password);
+            if (announce.get()) {
+                info("Sent login for %s (attempt %d of %d).", serverKey(), policy.attempts(), maxAttempts.get());
+            }
+        }).run();
     }
 
     private void loadStore() {

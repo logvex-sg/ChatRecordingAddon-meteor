@@ -545,36 +545,40 @@ public class SchematicDropperModule extends AddonModule {
 
     @EventHandler
     private void onTick(TickEvent.Post event) {
-        if (!isActive()) return;
+        SafeEventHandler.guard("SchematicDropperModule.onTick", () -> {
+            if (!isActive()) return;
 
-        engine.setConfig(config());
-        engine.setStackStrategy(stackStrategy.get());
-        engine.tick(System.currentTimeMillis());
+            engine.setConfig(config());
+            engine.setStackStrategy(stackStrategy.get());
+            engine.tick(System.currentTimeMillis());
 
-        if (dropBridge.isActive() && !engine.state().isRunning()) dropBridge.finish();
+            if (dropBridge.isActive() && !engine.state().isRunning()) dropBridge.finish();
 
-        acquisition.setConfig(acquisitionConfig());
-        acquisition.setPlan(plan);
-        acquisition.tick(System.currentTimeMillis());
+            acquisition.setConfig(acquisitionConfig());
+            acquisition.setPlan(plan);
+            acquisition.tick(System.currentTimeMillis());
 
-        build.setConfig(buildConfig());
-        build.setCheckpointsEnabled(buildCheckpoints.get());
-        build.setOrigin(currentBuildOrigin());
-        build.tick(System.currentTimeMillis());
-        syncSchematicMaterials();
+            build.setConfig(buildConfig());
+            build.setCheckpointsEnabled(buildCheckpoints.get());
+            build.setOrigin(currentBuildOrigin());
+            build.tick(System.currentTimeMillis());
+            syncSchematicMaterials();
 
-        if (pendingImport != null) stepImport();
+            if (pendingImport != null) stepImport();
 
-        if (rotationDebug.get()) debugRotation();
+            if (rotationDebug.get()) debugRotation();
+        }).run();
     }
 
     @EventHandler
     private void onGameJoined(GameJoinedEvent event) {
-        serverTracker.reset();
-        creativeController.reset();
-        engine.onWorldChanged();
-        acquisition.onWorldChanged();
-        build.onWorldChanged();
+        SafeEventHandler.guard("SchematicDropperModule.onGameJoined", () -> {
+            serverTracker.reset();
+            creativeController.reset();
+            engine.onWorldChanged();
+            acquisition.onWorldChanged();
+            build.onWorldChanged();
+        }).run();
     }
 
     @EventHandler

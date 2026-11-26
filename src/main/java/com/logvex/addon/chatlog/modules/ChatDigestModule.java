@@ -20,6 +20,7 @@ import meteordevelopment.meteorclient.settings.SettingGroup;
 import meteordevelopment.meteorclient.systems.modules.Module;
 
 import java.util.List;
+import com.logvex.addon.framework.SafeEventHandler;
 
 /**
  * Periodic and on-demand summaries of chat activity.
@@ -88,11 +89,13 @@ public class ChatDigestModule extends AddonModule {
 
     @EventHandler
     private void onTick(TickEvent.Post event) {
-        if (!auto.get()) return;
-        long interval = intervalMinutes.get() * 60_000L;
-        if (System.currentTimeMillis() - lastDigestAt < interval) return;
-        lastDigestAt = System.currentTimeMillis();
-        digest(false);
+        SafeEventHandler.guard("ChatDigestModule.onTick", () -> {
+            if (!auto.get()) return;
+            long interval = intervalMinutes.get() * 60_000L;
+            if (System.currentTimeMillis() - lastDigestAt < interval) return;
+            lastDigestAt = System.currentTimeMillis();
+            digest(false);
+        }).run();
     }
 
     /** Computes the digest over the configured window. */

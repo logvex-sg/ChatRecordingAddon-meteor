@@ -12,6 +12,7 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.util.Hand;
 
 import java.util.List;
+import com.logvex.addon.framework.SafeEventHandler;
 
 /**
  * Eats food from the hotbar when the player is hungry.
@@ -80,25 +81,27 @@ public class AutoEatModule extends AutomationModule {
 
     @EventHandler
     private void onTick(TickEvent.Post event) {
-        if (!ready()) return;
-        controller.setThreshold(threshold.get());
+        SafeEventHandler.guard("AutoEatModule.onTick", () -> {
+            if (!ready()) return;
+            controller.setThreshold(threshold.get());
 
-        if (pauseWhenScreenOpen.get() && mc.currentScreen != null) return;
+            if (pauseWhenScreenOpen.get() && mc.currentScreen != null) return;
 
-        int food = AutomationSupport.foodLevel();
-        List<String> held = AutomationSupport.heldFoodIds();
-        if (!controller.shouldEat(food, AutomationSupport.health(), held)) return;
-        if (!controller.cooldownElapsed(System.currentTimeMillis(), cooldown.get())) return;
+            int food = AutomationSupport.foodLevel();
+            List<String> held = AutomationSupport.heldFoodIds();
+            if (!controller.shouldEat(food, AutomationSupport.health(), held)) return;
+            if (!controller.cooldownElapsed(System.currentTimeMillis(), cooldown.get())) return;
 
-        String choice = preferHighNutrition.get()
-            ? controller.chooseFood(held, AutomationSupport::foodValue)
-            : held.get(0);
-        if (choice == null) return;
+            String choice = preferHighNutrition.get()
+                ? controller.chooseFood(held, AutomationSupport::foodValue)
+                : held.get(0);
+            if (choice == null) return;
 
-        if (selectHotbarSlot(choice)) {
-            mc.interactionManager.interactItem(mc.player, Hand.MAIN_HAND);
-            controller.markEaten(System.currentTimeMillis());
-        }
+            if (selectHotbarSlot(choice)) {
+                mc.interactionManager.interactItem(mc.player, Hand.MAIN_HAND);
+                controller.markEaten(System.currentTimeMillis());
+            }
+        }).run();
     }
 
     /** Selects the first hotbar slot holding {@code itemId}. */

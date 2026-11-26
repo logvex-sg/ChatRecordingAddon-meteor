@@ -12,6 +12,7 @@ import meteordevelopment.meteorclient.settings.BoolSetting;
 import meteordevelopment.meteorclient.settings.IntSetting;
 import meteordevelopment.meteorclient.settings.Setting;
 import meteordevelopment.meteorclient.settings.SettingGroup;
+import com.logvex.addon.framework.SafeEventHandler;
 
 /**
  * Reports a short server status on a timer and keeps a session tally.
@@ -93,10 +94,12 @@ public class ServerMonitorModule extends AutomationModule {
 
     @EventHandler
     private void onTick(TickEvent.Post event) {
-        if (!ready()) return;
-        controller.setIntervalMs(interval.get() * 1000L);
-        if (!controller.due(System.currentTimeMillis())) return;
-        info("%s", statusLine());
+        SafeEventHandler.guard("ServerMonitorModule.onTick", () -> {
+            if (!ready()) return;
+            controller.setIntervalMs(interval.get() * 1000L);
+            if (!controller.due(System.currentTimeMillis())) return;
+            info("%s", statusLine());
+        }).run();
     }
 
     /** The one-line status, built from what the client can observe. */

@@ -64,6 +64,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import com.logvex.addon.framework.SafeEventHandler;
 
 /**
  * A configurable chat assistant: keyword triggers, persistent memory and memory commands.
@@ -656,14 +657,16 @@ public class AssistantModule extends AutomationModule {
 
     @EventHandler
     private void onTick(TickEvent.Post event) {
-        if (mc.player != null) {
-            speed.sample(mc.player.getX(), mc.player.getZ(), System.currentTimeMillis());
-        }
-        drainPacer();
-        // Persist on a slow cadence rather than on every memory write, so a busy chat cannot cause
-        // a disk write storm. The dirty flag makes this a no-op when nothing changed.
-        if (System.currentTimeMillis() - lastSaveAt < 30_000L) return;
-        if (memoryDirty && persist.get()) flushMemory();
+        SafeEventHandler.guard("AssistantModule.onTick", () -> {
+            if (mc.player != null) {
+                speed.sample(mc.player.getX(), mc.player.getZ(), System.currentTimeMillis());
+            }
+            drainPacer();
+            // Persist on a slow cadence rather than on every memory write, so a busy chat cannot cause
+            // a disk write storm. The dirty flag makes this a no-op when nothing changed.
+            if (System.currentTimeMillis() - lastSaveAt < 30_000L) return;
+            if (memoryDirty && persist.get()) flushMemory();
+        }).run();
     }
 
     /**
@@ -686,10 +689,12 @@ public class AssistantModule extends AutomationModule {
 
     @EventHandler
     private void onReceiveMessage(ReceiveMessageEvent event) {
-        // Guarded because this runs inside Meteor's event dispatch: an exception here would leave
-        // the chat pipeline rather than being reported, and one malformed line would take the whole
-        // assistant down until the game restarted.
-        guard("receive", () -> receiveStep(event));
+        SafeEventHandler.guard("AssistantModule.onReceiveMessage", () -> {
+            // Guarded because this runs inside Meteor's event dispatch: an exception here would leave
+            // the chat pipeline rather than being reported, and one malformed line would take the whole
+            // assistant down until the game restarted.
+            guard("receive", () -> receiveStep(event));
+        }).run();
     }
 
     private void receiveStep(ReceiveMessageEvent event) {
@@ -1382,9 +1387,11 @@ public class AssistantModule extends AutomationModule {
      */
     @EventHandler
     private void onSendMessage(SendMessageEvent event) {
-        // Same reason as the receive path, and it matters more here: this runs on every message the
-        // player sends, so an unguarded throw would break ordinary chatting, not just the assistant.
-        guard("send", () -> sendStep(event));
+        SafeEventHandler.guard("AssistantModule.onSendMessage", () -> {
+            // Same reason as the receive path, and it matters more here: this runs on every message the
+            // player sends, so an unguarded throw would break ordinary chatting, not just the assistant.
+            guard("send", () -> sendStep(event));
+        }).run();
     }
 
     private void sendStep(SendMessageEvent event) {
@@ -1815,6 +1822,18 @@ public class AssistantModule extends AutomationModule {
         if (index < 0 || index >= updated.size()) return false;
         TriggerRule rule = TriggerRule.decode(encoded);
         updated.set(index, rule == null ? encoded : rule.encode());
+        rules.set(updated);
+        rebuild();
+        return true;
+    }
+
+    /** Turns one rule on or off in place, for the editor's On/Off button. */
+    public boolean setRuleEnabled(int index, boolean enabled) {
+        List<String> updated = new ArrayList<>(rules.get());
+        if (index < 0 || index >= updated.size()) return false;
+        TriggerRule rule = TriggerRule.decode(updated.get(index));
+        if (rule == null) return false;
+        updated.set(index, rule.withEnabled(enabled).encode());
         rules.set(updated);
         rebuild();
         return true;

@@ -38,4 +38,27 @@ public final class SafeEventHandler {
             LOG.error("Handler '{}' failed; the client continues without it", what, e);
         }
     }
+
+    /**
+     * A {@link Runnable} that runs its body through {@link #run}.
+     *
+     * <p>Lets a handler keep its body at the top level of the method instead of nested inside a
+     * lambda, which is what makes the guard cheap to apply to every handler rather than only to the
+     * ones that were already wrapped:
+     *
+     * <pre>{@code
+     * @EventHandler
+     * private void onTick(TickEvent.Post event) {
+     *     SafeEventHandler.guard("AutoEat.onTick", () -> {
+     *         ...existing body...
+     *     }).run();
+     * }
+     * }</pre>
+     *
+     * @param what a short name for the handler, used in the log line
+     * @param body the handler body
+     */
+    public static Runnable guard(String what, Runnable body) {
+        return () -> run(what, body);
+    }
 }

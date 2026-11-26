@@ -13,6 +13,7 @@ import com.logvex.addon.update.core.UpdateChannel;
 import com.logvex.addon.update.core.UpdateSnapshot;
 import com.logvex.addon.update.core.UpdateState;
 import com.logvex.addon.update.gui.UpdateScreen;
+import com.logvex.addon.framework.SafeEventHandler;
 
 /**
  * Checks GitHub Releases for a newer build and downloads it on request.
@@ -105,22 +106,26 @@ public class UpdateModule extends AddonModule {
 
     @EventHandler
     private void onJoin(GameJoinedEvent event) {
-        if (checkOnJoin.get()) triggerCheck();
+        SafeEventHandler.guard("UpdateModule.onJoin", () -> {
+            if (checkOnJoin.get()) triggerCheck();
+        }).run();
     }
 
     @EventHandler
     private void onTick(meteordevelopment.meteorclient.events.world.TickEvent.Post event) {
-        int interval = intervalMinutes.get();
-        if (interval <= 0) return;
-        long now = System.currentTimeMillis();
-        if (lastCheckMs == 0) {
-            lastCheckMs = now;
-            return;
-        }
-        if (now - lastCheckMs >= interval * 60_000L) {
-            lastCheckMs = now;
-            triggerCheck();
-        }
+        SafeEventHandler.guard("UpdateModule.onTick", () -> {
+            int interval = intervalMinutes.get();
+            if (interval <= 0) return;
+            long now = System.currentTimeMillis();
+            if (lastCheckMs == 0) {
+                lastCheckMs = now;
+                return;
+            }
+            if (now - lastCheckMs >= interval * 60_000L) {
+                lastCheckMs = now;
+                triggerCheck();
+            }
+        }).run();
     }
 
     /** Runs a check now, unless one already ran this session and the user did not ask again. */

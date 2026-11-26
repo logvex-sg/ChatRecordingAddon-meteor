@@ -19,6 +19,7 @@ import com.logvex.addon.notify.core.NotificationType;
 
 import java.util.ArrayList;
 import java.util.List;
+import com.logvex.addon.framework.SafeEventHandler;
 
 /**
  * Acquires a list of items automatically in Creative mode, then hands them to the Schematic Dropper
@@ -102,14 +103,16 @@ public class AutoCreativeModule extends AutomationModule {
 
     @EventHandler
     private void onTick(TickEvent.Post event) {
-        if (!ready() || !controller.running()) return;
+        SafeEventHandler.guard("AutoCreativeModule.onTick", () -> {
+            if (!ready() || !controller.running()) return;
 
-        boolean wasRunning = controller.running();
-        controller.tick();
+            boolean wasRunning = controller.running();
+            controller.tick();
 
-        if (wasRunning && controller.finished()) {
-            reportFinished();
-        }
+            if (wasRunning && controller.finished()) {
+                reportFinished();
+            }
+        }).run();
     }
 
     /** Parses the setting into requests, ignoring malformed lines. */

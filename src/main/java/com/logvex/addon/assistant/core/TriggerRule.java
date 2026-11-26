@@ -301,6 +301,91 @@ public record TriggerRule(
             DEFAULT_COOLDOWN_MS, 0, false, false, true);
     }
 
+    // ------------------------------------------------------------------ single-field edits
+    //
+    // Fifteen fields make a positional rebuild unreadable and easy to get wrong by one slot, so the
+    // editor changes one field at a time through these. Each returns a new record; the old value is
+    // never mutated, which is what keeps an in-progress edit from corrupting the live rule set.
+
+    public TriggerRule withPattern(String value) {
+        return new TriggerRule(value, caseSensitive, wholeWord, sender, reply, mode, cooldownMs,
+            sessionLimit, sound, remember, enabled, aliases, pool, whisper, embedMode);
+    }
+
+    public TriggerRule withReply(String value) {
+        return new TriggerRule(pattern, caseSensitive, wholeWord, sender, value, mode, cooldownMs,
+            sessionLimit, sound, remember, enabled, aliases, pool, whisper, embedMode);
+    }
+
+    public TriggerRule withSender(String value) {
+        return new TriggerRule(pattern, caseSensitive, wholeWord, value, reply, mode, cooldownMs,
+            sessionLimit, sound, remember, enabled, aliases, pool, whisper, embedMode);
+    }
+
+    public TriggerRule withMode(ReplyMode value) {
+        return new TriggerRule(pattern, caseSensitive, wholeWord, sender, reply, value, cooldownMs,
+            sessionLimit, sound, remember, enabled, aliases, pool, whisper, embedMode);
+    }
+
+    public TriggerRule withCooldownMs(long value) {
+        return new TriggerRule(pattern, caseSensitive, wholeWord, sender, reply, mode,
+            Math.max(0, value), sessionLimit, sound, remember, enabled, aliases, pool, whisper,
+            embedMode);
+    }
+
+    public TriggerRule withSessionLimit(int value) {
+        return new TriggerRule(pattern, caseSensitive, wholeWord, sender, reply, mode, cooldownMs,
+            Math.max(0, value), sound, remember, enabled, aliases, pool, whisper, embedMode);
+    }
+
+    public TriggerRule withCaseSensitive(boolean value) {
+        return new TriggerRule(pattern, value, wholeWord, sender, reply, mode, cooldownMs,
+            sessionLimit, sound, remember, enabled, aliases, pool, whisper, embedMode);
+    }
+
+    public TriggerRule withWholeWord(boolean value) {
+        return new TriggerRule(pattern, caseSensitive, value, sender, reply, mode, cooldownMs,
+            sessionLimit, sound, remember, enabled, aliases, pool, whisper, embedMode);
+    }
+
+    public TriggerRule withSound(boolean value) {
+        return new TriggerRule(pattern, caseSensitive, wholeWord, sender, reply, mode, cooldownMs,
+            sessionLimit, value, remember, enabled, aliases, pool, whisper, embedMode);
+    }
+
+    public TriggerRule withRemember(boolean value) {
+        return new TriggerRule(pattern, caseSensitive, wholeWord, sender, reply, mode, cooldownMs,
+            sessionLimit, sound, value, enabled, aliases, pool, whisper, embedMode);
+    }
+
+    public TriggerRule withEnabled(boolean value) {
+        return new TriggerRule(pattern, caseSensitive, wholeWord, sender, reply, mode, cooldownMs,
+            sessionLimit, sound, remember, value, aliases, pool, whisper, embedMode);
+    }
+
+    public TriggerRule withEmbedMode(EmbedMode value) {
+        return new TriggerRule(pattern, caseSensitive, wholeWord, sender, reply, mode, cooldownMs,
+            sessionLimit, sound, remember, enabled, aliases, pool, whisper,
+            value == null ? EmbedMode.AUTO : value);
+    }
+
+    public TriggerRule withAliases(String value) {
+        return new TriggerRule(pattern, caseSensitive, wholeWord, sender, reply, mode, cooldownMs,
+            sessionLimit, sound, remember, enabled, value, pool, whisper, embedMode);
+    }
+
+    /** The alternative replies, separated by {@code |}; blank keeps the single {@code reply}. */
+    public TriggerRule withPool(String value) {
+        return new TriggerRule(pattern, caseSensitive, wholeWord, sender, reply, mode, cooldownMs,
+            sessionLimit, sound, remember, enabled, aliases, value, whisper, embedMode);
+    }
+
+    /** The command used to deliver a private answer, such as {@code /msg} or {@code /w}. */
+    public TriggerRule withWhisper(String value) {
+        return new TriggerRule(pattern, caseSensitive, wholeWord, sender, reply, mode, cooldownMs,
+            sessionLimit, sound, remember, enabled, aliases, pool, value, embedMode);
+    }
+
     /** True when this rule may fire for a message from {@code from}. */
     public boolean senderAllowed(String from) {
         if (sender.isBlank()) return true;

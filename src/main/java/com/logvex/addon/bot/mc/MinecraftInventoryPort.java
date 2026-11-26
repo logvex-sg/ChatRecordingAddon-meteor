@@ -49,7 +49,11 @@ public final class MinecraftInventoryPort implements InventoryPort {
 
     @Override
     public boolean knownItem(String itemId) {
-        return item(itemId) != null;
+        // containsId, not a null check on the lookup result: Registry.get falls back to the
+        // registry's default entry, so an unknown id comes back as AIR rather than null and every
+        // typo used to look like a real item.
+        Identifier id = Identifier.tryParse(itemId == null ? "" : itemId);
+        return id != null && Registries.ITEM.containsId(id);
     }
 
     @Override

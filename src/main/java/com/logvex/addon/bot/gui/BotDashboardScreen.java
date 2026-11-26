@@ -113,7 +113,10 @@ public class BotDashboardScreen extends WindowScreen {
             module.error("Could not understand the objective. Try: gather 256 oak_log");
             return;
         }
-        module.addGoal(parsed.description(), parsed.type(), parsed.itemId(), parsed.amount());
+        if (module.addGoal(parsed.description(), parsed.type(), parsed.itemId(), parsed.amount()) == null) {
+            module.error("%s", module.explainUnknownItem(parsed.itemId()));
+            return;
+        }
         objectiveBox.set("");
         refresh();
     }

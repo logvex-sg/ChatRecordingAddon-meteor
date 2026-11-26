@@ -53,14 +53,16 @@ public final class SessionTimelineService {
 
     @EventHandler
     private void onGameJoined(GameJoinedEvent event) {
-        if (!recording) return;
-        long now = System.currentTimeMillis();
-        String server = log.serverName();
-        timeline.add(now, SessionTimeline.Kind.SESSION_START, server, "");
-        if (!started) {
-            started = true;
-            log.addListener(entryListener);
-        }
+        SafeEventHandler.guard("SessionTimelineService.onGameJoined", () -> {
+            if (!recording) return;
+            long now = System.currentTimeMillis();
+            String server = log.serverName();
+            timeline.add(now, SessionTimeline.Kind.SESSION_START, server, "");
+            if (!started) {
+                started = true;
+                log.addListener(entryListener);
+            }
+        }).run();
     }
 
     @EventHandler

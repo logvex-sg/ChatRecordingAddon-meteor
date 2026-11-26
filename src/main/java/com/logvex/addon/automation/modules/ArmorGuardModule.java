@@ -11,6 +11,7 @@ import meteordevelopment.meteorclient.settings.SettingGroup;
 import com.logvex.addon.notify.core.NotificationType;
 
 import java.util.List;
+import com.logvex.addon.framework.SafeEventHandler;
 
 /**
  * Warns when a piece of armour is close to breaking.
@@ -75,20 +76,22 @@ public class ArmorGuardModule extends AutomationModule {
 
     @EventHandler
     private void onTick(TickEvent.Post event) {
-        if (!ready()) return;
-        controller.setThresholds(warnPercent.get(), criticalPercent.get());
+        SafeEventHandler.guard("ArmorGuardModule.onTick", () -> {
+            if (!ready()) return;
+            controller.setThresholds(warnPercent.get(), criticalPercent.get());
 
-        List<ArmorGuardController.Piece> pieces = AutomationSupport.armorPieces();
-        for (int i = 0; i < pieces.size() && i < lastStates.length; i++) {
-            ArmorGuardController.Piece piece = pieces.get(i);
-            ArmorGuardController.PieceState state = controller.classify(piece.durability(), piece.maxDurability());
-            if (state == lastStates[i]) continue;
-            lastStates[i] = state;
-            if (state == ArmorGuardController.PieceState.WARNING
-                || state == ArmorGuardController.PieceState.CRITICAL) {
-                report(piece, state);
+            List<ArmorGuardController.Piece> pieces = AutomationSupport.armorPieces();
+            for (int i = 0; i < pieces.size() && i < lastStates.length; i++) {
+                ArmorGuardController.Piece piece = pieces.get(i);
+                ArmorGuardController.PieceState state = controller.classify(piece.durability(), piece.maxDurability());
+                if (state == lastStates[i]) continue;
+                lastStates[i] = state;
+                if (state == ArmorGuardController.PieceState.WARNING
+                    || state == ArmorGuardController.PieceState.CRITICAL) {
+                    report(piece, state);
+                }
             }
-        }
+        }).run();
     }
 
     private void report(ArmorGuardController.Piece piece, ArmorGuardController.PieceState state) {

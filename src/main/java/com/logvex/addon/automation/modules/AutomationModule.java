@@ -38,8 +38,10 @@ public abstract class AutomationModule extends AddonModule {
 
     @EventHandler
     private void onJoined(GameJoinedEvent event) {
-        worldLoaded = true;
-        onWorldJoin();
+        SafeEventHandler.guard("AutomationModule.onJoined", () -> {
+            worldLoaded = true;
+            onWorldJoin();
+        }).run();
     }
 
     @EventHandler

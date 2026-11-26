@@ -6,6 +6,7 @@ import net.minecraft.network.packet.s2c.play.InventoryS2CPacket;
 import net.minecraft.network.packet.s2c.play.ScreenHandlerSlotUpdateS2CPacket;
 
 import static com.logvex.addon.framework.LogClientContext.mc;
+import com.logvex.addon.framework.SafeEventHandler;
 
 /**
  * Observes the packets the server uses to correct the client's inventory.
@@ -33,21 +34,23 @@ public final class ServerInventoryTracker {
 
     @EventHandler
     private void onReceive(PacketEvent.Receive event) {
-        if (mc.player == null) return;
+        SafeEventHandler.guard("ServerInventoryTracker.onReceive", () -> {
+            if (mc.player == null) return;
 
-        if (event.packet instanceof ScreenHandlerSlotUpdateS2CPacket packet) {
-            if (!matchesCurrentHandler(packet.getSyncId())) return;
-            sequence++;
-            lastSlot = packet.getSlot();
-            lastCount = packet.getStack().getCount();
-            lastSequenceForSlot = sequence;
-        } else if (event.packet instanceof InventoryS2CPacket packet) {
-            if (!matchesCurrentHandler(packet.getSyncId())) return;
-            sequence++;
-            lastSlot = -1;
-            lastCount = -1;
-            lastSequenceForSlot = sequence;
-        }
+            if (event.packet instanceof ScreenHandlerSlotUpdateS2CPacket packet) {
+                if (!matchesCurrentHandler(packet.getSyncId())) return;
+                sequence++;
+                lastSlot = packet.getSlot();
+                lastCount = packet.getStack().getCount();
+                lastSequenceForSlot = sequence;
+            } else if (event.packet instanceof InventoryS2CPacket packet) {
+                if (!matchesCurrentHandler(packet.getSyncId())) return;
+                sequence++;
+                lastSlot = -1;
+                lastCount = -1;
+                lastSequenceForSlot = sequence;
+            }
+        }).run();
     }
 
     private boolean matchesCurrentHandler(int syncId) {

@@ -34,6 +34,7 @@ import meteordevelopment.meteorclient.systems.modules.Modules;
 import com.logvex.addon.notify.core.NotificationPriority;
 import com.logvex.addon.notify.core.NotificationType;
 import com.logvex.addon.notify.mc.NotificationService;
+import com.logvex.addon.framework.SafeEventHandler;
 
 /**
  * The one place a webhook is configured, and the one place its output is styled.
@@ -506,14 +507,16 @@ public class WebhookRelayModule extends AddonModule {
 
     @EventHandler
     private void onTick(TickEvent.Post event) {
-        if (!digestEnabled.get() || !isActive()) return;
-        long interval = digestMinutes.get() * 60_000L;
-        if (System.currentTimeMillis() - lastDigestAt < interval) return;
-        lastDigestAt = System.currentTimeMillis();
-        if (!configured()) return;
-        ChatDigest.Summary summary = fetchSummary();
-        if (summary.isEmpty()) return;
-        service.notifyDigest(url(), username(), summary, null);
+        SafeEventHandler.guard("WebhookRelayModule.onTick", () -> {
+            if (!digestEnabled.get() || !isActive()) return;
+            long interval = digestMinutes.get() * 60_000L;
+            if (System.currentTimeMillis() - lastDigestAt < interval) return;
+            lastDigestAt = System.currentTimeMillis();
+            if (!configured()) return;
+            ChatDigest.Summary summary = fetchSummary();
+            if (summary.isEmpty()) return;
+            service.notifyDigest(url(), username(), summary, null);
+        }).run();
     }
 
     // ------------------------------------------------------------------ controls

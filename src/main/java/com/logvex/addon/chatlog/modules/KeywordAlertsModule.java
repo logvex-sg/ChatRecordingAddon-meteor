@@ -25,6 +25,7 @@ import net.minecraft.sound.SoundEvents;
 
 import java.util.ArrayList;
 import java.util.List;
+import com.logvex.addon.framework.SafeEventHandler;
 
 /**
  * Configurable keyword alerts.
@@ -134,22 +135,24 @@ public class KeywordAlertsModule extends AddonModule {
 
     @EventHandler
     private void onTick(TickEvent.Post event) {
-        List<KeywordRule> current = parseRules();
-        if (!current.equals(parsed)) {
-            parsed = current;
-            service.setKeywordRules(parsed);
-        }
-
-        evaluateRecent();
-
-        if (sendSummary.get()) {
-            long interval = summaryMinutes.get() * 60_000L;
-            if (System.currentTimeMillis() - lastSummaryAt >= interval) {
-                lastSummaryAt = System.currentTimeMillis();
-                List<ChatEntry> recent = service.recent(200);
-                if (!recent.isEmpty()) service.notifySummary(target().url(), target().username(), recent);
+        SafeEventHandler.guard("KeywordAlertsModule.onTick", () -> {
+            List<KeywordRule> current = parseRules();
+            if (!current.equals(parsed)) {
+                parsed = current;
+                service.setKeywordRules(parsed);
             }
-        }
+
+            evaluateRecent();
+
+            if (sendSummary.get()) {
+                long interval = summaryMinutes.get() * 60_000L;
+                if (System.currentTimeMillis() - lastSummaryAt >= interval) {
+                    lastSummaryAt = System.currentTimeMillis();
+                    List<ChatEntry> recent = service.recent(200);
+                    if (!recent.isEmpty()) service.notifySummary(target().url(), target().username(), recent);
+                }
+            }
+        }).run();
     }
 
     /**
