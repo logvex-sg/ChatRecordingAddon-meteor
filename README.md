@@ -406,10 +406,10 @@ single line each, so the whole feature set is editable from the settings list, t
 pattern;case=false;whole=true;sender=;reply=;mode=private;cooldown=3000;limit=0;sound=false;remember=false;enabled=true;aliases=;pool=;whisper=msg;embed=auto
 ```
 
-A fresh install ships **105 preconfigured rules** with 76 extra aliases, all enabled, all at the
+A fresh install ships **105 preconfigured rules** with 78 extra aliases, all enabled, all at the
 3000 ms cooldown, all matched on whole words, and all answered **privately to the person they
 answer** (see *Who the assistant will answer* below for who that is).
-That is 181 phrases answering out of the box — no setup step. They cover greetings, thanks,
+That is 183 phrases answering out of the box — no setup step. They cover greetings, thanks,
 farewells, `gg`/`wp`, small talk, the server-figure questions (`what is the tps`, `what is my ping`,
 `is the server lagging`, `how many players`), the player-figure questions (`where am i`,
 `what is my health`, `what is my armour`, `what is my gamemode`) and the command-shaped set
@@ -441,6 +441,13 @@ shipped table is not merged straight back in on the next load — without that r
 exists to deliver newly shipped rules could not tell "deleted on purpose" from "shipped after this
 config was written", and every deletion would be silently undone. Rules shipped *after* your config
 was written are still added. Clearing `removed-rules` is equivalent to `.ai triggers restore`.
+
+A saved rule is also refreshed when a shipped rule with the same name gains a phrase. A config
+saved by an older build holds its own copy of every rule, so without this a new way of saying
+something (`gtg` for the goodbye rule) would reach only a fresh install. The refresh touches the
+phrase list only: a reply you rewrote, an alias you added, and a rule you disabled are all left as
+you left them. If you do not want the shipped phrases back either, delete the rule and add your own
+under the same name, which the merge treats as yours.
 
 #### Who the assistant will answer
 

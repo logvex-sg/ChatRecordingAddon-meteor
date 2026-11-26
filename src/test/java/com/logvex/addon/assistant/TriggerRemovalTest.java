@@ -12,6 +12,7 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -164,6 +165,76 @@ class TriggerRemovalTest {
             "the merge added a second copy of a rule that was also saved");
         assertTrue(answers(TriggerSet.of(loaded), "cya"),
             "a saved rule was silenced by a stale deletion record");
+    }
+
+    @Test
+    @DisplayName("a config saved before a phrase was added still gains that phrase")
+    void staleShippedRuleGainsNewPhrases() {
+        // This is why "gtg" stayed silent for an existing install even after the alias was shipped:
+        // the merge only filled in rules that were wholly absent, and the config already had its own
+        // copy of the goodbye rule without the new phrase. The saved line is assumed to be a stale
+        // copy of a shipped rule, so it is refreshed in place.
+        TriggerRule shipped = TriggerRule.preconfigured().stream()
+            .filter(r -> r.pattern().equals("goodbye")).findFirst().orElseThrow();
+        String stale = new TriggerRule(shipped.pattern(), shipped.caseSensitive(), shipped.wholeWord(),
+            shipped.sender(), shipped.reply(), shipped.mode(), shipped.cooldownMs(),
+            shipped.sessionLimit(), shipped.sound(), shipped.remember(), shipped.enabled(),
+            "bye,cya", shipped.pool(), shipped.whisper(), shipped.embedMode()).encode();
+
+        List<TriggerRule> loaded = TriggerRule.loadSaved(List.of(stale), Set.of());
+
+        assertEquals(1, loaded.stream().filter(r -> r.pattern().equals("goodbye")).count(),
+            "refreshing the rule added a second copy");
+        TriggerRule goodbye = loaded.stream().filter(r -> r.pattern().equals("goodbye"))
+            .findFirst().orElseThrow();
+        assertTrue(goodbye.aliasList().contains("gtg"),
+            "the saved rule was not refreshed with the shipped phrases: " + goodbye.aliases());
+        assertTrue(TriggerSet.of(loaded).firstMatch("someone", "gtg") != null,
+            "gtg still does not answer for a config saved before the alias existed");
+    }
+
+    @Test
+    @DisplayName("an alias the user added is not discarded by the refresh")
+    void userAliasesSurviveTheRefresh() {
+        // The refresh is a convenience, not an authority: a player who rewrote the reply or added a
+        // phrase of their own must not have that edit undone on the next launch.
+        TriggerRule shipped = TriggerRule.preconfigured().stream()
+            .filter(r -> r.pattern().equals("goodbye")).findFirst().orElseThrow();
+        String custom = new TriggerRule(shipped.pattern(), shipped.caseSensitive(), shipped.wholeWord(),
+            shipped.sender(), "Later!", shipped.mode(), shipped.cooldownMs(),
+            shipped.sessionLimit(), shipped.sound(), shipped.remember(), false,
+            "bye,cya,my own word", shipped.pool(), shipped.whisper(), shipped.embedMode()).encode();
+
+        TriggerRule goodbye = TriggerRule.loadSaved(List.of(custom), Set.of()).stream()
+            .filter(r -> r.pattern().equals("goodbye")).findFirst().orElseThrow();
+
+        assertEquals("bye,cya,my own word", goodbye.aliases(), "a user's own alias was overwritten");
+        assertEquals("Later!", goodbye.reply(), "a user's own reply was overwritten");
+        assertFalse(goodbye.enabled(), "a user's disabled flag was cleared by the refresh");
+    }
+
+    @Test
+    @DisplayName("the shipped table answers a player signing off, including gtg")
+    void farewellIsAnswered() {
+        // "gtg" once answered from a farewell path that was removed along with the local AI feature,
+        // and nothing replaced it, so the word stopped getting a reply with no test noticing. The
+        // farewell rule is what a player saying goodbye actually reaches, so it is pinned here.
+        List<TriggerRule> rules = TriggerRule.loadSaved(List.of(), Set.of());
+        TriggerSet set = TriggerSet.of(rules);
+
+        for (String phrase : List.of("cya", "bye", "gtg", "g2g")) {
+            TriggerRule winner = null;
+            for (TriggerRule rule : rules) {
+                if (TriggerSet.matches(rule, phrase)) {
+                    winner = rule;
+                    break;
+                }
+            }
+            assertNotNull(winner, "'" + phrase + "' is answered by no shipped rule");
+            assertEquals("goodbye", winner.pattern(),
+                "'" + phrase + "' was answered by '" + winner.pattern() + "', not the farewell rule");
+            assertTrue(answers(set, phrase), "'" + phrase + "' did not produce a reply");
+        }
     }
 
     @Test

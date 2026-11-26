@@ -512,10 +512,30 @@ public record TriggerRule(
         java.util.List<String> out = new java.util.ArrayList<>(saved == null ? java.util.List.of() : saved);
         java.util.Set<String> deleted = keyed(removed);
 
+        java.util.Map<String, TriggerRule> shippedByKey = new java.util.LinkedHashMap<>();
+        for (TriggerRule shipped : preconfigured()) {
+            shippedByKey.putIfAbsent(key(shipped), shipped);
+        }
+
         java.util.Set<String> have = new java.util.HashSet<>();
-        for (String line : out) {
-            TriggerRule rule = decode(line);
-            if (rule != null) have.add(key(rule));
+        for (int i = 0; i < out.size(); i++) {
+            TriggerRule rule = decode(out.get(i));
+            if (rule == null) continue;
+            String key = key(rule);
+            have.add(key);
+            TriggerRule shipped = shippedByKey.get(key);
+            // The rule is present, so it is not added again, but a rule saved by an older build is a
+            // stale copy: adding a phrase to a shipped rule (a new way of saying goodbye) would
+            // otherwise never reach an install that already had that rule. Only a saved rule whose
+            // aliases are all shipped ones is treated as stale, so a user's own aliases are left
+            // exactly as written.
+            if (shipped != null && !shipped.aliases().equals(rule.aliases())
+                && shipped.aliasList().containsAll(rule.aliasList())) {
+                out.set(i, new TriggerRule(rule.pattern(), rule.caseSensitive(), rule.wholeWord(),
+                    rule.sender(), rule.reply(), rule.mode(), rule.cooldownMs(), rule.sessionLimit(),
+                    rule.sound(), rule.remember(), rule.enabled(), shipped.aliases(), rule.pool(),
+                    rule.whisper(), rule.embedMode()).encode());
+            }
         }
 
         for (TriggerRule shipped : preconfigured()) {
@@ -612,7 +632,7 @@ public record TriggerRule(
         out.add(rule("good morning", "Morning, {player}!", "morning"));
         out.add(rule("good night", "Night, {player}.", "gn"));
         out.add(rule("thank you", "You are welcome, {player}.", "thanks,ty,thx"));
-        out.add(rule("goodbye", "See you, {player}.", "bye,cya"));
+        out.add(rule("goodbye", "See you, {player}.", "bye,cya,gtg,g2g"));
         out.add(rule("good bot", "Thank you, {player}.", "nice bot"));
         out.add(rule("good game", "Good game!", "gg,wp"));
         out.add(rule("welcome back", "Welcome back, {player}.", "wb"));
