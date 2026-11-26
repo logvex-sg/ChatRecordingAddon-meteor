@@ -160,8 +160,8 @@ class IntegrationTest(unittest.TestCase):
         posted = []
 
         class Poster:
-            def post(self, content, username=None):
-                posted.append(content)
+            def post(self, content="", username=None, embed=None):
+                posted.append(embed if embed is not None else content)
                 return True
 
         bridge = self._bridge(Poster())
@@ -174,9 +174,11 @@ class IntegrationTest(unittest.TestCase):
         self._publish("hello from minecraft")
         time.sleep(0.6)
 
-        self.assertTrue(any("hello from minecraft" in line for line in posted), posted)
-        self.assertTrue(any("**Steve**" in line for line in posted), posted)
-        self.assertFalse(any("keep-alive" in line for line in posted), posted)
+        cards = [item for item in posted if hasattr(item, "to_map")]
+        self.assertTrue(cards, posted)
+        self.assertTrue(any("hello from minecraft" in card.description for card in cards), posted)
+        self.assertTrue(any(card.author == "Steve · srv" for card in cards), posted)
+        self.assertFalse(any("keep-alive" in card.description for card in cards), posted)
 
 
 if __name__ == "__main__":

@@ -100,6 +100,36 @@ and a line posted and deleted within one poll interval is missed.
 
 ---
 
+## How a chat line looks in Discord
+
+Each forwarded line is a **rich embed**, not a flat message: a coloured card with the sender as the
+author and the message as the description, so a busy channel reads as a list of cards instead of a
+wall of text. The card uses the same palette and the same limits as the in-game webhook relay
+(`DiscordEmbed.java`), in the teal that relay gives ordinary chat, so a forwarded line sits next to
+the relay's own cards without looking out of place. (The bridge forwards chat only, so it does not
+use the relay's separate join, death and announcement colours.)
+
+The limits are enforced as the card is built, not hoped for:
+
+| Part | Limit |
+| --- | --- |
+| title | 256 |
+| description | 4096 |
+| field name | 256 |
+| field value | 1024 |
+| fields | 25 |
+| footer | 2048 |
+| author | 256 |
+| **all parts together** | **6000** |
+
+The combined budget is the one that catches people out: a description at its own 4096 limit plus a
+footer at its own 2048 limit is 6144, over the total. Discord answers that with a `400`, which is
+not retryable, so the card would be dropped rather than delayed. Each part is therefore clipped to
+its own limit *and* to what is left of the 6000, so the card always fits and always sends, with the
+overflow shortened and marked with `…`.
+
+---
+
 ## Security
 
 The bridge crosses a trust boundary: **anything typed in Discord reaches Minecraft.**

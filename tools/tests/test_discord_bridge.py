@@ -132,8 +132,8 @@ class FakePoster:
     def __init__(self):
         self.posted = []
 
-    def post(self, content, username=None):
-        self.posted.append(content)
+    def post(self, content="", username=None, embed=None):
+        self.posted.append(content if embed is None else embed)
         return True
 
 
@@ -178,7 +178,26 @@ class MinecraftToDiscordTest(unittest.TestCase):
         poster = FakePoster()
         bridge = make_bridge(poster)
         bridge.handle_companion_event(chat_event("hello world"))
-        self.assertEqual(["**Steve** hello world  `srv`"], poster.posted)
+        self.assertEqual(1, len(poster.posted))
+        posted = poster.posted[0]
+        self.assertEqual("hello world", posted.description)
+        self.assertEqual("Steve · srv", posted.author)
+
+    def test_the_card_carries_the_sender_and_the_server(self):
+        poster = FakePoster()
+        bridge = make_bridge(poster)
+        bridge.handle_companion_event(chat_event("hi", sender="Alex", server="play.example"))
+        payload = poster.posted[0].to_map()
+        self.assertEqual("Alex · play.example", payload["author"]["name"])
+        self.assertEqual("hi", payload["description"])
+        self.assertEqual(bridge_module.EMBED_COLORS["public_chat"], payload["color"])
+
+    def test_the_card_never_mentions_anyone(self):
+        # The escaping that protects the old flat line must still protect the card body.
+        poster = FakePoster()
+        bridge = make_bridge(poster)
+        bridge.handle_companion_event(chat_event("@everyone come here"))
+        self.assertNotIn("@everyone", poster.posted[0].description)
 
     def test_snapshot_key_name_is_also_accepted(self):
         # The snapshot names the text "message", the event stream names it "content".
@@ -420,6 +439,99 @@ class BuildTest(unittest.TestCase):
                                       ingress="poll")
         _, gateway = bridge_module.build(config, log=lambda _m: None)
         self.assertIsNone(gateway)
+
+
+class EmbedTests(unittest.TestCase):
+    """The card is the Discord output, so its limits and its budget are the contract."""
+
+    def test_an_empty_embed_has_no_parts(self):
+        self.assertTrue(bridge_module.Embed().is_empty())
+
+    def test_parts_appear_only_when_set(self):
+        embed = bridge_module.Embed()
+        embed.set_description("hello")
+        payload = embed.to_map()
+        self.assertEqual({"description": "hello"}, payload)
+        self.assertNotIn("title", payload)
+        self.assertNotIn("footer", payload)
+
+    def test_a_description_is_clipped_to_its_own_limit(self):
+        embed = bridge_module.Embed()
+        embed.set_description("x" * 9000)
+        self.assertEqual(bridge_module.EMBED_DESCRIPTION_LIMIT, len(embed.description))
+        self.assertTrue(embed.description.endswith("\u2026"))
+
+    def test_a_title_is_clipped_to_its_own_limit(self):
+        embed = bridge_module.Embed().set_title("t" * 400)
+        self.assertEqual(bridge_module.EMBED_TITLE_LIMIT, len(embed.title))
+
+    def test_no_more_than_twenty_five_fields(self):
+        embed = bridge_module.Embed()
+        for index in range(30):
+            embed.add_field(f"f{index}", "v")
+        self.assertEqual(bridge_module.EMBED_MAX_FIELDS, len(embed.fields))
+
+    def test_a_field_with_no_name_is_refused(self):
+        embed = bridge_module.Embed()
+        embed.add_field("   ", "value")
+        self.assertEqual([], embed.fields)
+
+    def test_a_field_value_is_clipped_to_its_own_limit(self):
+        embed = bridge_module.Embed()
+        embed.add_field("name", "v" * 5000)
+        self.assertEqual(bridge_module.EMBED_FIELD_VALUE_LIMIT, len(embed.fields[0].value))
+
+    def test_the_combined_budget_is_never_exceeded(self):
+        # 4096 + 2048 is over 6000, so a maximal description plus a maximal footer must still
+        # total at most the limit; Discord would reject the payload otherwise.
+        embed = bridge_module.Embed()
+        embed.set_description("d" * 4096)
+        embed.set_footer("f" * 2048)
+        embed.set_author("a" * 256)
+        embed.set_title("t" * 256)
+        for index in range(25):
+            embed.add_field(f"name{index}", "v" * 1024)
+        self.assertLessEqual(embed.length(), bridge_module.EMBED_TOTAL_LIMIT)
+
+    def test_a_part_added_after_the_budget_is_spent_is_dropped_or_shortened(self):
+        embed = bridge_module.Embed()
+        embed.set_description("d" * 4096)
+        embed.set_footer("f" * 1900)
+        embed.set_title("later title")
+        self.assertLessEqual(embed.length(), bridge_module.EMBED_TOTAL_LIMIT)
+
+    def test_the_serialised_shape_uses_the_field_names_discord_expects(self):
+        embed = bridge_module.Embed()
+        embed.set_title("T")
+        embed.set_description("D")
+        embed.set_color(0x123456)
+        embed.add_field("N", "V", inline=True)
+        embed.set_footer("F")
+        payload = embed.to_map()
+        self.assertEqual("T", payload["title"])
+        self.assertEqual(0x123456, payload["color"])
+        self.assertEqual([{"name": "N", "value": "V", "inline": True}], payload["fields"])
+        self.assertEqual({"text": "F"}, payload["footer"])
+        json.dumps(payload)  # must be serialisable as-is
+
+    def test_a_colour_is_taken_from_the_type(self):
+        embed = bridge_module.Embed().set_color_for("death")
+        self.assertEqual(bridge_module.EMBED_COLORS["death"], embed.color)
+
+    def test_an_unknown_type_falls_back_to_blurple(self):
+        embed = bridge_module.Embed().set_color_for("no-such-type")
+        self.assertEqual(bridge_module.EMBED_BLURPLE, embed.color)
+
+    def test_the_chat_card_places_the_message_in_the_description(self):
+        embed = bridge_module.chat_embed("Steve", "hello")
+        self.assertEqual("hello", embed.description)
+        self.assertEqual("Steve", embed.author)
+
+    def test_an_empty_message_still_produces_a_visible_card(self):
+        # A card with no description would render as a bare coloured bar, which looks broken.
+        embed = bridge_module.chat_embed("Steve", "")
+        self.assertFalse(embed.is_empty())
+        self.assertTrue(embed.description)
 
 
 if __name__ == "__main__":

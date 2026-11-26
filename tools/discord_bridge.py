@@ -57,6 +57,18 @@ VERSION = "1.0.0"
 DISCORD_MESSAGE_LIMIT = 2000
 MINECRAFT_LINE_LIMIT = 256
 
+# A rich embed has its own per-part limits and a combined budget. These mirror DiscordEmbed.java,
+# which the in-game webhook relay uses, so a card looks the same whether the mod or this bridge
+# sent it.
+EMBED_TITLE_LIMIT = 256
+EMBED_DESCRIPTION_LIMIT = 4096
+EMBED_FIELD_NAME_LIMIT = 256
+EMBED_FIELD_VALUE_LIMIT = 1024
+EMBED_MAX_FIELDS = 25
+EMBED_FOOTER_LIMIT = 2048
+EMBED_AUTHOR_LIMIT = 256
+EMBED_TOTAL_LIMIT = 6000
+
 # Discord API version. v10 is current.
 DISCORD_API = "https://discord.com/api/v10"
 
@@ -127,6 +139,142 @@ def format_minecraft_line(sender: str, message: str, server: str = "") -> str:
     if server:
         line = f"{line}  `{escape_for_discord(server)}`"
     return clamp(line, DISCORD_MESSAGE_LIMIT)
+
+
+# --------------------------------------------------------------------------- embeds
+
+# The same palette the in-game relay uses, so a card looks the same wherever it was sent from.
+EMBED_COLORS = {
+    "public_chat": 0x1ABC9C,
+    "player_message": 0x1ABC9C,
+    "join": 0x57F287,
+    "leave": 0xE67E22,
+    "death": 0xED4245,
+    "announcement": 0x9B59B6,
+    "system": 0x4F545C,
+    "game": 0x5865F2,
+    "other": 0x4F545C,
+}
+EMBED_BLURPLE = 0x5865F2
+
+
+@dataclass
+class EmbedField:
+    name: str
+    value: str
+    inline: bool = False
+
+
+class Embed:
+    """A Discord rich embed, with Discord's limits enforced as parts are added.
+
+    The Python bridge posted plain text while the in-game relay posted a card, so the same chat
+    looked different depending on who forwarded it. This mirrors ``DiscordEmbed.java``: per-part
+    limits, and a running total against the 6000 character budget, because a description at its
+    own limit plus a footer at its own limit still exceeds the combined limit and Discord rejects
+    the whole payload with a 400 that is not worth retrying.
+    """
+
+    def __init__(self) -> None:
+        self.title = ""
+        self.description = ""
+        self.color = 0
+        self.footer = ""
+        self.author = ""
+        self.fields: list = []
+
+    def set_title(self, value: str) -> "Embed":
+        self.title = self._clip(value, EMBED_TITLE_LIMIT, len(self.title))
+        return self
+
+    def set_description(self, value: str) -> "Embed":
+        self.description = self._clip(value, EMBED_DESCRIPTION_LIMIT, len(self.description))
+        return self
+
+    def set_footer(self, value: str) -> "Embed":
+        self.footer = self._clip(value, EMBED_FOOTER_LIMIT, len(self.footer))
+        return self
+
+    def set_author(self, value: str) -> "Embed":
+        self.author = self._clip(value, EMBED_AUTHOR_LIMIT, len(self.author))
+        return self
+
+    def set_color(self, value: int) -> "Embed":
+        self.color = value & 0xFFFFFF
+        return self
+
+    def set_color_for(self, kind: str) -> "Embed":
+        self.color = EMBED_COLORS.get((kind or "").lower(), EMBED_BLURPLE)
+        return self
+
+    def add_field(self, name: str, value: str, inline: bool = False) -> "Embed":
+        if len(self.fields) >= EMBED_MAX_FIELDS:
+            return self
+        clipped_name = self._clip(name, EMBED_FIELD_NAME_LIMIT, 0)
+        if not clipped_name:
+            return self
+        clipped_value = self._clip(value, EMBED_FIELD_VALUE_LIMIT, 0)
+        self.fields.append(EmbedField(clipped_name, clipped_value, inline))
+        return self
+
+    def is_empty(self) -> bool:
+        return not (self.title or self.description or self.footer or self.author or self.fields)
+
+    def length(self) -> int:
+        """Total visible characters, for the combined budget."""
+        total = len(self.title) + len(self.description) + len(self.footer) + len(self.author)
+        for field in self.fields:
+            total += len(field.name) + len(field.value)
+        return total
+
+    def to_map(self) -> dict:
+        """The JSON shape Discord accepts, omitting empty parts."""
+        payload: dict = {}
+        if self.title:
+            payload["title"] = self.title
+        if self.description:
+            payload["description"] = self.description
+        if self.color:
+            payload["color"] = self.color
+        if self.author:
+            payload["author"] = {"name": self.author}
+        if self.fields:
+            payload["fields"] = [
+                {"name": f.name, "value": f.value, "inline": f.inline} for f in self.fields
+            ]
+        if self.footer:
+            payload["footer"] = {"text": self.footer}
+        return payload
+
+    def _clip(self, value: str, part_limit: int, current: int) -> str:
+        """Clip to the part's own limit and to what is left of the combined budget.
+
+        ``current`` is this part's length before the call, so its own old text does not count
+        against the room it is about to use.
+        """
+        room = min(part_limit, max(0, EMBED_TOTAL_LIMIT - (self.length() - current)))
+        text = (value or "").strip()
+        if len(text) <= room:
+            return text
+        if room <= 0:
+            return ""
+        return text[: room - 1] + "\u2026"
+
+
+def chat_embed(sender: str, message: str, server: str = "") -> Embed:
+    """The card for one forwarded chat line.
+
+    A chat line is one player saying one thing, so the sender becomes the author heading and the
+    words become the description — no field table, because a table would read like a form rather
+    than like the line itself. Every forwarded line is ordinary chat, so it takes the chat colour;
+    joins, deaths and the rest are only classified inside the game by ``EmbedColor.java``.
+    """
+    who = escape_for_discord(sender).strip() or "server"
+    body = escape_for_discord(message).strip()
+    embed = Embed().set_author(f"{who}" + (f" · {server}" if server else ""))
+    embed.set_description(body or "_(empty message)_")
+    embed.set_color_for("public_chat")
+    return embed
 
 
 def format_discord_for_minecraft(author: str, message: str) -> str:
@@ -394,17 +542,21 @@ class DiscordPoster:
         self.timeout = timeout
         self._lock = threading.Lock()
 
-    def post(self, content: str, username: Optional[str] = None) -> bool:
+    def post(self, content: str = "", username: Optional[str] = None,
+             embed: Optional["Embed"] = None) -> bool:
         """Post one message. Returns False when Discord refused it.
 
         ``allowed_mentions`` is pinned to an empty parse list: this content came from Minecraft
         and must never ping anyone, no matter what a player typed.
         """
-        payload = {
-            "content": clamp(content, DISCORD_MESSAGE_LIMIT),
+        payload: dict = {
             "username": username or self.username,
             "allowed_mentions": {"parse": []},
         }
+        if content:
+            payload["content"] = clamp(content, DISCORD_MESSAGE_LIMIT)
+        if embed is not None and not embed.is_empty():
+            payload["embeds"] = [embed.to_map()]
         data = json.dumps(payload).encode("utf-8")
         request = urllib.request.Request(
             self.webhook_url,
@@ -438,12 +590,16 @@ class DiscordBotPoster:
         self.timeout = timeout
         self._lock = threading.Lock()
 
-    def post(self, content: str, username: Optional[str] = None) -> bool:
-        payload = {
-            "content": clamp(content, DISCORD_MESSAGE_LIMIT),
+    def post(self, content: str = "", username: Optional[str] = None,
+             embed: Optional["Embed"] = None) -> bool:
+        payload: dict = {
             # Captured chat must never ping anyone, whatever a player typed.
             "allowed_mentions": {"parse": []},
         }
+        if content:
+            payload["content"] = clamp(content, DISCORD_MESSAGE_LIMIT)
+        if embed is not None and not embed.is_empty():
+            payload["embeds"] = [embed.to_map()]
         data = json.dumps(payload).encode("utf-8")
         url = f"{DISCORD_API}/channels/{urllib.parse.quote(self.channel_id)}/messages"
         request = urllib.request.Request(url, data=data, method="POST", headers={
@@ -593,8 +749,7 @@ class Bridge:
             return
         if self.poster is None:
             return
-        line = format_minecraft_line(sender, str(text), server)
-        if self.poster.post(line):
+        if self.poster.post(embed=chat_embed(sender, str(text), server)):
             self._stats["to_discord"] += 1
 
     def run_event_stream(self) -> None:
