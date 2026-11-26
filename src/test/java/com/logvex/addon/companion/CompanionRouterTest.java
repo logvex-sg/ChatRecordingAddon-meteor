@@ -97,6 +97,20 @@ class CompanionRouterTest {
     }
 
     @Test
+    @DisplayName("the world endpoint serves the view the app's World tab reads")
+    void worldServed() {
+        FakeCompanionApi api = new FakeCompanionApi();
+        CompanionRouter router = router(api);
+
+        CompanionRouter.Response response = router.handle(get("api/v1/world"));
+
+        assertEquals(200, response.status());
+        assertTrue(response.body().contains("\"inWorld\":false"),
+            "a fake with no world must still answer with the field: " + response.body());
+        assertTrue(response.body().contains("\"blocks\":[]"), response.body());
+    }
+
+    @Test
     @DisplayName("every bot control endpoint calls the matching action")
     void botControls() {
         FakeCompanionApi api = new FakeCompanionApi();

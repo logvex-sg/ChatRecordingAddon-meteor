@@ -24,6 +24,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import com.logvex.addon.framework.SafeEventHandler;
 
 /**
  * Records what the client discovers about the world it is in.
@@ -118,17 +119,19 @@ public class WorldIntelligenceModule extends AddonModule {
 
     @EventHandler
     private void onTick(TickEvent.Post event) {
-        if (mc.player == null || mc.world == null) return;
-        long now = System.currentTimeMillis();
-        if (now - lastScan < scanInterval.get() * 50L) return;
-        lastScan = now;
+        SafeEventHandler.guard("WorldIntelligenceModule.onTick", () -> {
+            if (mc.player == null || mc.world == null) return;
+            long now = System.currentTimeMillis();
+            if (now - lastScan < scanInterval.get() * 50L) return;
+            lastScan = now;
 
-        List<String> watch = trackResources.get() ? resources.get() : List.of();
-        Map<String, String> structures = trackResources.get() ? parseStructures(structureBlocks.get()) : Map.of();
-        WorldService.get().sample(scanRadius.get(), watch, structures,
-            trackChunks.get(), trackBiomes.get());
+            List<String> watch = trackResources.get() ? resources.get() : List.of();
+            Map<String, String> structures = trackResources.get() ? parseStructures(structureBlocks.get()) : Map.of();
+            WorldService.get().sample(scanRadius.get(), watch, structures,
+                trackChunks.get(), trackBiomes.get());
 
-        if (markSpawn.get() && !spawnMarked) markSpawnOnce();
+            if (markSpawn.get() && !spawnMarked) markSpawnOnce();
+        }).run();
     }
 
     private void markSpawnOnce() {

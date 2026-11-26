@@ -6,6 +6,7 @@ import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.systems.modules.Category;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.orbit.EventHandler;
+import com.logvex.addon.framework.SafeEventHandler;
 
 /**
  * Base class for every addon module.
@@ -37,7 +38,11 @@ public abstract class AddonModule extends Module {
 
     @EventHandler
     private void onTickInternal(TickEvent.Post event) {
-        if (ticker != null) ticker.run();
+        // Named after the concrete module, not this base class: the log line has to point at the
+        // module whose ticker failed, and every module would otherwise report "AddonModule".
+        SafeEventHandler.guard(getClass().getSimpleName() + ".ticker", () -> {
+            if (ticker != null) ticker.run();
+        }).run();
     }
 
     /** The module's custom controls in the addon's GUI, or null when it has none. */

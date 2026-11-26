@@ -22,9 +22,10 @@ public record CompanionSnapshot(
     StatsView stats,
     StorageView storage,
     BotView bot,
+    WorldView world,
     List<String> capabilities
 ) {
-    public static final String API_VERSION = "13";
+    public static final String API_VERSION = "14";
 
     /** Identity and connection state of this client. */
     public record NodeInfo(
@@ -170,6 +171,59 @@ public record CompanionSnapshot(
     ) {
     }
 
+    /**
+     * A compact picture of what the client can see right now, for the app's World tab.
+     *
+     * <p>This is the pruning of a schematic viewer that fits a web page: the player's own position
+     * and look direction, the block under them, the dimension and light level, plus a short list of
+     * the blocks and entities nearby. It is read-only and rebuilt on each poll, so nothing here can
+     * change the game, and the lists are capped so a snapshot stays small enough to send every
+     * second.
+     *
+     * @param blockBelow the id of the block directly under the player, or "" when unknown
+     * @param blocks     the nearest non-air blocks, nearest first, each at most one per position
+     * @param entities   the nearest living entities, nearest first
+     */
+    public record WorldView(
+        boolean inWorld,
+        String dimension,
+        double x,
+        double y,
+        double z,
+        float yaw,
+        float pitch,
+        int blockX,
+        int blockY,
+        int blockZ,
+        String blockBelow,
+        int lightLevel,
+        int health,
+        long timeOfDay,
+        boolean raining,
+        boolean thundering,
+        List<BlockView> blocks,
+        List<EntityView> entities
+    ) {
+        /** An empty view, for a client that is not in a world. */
+        public static WorldView empty() {
+            return new WorldView(false, "", 0, 0, 0, 0, 0, 0, 0, 0, "", 0, 0, 0, false, false,
+                List.of(), List.of());
+        }
+    }
+
+    /** One nearby block, with the distance that puts it in scan order. */
+    public record BlockView(int x, int y, int z, String id, double distance) {
+    }
+
+    /**
+     * One nearby entity.
+     *
+     * @param kind     "player", "hostile", "passive" or "other"
+     * @param distance distance from the player in blocks, rounded to one decimal
+     */
+    public record EntityView(String id, String name, String kind, double distance, int health) {
+    }
+
     /** An empty snapshot, used before the first build and when the client is not in a world. */
     public static CompanionSnapshot empty(String nodeId, String name, String addonVersion) {
         return new CompanionSnapshot(
@@ -179,6 +233,7 @@ public record CompanionSnapshot(
             new StatsView(0, 0, 0, 0, 0, 0),
             new StorageView(0, 0, 0, 0, 0),
             new BotView("Disabled", "", 0, 0, 0, false, List.of()),
+            WorldView.empty(),
             List.of());
     }
 }

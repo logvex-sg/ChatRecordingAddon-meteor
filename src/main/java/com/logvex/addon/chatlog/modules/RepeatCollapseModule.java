@@ -11,6 +11,7 @@ import meteordevelopment.meteorclient.settings.SettingGroup;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.orbit.EventHandler;
 import meteordevelopment.orbit.EventPriority;
+import com.logvex.addon.framework.SafeEventHandler;
 
 /**
  * Collapses a run of identical chat lines into the first one plus a repeat count.
@@ -111,8 +112,10 @@ public class RepeatCollapseModule extends AddonModule {
      */
     @EventHandler
     private void onTick(TickEvent.Post event) {
-        if (pendingCount <= 0) return;
-        if (System.currentTimeMillis() - lastRepeatAt >= Math.max(1, windowMs.get())) flushPending();
+        SafeEventHandler.guard("RepeatCollapseModule.onTick", () -> {
+            if (pendingCount <= 0) return;
+            if (System.currentTimeMillis() - lastRepeatAt >= Math.max(1, windowMs.get())) flushPending();
+        }).run();
     }
 
     /** Reports the run that just ended, if it was longer than the one line already shown. */

@@ -25,6 +25,7 @@ import net.minecraft.sound.SoundEvents;
 
 import java.util.ArrayList;
 import java.util.List;
+import com.logvex.addon.framework.SafeEventHandler;
 
 /**
  * Alerts when a name of interest is used in chat.
@@ -131,21 +132,23 @@ public class MentionAlertsModule extends AddonModule {
 
     @EventHandler
     private void onTick(TickEvent.Post event) {
-        List<String> watched = watchedNames();
-        if (watched.isEmpty()) return;
-        // Drop throttle state for names the user removed, so editing the list does not leave keys
-        // that can never fire again.
-        throttle.retain(watched);
+        SafeEventHandler.guard("MentionAlertsModule.onTick", () -> {
+            List<String> watched = watchedNames();
+            if (watched.isEmpty()) return;
+            // Drop throttle state for names the user removed, so editing the list does not leave keys
+            // that can never fire again.
+            throttle.retain(watched);
 
-        List<ChatEntry> recent = service.recent(50);
-        long newest = lastSeenTimestamp;
-        for (int i = recent.size() - 1; i >= 0; i--) {
-            ChatEntry entry = recent.get(i);
-            if (entry.timestamp() <= lastSeenTimestamp) continue;
-            newest = Math.max(newest, entry.timestamp());
-            handle(entry, watched);
-        }
-        lastSeenTimestamp = newest;
+            List<ChatEntry> recent = service.recent(50);
+            long newest = lastSeenTimestamp;
+            for (int i = recent.size() - 1; i >= 0; i--) {
+                ChatEntry entry = recent.get(i);
+                if (entry.timestamp() <= lastSeenTimestamp) continue;
+                newest = Math.max(newest, entry.timestamp());
+                handle(entry, watched);
+            }
+            lastSeenTimestamp = newest;
+        }).run();
     }
 
     private void handle(ChatEntry entry, List<String> watched) {

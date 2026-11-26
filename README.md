@@ -340,6 +340,24 @@ bot agree on how the player may move; they have no effect with the built-in plan
 never teleported or otherwise faked: success requires the player's actual position to be within the
 arrival tolerance.
 
+### Search and retries
+
+A block search answers in the tick that asks for it. The first version used Meteor's
+`BlockIterator`, which only queues a callback for the next tick; the executor read the list
+immediately, always saw an empty one, and asked again — a scan of the whole radius on every tick,
+which froze the client. The scan now walks the box itself, stops at a result cap, skips unloaded
+chunks, and sorts nearest-first so the bot heads for the closest ore rather than one that merely
+came first in the loop order.
+
+An empty answer is a soft retry, not a fail: the task stays active and waits, with the wait doubling
+up to a ceiling. Without that backoff a hopeless search would rescan the same box every tick, which
+is the other half of the same freeze.
+
+Every tick of the bot runs inside a guard. Meteor's event bus (orbit) calls listeners with no
+try/catch, so a handler that throws unwinds out of the tick loop and takes the client with it. The
+guard logs the failure and the client carries on, and a build-time test walks the source tree so a
+new handler cannot be added without one.
+
 ### Profiles
 
 A **profile** is a named snapshot of the bot's settings. **Profiles...** on the bot dashboard (or
@@ -373,6 +391,13 @@ dashboard and HUD use, so a command never diverges from the GUI:
 | `!bot waypoint add\|del\|list <name>` | Manages named waypoints. |
 | `!bot profile [list\|apply\|save\|delete] <name>` | Manages bot profiles. |
 
+An objective that names an item is checked against the game's item registry before it is queued.
+`!log gather 256 oak_logg` is refused with `Unknown item id 'oak_logg'` and, when a close match
+exists, a suggestion (`did you mean oak_log?`), rather than being accepted and left to fail later in
+the field. The same check backs the dashboard's **Queue objective** box and the companion's
+`POST /api/v1/tasks`, so a typo is caught wherever it is typed. A task that cannot be carried out is
+therefore refused at the point of entry instead of sitting in the queue retrying.
+
 
 ## Assistant
 
@@ -400,22 +425,59 @@ player. Join, leave, death and advancement lines keep their own types and are un
 
 A trigger watches incoming chat for a keyword or phrase and answers it. Triggers are stored as a
 single line each, so the whole feature set is editable from the settings list, the
-`!ai triggers` command or the Assistant Manager GUI:
+`.ai triggers` command or the Assistant Manager GUI:
 
 ```
-pattern;sender=;reply=;mode=private;cooldown=3000;limit=0;sound=false;remember=false;enabled=true;aliases=;pool=;whisper=msg;embed=false
+pattern;case=false;whole=true;sender=;reply=;mode=private;cooldown=3000;limit=0;sound=false;remember=false;enabled=true;aliases=;pool=;whisper=msg;embed=auto
 ```
 
-A fresh install ships **106 preconfigured rules** with 76 extra aliases, all enabled, all at the
+A fresh install ships **105 preconfigured rules** with 78 extra aliases, all enabled, all at the
 3000 ms cooldown, all matched on whole words, and all answered **privately to the person they
 answer** (see *Who the assistant will answer* below for who that is).
-That is 182 phrases answering out of the box — no setup step. They cover greetings, thanks,
+That is 183 phrases answering out of the box — no setup step. They cover greetings, thanks,
 farewells, `gg`/`wp`, small talk, the server-figure questions (`what is the tps`, `what is my ping`,
 `is the server lagging`, `how many players`), the player-figure questions (`where am i`,
 `what is my health`, `what is my armour`, `what is my gamemode`) and the command-shaped set
 (`!tps`, `!status`, `!memory`, `!world`, `!time`, `!ping`, `!fps`, `!ram`, `!session`,
 `!players`, `!hunger`, `!vitals`, `!facing`, `!offhand`, `!environment`, `!help`).
-`!ai triggers restore` puts the same table back.
+`.ai triggers restore` puts the same table back.
+
+#### Silencing one answer
+
+Every shipped rule can be turned off or deleted, and both stick across a restart. Two different
+front ends write the same stored list, so pick whichever suits:
+
+```
+!trigger off cya     # typed in chat: switches the "goodbye" rule off; "cya" stops answering
+!trigger on cya      # typed in chat: switches it back on
+.ai triggers remove 12   # deletes rule 12 outright
+.ai triggers restore     # brings back anything deleted
+```
+
+`!trigger off` is a chat command, so it goes through the assistant's own prefix (`!` by default)
+rather than the Meteor `.` prefix. It takes the word you actually saw in chat, not just the rule's
+name: `cya` and `bye` both resolve to the `goodbye` rule, and an ambiguous prefix lists the
+candidates instead of guessing. Disabling keeps the reply text, so `!trigger on` restores the exact
+wording.
+
+The same rules are editable in the Assistant Manager GUI, where **Remove** deletes a rule and
+**Remove all** empties the table. Selecting a rule opens a full editor for that one rule rather than
+a single cramped line: the phrase, whether case and whole words matter, who it answers, the reply
+text, the delivery mode, the cooldown, the session limit, the sound and memory flags, whether it is
+enabled, its aliases, its random-reply pool and its embed setting. Every field writes back to the
+same stored line the settings list and `.ai triggers` use, so a change made in the GUI shows up in
+chat immediately and survives a restart. A deletion is recorded in the `removed-rules` setting so the
+shipped table is not merged straight back in on the next load — without that record the merge that
+exists to deliver newly shipped rules could not tell "deleted on purpose" from "shipped after this
+config was written", and every deletion would be silently undone. Rules shipped *after* your config
+was written are still added. Clearing `removed-rules` is equivalent to `.ai triggers restore`.
+
+A saved rule is also refreshed when a shipped rule with the same name gains a phrase. A config
+saved by an older build holds its own copy of every rule, so without this a new way of saying
+something (`gtg` for the goodbye rule) would reach only a fresh install. The refresh touches the
+phrase list only: a reply you rewrote, an alias you added, and a rule you disabled are all left as
+you left them. If you do not want the shipped phrases back either, delete the rule and add your own
+under the same name, which the merge treats as yours.
 
 #### Who the assistant will answer
 
@@ -1021,6 +1083,13 @@ answer it gives can be traced back to a rule you wrote or a command you enabled.
 The widget also has an "Assistant Permissions..." button, which opens the permissions screen
 described above.
 
+Every text box in the addon — the trigger editor, the memory and status boxes, the webhook and
+profile fields — behaves like a normal text field. Click to place the caret where you clicked,
+drag to select, and `Shift`+click or `Shift`+arrow to extend the selection. `Ctrl+A` selects
+everything, `Ctrl+C` copies the selection, `Ctrl+X` cuts it and `Ctrl+V` pastes at the caret,
+replacing any selection. Pasted text is cleaned of control characters and line breaks first, so a
+paste into a one-line box always stays one line.
+
 ### Greetings
 
 With `greetings` on, the assistant greets the local player when they join a world, choosing a
@@ -1592,6 +1661,12 @@ across those refreshes, so a rebuild never discards your input.
 - **Search** — a search over the client's own stored log rather than the few dozen lines a snapshot
   carries, so a message from earlier in the session can be found. Filter by words, by player, and by
   how many results to return; the client does the matching and returns the matches oldest-first.
+- **World** — where the client is and what is around it, for a player who is not at that machine.
+  Coordinates, health, light level, the clock and the dimension sit beside a drawn top-down map of
+  the nearby blocks, coloured by material (water blue, lava orange, leaves green, and so on), with
+  the player marked at the centre. Below it are the nearby entities with their kind, distance and
+  health, and a count of the blocks you are standing among. The map answers the question a list of
+  coordinates cannot: *where* the lava is.
 - **Players** — observed players with their message counts and last-seen times, marked online when
   the client's player list currently contains them.
 - **Stats** — session message, player, join, leave and death totals.
@@ -1656,6 +1731,7 @@ All responses are JSON. Authenticate with the token unless noted.
 | GET | `/api/v1/chat` | The recent chat. |
 | POST | `/api/v1/chat` | Sends a chat line: `{"message":"hello"}`. A line starting with `/` is treated as a command. |
 | GET | `/api/v1/players` | The observed players. |
+| GET | `/api/v1/world` | Where the client is: dimension, position, yaw/pitch, the block it stands on, health, light level, world time and weather, plus the nearby blocks and entities. `inWorld` is `false` and the lists are empty when no world is loaded. |
 | GET | `/api/v1/storage` | The segment count, compressed size and oldest/newest timestamps. |
 | GET | `/api/v1/queries` | The names the query endpoint accepts. |
 | GET | `/api/v1/query/{name}` | `messages`, `players` or `stats`, with `q`, `player` and `limit` filters. |

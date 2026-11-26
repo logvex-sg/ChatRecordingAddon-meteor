@@ -27,9 +27,18 @@ import meteordevelopment.meteorclient.utils.player.ChatUtils;
 import com.logvex.addon.notify.NotificationModule;
 import com.logvex.addon.notify.core.Notification;
 import com.logvex.addon.notify.core.NotificationType;
+import net.minecraft.block.BlockState;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.world.ClientWorld;
+import net.minecraft.entity.Entity;
+import net.minecraft.entity.LivingEntity;
+import net.minecraft.entity.mob.HostileEntity;
+import net.minecraft.entity.passive.PassiveEntity;
+import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.registry.Registries;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Box;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -52,6 +61,11 @@ public final class MinecraftCompanionApi implements CompanionApi {
     private static final int CHAT_LIMIT = 60;
     private static final int EVENT_LIMIT = 25;
     private static final int PLAYER_LIMIT = 200;
+    /** How far the World tab looks, and how much of it it sends. */
+    private static final int WORLD_RADIUS = 6;
+    private static final int WORLD_BLOCK_LIMIT = 160;
+    private static final int WORLD_ENTITY_RADIUS = 32;
+    private static final int WORLD_ENTITY_LIMIT = 40;
 
     private final String nodeId;
     private final long startedAt = System.currentTimeMillis();
@@ -77,7 +91,98 @@ public final class MinecraftCompanionApi implements CompanionApi {
             stats(log),
             storage(log, Modules.get().get(ChatLoggerModule.class)),
             bot(bot),
+            world(mc),
             capabilities());
+    }
+
+    /**
+     * The player's surroundings, as a compact view for the app's World tab.
+     *
+     * <p>Bounded on purpose: at most {@link #WORLD_BLOCK_LIMIT} blocks and
+     * {@link #WORLD_ENTITY_LIMIT} entities within {@link #WORLD_RADIUS} blocks, so one poll stays a
+     * few kilobytes no matter how crowded the area is. Nothing here writes to the world.
+     */
+    private CompanionSnapshot.WorldView world(MinecraftClient mc) {
+        if (mc == null || mc.world == null || mc.player == null) {
+            return CompanionSnapshot.WorldView.empty();
+        }
+        ClientPlayerEntity player = mc.player;
+        ClientWorld world = mc.world;
+        int bx = player.getBlockX();
+        int by = player.getBlockY();
+        int bz = player.getBlockZ();
+
+        String below = "";
+        BlockPos under = new BlockPos(bx, by - 1, bz);
+        if (world.isChunkLoaded(under.getX() >> 4, under.getZ() >> 4)) {
+            below = Registries.BLOCK.getId(world.getBlockState(under).getBlock()).toString();
+        }
+
+        return new CompanionSnapshot.WorldView(
+            true,
+            world.getRegistryKey().getValue().toString(),
+            round(player.getX()),
+            round(player.getY()),
+            round(player.getZ()),
+            (float) round(player.getYaw()),
+            (float) round(player.getPitch()),
+            bx, by, bz,
+            below,
+            world.getLightLevel(new BlockPos(bx, by, bz)),
+            Math.round(player.getHealth()),
+            world.getTimeOfDay(),
+            world.isRaining(),
+            world.isThundering(),
+            nearbyBlocks(world, bx, by, bz),
+            nearbyEntities(world, player));
+    }
+
+    private List<CompanionSnapshot.BlockView> nearbyBlocks(ClientWorld world, int bx, int by, int bz) {
+        List<CompanionSnapshot.BlockView> out = new ArrayList<>();
+        for (int dx = -WORLD_RADIUS; dx <= WORLD_RADIUS; dx++) {
+            for (int dz = -WORLD_RADIUS; dz <= WORLD_RADIUS; dz++) {
+                for (int dy = -WORLD_RADIUS; dy <= WORLD_RADIUS; dy++) {
+                    int x = bx + dx;
+                    int y = by + dy;
+                    int z = bz + dz;
+                    if (!world.isChunkLoaded(x >> 4, z >> 4)) continue;
+                    BlockPos pos = new BlockPos(x, y, z);
+                    BlockState state = world.getBlockState(pos);
+                    if (state.isAir()) continue;
+                    // Only the shell matters for a viewer: the player's own block and everything
+                    // below it is a solid mass that would fill the list with stone.
+                    if (dx == 0 && dz == 0 && dy == 0) continue;
+                    out.add(new CompanionSnapshot.BlockView(x, y, z,
+                        Registries.BLOCK.getId(state.getBlock()).toString(),
+                        round(Math.sqrt(dx * dx + dy * dy + dz * dz))));
+                }
+            }
+        }
+        out.sort(java.util.Comparator.comparingDouble(CompanionSnapshot.BlockView::distance));
+        return out.size() > WORLD_BLOCK_LIMIT ? out.subList(0, WORLD_BLOCK_LIMIT) : out;
+    }
+
+    private List<CompanionSnapshot.EntityView> nearbyEntities(ClientWorld world, ClientPlayerEntity player) {
+        List<CompanionSnapshot.EntityView> out = new ArrayList<>();
+        Box box = player.getBoundingBox().expand(WORLD_ENTITY_RADIUS);
+        for (Entity entity : world.getOtherEntities(player, box)) {
+            if (!(entity instanceof LivingEntity living) || !living.isAlive()) continue;
+            String kind = entity instanceof PlayerEntity ? "player"
+                : entity instanceof HostileEntity ? "hostile"
+                : entity instanceof PassiveEntity ? "passive" : "other";
+            out.add(new CompanionSnapshot.EntityView(
+                Registries.ENTITY_TYPE.getId(entity.getType()).toString(),
+                entity.getName().getString(),
+                kind,
+                round(entity.distanceTo(player)),
+                Math.round(living.getMaxHealth() <= 0 ? 0 : living.getHealth())));
+        }
+        out.sort(java.util.Comparator.comparingDouble(CompanionSnapshot.EntityView::distance));
+        return out.size() > WORLD_ENTITY_LIMIT ? out.subList(0, WORLD_ENTITY_LIMIT) : out;
+    }
+
+    private static double round(double value) {
+        return Math.round(value * 10.0) / 10.0;
     }
 
     private CompanionSnapshot.NodeInfo nodeInfo(MinecraftClient mc) {
@@ -326,6 +431,7 @@ public final class MinecraftCompanionApi implements CompanionApi {
         out.add("modules");
         out.add("events");
         out.add("storage");
+        out.add("world");
         return out;
     }
 
@@ -403,7 +509,9 @@ public final class MinecraftCompanionApi implements CompanionApi {
         if (itemId.isEmpty()) {
             return ActionResult.fail("Could not read an item from that objective.");
         }
-        bot.addGoal(text, type, itemId, amount);
+        if (bot.addGoal(text, type, itemId, amount) == null) {
+            return ActionResult.fail(bot.explainUnknownItem(itemId));
+        }
         return ActionResult.ok("Queued: " + text + ".");
     }
 

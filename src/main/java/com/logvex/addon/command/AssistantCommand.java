@@ -568,15 +568,22 @@ public class AssistantCommand extends Command {
             error("The assistant module is not available.");
             return;
         }
-        int index = oneBased - 1;
+        // Resolve the number against the same list !triggers printed, then remove by name. The
+        // merged list holds shipped rules that were never written to the setting, so its indices do
+        // not address the stored list once the two differ in length (an old config that gained a
+        // rule since) - and a rule that is only shipped is not in the stored list to remove at all.
         List<TriggerRule> rules = module.triggers().rules();
+        int index = oneBased - 1;
         if (index < 0 || index >= rules.size()) {
             warning("There is no trigger number %d.", oneBased);
             return;
         }
         String pattern = rules.get(index).pattern();
-        module.removeRule(index);
-        info("Removed trigger '%s'.", pattern);
+        if (module.removeRuleNamed(pattern)) {
+            info("Removed trigger '%s'. It stays removed until you restore the defaults.", pattern);
+        } else {
+            warning("Could not remove trigger '%s'.", pattern);
+        }
     }
 
     private void facts() {

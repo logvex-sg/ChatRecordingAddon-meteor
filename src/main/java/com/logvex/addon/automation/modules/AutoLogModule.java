@@ -11,6 +11,7 @@ import meteordevelopment.meteorclient.settings.Setting;
 import meteordevelopment.meteorclient.settings.SettingGroup;
 import com.logvex.addon.notify.core.NotificationType;
 import net.minecraft.text.Text;
+import com.logvex.addon.framework.SafeEventHandler;
 
 /**
  * Disconnects from the server when the player is in danger.
@@ -158,27 +159,29 @@ public class AutoLogModule extends AutomationModule {
 
     @EventHandler
     private void onTick(TickEvent.Post event) {
-        if (!ready()) return;
-        pushSettings();
+        SafeEventHandler.guard("AutoLogModule.onTick", () -> {
+            if (!ready()) return;
+            pushSettings();
 
-        long now = System.currentTimeMillis();
-        if (!controller.enabled()) return;
-        if (now - lastTriggeredAt < rearmSeconds.get() * 1000L) return;
+            long now = System.currentTimeMillis();
+            if (!controller.enabled()) return;
+            if (now - lastTriggeredAt < rearmSeconds.get() * 1000L) return;
 
-        AutoLogController.Reason reason = controller.evaluate(now,
-            lowHealth.get() ? AutomationSupport.health() : Float.MAX_VALUE,
-            noFood.get() ? AutomationSupport.foodLevel() : Integer.MAX_VALUE,
-            AutomationSupport.freeSlots(),
-            hostile.get() && AutomationSupport.hostileNearby(hostileRadius.get()),
-            playerNear.get() && AutomationSupport.playerNearby(playerRadius.get()));
+            AutoLogController.Reason reason = controller.evaluate(now,
+                lowHealth.get() ? AutomationSupport.health() : Float.MAX_VALUE,
+                noFood.get() ? AutomationSupport.foodLevel() : Integer.MAX_VALUE,
+                AutomationSupport.freeSlots(),
+                hostile.get() && AutomationSupport.hostileNearby(hostileRadius.get()),
+                playerNear.get() && AutomationSupport.playerNearby(playerRadius.get()));
 
-        if (reason == AutoLogController.Reason.NONE) return;
+            if (reason == AutoLogController.Reason.NONE) return;
 
-        lastTriggeredAt = now;
-        String why = AutoLogController.describe(reason);
-        warning("Disconnecting: %s.", why);
-        notifyUser(NotificationType.CONNECTION, "Auto Log", "Disconnected because " + why + ".");
-        disconnect(why);
+            lastTriggeredAt = now;
+            String why = AutoLogController.describe(reason);
+            warning("Disconnecting: %s.", why);
+            notifyUser(NotificationType.CONNECTION, "Auto Log", "Disconnected because " + why + ".");
+            disconnect(why);
+        }).run();
     }
 
     private void pushSettings() {

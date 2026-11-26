@@ -20,6 +20,8 @@ import com.logvex.addon.bot.hud.BotStatusHud;
 import com.logvex.addon.bot.mc.FileMemoryStore;
 import com.logvex.addon.bot.mc.MinecraftActionPort;
 import com.logvex.addon.bot.mc.MinecraftBuildPort;
+import net.minecraft.registry.Registries;
+import net.minecraft.util.Identifier;
 import com.logvex.addon.bot.mc.MinecraftInventoryPort;
 import com.logvex.addon.bot.mc.MinecraftItemKnowledge;
 import com.logvex.addon.bot.mc.MinecraftNavPort;
@@ -352,6 +354,12 @@ public class BotModule extends AddonModule {
     @EventHandler
     private void onTick(TickEvent.Post event) {
         if (!isActive()) return;
+        // One failed tick must not take the client down: Meteor's event bus calls listeners without
+        // a try/catch, so a throw here would unwind into the game loop.
+        SafeEventHandler.run("BotModule.onTick", this::tickBot);
+    }
+
+    private void tickBot() {
         applySettings();
         if (!recipesIndexed) {
             recipeSource.rebuild();
@@ -363,6 +371,11 @@ public class BotModule extends AddonModule {
     @EventHandler
     private void onGameJoined(GameJoinedEvent event) {
         if (!isActive()) return;
+        // Posted inside the client's join path; a throw here would break the connect.
+        SafeEventHandler.run("BotModule.onGameJoined", this::onJoinedWork);
+    }
+
+    private void onJoinedWork() {
         // A new world means a fresh recipe table and a fresh registry cache.
         itemKnowledge.clearCache();
         recipeSource.rebuild();
@@ -442,6 +455,55 @@ public class BotModule extends AddonModule {
         return memory;
     }
 
+    /** True when {@code itemId} is a real registry item, so a task can never target a typo. */
+    public boolean knowsItem(String itemId) {
+        return inventoryPort.knownItem(itemId);
+    }
+
+    /**
+     * The closest registry item to {@code itemId}, or "" when nothing is close enough.
+     *
+     * <p>Only used for an error message, so the search is deliberately cheap: a shared namespace and
+     * one of a small edit distance, a prefix, or a path that contains the typed path.
+     */
+    public String suggestItem(String itemId) {
+        if (itemId == null || itemId.isBlank()) return "";
+        String path = itemId.substring(itemId.indexOf(':') + 1);
+        String best = "";
+        int bestDistance = Integer.MAX_VALUE;
+        for (Identifier id : Registries.ITEM.getIds()) {
+            String candidate = id.getPath();
+            int distance = editDistance(path, candidate);
+            boolean related = candidate.startsWith(path) || path.startsWith(candidate)
+                || candidate.contains(path);
+            if (!related && distance > 2) continue;
+            int score = related ? Math.min(distance, 1) : distance;
+            if (score < bestDistance || (score == bestDistance && candidate.length() < best.length())) {
+                bestDistance = score;
+                best = id.toString();
+            }
+        }
+        return bestDistance <= 3 ? best : "";
+    }
+
+    private static int editDistance(String a, String b) {
+        int[] previous = new int[b.length() + 1];
+        int[] current = new int[b.length() + 1];
+        for (int j = 0; j <= b.length(); j++) previous[j] = j;
+        for (int i = 1; i <= a.length(); i++) {
+            current[0] = i;
+            for (int j = 1; j <= b.length(); j++) {
+                int cost = a.charAt(i - 1) == b.charAt(j - 1) ? 0 : 1;
+                current[j] = Math.min(Math.min(current[j - 1] + 1, previous[j] + 1),
+                    previous[j - 1] + cost);
+            }
+            int[] swap = previous;
+            previous = current;
+            current = swap;
+        }
+        return previous[b.length()];
+    }
+
     /** Persists the bot memory immediately, e.g. after a command adds a waypoint. */
     public void persistMemory() {
         saveMemory();
@@ -501,11 +563,34 @@ public class BotModule extends AddonModule {
         return navPort;
     }
 
-    /** Adds a user objective and returns it. */
+    /**
+     * Adds a goal from a loose objective.
+     *
+     * <p>An item id is checked against the registry first. A typo can never be found in the world, so
+     * queueing it only produced a task that scanned until it timed out; refusing it here covers every
+     * entry point at once — the {@code .log} command, the dashboard's objective box and the
+     * companion's {@code POST /api/v1/tasks} — rather than only the one that remembered to check.
+     *
+     * @return the goal, or {@code null} when the item id is not a registry item
+     */
     public GoalManager.Goal addGoal(String description, String type, String itemId, int amount) {
+        if (itemId != null && !itemId.isBlank() && !knowsItem(itemId)) return null;
         GoalManager.Goal goal = controller.addGoal(description, type, itemId, amount);
         controller.setContext(buildContext());
         return goal;
+    }
+
+    /**
+     * The reason a goal was refused, in a form suitable for chat or an API result.
+     *
+     * @return the message, or "" when the item id is fine
+     */
+    public String explainUnknownItem(String itemId) {
+        if (itemId == null || itemId.isBlank() || knowsItem(itemId)) return "";
+        String suggestion = suggestItem(itemId);
+        return suggestion.isEmpty()
+            ? itemId + " is not a known item. Use a registry id such as minecraft:spruce_log."
+            : itemId + " is not a known item. Did you mean " + suggestion + "?";
     }
 
     /** Adds a ready-made task. */

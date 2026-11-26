@@ -37,6 +37,9 @@ public final class BotController {
     private BotState state = BotState.DISABLED;
     private BotTask active;
     private long lastActionAt;
+    /** Retries the active task has asked for since it began, for the backoff below. */
+    private int retriesThisTask;
+    private long nextRetryAt;
     private long stateSince;
     private boolean autoStart = true;
 
@@ -321,6 +324,7 @@ public final class BotController {
             beginTask(next.get());
         }
         if (now - lastActionAt < config.actionCooldownMs()) return;
+        if (now < nextRetryAt) return;
 
         // A task that runs past its budget is failed rather than left to retry forever.
         if (config.taskTimeoutMs() > 0 && now - active.startedAt() > config.taskTimeoutMs()) {
@@ -375,6 +379,8 @@ public final class BotController {
 
     private void beginTask(BotTask task) {
         active = task;
+        retriesThisTask = 0;
+        nextRetryAt = 0;
         task.setStartedAt(clock.now());
         if (task.createdAt() == 0) task.setCreatedAt(clock.now());
         queue.markRunning(task);
@@ -437,9 +443,13 @@ public final class BotController {
     }
 
     private void handleRetry(long now) {
-        // A soft retry: the task stays active and simply waits. The retry budget is deliberately
-        // not reset here; only a completed task or a fresh plan clears it, so a task that keeps
-        // asking to retry is still bounded by the task timeout and the retry limit.
+        // A soft retry: the task stays active and waits. Without the wait a "nothing nearby"
+        // retry would rescan the whole radius on every tick, which is what froze the client when
+        // the target block could not be found. The wait doubles per retry up to a ceiling, so a
+        // hopeless search settles instead of spinning.
+        retriesThisTask++;
+        long backoff = config.retryBackoffMs() * Math.min(8L, 1L << Math.min(3, retriesThisTask - 1));
+        nextRetryAt = now + Math.max(backoff, config.actionCooldownMs());
     }
 
     private void cancelActive(String reason) {

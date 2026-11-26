@@ -846,6 +846,18 @@ public class LogCommand extends Command {
             error("Give an item, for example oak_log or minecraft:oak_log.");
             return;
         }
+        // Refused here rather than queued: an id the registry does not know can never be found in
+        // the world, so queueing it only produced a task that scanned until it timed out.
+        if (!bot.knowsItem(itemId)) {
+            String suggestion = bot.suggestItem(itemId);
+            if (suggestion.isEmpty()) {
+                error("%s is not a known item. Use a registry id such as minecraft:spruce_log.",
+                    itemId);
+            } else {
+                error("%s is not a known item. Did you mean %s?", itemId, suggestion);
+            }
+            return;
+        }
         BotTask task = new BotTask(type, itemId).itemId(itemId).required(amount);
         if (bot.controller().queue().add(task)) {
             info("Queued %s x%d.", itemId, amount);

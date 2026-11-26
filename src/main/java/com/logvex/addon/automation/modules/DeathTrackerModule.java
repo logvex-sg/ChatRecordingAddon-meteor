@@ -9,6 +9,7 @@ import meteordevelopment.meteorclient.settings.BoolSetting;
 import meteordevelopment.meteorclient.settings.Setting;
 import meteordevelopment.meteorclient.settings.SettingGroup;
 import meteordevelopment.orbit.EventHandler;
+import com.logvex.addon.framework.SafeEventHandler;
 
 /**
  * Remembers where you died, so the spot can be found again.
@@ -56,37 +57,39 @@ public class DeathTrackerModule extends AutomationModule {
 
     @EventHandler
     private void onTick(TickEvent.Post event) {
-        if (!ready()) return;
+        SafeEventHandler.guard("DeathTrackerModule.onTick", () -> {
+            if (!ready()) return;
 
-        boolean alive = mc.player.getHealth() > 0;
+            boolean alive = mc.player.getHealth() > 0;
 
-        if (alive) {
-            // Sample while alive: on the tick health reaches zero the player is already being
-            // moved, so this is the last trustworthy position.
-            lastX = mc.player.getX();
-            lastY = mc.player.getY();
-            lastZ = mc.player.getZ();
-            lastWorld = dimension();
-            wasAlive = true;
-            return;
-        }
+            if (alive) {
+                // Sample while alive: on the tick health reaches zero the player is already being
+                // moved, so this is the last trustworthy position.
+                lastX = mc.player.getX();
+                lastY = mc.player.getY();
+                lastZ = mc.player.getZ();
+                lastWorld = dimension();
+                wasAlive = true;
+                return;
+            }
 
-        // Health is zero. Only record the transition, so the several ticks spent dead before the
-        // respawn do not create one entry each.
-        if (!wasAlive) return;
-        wasAlive = false;
+            // Health is zero. Only record the transition, so the several ticks spent dead before the
+            // respawn do not create one entry each.
+            if (!wasAlive) return;
+            wasAlive = false;
 
-        tracker.record(lastWorld, (int) Math.floor(lastX), (int) Math.floor(lastY),
-            (int) Math.floor(lastZ), System.currentTimeMillis(), "");
+            tracker.record(lastWorld, (int) Math.floor(lastX), (int) Math.floor(lastY),
+                (int) Math.floor(lastZ), System.currentTimeMillis(), "");
 
-        DeathTracker.Death death = tracker.last();
-        if (death == null) return;
-        if (announce.get()) {
-            info("You died at %s (%s). Use %sback to see it.",
-                death.coords(), shortWorld(death.world()),
-                com.logvex.addon.framework.systems.config.ClientConfig.get().prefix());
-        }
-        notifyUser(NotificationType.CONNECTION, "Death", "Died at " + death.coords());
+            DeathTracker.Death death = tracker.last();
+            if (death == null) return;
+            if (announce.get()) {
+                info("You died at %s (%s). Use %sback to see it.",
+                    death.coords(), shortWorld(death.world()),
+                    com.logvex.addon.framework.systems.config.ClientConfig.get().prefix());
+            }
+            notifyUser(NotificationType.CONNECTION, "Death", "Died at " + death.coords());
+        }).run();
     }
 
     /** The current dimension id, such as {@code minecraft:overworld}. */

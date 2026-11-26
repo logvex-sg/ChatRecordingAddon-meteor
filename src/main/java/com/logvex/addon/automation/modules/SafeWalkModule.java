@@ -9,6 +9,7 @@ import meteordevelopment.meteorclient.settings.IntSetting;
 import meteordevelopment.meteorclient.settings.Setting;
 import meteordevelopment.meteorclient.settings.SettingGroup;
 import net.minecraft.util.math.BlockPos;
+import com.logvex.addon.framework.SafeEventHandler;
 
 /**
  * Stops the player walking off a ledge while sneaking is not held.
@@ -73,36 +74,38 @@ public class SafeWalkModule extends AutomationModule {
 
     @EventHandler
     private void onTick(TickEvent.Post event) {
-        if (!ready() || mc.options == null) return;
-        controller.setMaxDrop(maxDrop.get());
-        controller.setSneakAtEdge(sneakAtEdge.get());
+        SafeEventHandler.guard("SafeWalkModule.onTick", () -> {
+            if (!ready() || mc.options == null) return;
+            controller.setMaxDrop(maxDrop.get());
+            controller.setSneakAtEdge(sneakAtEdge.get());
 
-        if (respectSneak.get() && mc.player.isSneaking()) {
-            restore();
-            return;
-        }
+            if (respectSneak.get() && mc.player.isSneaking()) {
+                restore();
+                return;
+            }
 
-        boolean forward = mc.options.forwardKey.isPressed();
-        if (!forward) {
-            restore();
-            return;
-        }
+            boolean forward = mc.options.forwardKey.isPressed();
+            if (!forward) {
+                restore();
+                return;
+            }
 
-        BlockPos below = mc.player.getBlockPos().down();
-        BlockPos ahead = mc.player.getBlockPos().offset(mc.player.getHorizontalFacing());
-        boolean groundBelow = AutomationSupport.solidAt(below);
-        boolean aheadSolid = AutomationSupport.solidAt(ahead);
-        int drop = AutomationSupport.dropBelow(ahead, 8);
+            BlockPos below = mc.player.getBlockPos().down();
+            BlockPos ahead = mc.player.getBlockPos().offset(mc.player.getHorizontalFacing());
+            boolean groundBelow = AutomationSupport.solidAt(below);
+            boolean aheadSolid = AutomationSupport.solidAt(ahead);
+            int drop = AutomationSupport.dropBelow(ahead, 8);
 
-        boolean dangerous = controller.wouldFall(groundBelow, aheadSolid, drop,
-            mc.player.isOnGround(), true);
-        if (dangerous) {
-            mc.options.forwardKey.setPressed(false);
-            if (controller.sneakAtEdge()) mc.options.sneakKey.setPressed(true);
-            suppressed = true;
-        } else if (suppressed) {
-            restore();
-        }
+            boolean dangerous = controller.wouldFall(groundBelow, aheadSolid, drop,
+                mc.player.isOnGround(), true);
+            if (dangerous) {
+                mc.options.forwardKey.setPressed(false);
+                if (controller.sneakAtEdge()) mc.options.sneakKey.setPressed(true);
+                suppressed = true;
+            } else if (suppressed) {
+                restore();
+            }
+        }).run();
     }
 
     /** Undoes any input change the module made. */

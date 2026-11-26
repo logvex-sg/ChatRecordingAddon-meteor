@@ -20,6 +20,7 @@ import meteordevelopment.meteorclient.systems.modules.Module;
 
 import java.util.ArrayList;
 import java.util.List;
+import com.logvex.addon.framework.SafeEventHandler;
 
 /**
  * Suppresses chat noise with an ordered rule list.
@@ -81,19 +82,21 @@ public class ChatFilterModule extends AddonModule {
 
     @EventHandler
     private void onTick(TickEvent.Post event) {
-        // Rebuild only when the encoded rule list actually changed, so a tick costs one list compare.
-        List<ChatFilterRule> current = parseRules();
-        if (!current.equals(parsed) || service.rules().defaultAction() != defaultAction.get()) {
-            parsed = current;
-            service.setRules(ChatFilterRuleSet.of(parsed, defaultAction.get()));
-        }
+        SafeEventHandler.guard("ChatFilterModule.onTick", () -> {
+            // Rebuild only when the encoded rule list actually changed, so a tick costs one list compare.
+            List<ChatFilterRule> current = parseRules();
+            if (!current.equals(parsed) || service.rules().defaultAction() != defaultAction.get()) {
+                parsed = current;
+                service.setRules(ChatFilterRuleSet.of(parsed, defaultAction.get()));
+            }
 
-        if (announceHides.get() && service.hiddenCount() != announcedHides) {
-            announcedHides = service.hiddenCount();
-            info("Filtered %s. Latest: %s",
-                com.logvex.addon.common.Messages.plural(service.hiddenCount(), "message"),
-                service.lastHidden());
-        }
+            if (announceHides.get() && service.hiddenCount() != announcedHides) {
+                announcedHides = service.hiddenCount();
+                info("Filtered %s. Latest: %s",
+                    com.logvex.addon.common.Messages.plural(service.hiddenCount(), "message"),
+                    service.lastHidden());
+            }
+        }).run();
     }
 
     private List<ChatFilterRule> parseRules() {

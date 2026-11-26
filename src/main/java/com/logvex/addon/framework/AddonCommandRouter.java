@@ -13,6 +13,7 @@ import net.minecraft.client.MinecraftClient;
 import java.util.HashSet;
 import java.util.Locale;
 import java.util.Set;
+import com.logvex.addon.framework.SafeEventHandler;
 
 /**
  * Runs this addon's own chat commands under the addon's prefix.
@@ -34,24 +35,26 @@ public final class AddonCommandRouter {
 
     @EventHandler
     private void onSendMessage(SendMessageEvent event) {
-        if (event == null || event.message == null) return;
+        SafeEventHandler.guard("AddonCommandRouter.onSendMessage", () -> {
+            if (event == null || event.message == null) return;
 
-        String body = CommandLine.body(event.message, ClientConfig.get().prefix(), ownNames());
-        if (body == null) return;
+            String body = CommandLine.body(event.message, ClientConfig.get().prefix(), ownNames());
+            if (body == null) return;
 
-        event.cancel();
-        // Meteor echoes a dispatched command into chat history so the up arrow can recall it.
-        // Matching that keeps an addon command behaving like every other one.
-        MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc.inGameHud != null) mc.inGameHud.getChatHud().addToMessageHistory(event.message);
+            event.cancel();
+            // Meteor echoes a dispatched command into chat history so the up arrow can recall it.
+            // Matching that keeps an addon command behaving like every other one.
+            MinecraftClient mc = MinecraftClient.getInstance();
+            if (mc.inGameHud != null) mc.inGameHud.getChatHud().addToMessageHistory(event.message);
 
-        try {
-            Commands.dispatch(body);
-        } catch (CommandSyntaxException e) {
-            ChatUtils.error(e.getMessage());
-        } catch (RuntimeException e) {
-            ChatUtils.error("That command failed: " + e.getMessage());
-        }
+            try {
+                Commands.dispatch(body);
+            } catch (CommandSyntaxException e) {
+                ChatUtils.error(e.getMessage());
+            } catch (RuntimeException e) {
+                ChatUtils.error("That command failed: " + e.getMessage());
+            }
+        }).run();
     }
 
     /**

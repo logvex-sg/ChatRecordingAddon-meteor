@@ -14,6 +14,7 @@ import net.minecraft.util.hit.HitResult;
 
 import java.util.ArrayList;
 import java.util.List;
+import com.logvex.addon.framework.SafeEventHandler;
 
 /**
  * Swaps to the best tool for the block the player is looking at.
@@ -81,28 +82,30 @@ public class AutoToolModule extends AutomationModule {
 
     @EventHandler
     private void onTick(TickEvent.Post event) {
-        if (!ready()) return;
-        controller.setSwapBack(swapBack.get());
+        SafeEventHandler.guard("AutoToolModule.onTick", () -> {
+            if (!ready()) return;
+            controller.setSwapBack(swapBack.get());
 
-        BlockState target = targetedBlock();
-        if (target == null || target.isAir()) {
-            restorePreviousSlot();
-            return;
-        }
-        if (onlyWhenBreaking.get() && (mc.interactionManager == null
-            || !mc.interactionManager.isBreakingBlock())) {
-            return;
-        }
+            BlockState target = targetedBlock();
+            if (target == null || target.isAir()) {
+                restorePreviousSlot();
+                return;
+            }
+            if (onlyWhenBreaking.get() && (mc.interactionManager == null
+                || !mc.interactionManager.isBreakingBlock())) {
+                return;
+            }
 
-        int current = mc.player.getInventory().selectedSlot;
-        List<AutoToolController.Candidate> candidates = scoreTools(target);
-        int chosen = controller.chooseSlot(current, candidates, 0);
-        if (chosen != current) {
-            controller.rememberSwap(current);
-            slotBeforeSwap = current;
-            mc.player.getInventory().selectedSlot = chosen;
-            swapped = true;
-        }
+            int current = mc.player.getInventory().selectedSlot;
+            List<AutoToolController.Candidate> candidates = scoreTools(target);
+            int chosen = controller.chooseSlot(current, candidates, 0);
+            if (chosen != current) {
+                controller.rememberSwap(current);
+                slotBeforeSwap = current;
+                mc.player.getInventory().selectedSlot = chosen;
+                swapped = true;
+            }
+        }).run();
     }
 
     private void restorePreviousSlot() {

@@ -301,6 +301,91 @@ public record TriggerRule(
             DEFAULT_COOLDOWN_MS, 0, false, false, true);
     }
 
+    // ------------------------------------------------------------------ single-field edits
+    //
+    // Fifteen fields make a positional rebuild unreadable and easy to get wrong by one slot, so the
+    // editor changes one field at a time through these. Each returns a new record; the old value is
+    // never mutated, which is what keeps an in-progress edit from corrupting the live rule set.
+
+    public TriggerRule withPattern(String value) {
+        return new TriggerRule(value, caseSensitive, wholeWord, sender, reply, mode, cooldownMs,
+            sessionLimit, sound, remember, enabled, aliases, pool, whisper, embedMode);
+    }
+
+    public TriggerRule withReply(String value) {
+        return new TriggerRule(pattern, caseSensitive, wholeWord, sender, value, mode, cooldownMs,
+            sessionLimit, sound, remember, enabled, aliases, pool, whisper, embedMode);
+    }
+
+    public TriggerRule withSender(String value) {
+        return new TriggerRule(pattern, caseSensitive, wholeWord, value, reply, mode, cooldownMs,
+            sessionLimit, sound, remember, enabled, aliases, pool, whisper, embedMode);
+    }
+
+    public TriggerRule withMode(ReplyMode value) {
+        return new TriggerRule(pattern, caseSensitive, wholeWord, sender, reply, value, cooldownMs,
+            sessionLimit, sound, remember, enabled, aliases, pool, whisper, embedMode);
+    }
+
+    public TriggerRule withCooldownMs(long value) {
+        return new TriggerRule(pattern, caseSensitive, wholeWord, sender, reply, mode,
+            Math.max(0, value), sessionLimit, sound, remember, enabled, aliases, pool, whisper,
+            embedMode);
+    }
+
+    public TriggerRule withSessionLimit(int value) {
+        return new TriggerRule(pattern, caseSensitive, wholeWord, sender, reply, mode, cooldownMs,
+            Math.max(0, value), sound, remember, enabled, aliases, pool, whisper, embedMode);
+    }
+
+    public TriggerRule withCaseSensitive(boolean value) {
+        return new TriggerRule(pattern, value, wholeWord, sender, reply, mode, cooldownMs,
+            sessionLimit, sound, remember, enabled, aliases, pool, whisper, embedMode);
+    }
+
+    public TriggerRule withWholeWord(boolean value) {
+        return new TriggerRule(pattern, caseSensitive, value, sender, reply, mode, cooldownMs,
+            sessionLimit, sound, remember, enabled, aliases, pool, whisper, embedMode);
+    }
+
+    public TriggerRule withSound(boolean value) {
+        return new TriggerRule(pattern, caseSensitive, wholeWord, sender, reply, mode, cooldownMs,
+            sessionLimit, value, remember, enabled, aliases, pool, whisper, embedMode);
+    }
+
+    public TriggerRule withRemember(boolean value) {
+        return new TriggerRule(pattern, caseSensitive, wholeWord, sender, reply, mode, cooldownMs,
+            sessionLimit, sound, value, enabled, aliases, pool, whisper, embedMode);
+    }
+
+    public TriggerRule withEnabled(boolean value) {
+        return new TriggerRule(pattern, caseSensitive, wholeWord, sender, reply, mode, cooldownMs,
+            sessionLimit, sound, remember, value, aliases, pool, whisper, embedMode);
+    }
+
+    public TriggerRule withEmbedMode(EmbedMode value) {
+        return new TriggerRule(pattern, caseSensitive, wholeWord, sender, reply, mode, cooldownMs,
+            sessionLimit, sound, remember, enabled, aliases, pool, whisper,
+            value == null ? EmbedMode.AUTO : value);
+    }
+
+    public TriggerRule withAliases(String value) {
+        return new TriggerRule(pattern, caseSensitive, wholeWord, sender, reply, mode, cooldownMs,
+            sessionLimit, sound, remember, enabled, value, pool, whisper, embedMode);
+    }
+
+    /** The alternative replies, separated by {@code |}; blank keeps the single {@code reply}. */
+    public TriggerRule withPool(String value) {
+        return new TriggerRule(pattern, caseSensitive, wholeWord, sender, reply, mode, cooldownMs,
+            sessionLimit, sound, remember, enabled, aliases, value, whisper, embedMode);
+    }
+
+    /** The command used to deliver a private answer, such as {@code /msg} or {@code /w}. */
+    public TriggerRule withWhisper(String value) {
+        return new TriggerRule(pattern, caseSensitive, wholeWord, sender, reply, mode, cooldownMs,
+            sessionLimit, sound, remember, enabled, aliases, pool, value, embedMode);
+    }
+
     /** True when this rule may fire for a message from {@code from}. */
     public boolean senderAllowed(String from) {
         if (sender.isBlank()) return true;
@@ -487,7 +572,7 @@ public record TriggerRule(
     }
 
     /**
-     * Fills in shipped rules a saved list does not have.
+     * Fills in shipped rules a saved list does not have, skipping ones the user deleted.
      *
      * <p>The rule table is a persisted setting, so an install that saved its rules before a command
      * existed kept the old list for ever and the new command was unreachable. That is what a player
@@ -495,29 +580,78 @@ public record TriggerRule(
      * gained it. Merging on load is what makes a newly shipped command appear for an existing
      * install.
      *
-     * <p>Two things are deliberately not done. A rule the user wrote is never rewritten, and a
-     * shipped rule they deleted is not resurrected: only patterns absent from the saved list are
-     * added, so a deletion is still a deletion. Disabling a shipped rule in place also works,
-     * because a disabled rule is still present and so is never re-added.
+     * <p>A rule the user wrote is never rewritten, and a shipped rule they turned off in place stays
+     * off, because a disabled rule is still present and so is never re-added.
      *
-     * @param saved the encoded rules as stored, in order
-     * @return {@code saved} followed by the shipped rules whose pattern it lacks
+     * <p>Deletion needs the {@code removed} set, because absence alone is ambiguous: the merge
+     * cannot tell "deleted on purpose" from "shipped after this config was written", and treating
+     * absence as deletion would mean no install ever gained a new rule again. So a deletion is
+     * recorded by name, and only names absent from both the saved list and this set are added.
+     *
+     * @param saved   the encoded rules as stored, in order
+     * @param removed patterns the user deleted, so they are not shipped back in
+     * @return {@code saved} followed by the shipped rules it lacks and the user did not delete
      */
-    public static java.util.List<String> mergeWithPreconfigured(java.util.List<String> saved) {
+    public static java.util.List<String> mergeWithPreconfigured(java.util.List<String> saved,
+                                                               java.util.Set<String> removed) {
         java.util.List<String> out = new java.util.ArrayList<>(saved == null ? java.util.List.of() : saved);
+        java.util.Set<String> deleted = keyed(removed);
+
+        java.util.Map<String, TriggerRule> shippedByKey = new java.util.LinkedHashMap<>();
+        for (TriggerRule shipped : preconfigured()) {
+            shippedByKey.putIfAbsent(key(shipped), shipped);
+        }
 
         java.util.Set<String> have = new java.util.HashSet<>();
-        for (String line : out) {
-            TriggerRule rule = decode(line);
-            if (rule != null) have.add(rule.pattern().strip().toLowerCase(Locale.ROOT));
+        for (int i = 0; i < out.size(); i++) {
+            TriggerRule rule = decode(out.get(i));
+            if (rule == null) continue;
+            String key = key(rule);
+            have.add(key);
+            TriggerRule shipped = shippedByKey.get(key);
+            // The rule is present, so it is not added again, but a rule saved by an older build is a
+            // stale copy: adding a phrase to a shipped rule (a new way of saying goodbye) would
+            // otherwise never reach an install that already had that rule. Only a saved rule whose
+            // aliases are all shipped ones is treated as stale, so a user's own aliases are left
+            // exactly as written.
+            if (shipped != null && !shipped.aliases().equals(rule.aliases())
+                && shipped.aliasList().containsAll(rule.aliasList())) {
+                out.set(i, new TriggerRule(rule.pattern(), rule.caseSensitive(), rule.wholeWord(),
+                    rule.sender(), rule.reply(), rule.mode(), rule.cooldownMs(), rule.sessionLimit(),
+                    rule.sound(), rule.remember(), rule.enabled(), shipped.aliases(), rule.pool(),
+                    rule.whisper(), rule.embedMode()).encode());
+            }
         }
 
         for (TriggerRule shipped : preconfigured()) {
-            if (have.add(shipped.pattern().strip().toLowerCase(Locale.ROOT))) {
+            String key = key(shipped);
+            if (deleted.contains(key)) continue;
+            if (have.add(key)) {
                 out.add(shipped.encode());
             }
         }
         return java.util.List.copyOf(out);
+    }
+
+    /** Merges without a deletion set: shipped rules a saved list lacks are all filled in. */
+    public static java.util.List<String> mergeWithPreconfigured(java.util.List<String> saved) {
+        return mergeWithPreconfigured(saved, java.util.Set.of());
+    }
+
+    /** A pattern reduced to the form used to compare rules across configs. */
+    private static String key(TriggerRule rule) {
+        return rule.pattern().strip().toLowerCase(Locale.ROOT);
+    }
+
+    private static java.util.Set<String> keyed(java.util.Collection<String> patterns) {
+        java.util.Set<String> out = new java.util.HashSet<>();
+        if (patterns == null) return out;
+        for (String pattern : patterns) {
+            if (pattern != null && !pattern.isBlank()) {
+                out.add(pattern.strip().toLowerCase(Locale.ROOT));
+            }
+        }
+        return out;
     }
 
     /**
@@ -529,8 +663,19 @@ public record TriggerRule(
      * @param saved the encoded rules as stored, in order
      */
     public static java.util.List<TriggerRule> loadSaved(java.util.List<String> saved) {
+        return loadSaved(saved, java.util.Set.of());
+    }
+
+    /**
+     * The rules to run: the saved rules, the shipped ones filled in, deletions respected.
+     *
+     * @param saved   the encoded rules as stored, in order
+     * @param removed patterns the user deleted, which must not be shipped back in
+     */
+    public static java.util.List<TriggerRule> loadSaved(java.util.List<String> saved,
+                                                        java.util.Set<String> removed) {
         java.util.List<TriggerRule> out = new java.util.ArrayList<>();
-        for (String encoded : mergeWithPreconfigured(saved)) {
+        for (String encoded : mergeWithPreconfigured(saved, removed)) {
             TriggerRule rule = decode(encoded);
             if (rule != null) out.add(rule);
         }
@@ -572,7 +717,7 @@ public record TriggerRule(
         out.add(rule("good morning", "Morning, {player}!", "morning"));
         out.add(rule("good night", "Night, {player}.", "gn"));
         out.add(rule("thank you", "You are welcome, {player}.", "thanks,ty,thx"));
-        out.add(rule("goodbye", "See you, {player}.", "bye,cya"));
+        out.add(rule("goodbye", "See you, {player}.", "bye,cya,gtg,g2g"));
         out.add(rule("good bot", "Thank you, {player}.", "nice bot"));
         out.add(rule("good game", "Good game!", "gg,wp"));
         out.add(rule("welcome back", "Welcome back, {player}.", "wb"));

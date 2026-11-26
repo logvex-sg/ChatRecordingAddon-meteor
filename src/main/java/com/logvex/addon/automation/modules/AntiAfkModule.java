@@ -11,6 +11,7 @@ import net.minecraft.util.Hand;
 
 import java.util.ArrayList;
 import java.util.List;
+import com.logvex.addon.framework.SafeEventHandler;
 
 /**
  * Performs small actions so the player is not kicked for idling.
@@ -89,20 +90,22 @@ public class AntiAfkModule extends AutomationModule {
 
     @EventHandler
     private void onTick(TickEvent.Post event) {
-        if (!ready()) return;
+        SafeEventHandler.guard("AntiAfkModule.onTick", () -> {
+            if (!ready()) return;
 
-        // A key pressed by an earlier action is held for a few ticks, then released, so the player
-        // never keeps sneaking or walking after the action ends.
-        if (releaseKeyAt >= 0 && mc.player != null && mc.player.age >= releaseKeyAt) {
-            releaseInputs();
-        }
+            // A key pressed by an earlier action is held for a few ticks, then released, so the player
+            // never keeps sneaking or walking after the action ends.
+            if (releaseKeyAt >= 0 && mc.player != null && mc.player.age >= releaseKeyAt) {
+                releaseInputs();
+            }
 
-        controller.setIntervals(minInterval.get() * 1000L, maxInterval.get() * 1000L);
-        controller.setActions(selectedActions());
+            controller.setIntervals(minInterval.get() * 1000L, maxInterval.get() * 1000L);
+            controller.setActions(selectedActions());
 
-        AntiAfkController.Action action = controller.next(System.currentTimeMillis());
-        if (action == null) return;
-        perform(action);
+            AntiAfkController.Action action = controller.next(System.currentTimeMillis());
+            if (action == null) return;
+            perform(action);
+        }).run();
     }
 
     private List<AntiAfkController.Action> selectedActions() {

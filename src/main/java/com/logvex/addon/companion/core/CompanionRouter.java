@@ -142,6 +142,7 @@ public final class CompanionRouter {
         route("GET", "/api/v1/players", request -> Response.json(200, call(api::snapshot).players()));
         route("GET", "/api/v1/chat", request -> Response.json(200, call(api::snapshot).chat()));
         route("GET", "/api/v1/bot", request -> Response.json(200, call(api::snapshot).bot()));
+        route("GET", "/api/v1/world", request -> Response.json(200, call(api::snapshot).world()));
         route("GET", "/api/v1/storage", request -> Response.json(200, call(api::snapshot).storage()));
         route("GET", "/api/v1/queries", request -> Response.json(200, api.queries()));
 
