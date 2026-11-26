@@ -487,7 +487,7 @@ public record TriggerRule(
     }
 
     /**
-     * Fills in shipped rules a saved list does not have.
+     * Fills in shipped rules a saved list does not have, skipping ones the user deleted.
      *
      * <p>The rule table is a persisted setting, so an install that saved its rules before a command
      * existed kept the old list for ever and the new command was unreachable. That is what a player
@@ -495,29 +495,58 @@ public record TriggerRule(
      * gained it. Merging on load is what makes a newly shipped command appear for an existing
      * install.
      *
-     * <p>Two things are deliberately not done. A rule the user wrote is never rewritten, and a
-     * shipped rule they deleted is not resurrected: only patterns absent from the saved list are
-     * added, so a deletion is still a deletion. Disabling a shipped rule in place also works,
-     * because a disabled rule is still present and so is never re-added.
+     * <p>A rule the user wrote is never rewritten, and a shipped rule they turned off in place stays
+     * off, because a disabled rule is still present and so is never re-added.
      *
-     * @param saved the encoded rules as stored, in order
-     * @return {@code saved} followed by the shipped rules whose pattern it lacks
+     * <p>Deletion needs the {@code removed} set, because absence alone is ambiguous: the merge
+     * cannot tell "deleted on purpose" from "shipped after this config was written", and treating
+     * absence as deletion would mean no install ever gained a new rule again. So a deletion is
+     * recorded by name, and only names absent from both the saved list and this set are added.
+     *
+     * @param saved   the encoded rules as stored, in order
+     * @param removed patterns the user deleted, so they are not shipped back in
+     * @return {@code saved} followed by the shipped rules it lacks and the user did not delete
      */
-    public static java.util.List<String> mergeWithPreconfigured(java.util.List<String> saved) {
+    public static java.util.List<String> mergeWithPreconfigured(java.util.List<String> saved,
+                                                               java.util.Set<String> removed) {
         java.util.List<String> out = new java.util.ArrayList<>(saved == null ? java.util.List.of() : saved);
+        java.util.Set<String> deleted = keyed(removed);
 
         java.util.Set<String> have = new java.util.HashSet<>();
         for (String line : out) {
             TriggerRule rule = decode(line);
-            if (rule != null) have.add(rule.pattern().strip().toLowerCase(Locale.ROOT));
+            if (rule != null) have.add(key(rule));
         }
 
         for (TriggerRule shipped : preconfigured()) {
-            if (have.add(shipped.pattern().strip().toLowerCase(Locale.ROOT))) {
+            String key = key(shipped);
+            if (deleted.contains(key)) continue;
+            if (have.add(key)) {
                 out.add(shipped.encode());
             }
         }
         return java.util.List.copyOf(out);
+    }
+
+    /** Merges without a deletion set: shipped rules a saved list lacks are all filled in. */
+    public static java.util.List<String> mergeWithPreconfigured(java.util.List<String> saved) {
+        return mergeWithPreconfigured(saved, java.util.Set.of());
+    }
+
+    /** A pattern reduced to the form used to compare rules across configs. */
+    private static String key(TriggerRule rule) {
+        return rule.pattern().strip().toLowerCase(Locale.ROOT);
+    }
+
+    private static java.util.Set<String> keyed(java.util.Collection<String> patterns) {
+        java.util.Set<String> out = new java.util.HashSet<>();
+        if (patterns == null) return out;
+        for (String pattern : patterns) {
+            if (pattern != null && !pattern.isBlank()) {
+                out.add(pattern.strip().toLowerCase(Locale.ROOT));
+            }
+        }
+        return out;
     }
 
     /**
@@ -529,8 +558,19 @@ public record TriggerRule(
      * @param saved the encoded rules as stored, in order
      */
     public static java.util.List<TriggerRule> loadSaved(java.util.List<String> saved) {
+        return loadSaved(saved, java.util.Set.of());
+    }
+
+    /**
+     * The rules to run: the saved rules, the shipped ones filled in, deletions respected.
+     *
+     * @param saved   the encoded rules as stored, in order
+     * @param removed patterns the user deleted, which must not be shipped back in
+     */
+    public static java.util.List<TriggerRule> loadSaved(java.util.List<String> saved,
+                                                        java.util.Set<String> removed) {
         java.util.List<TriggerRule> out = new java.util.ArrayList<>();
-        for (String encoded : mergeWithPreconfigured(saved)) {
+        for (String encoded : mergeWithPreconfigured(saved, removed)) {
             TriggerRule rule = decode(encoded);
             if (rule != null) out.add(rule);
         }

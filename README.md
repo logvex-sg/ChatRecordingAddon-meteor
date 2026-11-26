@@ -400,22 +400,47 @@ player. Join, leave, death and advancement lines keep their own types and are un
 
 A trigger watches incoming chat for a keyword or phrase and answers it. Triggers are stored as a
 single line each, so the whole feature set is editable from the settings list, the
-`!ai triggers` command or the Assistant Manager GUI:
+`.ai triggers` command or the Assistant Manager GUI:
 
 ```
-pattern;sender=;reply=;mode=private;cooldown=3000;limit=0;sound=false;remember=false;enabled=true;aliases=;pool=;whisper=msg;embed=false
+pattern;case=false;whole=true;sender=;reply=;mode=private;cooldown=3000;limit=0;sound=false;remember=false;enabled=true;aliases=;pool=;whisper=msg;embed=auto
 ```
 
-A fresh install ships **106 preconfigured rules** with 76 extra aliases, all enabled, all at the
+A fresh install ships **105 preconfigured rules** with 76 extra aliases, all enabled, all at the
 3000 ms cooldown, all matched on whole words, and all answered **privately to the person they
 answer** (see *Who the assistant will answer* below for who that is).
-That is 182 phrases answering out of the box — no setup step. They cover greetings, thanks,
+That is 181 phrases answering out of the box — no setup step. They cover greetings, thanks,
 farewells, `gg`/`wp`, small talk, the server-figure questions (`what is the tps`, `what is my ping`,
 `is the server lagging`, `how many players`), the player-figure questions (`where am i`,
 `what is my health`, `what is my armour`, `what is my gamemode`) and the command-shaped set
 (`!tps`, `!status`, `!memory`, `!world`, `!time`, `!ping`, `!fps`, `!ram`, `!session`,
 `!players`, `!hunger`, `!vitals`, `!facing`, `!offhand`, `!environment`, `!help`).
-`!ai triggers restore` puts the same table back.
+`.ai triggers restore` puts the same table back.
+
+#### Silencing one answer
+
+Every shipped rule can be turned off or deleted, and both stick across a restart. Two different
+front ends write the same stored list, so pick whichever suits:
+
+```
+!trigger off cya     # typed in chat: switches the "goodbye" rule off; "cya" stops answering
+!trigger on cya      # typed in chat: switches it back on
+.ai triggers remove 12   # deletes rule 12 outright
+.ai triggers restore     # brings back anything deleted
+```
+
+`!trigger off` is a chat command, so it goes through the assistant's own prefix (`!` by default)
+rather than the Meteor `.` prefix. It takes the word you actually saw in chat, not just the rule's
+name: `cya` and `bye` both resolve to the `goodbye` rule, and an ambiguous prefix lists the
+candidates instead of guessing. Disabling keeps the reply text, so `!trigger on` restores the exact
+wording.
+
+The same rules are editable in the Assistant Manager GUI, where **Remove** deletes a rule and
+**Remove all** empties the table. A deletion is recorded in the `removed-rules` setting so the
+shipped table is not merged straight back in on the next load — without that record the merge that
+exists to deliver newly shipped rules could not tell "deleted on purpose" from "shipped after this
+config was written", and every deletion would be silently undone. Rules shipped *after* your config
+was written are still added. Clearing `removed-rules` is equivalent to `.ai triggers restore`.
 
 #### Who the assistant will answer
 

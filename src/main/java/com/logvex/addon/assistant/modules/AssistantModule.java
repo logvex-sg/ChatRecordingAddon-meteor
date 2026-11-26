@@ -60,7 +60,10 @@ import net.minecraft.text.Text;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 
 /**
  * A configurable chat assistant: keyword triggers, persistent memory and memory commands.
@@ -340,6 +343,23 @@ public class AssistantModule extends AutomationModule {
             + "Empty means only you.")
         .defaultValue(List.of())
         .visible(() -> triggerAudience.get() == TriggerAudience.ALLOWLIST)
+        .onChanged(ignored -> rebuild())
+        .build()
+    );
+
+    /**
+     * Patterns the user deleted, kept so the shipped-rule merge does not add them back.
+     *
+     * <p>Deleting a shipped rule removes it from {@link #rules}, but the merge cannot read that as
+     * intent: it exists to give an old config the rules shipped since, and an absent rule looks the
+     * same either way. This list is the missing half of that decision, so "Remove" and "Remove all"
+     * stick across a restart while a newly shipped rule still arrives.
+     */
+    private final Setting<List<String>> removedRules = sgTriggers.add(new StringListSetting.Builder()
+        .name("removed-rules")
+        .description("Shipped triggers you deleted. Kept so they are not added back on load; "
+            + "clear this to let them return.")
+        .defaultValue(List.of())
         .onChanged(ignored -> rebuild())
         .build()
     );
@@ -1190,8 +1210,9 @@ public class AssistantModule extends AutomationModule {
         });
         runtime.brain().setTriggerToggle(this::setTriggerEnabled);
         // The catalog is the saved list merged with the shipped rules, disabled entries included:
-        // the active set cannot answer "what can I switch back on?".
-        runtime.brain().setTriggerCatalog(() -> TriggerRule.loadSaved(rules.get()));
+        // the active set cannot answer "what can I switch back on?". Deleted rules stay out, since
+        // they are not switchable and would be listed as if they were.
+        runtime.brain().setTriggerCatalog(() -> TriggerRule.loadSaved(rules.get(), removedRuleSet()));
     }
 
     /**
@@ -1211,6 +1232,9 @@ public class AssistantModule extends AutomationModule {
             TriggerRule rule = TriggerRule.decode(saved.get(i));
             if (rule == null || !rule.pattern().strip().equalsIgnoreCase(needle)) continue;
             if (rule.enabled() == enabled) {
+                // Reaching a rule that is already saved means it exists, whatever a stale deletion
+                // record says; clearing that keeps the two representations in agreement.
+                forgetRemovedQuietly(rule.pattern());
                 return null;
             }
             saved.set(i, new TriggerRule(rule.pattern(), rule.caseSensitive(), rule.wholeWord(),
@@ -1218,6 +1242,7 @@ public class AssistantModule extends AutomationModule {
                 rule.sound(), rule.remember(), enabled, rule.aliases(), rule.pool(),
                 rule.whisper(), rule.embedMode()).encode());
             rules.set(saved);
+            forgetRemovedQuietly(rule.pattern());
             rebuild();
             return null;
         }
@@ -1230,6 +1255,9 @@ public class AssistantModule extends AutomationModule {
                 shipped.sessionLimit(), shipped.sound(), shipped.remember(), enabled,
                 shipped.aliases(), shipped.pool(), shipped.whisper(), shipped.embedMode()).encode());
             rules.set(saved);
+            // Turning a rule back on after deleting it revives it, so the deletion record must go
+            // too: otherwise the record and the saved list disagree about whether it exists.
+            forgetRemovedQuietly(shipped.pattern());
             rebuild();
             return null;
         }
@@ -1470,8 +1498,19 @@ public class AssistantModule extends AutomationModule {
         // loadSaved is the one load path: it merges the shipped rules into the saved list, because
         // the list is persisted and an install saved before a command shipped would never gain it.
         // Merging at parse time leaves the setting as the user left it and cannot recurse through
-        // its onChanged.
-        return TriggerRule.loadSaved(rules.get());
+        // its onChanged. The deleted set is passed so a removal is not undone by that same merge.
+        return TriggerRule.loadSaved(rules.get(), removedRuleSet());
+    }
+
+    /** The deleted patterns, lowercased, for the merge to skip. */
+    private Set<String> removedRuleSet() {
+        Set<String> out = new HashSet<>();
+        for (String pattern : removedRules.get()) {
+            if (pattern != null && !pattern.isBlank()) {
+                out.add(pattern.strip().toLowerCase(Locale.ROOT));
+            }
+        }
+        return out;
     }
 
     private void flushMemory() {
@@ -1678,6 +1717,10 @@ public class AssistantModule extends AutomationModule {
         List<String> updated = new ArrayList<>(rules.get());
         updated.add(rule.encode());
         rules.set(updated);
+        // A saved rule always wins over a deletion record, but leaving the record behind would make
+        // "Restore defaults" and this rule disagree about whether the pattern is deleted. Adding one
+        // is the user saying they want it, so the record goes.
+        forgetRemovedQuietly(rule.pattern());
         rebuild();
         return true;
     }
@@ -1685,10 +1728,86 @@ public class AssistantModule extends AutomationModule {
     public boolean removeRule(int index) {
         List<String> updated = new ArrayList<>(rules.get());
         if (index < 0 || index >= updated.size()) return false;
-        updated.remove(index);
+        TriggerRule removed = TriggerRule.decode(updated.remove(index));
         rules.set(updated);
+        if (removed != null) rememberRemoved(removed.pattern());
         rebuild();
         return true;
+    }
+
+    /**
+     * Removes the rule called {@code pattern}, whether it is stored or only shipped.
+     *
+     * <p>Removal by name, not by index: the list a user reads from {@code !triggers} is the merged
+     * one, whose tail is shipped rules that were never written to the setting, so an index from
+     * that list does not address {@link #rules} once the two differ in length.
+     *
+     * @return true when something was removed
+     */
+    public boolean removeRuleNamed(String pattern) {
+        if (pattern == null || pattern.isBlank()) return false;
+        String needle = pattern.strip();
+        List<String> updated = new ArrayList<>(rules.get());
+        for (int i = 0; i < updated.size(); i++) {
+            TriggerRule rule = TriggerRule.decode(updated.get(i));
+            if (rule == null || !rule.pattern().strip().equalsIgnoreCase(needle)) continue;
+            updated.remove(i);
+            rules.set(updated);
+            rememberRemoved(rule.pattern());
+            rebuild();
+            return true;
+        }
+        // A rule that only exists in the shipped table: it is not in the setting, so there is
+        // nothing to delete there. Recording the name is what stops the merge adding it back.
+        for (TriggerRule shipped : TriggerRule.preconfigured()) {
+            if (!shipped.pattern().strip().equalsIgnoreCase(needle)) continue;
+            rememberRemoved(shipped.pattern());
+            rebuild();
+            return true;
+        }
+        return false;
+    }
+
+    /** Records a deletion so the shipped-rule merge leaves the rule out. */
+    private void rememberRemoved(String pattern) {
+        if (pattern == null || pattern.isBlank()) return;
+        String needle = pattern.strip();
+        List<String> deleted = new ArrayList<>(removedRules.get());
+        for (String existing : deleted) {
+            if (existing != null && existing.strip().equalsIgnoreCase(needle)) return;
+        }
+        deleted.add(needle);
+        removedRules.set(deleted);
+    }
+
+    /** Drops a recorded deletion, so a shipped rule comes back on the next rebuild. */
+    public boolean forgetRemoved(String pattern) {
+        if (!forgetRemovedQuietly(pattern)) return false;
+        rebuild();
+        return true;
+    }
+
+    /** Drops a recorded deletion without rebuilding, for callers that rebuild anyway. */
+    private boolean forgetRemovedQuietly(String pattern) {
+        if (pattern == null || pattern.isBlank()) return false;
+        String needle = pattern.strip();
+        List<String> deleted = new ArrayList<>();
+        boolean dropped = false;
+        for (String existing : removedRules.get()) {
+            if (existing != null && existing.strip().equalsIgnoreCase(needle)) {
+                dropped = true;
+                continue;
+            }
+            deleted.add(existing);
+        }
+        if (!dropped) return false;
+        removedRules.set(deleted);
+        return true;
+    }
+
+    /** The patterns currently recorded as deleted. */
+    public List<String> removedRulePatterns() {
+        return List.copyOf(removedRules.get());
     }
 
     public boolean replaceRule(int index, String encoded) {
@@ -1701,7 +1820,17 @@ public class AssistantModule extends AutomationModule {
         return true;
     }
 
+    /** Drops every rule, shipped ones included, and records them so the merge leaves them out. */
+    public void removeAllRules() {
+        for (TriggerRule rule : parseRules()) rememberRemoved(rule.pattern());
+        rules.set(List.of());
+        rebuild();
+    }
+
     public void restoreDefaultRules() {
+        // Clearing the deletions is what makes "Restore defaults" mean it: a deleted shipped rule
+        // is absent from the saved list, so without this the merge would still leave it out.
+        removedRules.set(List.of());
         rules.set(TriggerRule.defaults().stream().map(TriggerRule::encode).toList());
         rebuild();
     }

@@ -126,8 +126,9 @@ public class AssistantScreen extends WindowScreen {
         };
         WButton clear = footer.add(theme.button("Remove all")).widget();
         clear.action = () -> {
-            module.rulesSetting().set(List.of());
-            module.rebuild();
+            // Through the module, not the setting: emptying the list alone leaves every shipped
+            // rule to be merged straight back in on the next rebuild, so the table never emptied.
+            module.removeAllRules();
             taskAfterRender = this::render;
         };
         footer.row();
