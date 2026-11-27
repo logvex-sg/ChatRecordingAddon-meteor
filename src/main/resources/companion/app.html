@@ -2166,15 +2166,23 @@ function renderWorld() {
   }));
   view.appendChild(mapCard);
 
+  // Entities are embeds like every other record list: the stripe and badge colour carry the kind,
+  // so a hostile mob is recognisable at a glance instead of by reading the word.
   const entityCard = card("Entities", [entities.length
-    ? el("div", { class: "grid tight" }, entities.slice(0, 12).map(e =>
-        el("div", { class: "card", style: "padding:9px 11px" }, [
-          el("div", { class: "kv" }, [
-            el("span", { text: e.name || shortId(e.id) }),
-            el("span", { class: "badge " + entityTone(e.kind), text: e.kind })
-          ]),
-          el("div", { class: "muted mono", text: fmt(e.distance) + " blocks · " + e.health + " hp" })
-        ])))
+    ? el("div", { class: "embeds", style: "max-height:360px" }, entities.slice(0, 12).map(e => {
+        const tone = "var(--" + entityTone(e.kind) + ")";
+        return el("div", { class: "embed", style: "--tone:" + tone }, [
+          el("div", { class: "stripe" }),
+          el("div", { class: "body" }, [
+            el("div", { class: "head" }, [
+              el("span", { class: "sender", text: e.name || shortId(e.id) }),
+              el("span", { class: "badge", text: e.kind }),
+              el("span", { class: "time", text: fmt(e.distance) + " blocks" })
+            ]),
+            el("div", { class: "meta", text: shortId(e.id) + " · " + e.health + " hp" })
+          ])
+        ]);
+      }))
     : emptyState("Nothing living nearby.")]);
   view.appendChild(entityCard);
 

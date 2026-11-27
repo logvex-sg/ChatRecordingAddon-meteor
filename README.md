@@ -1664,9 +1664,10 @@ across those refreshes, so a rebuild never discards your input.
 - **World** — where the client is and what is around it, for a player who is not at that machine.
   Coordinates, health, light level, the clock and the dimension sit beside a drawn top-down map of
   the nearby blocks, coloured by material (water blue, lava orange, leaves green, and so on), with
-  the player marked at the centre. Below it are the nearby entities with their kind, distance and
-  health, and a count of the blocks you are standing among. The map answers the question a list of
-  coordinates cannot: *where* the lava is.
+  the player marked at the centre. Below it are the nearby entities as embeds — the stripe and
+  badge colour carry the kind, so a hostile mob reads differently from a passive one without
+  reading the word — with their distance and health, and a count of the blocks you are standing
+  among. The map answers the question a list of coordinates cannot: *where* the lava is.
 - **Players** — observed players with their message counts and last-seen times, marked online when
   the client's player list currently contains them.
 - **Stats** — session message, player, join, leave and death totals.
