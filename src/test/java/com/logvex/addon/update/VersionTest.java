@@ -53,6 +53,29 @@ class VersionTest {
     }
 
     @Test
+    @DisplayName("a hyphen later in the title is not a pre-release marker")
+    void proseTitleKeepsItsVersionClean() {
+        // The release title is prose, and a bare counter tag forces the version to be read from it.
+        // A hyphen in the headline ("auto-login") used to be taken as a pre-release marker, so the
+        // whole rest of the headline became part of the version the player was shown.
+        ReleaseInfo release = new ReleaseInfo("v44",
+            "Log Client 18.27.0 \u2014 auto-login answers the prompt, and ai reactions explains itself",
+            "", false, "", "", List.of());
+
+        assertEquals("18.27.0", release.version().toString());
+        assertTrue(release.isNewerThan(Version.parse("18.26.0")));
+        assertFalse(release.isNewerThan(Version.parse("18.27.0")));
+    }
+
+    @Test
+    @DisplayName("a hyphenated headline still parses the version before the separator")
+    void emDashSeparatorIsNotPartOfTheVersion() {
+        assertEquals("18.27.0", Version.parse("Log Client 18.27.0 \u2014 headline").toString());
+        assertEquals("18.27.0", Version.parse("Log Client 18.27.0 - headline").toString());
+        assertEquals("18.27.0", Version.parse("18.27.0 (hotfix)").toString());
+    }
+
+    @Test
     @DisplayName("channel selection honours the pre-release flag")
     void channelSelection() {
         ReleaseInfo stable = release("v13.1.0", false);

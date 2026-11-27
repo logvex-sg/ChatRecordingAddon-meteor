@@ -43,26 +43,34 @@ public final class Version implements Comparable<Version> {
         if (start < 0) return new Version(0, 0, 0, "", raw);
 
         String body = raw.substring(start);
-        String pre = "";
-        int preIndex = indexOfPreRelease(body);
-        if (preIndex >= 0) {
-            pre = body.substring(preIndex).replaceFirst("^[-+]", "");
-            body = body.substring(0, preIndex);
+        // The version is the leading run of digits and dots. A pre-release marker counts only when
+        // it directly follows that run and is one unbroken token.
+        //
+        // Scanning for a hyphen anywhere was wrong: release titles are prose, and
+        // "Log Client 18.27.0 — auto-login answers the prompt" put the whole headline into the
+        // version as a pre-release tag, which then reached the player as
+        // "18.27.0-login answers the prompt, and ai reactions explains itself".
+        int bodyEnd = 0;
+        while (bodyEnd < body.length()) {
+            char c = body.charAt(bodyEnd);
+            if (!Character.isDigit(c) && c != '.') break;
+            bodyEnd++;
         }
-        body = body.replaceFirst("[^0-9.].*$", "");
+        String pre = "";
+        // Only a hyphen introduces a pre-release. A '+' introduces build metadata, which semver
+        // ignores for ordering, so "2.3.4+build.7" is version 2.3.4.
+        if (bodyEnd < body.length() && body.charAt(bodyEnd) == '-') {
+            int preEnd = bodyEnd + 1;
+            while (preEnd < body.length() && !Character.isWhitespace(body.charAt(preEnd))) preEnd++;
+            pre = body.substring(bodyEnd + 1, preEnd);
+        }
+        body = body.substring(0, bodyEnd);
 
         String[] parts = body.split("\\.");
         int major = component(parts, 0);
         int minor = component(parts, 1);
         int patch = component(parts, 2);
         return new Version(major, minor, patch, pre, raw);
-    }
-
-    private static int indexOfPreRelease(String body) {
-        for (int i = 0; i < body.length(); i++) {
-            if (body.charAt(i) == '-') return i;
-        }
-        return -1;
     }
 
     private static int component(String[] parts, int index) {
