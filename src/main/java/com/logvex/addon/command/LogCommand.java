@@ -1015,18 +1015,26 @@ public class LogCommand extends Command {
 
     private void acquisitionStatus(SchematicDropperModule module) {
         var snapshot = module.acquisitionSnapshot();
-        info("Acquisition: %s, %s",
-            module.acquisitionState().name().toLowerCase(Locale.ROOT),
-            Messages.percent(snapshot.percent() / 100.0));
-        info("  %s acquired, %s remaining, %s.",
-            Messages.number(snapshot.totalAcquired()), Messages.number(snapshot.totalRemaining()),
-            snapshot.failedOperations() == 0 ? "no failures"
-                : Messages.plural(snapshot.failedOperations(), "failure"));
         var current = snapshot.current();
+
+        List<com.logvex.addon.assistant.core.ReplyFormat.Field> fields = new ArrayList<>();
+        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("State",
+            module.acquisitionState().name().toLowerCase(Locale.ROOT)));
+        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Progress",
+            Messages.percent(snapshot.percent() / 100.0)));
+        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Acquired",
+            Messages.number(snapshot.totalAcquired())));
+        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Remaining",
+            Messages.number(snapshot.totalRemaining())));
+        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Failures",
+            snapshot.failedOperations() == 0 ? "none"
+                : Messages.number(snapshot.failedOperations())));
         if (current != null) {
-            info("  Current: %s (%s required).", Messages.prettyId(current.itemId()),
-                Messages.number(current.required()));
+            fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Current",
+                Messages.prettyId(current.itemId()) + " ("
+                    + Messages.number(current.required()) + " required)"));
         }
+        CommandOutput.send(this, "Acquisition", fields, "");
     }
 
     private void openGui() {
@@ -1338,8 +1346,11 @@ public class LogCommand extends Command {
             info("Chat filter: no rules configured (nothing is hidden).");
             return;
         }
-        info("Chat filter: %d rules, default %s, %d messages hidden this session.",
-            rules.rules().size(), rules.defaultAction().name().toLowerCase(), service.hiddenCount());
+        List<Field> fields = new ArrayList<>();
+        fields.add(new Field("Rules", String.valueOf(rules.rules().size())));
+        fields.add(new Field("Default", rules.defaultAction().name().toLowerCase(Locale.ROOT)));
+        fields.add(new Field("Hidden", service.hiddenCount() + " this session"));
+        CommandOutput.send(this, "Chat filter", fields, "");
     }
 
     private void filterReset() {
