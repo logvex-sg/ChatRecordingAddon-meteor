@@ -32,8 +32,26 @@ import java.util.Map;
  * written token.
  */
 public final class CompanionDiscovery {
-    /** The file name, inside the addon data folder. */
+    /** The file name used by a single client, inside the addon data folder. */
     public static final String FILE_NAME = "companion.json";
+
+    /**
+     * The file name for a server on a given port.
+     *
+     * <p>Two Minecraft instances on one machine share the addon data folder. With one fixed name the
+     * second instance overwrote the first's document, so a dashboard reading it would dial the wrong
+     * port with the wrong token. The port is part of the name instead, so each running companion
+     * owns a file and a reader can enumerate them.
+     *
+     * <p>The plain {@link #FILE_NAME} is still written by a client on the default port, so an
+     * existing single-client setup keeps the path it already knows.
+     */
+    public static String fileNameFor(int port) {
+        return port == DEFAULT_PORT ? FILE_NAME : "companion-" + port + ".json";
+    }
+
+    /** The default port, kept in step with {@link CompanionConfig}. */
+    public static final int DEFAULT_PORT = 6767;
 
     /** The document version, so a future build can migrate rather than guess. */
     public static final int VERSION = 1;

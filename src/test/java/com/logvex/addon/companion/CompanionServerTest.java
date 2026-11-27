@@ -23,6 +23,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -100,6 +101,45 @@ class CompanionServerTest {
 
         server.stop();
         assertFalse(server.isRunning());
+    }
+
+    @Test
+    @DisplayName("a second client on the same machine gets its own port")
+    void secondServerMovesToTheNextFreePort() throws Exception {
+        CompanionServer first = null;
+        CompanionServer second = null;
+        try {
+            // Find a port the OS will give us, then ask a second server for that same port. This is
+            // exactly what two Minecraft instances sharing the default 6767 do.
+            CompanionConfig probe = new CompanionConfig();
+            probe.setToken(TOKEN);
+            probe.setPort(0);
+            first = new CompanionServer(probe, new FakeCompanionApi(), CompanionClientThread.direct(),
+                new CompanionEventBus(20), "<html><body>first</body></html>");
+            first.start();
+            int taken = first.port();
+            assertTrue(taken > 0);
+
+            CompanionConfig wanted = new CompanionConfig();
+            wanted.setToken(TOKEN);
+            wanted.setPort(taken);
+            second = new CompanionServer(wanted, new FakeCompanionApi(),
+                CompanionClientThread.direct(), new CompanionEventBus(20),
+                "<html><body>second</body></html>");
+            second.start();
+
+            assertNotEquals(taken, second.port(),
+                "the second client must not bind the port the first one holds");
+            assertTrue(second.port() > taken,
+                "the search must move forward from the configured port, not pick anything");
+            assertTrue(first.isRunning(), "starting a second client must not disturb the first");
+            assertEquals(taken, first.port(), "the first client keeps the port it already had");
+            assertEquals(taken, wanted.port(),
+                "the configured port must not be rewritten by a fallback");
+        } finally {
+            if (second != null) second.stop();
+            if (first != null) first.stop();
+        }
     }
 
     @Test

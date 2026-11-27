@@ -13,6 +13,7 @@ import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -41,6 +42,19 @@ class CompanionDiscoveryTest {
         assertEquals(6767, doc.get("port").getAsInt());
         assertEquals("s3cret", doc.get("token").getAsString());
         assertTrue(doc.get("pid").getAsLong() > 0, "the reader needs a pid to spot a stale file");
+    }
+
+    @Test
+    @DisplayName("two clients on one machine do not overwrite each other's discovery file")
+    void fileNameIsUniquePerPort() {
+        // Both instances share the addon data folder, so a single fixed name meant the second
+        // companion silently replaced the first's token and port.
+        assertEquals(CompanionDiscovery.FILE_NAME, CompanionDiscovery.fileNameFor(6767),
+            "the default port keeps the plain name, so an existing setup is unchanged");
+        assertNotEquals(CompanionDiscovery.fileNameFor(6767),
+            CompanionDiscovery.fileNameFor(6768));
+        assertTrue(CompanionDiscovery.fileNameFor(6768).contains("6768"),
+            "the file name must say which port it belongs to");
     }
 
     @Test

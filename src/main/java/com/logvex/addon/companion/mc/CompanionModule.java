@@ -210,10 +210,16 @@ public class CompanionModule extends AddonModule {
             new MinecraftMapSource());
         try {
             server.start();
+            if (boundPort() != config.port()) {
+                info("Port %d was in use, so the companion moved to %d.",
+                    config.port(), boundPort());
+            }
             publishDiscovery();
         } catch (IOException e) {
-            LogClient.LOG.warn("Companion could not bind port {}: {}", config.port(), e.getMessage());
-            warning("Could not start the companion on port %d. Is it already in use?", config.port());
+            LogClient.LOG.warn("Companion could not bind near port {}: {}",
+                config.port(), e.getMessage());
+            warning("Could not start the companion near port %d. Try a different port.",
+                config.port());
             server = null;
         }
     }
@@ -236,16 +242,24 @@ public class CompanionModule extends AddonModule {
      */
     private void publishDiscovery() {
         if (!isLoopbackBind()) return;
-        if (discovery == null) {
-            discovery = new CompanionDiscovery(
-                new java.io.File(LogClientContext.dataFolder(), CompanionDiscovery.FILE_NAME).toPath());
+        // The bound port, not the preferred one: a second client on this machine moves to the next
+        // free port, and advertising the configured value would point a dashboard at the other bot.
+        int bound = boundPort();
+        if (bound <= 0) return;
+        java.nio.file.Path target = new java.io.File(
+            LogClientContext.dataFolder(), CompanionDiscovery.fileNameFor(bound)).toPath();
+        if (discovery == null || !discovery.file().equals(target)) {
+            discovery = new CompanionDiscovery(target);
         }
-        boolean ok = discovery.publish("127.0.0.1", config.port(), config.token());
+        boolean ok = discovery.publish("127.0.0.1", bound, config.token());
         if (!ok) LogClient.LOG.warn("Companion discovery: {}", discovery.lastError());
     }
 
     private void withdrawDiscovery() {
-        if (discovery != null) discovery.withdraw();
+        if (discovery != null) {
+            discovery.withdraw();
+            discovery = null;
+        }
     }
 
     /** True when the server only accepts connections from this machine. */

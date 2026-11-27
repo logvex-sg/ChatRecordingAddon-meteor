@@ -36,6 +36,12 @@ public final class CompanionServer {
     private final String appHtml;
     private final CompanionMapSource mapSource;
 
+    /**
+     * How many ports above the configured one to try. Sixteen is enough for a normal handful of
+     * clients on one machine while still failing quickly if something is badly wrong.
+     */
+    private static final int PORT_SEARCH_RANGE = 16;
+
     private HttpServer server;
     private ExecutorService workers;
     private final AtomicBoolean running = new AtomicBoolean(false);
@@ -84,14 +90,36 @@ public final class CompanionServer {
     }
 
     /**
-     * Starts the server.
+     * Starts the server, moving to the next free port when the configured one is taken.
      *
-     * @throws IOException when the address cannot be bound, for example when the port is in use
+     * <p>Two Minecraft instances on one machine share the addon data folder and therefore the same
+     * default port, so the second one to launch used to fail to bind and simply had no companion.
+     * A taken port is an ordinary condition here, not an error: the server walks forward to the
+     * first port it can have and reports it through {@link #port()}. The configured port is never
+     * modified, so the preference survives a restart.
+     *
+     * @throws IOException when no port in the search range can be bound
      */
     public synchronized void start() throws IOException {
         if (isRunning()) return;
-        InetSocketAddress address = new InetSocketAddress(config.resolveBindAddress(), config.port());
-        server = HttpServer.create(address, 32);
+        int preferred = config.port();
+        IOException last = null;
+        for (int offset = 0; offset < PORT_SEARCH_RANGE; offset++) {
+            int candidate = preferred + offset;
+            if (candidate > 65535) break;
+            try {
+                server = HttpServer.create(
+                    new InetSocketAddress(config.resolveBindAddress(), candidate), 32);
+                last = null;
+                break;
+            } catch (IOException e) {
+                // A port already in use is expected when a second client starts; keep looking.
+                last = e;
+            }
+        }
+        if (server == null) {
+            throw last == null ? new IOException("No free port near " + preferred) : last;
+        }
         workers = Executors.newFixedThreadPool(4, runnable -> {
             Thread thread = new Thread(runnable, "logvex-companion-http");
             thread.setDaemon(true);
