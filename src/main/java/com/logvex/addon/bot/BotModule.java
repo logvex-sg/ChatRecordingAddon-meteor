@@ -20,8 +20,10 @@ import com.logvex.addon.bot.hud.BotStatusHud;
 import com.logvex.addon.bot.mc.FileMemoryStore;
 import com.logvex.addon.bot.mc.MinecraftActionPort;
 import com.logvex.addon.bot.mc.MinecraftBuildPort;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.registry.Registries;
 import net.minecraft.util.Identifier;
+import net.minecraft.util.math.Box;
 import com.logvex.addon.bot.mc.MinecraftInventoryPort;
 import com.logvex.addon.bot.mc.MinecraftItemKnowledge;
 import com.logvex.addon.bot.mc.MinecraftNavPort;
@@ -207,8 +209,43 @@ public class BotModule extends AddonModule {
 
     private final Setting<Boolean> stopOnLowHealth = sgSafety.add(new BoolSetting.Builder()
         .name("pause-on-danger")
-        .description("Pause the bot when health or food drops below the safety thresholds.")
+        .description("Pause the bot when health or food drops below the thresholds, or a hostile mob comes near.")
         .defaultValue(true)
+        .build()
+    );
+
+    private final Setting<Boolean> stopOnThreat = sgSafety.add(new BoolSetting.Builder()
+        .name("pause-on-threat")
+        .description("Pause when a hostile mob comes within the threat radius.")
+        .defaultValue(true)
+        .visible(stopOnLowHealth::get)
+        .build()
+    );
+
+    private final Setting<Integer> threatRadius = sgSafety.add(new IntSetting.Builder()
+        .name("threat-radius")
+        .description("How many blocks away a hostile mob counts as a threat.")
+        .defaultValue(8)
+        .min(2)
+        .sliderRange(2, 24)
+        .visible(() -> stopOnLowHealth.get() && stopOnThreat.get())
+        .build()
+    );
+
+    private final Setting<Boolean> autoEat = sgSafety.add(new BoolSetting.Builder()
+        .name("auto-eat")
+        .description("Eat from the inventory before hunger reaches the pause threshold.")
+        .defaultValue(true)
+        .build()
+    );
+
+    private final Setting<Integer> eatAtFood = sgSafety.add(new IntSetting.Builder()
+        .name("eat-at-food")
+        .description("Eat when food is at or below this many shanks.")
+        .defaultValue(14)
+        .min(1)
+        .sliderRange(1, 20)
+        .visible(autoEat::get)
         .build()
     );
 
@@ -409,6 +446,10 @@ public class BotModule extends AddonModule {
             .retryLimit(retryLimit.get())
             .stopOnDisconnect(stopOnDisconnect.get())
             .stopOnLowHealth(stopOnLowHealth.get())
+            .stopOnThreat(stopOnLowHealth.get() && stopOnThreat.get())
+            .threatRadius(threatRadius.get())
+            .autoEat(autoEat.get())
+            .eatAtFood((float) (int) eatAtFood.get())
             .build();
         controller.setConfig(config);
         controller.setAutoStart(autoStart.get());
@@ -764,5 +805,18 @@ public class BotModule extends AddonModule {
         BotTask active = controller.activeTask();
         if (active != null) return state + ": " + active.describe();
         return state + " (" + controller.queue().size() + " queued)";
+    }
+
+    /** True when a hostile mob is within {@code radius}; mirrors what the safety stop sees. */
+    public boolean threatNearby(int radius) {
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc.player == null || mc.world == null) return false;
+        Box box = mc.player.getBoundingBox().expand(Math.max(1, radius));
+        for (net.minecraft.entity.Entity entity : mc.world.getOtherEntities(mc.player, box)) {
+            if (entity instanceof net.minecraft.entity.mob.HostileEntity hostile && hostile.isAlive()) {
+                return true;
+            }
+        }
+        return false;
     }
 }

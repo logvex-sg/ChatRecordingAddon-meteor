@@ -23,7 +23,11 @@ public record BotConfig(
     int retryLimit,
     long retryBackoffMs,
     boolean stopOnDisconnect,
-    boolean stopOnLowHealth
+    boolean stopOnLowHealth,
+    boolean stopOnThreat,
+    int threatRadius,
+    boolean autoEat,
+    float eatAtFood
 ) {
     public static final BotConfig DEFAULTS = builder().build();
 
@@ -51,6 +55,10 @@ public record BotConfig(
         private long retryBackoffMs = 500;
         private boolean stopOnDisconnect = true;
         private boolean stopOnLowHealth = true;
+        private boolean stopOnThreat = true;
+        private int threatRadius = 8;
+        private boolean autoEat = true;
+        private float eatAtFood = 14.0f;
 
         public Builder maxScanResults(int v) { this.maxScanResults = Math.max(1, v); return this; }
         public Builder gatherRadius(int v) { this.gatherRadius = Math.max(1, v); return this; }
@@ -70,12 +78,17 @@ public record BotConfig(
         public Builder retryBackoffMs(long v) { this.retryBackoffMs = Math.max(0, v); return this; }
         public Builder stopOnDisconnect(boolean v) { this.stopOnDisconnect = v; return this; }
         public Builder stopOnLowHealth(boolean v) { this.stopOnLowHealth = v; return this; }
+        public Builder stopOnThreat(boolean v) { this.stopOnThreat = v; return this; }
+        public Builder threatRadius(int v) { this.threatRadius = Math.max(2, v); return this; }
+        public Builder autoEat(boolean v) { this.autoEat = v; return this; }
+        public Builder eatAtFood(float v) { this.eatAtFood = Math.max(0, v); return this; }
 
         public BotConfig build() {
             return new BotConfig(maxScanResults, gatherRadius, containerRadius, entityRadius,
                 navigationTolerance, maxTravelDistance, minToolDurability, inventoryFullThreshold,
                 healthThreshold, foodThreshold, actionCooldownMs, taskTimeoutMs, maxTasksPerTick,
-                lowPerformanceMode, retryLimit, retryBackoffMs, stopOnDisconnect, stopOnLowHealth);
+                lowPerformanceMode, retryLimit, retryBackoffMs, stopOnDisconnect, stopOnLowHealth,
+                stopOnThreat, threatRadius, autoEat, eatAtFood);
         }
     }
 

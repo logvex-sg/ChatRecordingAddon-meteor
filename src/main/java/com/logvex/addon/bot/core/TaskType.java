@@ -15,7 +15,10 @@ public enum TaskType {
     STORAGE,
     FISHING,
     TRANSPORT,
-    MAINTENANCE;
+    MAINTENANCE,
+    COMBAT,
+    /** Internal: feed the player. Never planned from a user objective; queued by the controller. */
+    EAT;
 
     @Override
     public String toString() {

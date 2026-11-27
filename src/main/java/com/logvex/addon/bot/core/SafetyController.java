@@ -17,7 +17,8 @@ public final class SafetyController {
         SCREEN_OPEN,
         NOT_IN_WORLD,
         INVENTORY_FULL,
-        WORLD_CHANGED
+        WORLD_CHANGED,
+        THREAT
     }
 
     private final BotConfig config;
@@ -39,6 +40,9 @@ public final class SafetyController {
         if (player == null || world == null) return Stop.NOT_IN_WORLD;
         if (!player.alive()) return Stop.DISCONNECTED;
         if (!world.canRun()) return Stop.DISCONNECTED;
+        // A hostile mob outranks hunger: fleeing is the immediate problem, and a bot that stopped to
+        // eat in front of a zombie would be taking damage the whole time.
+        if (config.stopOnThreat() && threatNearby) return Stop.THREAT;
         if (config.stopOnLowHealth() && player.health() > 0 && player.health() <= config.healthThreshold()) {
             return Stop.LOW_HEALTH;
         }
@@ -46,6 +50,21 @@ public final class SafetyController {
             return Stop.LOW_FOOD;
         }
         return Stop.NONE;
+    }
+
+    /**
+     * True when the bot should feed itself before the hunger stop would trip. Auto-eat is checked
+     * against its own, higher threshold so the bot eats while it can still work instead of waiting
+     * to be paused at the safety limit.
+     *
+     * <p>{@code hasFood} is passed in rather than read from the inventory here, because deciding
+     * what counts as food needs the item registry. Requiring it also stops the bot asking to eat
+     * forever when it is carrying nothing edible.
+     */
+    public boolean shouldEat(PlayerPort player, boolean hasFood) {
+        if (!config.autoEat() || player == null || !player.alive()) return false;
+        if (player.foodLevel() > config.eatAtFood()) return false;
+        return hasFood;
     }
 
     /** True when the inventory is at or below the configured free-slot threshold. */
@@ -65,6 +84,7 @@ public final class SafetyController {
             case NOT_IN_WORLD -> "Not in a world.";
             case INVENTORY_FULL -> "The inventory is full.";
             case WORLD_CHANGED -> "The world or dimension changed.";
+            case THREAT -> "A hostile mob is within the safety radius.";
         };
     }
 

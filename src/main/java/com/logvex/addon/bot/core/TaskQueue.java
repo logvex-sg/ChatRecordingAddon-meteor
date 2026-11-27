@@ -95,6 +95,15 @@ public final class TaskQueue {
         return tasks.isEmpty();
     }
 
+    /** True when an unfinished task of {@code type} is already queued. */
+    public boolean hasType(TaskType type) {
+        if (type == null) return false;
+        for (BotTask task : tasks.values()) {
+            if (task.type() == type && !task.state().isFinished()) return true;
+        }
+        return false;
+    }
+
     public boolean isFull() {
         return unfinishedCount() >= MAX_TASKS;
     }

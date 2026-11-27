@@ -6,6 +6,7 @@ import com.logvex.addon.bot.BotModule;
 import com.logvex.addon.bot.core.BotEvent;
 import com.logvex.addon.bot.core.BotState;
 import com.logvex.addon.bot.core.BotTask;
+import com.logvex.addon.bot.core.TaskType;
 import com.logvex.addon.chatlog.core.ChatEntry;
 import com.logvex.addon.chatlog.core.LogSegmentMeta;
 import com.logvex.addon.chatlog.core.PlayerActivity;
@@ -412,6 +413,7 @@ public final class MinecraftCompanionApi implements CompanionApi {
         }
         BotState state = bot.controller().state();
         BotTask active = bot.controller().activeTask();
+        ClientPlayerEntity player = MinecraftClient.getInstance().player;
         List<String> events = new ArrayList<>();
         for (BotEvent event : bot.controller().events()) {
             events.add(event.message());
@@ -424,7 +426,23 @@ public final class MinecraftCompanionApi implements CompanionApi {
             bot.controller().history().successCount(),
             bot.controller().history().failureCount(),
             state == BotState.PAUSED,
-            events);
+            events,
+            player == null ? 0f : player.getHealth(),
+            player == null ? 0f : player.getMaxHealth(),
+            player == null ? 0 : player.getHungerManager().getFoodLevel(),
+            hostileNearby(player, bot.controller().config().threatRadius()),
+            bot.controller().queue().hasType(TaskType.EAT),
+            active == null ? "" : active.describe());
+    }
+
+    /** True when a monster is within {@code radius}; read straight from the client world. */
+    private boolean hostileNearby(ClientPlayerEntity player, int radius) {
+        if (player == null || player.getWorld() == null) return false;
+        Box box = player.getBoundingBox().expand(Math.max(1, radius));
+        for (Entity entity : player.getWorld().getOtherEntities(player, box)) {
+            if (entity instanceof HostileEntity hostile && hostile.isAlive()) return true;
+        }
+        return false;
     }
 
     private List<String> capabilities() {

@@ -6,6 +6,10 @@ import meteordevelopment.meteorclient.utils.player.FindItemResult;
 import meteordevelopment.meteorclient.utils.player.InvUtils;
 import meteordevelopment.meteorclient.utils.world.BlockUtils;
 import net.minecraft.block.BlockState;
+import net.minecraft.command.argument.EntityAnchorArgumentType;
+import net.minecraft.component.DataComponentTypes;
+import net.minecraft.entity.Entity;
+import net.minecraft.entity.LivingEntity;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.recipe.RecipeEntry;
@@ -39,6 +43,8 @@ import static com.logvex.addon.framework.LogClientContext.mc;
 public final class MinecraftActionPort implements ActionPorts {
     /** How long a placement may stay unconfirmed before it is treated as failed. */
     private static final long PLACE_TIMEOUT_MS = 1500;
+    /** Vanilla melee reach squared (3 blocks), so the bot never swings out of range. */
+    private static final double REACH_SQUARED = 9.0;
 
     private long placeStartedAt;
     private BlockPos placingPos;
@@ -158,6 +164,32 @@ public final class MinecraftActionPort implements ActionPorts {
     public boolean canAct() {
         return mc.player != null && mc.world != null && mc.interactionManager != null
             && mc.player.isAlive() && !mc.player.isRemoved();
+    }
+
+    @Override
+    public boolean attack(int entityId) {
+        if (mc.player == null || mc.world == null || mc.interactionManager == null) return false;
+        Entity target = mc.world.getEntityById(entityId);
+        if (!(target instanceof LivingEntity living) || !living.isAlive()) return false;
+        // Refuse a swing at something out of reach: the server would reject the hit, and a rejected
+        // hit must not be reported as an attack that happened.
+        if (mc.player.squaredDistanceTo(target) > REACH_SQUARED) return false;
+        mc.player.lookAt(EntityAnchorArgumentType.EntityAnchor.EYES, target.getPos());
+        mc.interactionManager.attackEntity(mc.player, target);
+        mc.player.swingHand(Hand.MAIN_HAND);
+        return true;
+    }
+
+    @Override
+    public boolean eat() {
+        if (mc.player == null || mc.interactionManager == null) return false;
+        ItemStack held = mc.player.getMainHandStack();
+        if (held.isEmpty() || !held.contains(DataComponentTypes.FOOD)) return false;
+        // The client reports the eating animation and sends the "use item" packet; the food level
+        // only rises once the server accepts it, which the caller verifies.
+        mc.interactionManager.interactItem(mc.player, Hand.MAIN_HAND);
+        mc.player.swingHand(Hand.MAIN_HAND);
+        return true;
     }
 
     @Override

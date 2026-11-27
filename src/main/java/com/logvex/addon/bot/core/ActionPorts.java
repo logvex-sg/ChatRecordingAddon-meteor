@@ -36,6 +36,27 @@ public interface ActionPorts {
     /** True when the bot is currently allowed to act (no blocking screen, world present). */
     boolean canAct();
 
+    /**
+     * Attacks the entity with the given network id once.
+     *
+     * <p>Returns true only when the attack was actually issued; it does not promise the target was
+     * hit or killed, which the caller checks by re-scanning. A target that is out of reach or gone
+     * returns false rather than swinging at nothing.
+     */
+    default boolean attack(int entityId) {
+        return false;
+    }
+
+    /**
+     * Eats one portion of the held edible item.
+     *
+     * <p>The bot must already be holding food: selecting the slot is the caller's job, so this is a
+     * single "use the item" that the caller then verifies by watching the food level.
+     */
+    default boolean eat() {
+        return false;
+    }
+
     /** Cancels any in-flight operation. */
     void cancel();
 }

@@ -358,6 +358,33 @@ try/catch, so a handler that throws unwinds out of the tick loop and takes the c
 guard logs the failure and the client carries on, and a build-time test walks the source tree so a
 new handler cannot be added without one.
 
+### Survival: threats, combat and eating
+
+`pause-on-danger` used to be a setting with nothing behind it: no executor ever looked for a hostile
+mob, so the option could be toggled and would never pause anything. The safety controller now checks
+the world for real, before every action:
+
+- **`threat-radius`** (default 8 blocks) sets how close a hostile mob has to be. The check walks the
+  player's bounding box, expanded by that radius, and looks only at living `HostileEntity`
+  instances — a passive animal or an armour stand does not pause the bot.
+- **`pause-on-danger`** stops the bot with `THREAT` while a hostile is inside that radius. Threat
+  outranks hunger, because a bot that stopped to eat next to a zombie would take damage the whole
+  time it chewed.
+- **`auto-eat`** (default on) and **`eat-at-food`** (default 14) queue an internal `EAT` task before
+  the hunger safety stop trips. The bot eats while it can still work, rather than waiting to be
+  paused at the safety limit, and only when the inventory actually holds something edible — a bot
+  with an empty pack would otherwise ask to eat forever.
+- **`COMBAT`** is a real task type, reachable from an objective (`fight`, `attack`, `kill`, `defend`,
+  `hunt`, `combat`) or directly with `!log tasks add combat [amount]`. It needs no item, because the
+  target is whatever hostile is in range. Like every other executor it only reports `DONE` on an
+  observed effect in the world — a swing that never connected does not count as a kill.
+
+The same figures are visible in three places, so a pause is always explainable: the `!log tasks`
+block has a **Survival** section with health and food meters and the threat line, the `bot-status`
+HUD element draws health and food bars (and turns the threat line red), and the dashboard's Bot tab
+shows Health / Food / Threats tiles from the snapshot's `health`, `maxHealth`, `food` and
+`threatNearby` fields.
+
 ### Profiles
 
 A **profile** is a named snapshot of the bot's settings. **Profiles...** on the bot dashboard (or
@@ -2038,9 +2065,10 @@ The addon registers a `!log` command (alias `!la`). Run `!log help` for the list
 | `!log record <on\|off>` | Starts or stops chat recording (enabling the module if needed). |
 | `!log notifications [count]` | The most recent notifications. |
 | `!log notifications clear` | Empties the notification history. |
-| `!log tasks` | The automation queue and its history counters. |
+| `!log tasks` | A block with the automation state, queue, completion meter and a Survival section: health, food, and whether a hostile mob is inside the safety radius. |
 | `!log tasks <start\|pause\|resume\|stop\|clear>` | Controls the automation. |
 | `!log tasks add <type> <item> [amount]` | Queues a task, e.g. `!log tasks add mining diamond_ore 64`. |
+| `!log tasks add combat [amount]` | Fights nearby hostile mobs. No item is needed, because the target is whatever is in range. |
 | `!log waypoints [list]` | Lists saved waypoints. |
 | `!log waypoints add <name>` | Saves your current position as a waypoint. |
 | `!log import <file>` | Imports a material list (or a schematic) from a path, without the file dialog. |

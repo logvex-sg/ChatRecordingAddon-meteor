@@ -1,6 +1,7 @@
 package com.logvex.addon.bot.mc;
 
 import com.logvex.addon.bot.core.BlockPos3;
+import com.logvex.addon.bot.core.EntityRef;
 import com.logvex.addon.bot.core.WorldPort;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.entity.LootableContainerBlockEntity;
@@ -10,6 +11,7 @@ import net.minecraft.entity.mob.HostileEntity;
 import net.minecraft.registry.Registries;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
+import net.minecraft.util.math.Vec3d;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -173,7 +175,30 @@ public final class MinecraftWorldPort implements WorldPort {
         return mc.world.getLightLevel(p);
     }
 
-    /** True when a hostile mob is within {@code radius} of the player. */
+    @Override
+    public List<EntityRef> nearbyEntities(int radius) {
+        List<EntityRef> out = new ArrayList<>();
+        if (mc.world == null || mc.player == null) return out;
+        double r = Math.max(1, radius);
+        Box box = mc.player.getBoundingBox().expand(r);
+        Vec3d eye = mc.player.getPos();
+        for (Entity entity : mc.world.getOtherEntities(mc.player, box)) {
+            if (!(entity instanceof LivingEntity living) || !living.isAlive()) continue;
+            Vec3d at = entity.getPos();
+            double distance = Math.sqrt(eye.squaredDistanceTo(at));
+            if (distance > r) continue;
+            out.add(new EntityRef(
+                entity.getId(),
+                Registries.ENTITY_TYPE.getId(entity.getType()).toString(),
+                new BlockPos3(entity.getBlockX(), entity.getBlockY(), entity.getBlockZ()),
+                distance,
+                entity instanceof HostileEntity));
+        }
+        out.sort(Comparator.comparingDouble(EntityRef::distance));
+        return out;
+    }
+
+    @Override
     public boolean hostileNearby(int radius) {
         if (mc.world == null || mc.player == null) return false;
         Box box = mc.player.getBoundingBox().expand(Math.max(1, radius));

@@ -62,6 +62,8 @@ public final class BotFakes {
         public final Map<String, List<BlockPos3>> blocks = new LinkedHashMap<>();
         public final List<BlockPos3> containers = new ArrayList<>();
         public final List<String> entities = new ArrayList<>();
+        public final List<com.logvex.addon.bot.core.EntityRef> entityRefs = new ArrayList<>();
+        public boolean hostileNearby;
         public final List<String> unloaded = new ArrayList<>();
 
         @Override
@@ -110,6 +112,16 @@ public final class BotFakes {
         @Override
         public List<String> nearbyEntityTypes(int radius) {
             return new ArrayList<>(entities);
+        }
+
+        @Override
+        public List<com.logvex.addon.bot.core.EntityRef> nearbyEntities(int radius) {
+            return new ArrayList<>(entityRefs);
+        }
+
+        @Override
+        public boolean hostileNearby(int radius) {
+            return hostileNearby;
         }
 
         @Override
@@ -296,6 +308,8 @@ public final class BotFakes {
         public final List<String> calls = new ArrayList<>();
         public boolean canAct = true;
         public boolean mineResult = true;
+        public boolean attackResult = true;
+        public boolean eatResult = true;
 
         @Override
         public boolean mine(BlockPos3 pos) {
@@ -349,6 +363,18 @@ public final class BotFakes {
         }
 
         @Override
+        public boolean attack(int entityId) {
+            calls.add("attack:" + entityId);
+            return attackResult;
+        }
+
+        @Override
+        public boolean eat() {
+            calls.add("eat");
+            return eatResult;
+        }
+
+        @Override
         public void cancel() {
             calls.add("cancel");
         }
@@ -358,6 +384,8 @@ public final class BotFakes {
     public static final class FakeKnowledge implements ItemKnowledge {
         public final Map<String, List<String>> tags = new LinkedHashMap<>();
         public final Map<String, List<String>> yields = new LinkedHashMap<>();
+        /** Edible items, best first. */
+        public final List<String> foods = new ArrayList<>();
 
         @Override
         public List<String> itemsInTag(String tag) {
@@ -387,6 +415,16 @@ public final class BotFakes {
         @Override
         public List<String> blocksYielding(String itemId) {
             return yields.getOrDefault(itemId, List.of(itemId));
+        }
+
+        @Override
+        public boolean isFood(String itemId) {
+            return foods.contains(itemId);
+        }
+
+        @Override
+        public List<String> foods() {
+            return new ArrayList<>(foods);
         }
     }
 

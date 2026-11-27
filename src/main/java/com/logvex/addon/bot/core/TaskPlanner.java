@@ -49,6 +49,12 @@ public final class TaskPlanner {
         alias("transport", TaskType.TRANSPORT);
         alias("maintain", TaskType.MAINTENANCE);
         alias("inventory", TaskType.INVENTORY);
+        alias("fight", TaskType.COMBAT);
+        alias("attack", TaskType.COMBAT);
+        alias("kill", TaskType.COMBAT);
+        alias("defend", TaskType.COMBAT);
+        alias("hunt", TaskType.COMBAT);
+        alias("combat", TaskType.COMBAT);
     }
 
     private static void alias(String word, TaskType type) {
@@ -93,7 +99,8 @@ public final class TaskPlanner {
             tasks.add(nav);
             return tasks;
         }
-        if (type == TaskType.STORAGE || type == TaskType.INVENTORY || type == TaskType.MAINTENANCE) {
+        if (type == TaskType.STORAGE || type == TaskType.INVENTORY || type == TaskType.MAINTENANCE
+            || type == TaskType.COMBAT) {
             tasks.add(new BotTask(type, goal.description()).required(goal.amount()));
             return tasks;
         }

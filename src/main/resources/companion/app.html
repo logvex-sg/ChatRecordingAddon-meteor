@@ -1174,6 +1174,24 @@ function renderBot() {
     el("div", { class: "row", style: "margin-top:12px" }, controls)
   ]));
 
+  // Survival is what explains a pause: "paused" alone does not say whether the bot was hurt,
+  // hungry or cornered. Only drawn when the node reported the figures.
+  const maxHealth = Number(bot.maxHealth) || 0;
+  if (maxHealth > 0) {
+    const health = Number(bot.health) || 0;
+    const food = Number(bot.food) || 0;
+    const survivalTiles = el("div", { class: "tiles" }, [
+      tile("Health", String(Math.round(health)), "/" + Math.round(maxHealth),
+        health <= maxHealth * 0.4 ? "bad" : "good", health / maxHealth,
+        health <= maxHealth * 0.4 ? "low" : "healthy"),
+      tile("Food", String(food), "/20", food <= 6 ? "warn" : "good", food / 20,
+        bot.eating ? "eating" : (food <= 6 ? "hungry" : "fed")),
+      tile("Threats", bot.threatNearby ? "hostile" : "clear", "", bot.threatNearby ? "bad" : "good",
+        null, bot.threatNearby ? "inside the safety radius" : "nothing within the radius")
+    ]);
+    view.appendChild(card("Survival", [survivalTiles]));
+  }
+
   const objective = el("input", { placeholder: "e.g. mine oak_log 64" });
   view.appendChild(card("Queue an objective", [
     el("label", { text: "Objective (the addon's own grammar)" }),

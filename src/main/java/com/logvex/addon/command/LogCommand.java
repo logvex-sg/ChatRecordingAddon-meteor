@@ -173,6 +173,11 @@ public class LogCommand extends Command {
             return SINGLE_SUCCESS;
         })).then(literal("add")
             .then(argument("type", StringArgumentType.word())
+                .executes(context -> {
+                    // Combat needs no item: the objective is "kill what is here", not "find X".
+                    addTask(StringArgumentType.getString(context, "type"), "", 1);
+                    return SINGLE_SUCCESS;
+                })
                 .then(argument("item", StringArgumentType.word())
                     .executes(context -> {
                         addTask(StringArgumentType.getString(context, "type"),
@@ -791,26 +796,68 @@ public class LogCommand extends Command {
             error("The bot module is not available.");
             return;
         }
-        var queue = bot.controller().queue();
+        var controller = bot.controller();
+        var queue = controller.queue();
         List<Field> fields = new ArrayList<>();
+
+        fields.add(Field.section("State"));
         fields.add(new Field("Automation", bot.statusLine()));
-        if (queue.isEmpty()) {
-            fields.add(new Field("Queue", "empty"));
-        } else {
-            Rows.Capped<BotTask> capped = Rows.cap(queue.tasks(), 20);
+        fields.add(new Field("Queued", Messages.number(queue.unfinishedCount())
+            + (queue.isEmpty() ? " - idle" : " of " + Messages.number(queue.size()))));
+
+        var history = controller.history();
+        int total = history.size();
+        fields.add(Field.meter("Completed", Messages.number(history.successCount())
+                + "/" + Messages.number(total), total == 0 ? 0 : (double) history.successCount() / total));
+        if (history.failureCount() > 0) {
+            fields.add(new Field("Failed", Messages.number(history.failureCount())));
+        }
+
+        survival(bot, fields);
+
+        if (!queue.isEmpty()) {
+            fields.add(Field.section("Queue"));
+            Rows.Capped<BotTask> capped = Rows.cap(queue.tasks(), 12);
             for (BotTask task : capped.shown()) {
                 fields.add(new Field("#" + task.id(),
                     task.type() + " "
                         + (task.label().isBlank() ? task.itemId() : task.label())
                         + " (" + task.progress() + "/" + task.required() + ") " + task.state()));
             }
-            if (capped.truncated()) fields.add(new Field("Queue", Rows.remainderNote(capped)));
+            if (capped.truncated()) fields.add(new Field("More", Rows.remainderNote(capped)));
         }
-        var history = bot.controller().history();
-        fields.add(new Field("History", Messages.number(history.size()) + " total, "
-            + Messages.number(history.successCount()) + " ok, "
-            + Messages.number(history.failureCount()) + " failed"));
+
         embedLong("Automation tasks", fields);
+    }
+
+    /**
+     * Adds the survival figures, which are what make a pause explainable: "paused" on its own does
+     * not tell a user whether the bot was hurt, hungry or cornered.
+     */
+    private void survival(BotModule bot, List<Field> fields) {
+        var mc = net.minecraft.client.MinecraftClient.getInstance();
+        var player = mc.player;
+        if (player == null) {
+            fields.add(Field.section("Survival"));
+            fields.add(new Field("Player", "not in a world"));
+            return;
+        }
+        fields.add(Field.section("Survival"));
+        float health = player.getHealth();
+        float maxHealth = Math.max(1f, player.getMaxHealth());
+        fields.add(Field.meter("Health", String.format(java.util.Locale.ROOT, "%.0f/%.0f", health, maxHealth),
+            health / maxHealth));
+        int food = player.getHungerManager().getFoodLevel();
+        fields.add(Field.meter("Food", food + "/20", food / 20.0));
+
+        var config = bot.controller().config();
+        boolean threat = bot.threatNearby(config.threatRadius());
+        fields.add(new Field("Threats", threat
+            ? "hostile within " + config.threatRadius() + " blocks"
+            : "none within " + config.threatRadius() + " blocks"));
+        if (bot.controller().queue().hasType(com.logvex.addon.bot.core.TaskType.EAT)) {
+            fields.add(new Field("Eating", "a meal is queued"));
+        }
     }
 
     private void botAction(String action) {
@@ -842,13 +889,14 @@ public class LogCommand extends Command {
             return;
         }
         String itemId = TaskArgs.normaliseItem(item);
-        if (itemId.isEmpty()) {
+        boolean needsItem = type != TaskType.COMBAT;
+        if (needsItem && itemId.isEmpty()) {
             error("Give an item, for example oak_log or minecraft:oak_log.");
             return;
         }
         // Refused here rather than queued: an id the registry does not know can never be found in
         // the world, so queueing it only produced a task that scanned until it timed out.
-        if (!bot.knowsItem(itemId)) {
+        if (needsItem && !bot.knowsItem(itemId)) {
             String suggestion = bot.suggestItem(itemId);
             if (suggestion.isEmpty()) {
                 error("%s is not a known item. Use a registry id such as minecraft:spruce_log.",
@@ -860,7 +908,8 @@ public class LogCommand extends Command {
         }
         BotTask task = new BotTask(type, itemId).itemId(itemId).required(amount);
         if (bot.controller().queue().add(task)) {
-            info("Queued %s x%d.", itemId, amount);
+            if (needsItem) info("Queued %s x%d.", itemId, amount);
+            else info("Queued %s.", type.toString());
         } else {
             error("The queue is full; remove a task first.");
         }

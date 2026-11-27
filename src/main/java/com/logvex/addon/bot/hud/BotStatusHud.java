@@ -45,6 +45,12 @@ public class BotStatusHud extends HudElement {
     private final Setting<Boolean> showNavigation = sgGeneral.add(new BoolSetting.Builder()
         .name("show-navigation").description("Show which navigation backend is driving the bot.")
         .defaultValue(false).build());
+    private final Setting<Boolean> showSurvival = sgGeneral.add(new BoolSetting.Builder()
+        .name("show-survival").description("Show health, food and whether a hostile mob is near.")
+        .defaultValue(true).build());
+    private final Setting<Boolean> showThreat = sgGeneral.add(new BoolSetting.Builder()
+        .name("show-threat").description("Show a warning line when a hostile mob is within the threat radius.")
+        .defaultValue(true).build());
 
     private static final double BAR_HEIGHT = 4;
 
@@ -53,6 +59,9 @@ public class BotStatusHud extends HudElement {
     }
 
     private static BotStatusHud instance;
+
+    /** Set by {@link #lines} when the threat line is present, so it can be drawn in the warning colour. */
+    private String threatLine;
 
     /** Adds the element to the HUD if it is not already present. */
     public static void enable() {
@@ -74,6 +83,7 @@ public class BotStatusHud extends HudElement {
 
     private List<String> lines(BotModule module) {
         List<String> out = new ArrayList<>();
+        threatLine = null;
         if (module == null || !module.isActive()) return out;
 
         out.add("State: " + module.controller().state());
@@ -81,6 +91,7 @@ public class BotStatusHud extends HudElement {
         if (showTask.get()) out.add(task == null ? "Task: idle" : "Task: " + task.describe());
         if (showQueue.get()) out.add("Queued: " + module.controller().queue().size());
         if (showObjectives.get()) out.add("Objectives: " + module.controller().goals().pendingCount());
+        if (showSurvival.get()) out.addAll(survivalLines(module));
         if (showEvents.get()) {
             List<BotEvent> events = module.controller().events();
             out.add(events.isEmpty() ? "No recent events" : events.get(0).message());
@@ -92,6 +103,30 @@ public class BotStatusHud extends HudElement {
             // read as progress rather than as a stuck bot.
             if (left > 0) nav += " (" + left + " left)";
             out.add(nav);
+        }
+        return out;
+    }
+
+    /**
+     * Health and food as compact bars, plus the threat warning.
+     *
+     * <p>Bars rather than bare numbers: the HUD is read at a glance in the middle of a fight, and
+     * "7/20" takes longer to judge than a bar that is visibly low.
+     */
+    private List<String> survivalLines(BotModule module) {
+        List<String> out = new ArrayList<>();
+        var player = net.minecraft.client.MinecraftClient.getInstance().player;
+        if (player == null) return out;
+
+        float maxHealth = Math.max(1f, player.getMaxHealth());
+        out.add("Health: " + com.logvex.addon.assistant.core.ReplyFormat.bar(player.getHealth() / maxHealth, 10)
+            + String.format(Locale.ROOT, " %.0f", player.getHealth()));
+        int food = player.getHungerManager().getFoodLevel();
+        out.add("Food: " + com.logvex.addon.assistant.core.ReplyFormat.bar(food / 20.0, 10) + " " + food);
+
+        if (showThreat.get() && module.threatNearby(module.controller().config().threatRadius())) {
+            threatLine = "Threat: hostile nearby";
+            out.add(threatLine);
         }
         return out;
     }
@@ -143,7 +178,9 @@ public class BotStatusHud extends HudElement {
         }
         Color color = colorFor(module, style);
         for (String line : lines) {
-            HudPanel.line(renderer, this, line, cursor, color, scale, shadow);
+            // The threat line is the one line that must not blend in with the rest.
+            Color lineColor = line.equals(threatLine) ? style.bad() : color;
+            HudPanel.line(renderer, this, line, cursor, lineColor, scale, shadow);
             cursor += HudPanel.lineHeight(renderer, scale);
         }
 

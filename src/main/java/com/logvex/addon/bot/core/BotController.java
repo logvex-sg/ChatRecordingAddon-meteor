@@ -234,6 +234,10 @@ public final class BotController {
             scheduler.tick();
             if (context == null) return;
 
+            // Eating is scheduled before the safety gate: a hungry bot should feed itself rather
+            // than be paused by the very threshold the meal is meant to keep it above.
+            if (state.isActive()) maybeScheduleEat();
+
             SafetyController.Stop stop = evaluateSafety();
             if (stop != SafetyController.Stop.NONE) {
                 handleSafety(stop);
@@ -265,10 +269,41 @@ public final class BotController {
     private SafetyController.Stop evaluateSafety() {
         if (context.player() == null || context.world() == null) return SafetyController.Stop.NOT_IN_WORLD;
         if (!state.isActive()) return SafetyController.Stop.NONE;
-        // Threat detection is not part of the safety stop: it would require a world scan every
-        // tick, and the executors already back off when a hostile mob is near.
         return safety.evaluate(context.player(), context.world(),
-            context.inventory() == null ? InventorySnapshot.empty() : context.inventory().snapshot(), false);
+            context.inventory() == null ? InventorySnapshot.empty() : context.inventory().snapshot(),
+            threatNearby());
+    }
+
+    /**
+     * True when a hostile mob is inside the configured safety radius.
+     *
+     * <p>The scan is skipped when the user turned the threat stop off, so a bot that does not care
+     * about mobs does not pay for an entity query every tick.
+     */
+    private boolean threatNearby() {
+        if (!config.stopOnThreat() || context.world() == null) return false;
+        return context.world().hostileNearby(config.threatRadius());
+    }
+
+    /**
+     * Queues a critical feeding task when the player is hungry and carrying food.
+     *
+     * <p>This runs before the safety check so the bot eats while it still can, instead of waiting
+     * for the food level to fall through the safety threshold and pausing the whole run.
+     */
+    private void maybeScheduleEat() {
+        if (!config.autoEat() || context == null || context.player() == null) return;
+        if (queue.hasType(TaskType.EAT)) return;
+        // Threat outranks hunger here too: queueing a meal the bot cannot stop to eat would only
+        // leave it standing next to the mob it is about to be paused for.
+        if (threatNearby()) return;
+        if (!safety.shouldEat(context.player(), FoodSource.hasFood(context))) return;
+        BotTask eat = new BotTask(TaskType.EAT, "Eat something")
+            .priority(TaskPriority.CRITICAL)
+            .required(1);
+        if (queue.add(eat)) {
+            emit(BotEvent.Level.INFO, "Hungry: queued a meal.");
+        }
     }
 
     private void handleSafety(SafetyController.Stop stop) {

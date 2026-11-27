@@ -31,6 +31,24 @@ public interface ItemKnowledge {
     /** True when {@code itemId} is a seed that can be replanted. */
     boolean isSeed(String itemId);
 
+    /**
+     * True when {@code itemId} can be eaten.
+     *
+     * <p>Defaults to false: a knowledge source that predates food support simply never reports
+     * anything edible, so auto-eat stays off instead of the bot trying to eat a pickaxe.
+     */
+    default boolean isFood(String itemId) {
+        return false;
+    }
+
+    /**
+     * The item ids the bot should eat, best first. Ordering matters because a golden apple and a
+     * rotten flesh are both food but only one is worth using at full hunger.
+     */
+    default List<String> foods() {
+        return List.of();
+    }
+
     /** The block a seed plants, or empty. */
     default String cropForSeed(String seedId) {
         return "";

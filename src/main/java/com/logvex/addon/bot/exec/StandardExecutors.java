@@ -28,6 +28,8 @@ public final class StandardExecutors {
         registry.register(new FishingExecutor());
         registry.register(new TransportExecutor());
         registry.register(new MaintenanceExecutor());
+        registry.register(new CombatExecutor());
+        registry.register(new EatExecutor());
         return registry;
     }
 }

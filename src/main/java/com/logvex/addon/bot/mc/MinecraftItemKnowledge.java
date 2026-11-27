@@ -6,6 +6,8 @@ import net.minecraft.block.BlockState;
 import net.minecraft.block.CropBlock;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.block.entity.LootableContainerBlockEntity;
+import net.minecraft.component.DataComponentTypes;
+import net.minecraft.component.type.FoodComponent;
 import net.minecraft.item.BlockItem;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
@@ -15,6 +17,7 @@ import net.minecraft.registry.tag.TagKey;
 import net.minecraft.util.Identifier;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -87,6 +90,35 @@ public final class MinecraftItemKnowledge implements ItemKnowledge {
         String path = path(itemId);
         return path.endsWith("_seeds") || path.equals("carrot") || path.equals("potato")
             || path.equals("beetroot_seeds") || path.equals("nether_wart");
+    }
+
+    @Override
+    public boolean isFood(String itemId) {
+        return foodComponent(itemId) != null;
+    }
+
+    @Override
+    public List<String> foods() {
+        if (mc.world == null) return List.of();
+        List<String> out = new ArrayList<>();
+        // Iterate the registry rather than a hand-written list, so a modded food is edible too.
+        for (Item item : Registries.ITEM) {
+            if (item.getComponents().contains(DataComponentTypes.FOOD)) {
+                out.add(Registries.ITEM.getId(item).toString());
+            }
+        }
+        out.sort(Comparator.naturalOrder());
+        return out;
+    }
+
+    /** The food component of {@code itemId}, or null when it is not edible. */
+    private FoodComponent foodComponent(String itemId) {
+        if (itemId == null || itemId.isEmpty()) return null;
+        Identifier id = Identifier.tryParse(itemId);
+        if (id == null) return null;
+        Item item = Registries.ITEM.get(id);
+        if (item == null) return null;
+        return item.getComponents().get(DataComponentTypes.FOOD);
     }
 
     @Override

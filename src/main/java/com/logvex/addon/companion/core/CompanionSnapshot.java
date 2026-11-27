@@ -169,8 +169,20 @@ public record CompanionSnapshot(
         int completed,
         int failed,
         boolean paused,
-        List<String> recentEvents
+        List<String> recentEvents,
+        float health,
+        float maxHealth,
+        int food,
+        boolean threatNearby,
+        boolean eating,
+        String status
     ) {
+        /** Keeps callers that only know the original fields compiling. */
+        public BotView(String state, String activeTask, int queued, int completed, int failed,
+                       boolean paused, List<String> recentEvents) {
+            this(state, activeTask, queued, completed, failed, paused, recentEvents,
+                0f, 0f, 0, false, false, "");
+        }
     }
 
     /**

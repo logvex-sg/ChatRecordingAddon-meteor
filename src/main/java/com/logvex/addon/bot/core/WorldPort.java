@@ -37,6 +37,26 @@ public interface WorldPort {
     /** Block ids of the nearby entities' types, used for threat assessment. */
     List<String> nearbyEntityTypes(int radius);
 
+    /**
+     * Every living entity within {@code radius} of the player, nearest first.
+     *
+     * <p>Implementations must cap the result count. The list is a snapshot: an entity can die or
+     * move before the bot acts, so the caller re-checks the target before attacking.
+     */
+    default List<EntityRef> nearbyEntities(int radius) {
+        return List.of();
+    }
+
+    /**
+     * True when a hostile mob is within {@code radius} of the player.
+     *
+     * <p>A default of {@code false} keeps a port written before threat detection existed working;
+     * a bot built on such a port simply never sees a threat, which is the safe reading.
+     */
+    default boolean hostileNearby(int radius) {
+        return false;
+    }
+
     /** True when the block at {@code pos} can be replaced (air, grass, water, snow). */
     boolean isReplaceable(BlockPos3 pos);
 
