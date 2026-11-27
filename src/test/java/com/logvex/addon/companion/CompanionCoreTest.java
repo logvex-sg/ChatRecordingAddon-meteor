@@ -214,6 +214,55 @@ class CompanionCoreTest {
     }
 
     @Test
+    @DisplayName("the map cannot hang on one slow tile")
+    void mapTileFetchIsBoundedAndCached() throws Exception {
+        try (InputStream in = getClass().getResourceAsStream("/companion/app.html")) {
+            assertNotNull(in, "companion/app.html must ship in the jar");
+            String html = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+
+            // Regression: a tile request with no timeout left the whole map on "Loading terrain…"
+            // forever, because tiles were drawn strictly one after another and a single dead
+            // request never resolved. Every fetch must be abortable.
+            assertTrue(html.contains("TILE_TIMEOUT_MS"),
+                "tile fetches need a timeout, or one hung request freezes the map");
+            assertTrue(html.contains("controller.abort()"),
+                "the tile fetch must actually abort on timeout");
+            assertTrue(html.contains("init.signal = controller.signal"),
+                "the abort signal must be attached to the fetch");
+
+            // Regression: every tile was re-fetched on each three-second refresh, which made a
+            // large map never finish drawing. Decoded tiles must be cached.
+            assertTrue(html.contains("tileCache"),
+                "decoded tiles must be cached, or every refresh re-downloads the whole map");
+            assertTrue(html.contains("tileInflight"),
+                "two overlapping refreshes must not fetch the same tile twice");
+        }
+    }
+
+    @Test
+    @DisplayName("the map never claims to be live while it is still synchronising")
+    void mapReportsHonestHealth() throws Exception {
+        try (InputStream in = getClass().getResourceAsStream("/companion/app.html")) {
+            assertNotNull(in, "companion/app.html must ship in the jar");
+            String html = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+
+            assertTrue(html.contains("mapHealth"),
+                "the map must expose a health state rather than only a canvas");
+            // The distinction the spec demands: a paused or half-loaded map must not read as live.
+            for (String state : new String[]{"synchronising", "partial", "live", "error"}) {
+                assertTrue(html.contains("\"" + state + "\""),
+                    "map health must be able to report '" + state + "'");
+            }
+
+            // A redraw must not restart an in-flight draw: that is what made progress reset to 0.
+            assertTrue(html.contains("mapRun.busy"),
+                "an in-flight map draw must not be restarted by the periodic refresh");
+            assertTrue(html.contains("mapDom"),
+                "the canvas must survive a re-render, or every refresh discards drawn terrain");
+        }
+    }
+
+    @Test
     @DisplayName("a stalled publisher does not block on a subscriber")
     void subscriberNeverBlocksPublisher() throws Exception {
         CompanionEventBus bus = new CompanionEventBus(10);

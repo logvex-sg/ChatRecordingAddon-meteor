@@ -461,6 +461,10 @@ let nodes = loadNodes();
 let activeNodeId = null;
 let tab = localStorage.getItem(TAB_KEY) || "overview";
 const snapshots = new Map();   // nodeId -> snapshot
+
+// The map's own health, kept outside the DOM so a redraw does not lose it. A map that is still
+// fetching is "synchronising", never "live": the two must not be able to look the same.
+const mapHealth = { state: "idle", drawn: 0, total: 0, failed: 0, at: 0 };
 const nodeState = new Map();   // nodeId -> {ok, error, at}
 let eventSource = null;
 const feed = [];
@@ -1313,17 +1317,75 @@ function heightColor(height) {
   return "rgb(" + r + "," + g + "," + b + ")";
 }
 
-async function fetchTile(node, dimension, tileX, tileZ) {
+// Decoded tiles are kept for the life of the page, keyed by dimension and tile. Without this the
+// map re-fetched every tile on every three-second refresh: on a large explored area that is
+// thousands of requests a minute, the browser throttles them, and the map appears frozen because
+// the redraw never finishes before the next one starts.
+const tileCache = new Map();     // "dim:x:z" -> Uint8Array|null (null = known unexplored)
+const tileInflight = new Map();  // "dim:x:z" -> Promise, so two refreshes never fetch one tile twice
+const TILE_TIMEOUT_MS = 8000;
+
+function tileKey(dimension, x, z) {
+  return dimension + ":" + x + ":" + z;
+}
+
+/**
+ * Fetches one terrain tile, through the cache.
+ *
+ * <p>A 404 is cached as null: unexplored ground stays unexplored until the page is reloaded, so a
+ * region nobody has visited costs one request rather than one per refresh.
+ */
+function fetchTile(node, dimension, tileX, tileZ, options = {}) {
+  const key = tileKey(dimension, tileX, tileZ);
+  if (!options.refresh && tileCache.has(key)) return Promise.resolve(tileCache.get(key));
+  const pending = tileInflight.get(key);
+  if (pending && !options.refresh) return pending;
+
   const url = node.url.replace(/\/+$/, "") + "/api/v1/terrain/"
     + encodeURIComponent(dimension) + "/" + tileX + "/" + tileZ;
   const init = { headers: {} };
   if (node.token) init.headers["Authorization"] = "Bearer " + node.token;
-  try {
-    const response = await fetch(url, init);
-    if (response.status === 404) return null;          // unexplored is a real answer
-    if (!response.ok) return null;
-    return await inflateTile(new Uint8Array(await response.arrayBuffer()));
-  } catch { return null; }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TILE_TIMEOUT_MS);
+  init.signal = controller.signal;
+
+  const promise = (async () => {
+    try {
+      const response = await fetch(url, init);
+      if (response.status === 404) { tileCache.set(key, null); return null; }
+      if (!response.ok) return null;                 // transient: do not cache, retry next refresh
+      const raw = await inflateTile(new Uint8Array(await response.arrayBuffer()));
+      tileCache.set(key, raw);
+      return raw;
+    } catch {
+      return null;                                   // timeout or network error: retry later
+    } finally {
+      clearTimeout(timer);
+      tileInflight.delete(key);
+    }
+  })();
+  tileInflight.set(key, promise);
+  return promise;
+}
+
+// Tracks the in-flight map draw, so the periodic refresh does not restart it from scratch.
+const mapRun = { key: "", busy: false, dimension: "" };
+
+// The canvas, status line and stats live here rather than being rebuilt by every render, because
+// render() replaces the whole view every three seconds. Rebuilding the canvas discarded every
+// painted pixel and restarted the fetch, which is why the map could never finish on a slow link.
+const mapDom = { node: null, canvas: null, status: null, stats: null, wrap: null };
+
+function mapCanvas(node) {
+  if (mapDom.node !== node.id || !mapDom.canvas) {
+    mapDom.node = node.id;
+    mapDom.canvas = el("canvas", { width: "512", height: "512" });
+    mapDom.status = el("div", { class: "map-hint", text: "Loading terrain…" });
+    mapDom.stats = el("div", {});
+    mapDom.wrap = el("div", { class: "map-wrap" }, [mapDom.canvas]);
+  }
+  return mapDom;
 }
 
 function renderMap() {
@@ -1333,9 +1395,10 @@ function renderMap() {
   const node = activeNode();
   view.appendChild(card("Client", [nodeSelect()]));
 
-  const status = el("div", { class: "map-hint", text: "Loading terrain…" });
-  const canvas = el("canvas", { width: "512", height: "512" });
-  const wrap = el("div", { class: "map-wrap" }, [canvas]);
+  const dom = mapCanvas(node);
+  const status = dom.status;
+  const canvas = dom.canvas;
+  const wrap = dom.wrap;
   const legend = el("div", { class: "map-legend" }, [
     el("span", {}, [el("span", { class: "swatch", style: "background:" + heightColor(70) }), el("span", { text: "Land" })]),
     el("span", {}, [el("span", { class: "swatch", style: "background:" + heightColor(50) }), el("span", { text: "Water" })]),
@@ -1343,13 +1406,21 @@ function renderMap() {
   ]);
   view.appendChild(card("Surface", [wrap, legend, status]));
 
-  const stats = el("div", {});
+  const stats = dom.stats;
   view.appendChild(card("Captured", [stats]));
 
   const waypointBody = el("div", {});
   view.appendChild(card("Waypoints", [waypointBody]));
 
-  loadTerrain(node, canvas, status, stats);
+  if (mapRun.busy) {
+    // A draw is already running for this node: leave its canvas alone and let it finish.
+    if (mapHealth.total > 0) {
+      status.textContent = mapHealth.drawn + " of " + mapHealth.total + " tiles · " + mapHealth.state;
+    }
+  } else {
+    mapRun.busy = true;
+    loadTerrain(node, canvas, status, stats).finally(() => { mapRun.busy = false; });
+  }
   loadWaypoints(node, waypointBody);
 }
 
@@ -1436,6 +1507,7 @@ async function loadTerrain(node, canvas, status, stats) {
 
   // Prefer the overworld, else the first dimension with tiles.
   const dimension = dimensions.find(d => d.dimension === "minecraft:overworld") || dimensions[0];
+  mapRun.dimension = dimension.dimension;
   const tiles = Array.isArray(dimension.tiles) ? dimension.tiles : [];
   if (tiles.length === 0) {
     status.textContent = "That dimension has no tiles yet.";
@@ -1456,12 +1528,16 @@ async function loadTerrain(node, canvas, status, stats) {
   ctx.fillStyle = "#0a1020";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+  // Draw each tile the moment it arrives instead of waiting for the whole set. On a large area the
+  // last tile can take a while, and a map that shows nothing until then is indistinguishable from a
+  // frozen one. The health line reports progress so a slow map is visibly slow rather than stuck.
   let drawn = 0;
-  for (const tile of tiles) {
-    const raw = await fetchTile(node, dimension.dimension, tile.x, tile.z);
-    if (!raw) continue;
-    let decoded;
-    try { decoded = decodeTile(raw); } catch (e) { continue; }
+  let failed = 0;
+  let pending = tiles.length;
+  const total = tiles.length;
+  const startedAt = Date.now();
+
+  const paint = (decoded, tile) => {
     const offsetX = (tile.x - minX) * pixelsPerTile;
     const offsetY = (tile.z - minZ) * pixelsPerTile;
     for (const chunk of decoded.chunks) {
@@ -1476,15 +1552,57 @@ async function loadTerrain(node, canvas, status, stats) {
         }
       }
     }
-    drawn++;
+  };
+
+  const report = () => {
+    const elapsed = Math.max(1, Date.now() - startedAt);
+    const state = pending > 0 ? "synchronising" : failed > 0 ? "partial" : "live";
+    const bounds = dimension.minChunkX !== undefined
+      ? "chunks " + dimension.minChunkX + "…" + dimension.maxChunkX + " / " + dimension.minChunkZ + "…" + dimension.maxChunkZ
+      : "";
+    status.textContent = drawn + " of " + total + " tiles drawn for " + shortId(dimension.dimension)
+      + (bounds ? " (" + bounds + ")" : "") + " · " + state
+      + (pending > 0 ? " · " + pending + " pending" : "")
+      + (failed > 0 ? " · " + failed + " failed" : "")
+      + " · " + Math.round(drawn / (elapsed / 1000)) + " tiles/s";
+    mapHealth.state = state;
+    mapHealth.drawn = drawn;
+    mapHealth.total = total;
+    mapHealth.failed = failed;
+    mapHealth.at = Date.now();
+  };
+  report();
+
+  // Bounded parallelism: a handful of tiles at once keeps the network busy without opening
+  // hundreds of sockets, which is what made a large map stall.
+  const CONCURRENCY = 6;
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < tiles.length) {
+      const tile = tiles[cursor++];
+      const raw = await fetchTile(node, dimension.dimension, tile.x, tile.z);
+      pending--;
+      if (!raw) { failed++; report(); continue; }
+      try {
+        paint(decodeTile(raw), tile);
+        drawn++;
+      } catch (e) {
+        failed++;
+      }
+      report();
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, tiles.length) }, worker));
+
+  if (drawn === 0) {
+    status.textContent = "No tile could be read for " + shortId(dimension.dimension)
+      + ". The client may be reconnecting; this is not a live map.";
+    mapHealth.state = "error";
   }
 
-  const bounds = dimension.minChunkX !== undefined
-    ? "chunks " + dimension.minChunkX + "…" + dimension.maxChunkX + " / " + dimension.minChunkZ + "…" + dimension.maxChunkZ
-    : "";
-  status.textContent = drawn + " of " + tiles.length + " tiles drawn for " + shortId(dimension.dimension)
-    + (bounds ? " (" + bounds + ")" : "") + ". Brighter is higher.";
-  stats.appendChild(kv("Tiles", drawn + " / " + tiles.length, "mono"));
+  stats.appendChild(kv("Tiles", drawn + " / " + total + (failed ? " (" + failed + " failed)" : ""), "mono"));
+  stats.appendChild(kv("Map state", mapHealth.state, mapHealth.state === "live" ? "ok" : "warn"));
+  stats.appendChild(kv("Tile cache", tileCache.size + " entries", "mono"));
   if (dimension.biomes) {
     const top = Object.entries(dimension.biomes).slice(0, 6)
       .map(([name, count]) => shortId(name) + " " + count).join(", ");
