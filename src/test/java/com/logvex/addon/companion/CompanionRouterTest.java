@@ -404,6 +404,16 @@ class CompanionRouterTest {
             public List<String> queries() {
                 return List.of();
             }
+
+            @Override
+            public ActionResult clickSlot(int slotId, int button, String action, int syncId) {
+                return ActionResult.ok("");
+            }
+
+            @Override
+            public List<String> slotActions() {
+                return List.of();
+            }
         };
         CompanionRouter router = new CompanionRouter(config(), broken, CompanionClientThread.direct(),
             new CompanionEventBus(10), "<html>");

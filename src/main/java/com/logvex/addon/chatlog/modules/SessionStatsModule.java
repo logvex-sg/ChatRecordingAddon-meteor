@@ -1,6 +1,7 @@
 package com.logvex.addon.chatlog.modules;
 
 import com.logvex.addon.framework.systems.modules.AddonModule;
+import com.logvex.addon.framework.utils.misc.ChatBlock;
 import com.logvex.addon.LogClient;
 import com.logvex.addon.chatlog.core.SessionSummary;
 import com.logvex.addon.chatlog.core.StatsSnapshot;
@@ -52,7 +53,7 @@ public class SessionStatsModule extends AddonModule {
         SafeEventHandler.run("SessionStatsModule.onGameLeft", () -> {
             StatsSnapshot snapshot = service.snapshot();
             if (SessionSummary.isEmpty(snapshot)) return;
-            for (String line : SessionSummary.lines(snapshot)) info("%s", line);
+            ChatBlock.print(SessionSummary.lines(snapshot));
         });
     }
 
@@ -72,7 +73,7 @@ public class SessionStatsModule extends AddonModule {
                 info("No session statistics to summarise yet.");
                 return;
             }
-            for (String line : SessionSummary.lines(snapshot)) info("%s", line);
+            ChatBlock.print(SessionSummary.lines(snapshot));
         };
         return list;
     }

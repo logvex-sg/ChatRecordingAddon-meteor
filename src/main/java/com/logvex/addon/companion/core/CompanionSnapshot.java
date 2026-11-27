@@ -25,9 +25,10 @@ public record CompanionSnapshot(
     WorldView world,
     List<String> capabilities,
     List<MetricView> metrics,
-    InventoryView inventory
+    InventoryView inventory,
+    ViewportView viewport
 ) {
-    public static final String API_VERSION = "15";
+    public static final String API_VERSION = "16";
 
     /** Identity and connection state of this client. */
     public record NodeInfo(
@@ -244,26 +245,78 @@ public record CompanionSnapshot(
     }
 
     /**
-     * The player's own inventory, read-only.
+     * The player's own inventory, plus whatever container screen is open.
      *
-     * <p>Slots are the container indices Minecraft uses (0-8 hotbar, 9-35 main, 36-39 armour,
-     * 40 offhand), so the app can draw the same layout the game does. {@code itemId} is empty for an
-     * empty slot, which is a real state and not a missing value.
+     * <p>Two coordinate systems meet here and they are not the same. {@code slots} uses the
+     * inventory's own indices (0-8 hotbar, 9-35 main, 36-39 armour, 40 offhand) because that is what
+     * the app draws as a fixed grid, and it stays stable whichever screen is open. {@code openSlots}
+     * uses the <em>screen handler</em> indices the server uses for click packets, which shift
+     * whenever a container opens: the same chest slot is a different number in a chest, a furnace
+     * and the player's own screen.
+     *
+     * <p>An action must therefore name a slot from {@code openSlots}, never from {@code slots}. The
+     * router enforces that by rejecting any index outside {@code openSlots}.
+     *
+     * @param available      false when the client is not in a world, so nothing can be read
+     * @param selectedSlot   the hotbar slot in the player's hand, or -1
+     * @param slots          the player's own 41 slots, empty ones included
+     * @param openTitle      the open container's title, or "" for the player's own screen
+     * @param openSlots      every slot of the open screen handler, in handler order
+     * @param cursor         the stack held on the cursor, or null when the cursor is empty
+     * @param syncId         the screen handler's sync id, so a stale click can be refused
+     * @param playerSlotStart first handler index that is the player's own inventory
      */
     public record InventoryView(
         boolean available,
         int selectedSlot,
-        List<ItemView> slots
+        List<ItemView> slots,
+        String openTitle,
+        List<ItemView> openSlots,
+        ItemView cursor,
+        int syncId,
+        int playerSlotStart
     ) {
         /** An inventory that could not be read, because the client is not in a world. */
         public static InventoryView unavailable() {
-            return new InventoryView(false, -1, List.of());
+            return new InventoryView(false, -1, List.of(), "", List.of(), null, -1, 0);
+        }
+
+        /** True when a container screen is open, i.e. more than the player's own inventory. */
+        public boolean containerOpen() {
+            return available && !openSlots.isEmpty() && !"".equals(openTitle);
         }
     }
 
-    /** One inventory slot: what is in it and how many. */
+    /**
+     * One inventory slot: what is in it and how many.
+     *
+     * <p>{@code maxDamage} is 0 for an item that does not wear out, and {@code damage} is 0 for an
+     * undamaged one, so durability is {@code (maxDamage - damage) / maxDamage} only when
+     * {@code maxDamage > 0}. Both are reported rather than a precomputed ratio: the browser draws
+     * the same bar the game does, and a ratio alone cannot show "0 damage of 1561" in a tooltip.
+     *
+     * @param enchanted    true when the stack carries enchantments, which is what draws the glint
+     * @param glint        true when the game would render the enchantment shimmer; a potion and a
+     *                     written book glint without being enchanted, so this is not the same flag
+     * @param enchantments "sharpness 5" style lines, already ordered as the game shows them
+     * @param rarity       "common", "uncommon", "rare" or "epic", for the tooltip's name colour
+     * @param slotIndex    the inventory or handler index this stack sits at
+     */
     public record ItemView(int slot, String itemId, String name, int count, int maxCount, int damage,
-                           boolean enchanted) {
+                           int maxDamage, boolean enchanted, boolean glint,
+                           List<String> enchantments, String rarity) {
+
+        /**
+         * A stack with no enchantment detail.
+         *
+         * <p>Kept so a caller that only knows the basics (an older snapshot producer, or a test) does
+         * not have to invent four empty fields.
+         */
+        public ItemView(int slot, String itemId, String name, int count, int maxCount, int damage,
+                        int maxDamage, boolean enchanted) {
+            this(slot, itemId, name, count, maxCount, damage, maxDamage, enchanted, enchanted,
+                List.of(), "common");
+        }
     }
 
     /** One nearby block, with the distance that puts it in scan order. */
@@ -271,12 +324,49 @@ public record CompanionSnapshot(
     }
 
     /**
-     * One nearby entity.
+     * One nearby entity, with the offsets a radar needs to place it.
      *
-     * @param kind     "player", "hostile", "passive" or "other"
+     * @param kind     "player", "hostile", "passive", "item", "vehicle" or "projectile"
      * @param distance distance from the player in blocks, rounded to one decimal
+     * @param dx       offset east of the player in blocks, rounded to one decimal
+     * @param dz       offset south of the player in blocks, rounded to one decimal
+     * @param dy       offset above the player in blocks, rounded to one decimal
+     * @param bearing  the direction from the player to this entity, in degrees, 0 being north
+     * @param yaw      the entity's own facing in degrees, or 0 when it has none
      */
-    public record EntityView(String id, String name, String kind, double distance, int health) {
+    public record EntityView(
+        String id,
+        String name,
+        String kind,
+        double distance,
+        int health,
+        double dx,
+        double dz,
+        double dy,
+        double bearing,
+        float yaw
+    ) {
+        /** Keeps callers that only know the original fields compiling. */
+        public EntityView(String id, String name, String kind, double distance, int health) {
+            this(id, name, kind, distance, health, 0, 0, 0, 0, 0);
+        }
+    }
+
+    /**
+     * Whether this client can stream its screen and whether a viewer may drive it.
+     *
+     * <p>The app needs both facts before it offers the controls: a button that sends a request the
+     * client will refuse is worse than no button, because it looks like the app is broken.
+     */
+    public record ViewportView(
+        boolean available,
+        boolean controlEnabled,
+        int minWidth,
+        int maxWidth
+    ) {
+        public static ViewportView unavailable() {
+            return new ViewportView(false, false, 0, 0);
+        }
     }
 
     /** An empty snapshot, used before the first build and when the client is not in a world. */
@@ -291,6 +381,7 @@ public record CompanionSnapshot(
             WorldView.empty(),
             List.of(),
             List.of(),
-            InventoryView.unavailable());
+            InventoryView.unavailable(),
+            ViewportView.unavailable());
     }
 }

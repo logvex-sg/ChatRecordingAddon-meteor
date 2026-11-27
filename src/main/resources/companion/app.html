@@ -6,36 +6,41 @@
 <title>Log Client Companion</title>
 <style>
   :root {
-    --bg: #080c18;
-    --bg-2: #0d1426;
-    --panel: #121b30;
-    --panel-2: #18233d;
-    --panel-3: #1f2c4b;
-    --line: #253252;
-    --line-soft: rgba(37, 50, 82, .55);
-    --text: #e8eeff;
-    --muted: #8fa2c8;
-    --faint: #62729a;
-    --accent: #6aa8ff;
-    --accent-2: #3b82f6;
-    --accent-glow: rgba(96, 165, 250, .22);
-    --good: #5eead4;
-    --warn: #fbbf6e;
-    --bad: #fb8a8a;
+    --bg: #08070a;
+    --bg-2: #0d0b10;
+    --panel: #131016;
+    --panel-2: #1a151d;
+    --panel-3: #241c26;
+    --line: #2e2430;
+    --line-soft: rgba(64, 44, 58, .55);
+    --text: #f2eef1;
+    --muted: #a08e9b;
+    --faint: #6f6070;
+    --accent: #ff3b5c;
+    --accent-2: #d81b3f;
+    --accent-glow: rgba(255, 59, 92, .22);
+    --good: #4ade9b;
+    --warn: #f5b544;
+    --bad: #ff5f5f;
     --radius: 14px;
     --radius-sm: 9px;
     --mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, monospace;
-    --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px -12px rgba(0, 0, 0, .6);
+    --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .45), 0 10px 28px -14px rgba(0, 0, 0, .85);
+    /* Layout scale: every gap and padding below is multiplied by --space, so density is one knob. */
+    --space: 1;
+    --font-scale: 1;
+    --sidebar-w: 196px;
   }
   * { box-sizing: border-box; }
   html { color-scheme: dark; }
   body {
     margin: 0; min-height: 100vh; color: var(--text);
     background:
-      radial-gradient(1100px 520px at 8% -12%, rgba(96, 165, 250, .13), transparent 62%),
-      radial-gradient(900px 460px at 96% 4%, rgba(94, 234, 212, .08), transparent 58%),
+      radial-gradient(1100px 520px at 8% -12%, rgba(255, 59, 92, .10), transparent 62%),
+      radial-gradient(900px 460px at 96% 4%, rgba(216, 27, 63, .07), transparent 58%),
       var(--bg);
-    font: 14px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font: calc(14px * var(--font-scale))/1.55 var(--font-ui);
     -webkit-font-smoothing: antialiased;
   }
   a { color: var(--accent); }
@@ -43,33 +48,72 @@
   ::-webkit-scrollbar { width: 10px; height: 10px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: var(--panel-3); border-radius: 999px; border: 2px solid var(--bg); }
-  ::-webkit-scrollbar-thumb:hover { background: #2b3a5e; }
+  ::-webkit-scrollbar-thumb:hover { background: #3a2c3c; }
 
-  header {
-    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-    padding: 11px 18px; position: sticky; top: 0; z-index: 10;
-    background: rgba(10, 16, 32, .82);
+  /* Shell: a fixed rail of navigation beside a scrolling work area. The rail is a real sidebar
+     rather than a wrapped row of buttons, so a growing tab list never pushes the content down. */
+  .shell { display: grid; grid-template-columns: var(--sidebar-w) 1fr; min-height: 100vh; }
+  .shell.rail-hidden { grid-template-columns: 0 1fr; }
+  .shell.rail-hidden aside { display: none; }
+
+  aside {
+    position: sticky; top: 0; align-self: start; height: 100vh;
+    display: flex; flex-direction: column; gap: 4px;
+    padding: calc(14px * var(--space)) calc(10px * var(--space));
+    background: linear-gradient(180deg, var(--bg-2), var(--panel) 40%);
+    border-right: 1px solid var(--line);
+    overflow-y: auto;
+  }
+  .brand { display: flex; align-items: center; gap: 9px; padding: 2px 6px 14px; }
+  .brand-mark {
+    width: 28px; height: 28px; border-radius: 9px; display: grid; place-items: center;
+    background: linear-gradient(145deg, var(--accent), #7a0f26);
+    color: #fff; font-size: 13px; font-weight: 800; letter-spacing: -.5px;
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, .14) inset, 0 4px 16px -4px var(--accent-glow);
+  }
+  .brand h1 { font-size: 13.5px; margin: 0; font-weight: 650; letter-spacing: .1px; line-height: 1.2; }
+  .brand h1 small { display: block; font-size: 10px; font-weight: 500; color: var(--faint); letter-spacing: .3px; }
+
+  nav { display: flex; flex-direction: column; gap: 2px; }
+  nav .nav-group {
+    font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .9px;
+    color: var(--faint); padding: 12px 8px 4px;
+  }
+  nav button {
+    display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+    background: transparent; color: var(--muted); border: 1px solid transparent;
+    padding: 7px 10px; border-radius: var(--radius-sm); cursor: pointer;
+    font-size: 12.5px; font-weight: 500; transition: background .14s, color .14s, border-color .14s;
+  }
+  nav button:hover { color: var(--text); background: var(--panel-2); }
+  nav button.active {
+    background: linear-gradient(180deg, rgba(255, 59, 92, .18), rgba(216, 27, 63, .10));
+    color: #fff; border-color: rgba(255, 59, 92, .35);
+    box-shadow: inset 2px 0 0 var(--accent);
+  }
+  nav button .count {
+    font-size: 10px; margin-left: auto; padding: 0 5px; border-radius: 999px;
+    background: rgba(255, 255, 255, .1); color: inherit;
+  }
+  aside .rail-foot { margin-top: auto; padding-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+
+  .topbar {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    padding: calc(10px * var(--space)) calc(18px * var(--space));
+    position: sticky; top: 0; z-index: 10;
+    background: rgba(10, 8, 12, .84);
     backdrop-filter: blur(14px) saturate(140%);
     border-bottom: 1px solid var(--line-soft);
   }
-  .brand { display: flex; align-items: center; gap: 10px; margin-right: 4px; }
-  .brand-mark {
-    width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center;
-    background: linear-gradient(145deg, var(--accent), #4f46e5);
-    color: #fff; font-size: 13px; font-weight: 700; letter-spacing: -.5px;
-    box-shadow: 0 0 0 1px rgba(255, 255, 255, .12) inset, 0 4px 14px -4px var(--accent-glow);
-  }
-  header h1 { font-size: 14.5px; margin: 0; font-weight: 650; letter-spacing: .1px; }
-  header h1 small { display: block; font-size: 10.5px; font-weight: 500; color: var(--faint); letter-spacing: .3px; }
-  header .spacer { flex: 1; }
+  .topbar .spacer { flex: 1; }
 
   .badge {
     font-size: 11px; padding: 3px 9px; border-radius: 999px; white-space: nowrap;
     background: var(--panel-2); color: var(--muted); border: 1px solid var(--line);
   }
-  .badge.good { color: var(--good); border-color: rgba(94, 234, 212, .35); background: rgba(94, 234, 212, .1); }
-  .badge.bad { color: var(--bad); border-color: rgba(251, 138, 138, .35); background: rgba(251, 138, 138, .1); }
-  .badge.warn { color: var(--warn); border-color: rgba(251, 191, 110, .35); background: rgba(251, 191, 110, .1); }
+  .badge.good { color: var(--good); border-color: rgba(74, 222, 155, .35); background: rgba(74, 222, 155, .1); }
+  .badge.bad { color: var(--bad); border-color: rgba(255, 95, 95, .35); background: rgba(255, 95, 95, .1); }
+  .badge.warn { color: var(--warn); border-color: rgba(245, 181, 68, .35); background: rgba(245, 181, 68, .1); }
   .badge .dot {
     display: inline-block; width: 6px; height: 6px; border-radius: 50%;
     background: currentColor; margin-right: 5px; vertical-align: middle;
@@ -77,27 +121,7 @@
   .badge.good .dot { animation: pulse 2.4s ease-in-out infinite; }
   @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
 
-  nav {
-    display: flex; gap: 4px; flex-wrap: wrap; padding: 12px 18px 0;
-    max-width: 1320px; margin: 0 auto;
-  }
-  nav button {
-    background: transparent; color: var(--muted); border: 1px solid transparent;
-    padding: 7px 14px; border-radius: var(--radius-sm); cursor: pointer;
-    font-size: 13px; font-weight: 500; transition: background .14s, color .14s, border-color .14s;
-  }
-  nav button:hover { color: var(--text); background: var(--panel); }
-  nav button.active {
-    background: linear-gradient(180deg, var(--accent-2), #2f6fd8);
-    color: #fff; border-color: rgba(255, 255, 255, .14);
-    box-shadow: 0 4px 14px -6px var(--accent-glow);
-  }
-  nav button .count {
-    font-size: 10.5px; margin-left: 6px; padding: 0 5px; border-radius: 999px;
-    background: rgba(255, 255, 255, .14); color: inherit;
-  }
-
-  main { padding: 16px 18px 56px; max-width: 1320px; margin: 0 auto; }
+  main { padding: calc(16px * var(--space)) calc(18px * var(--space)) 56px; max-width: 1320px; margin: 0 auto; }
   section { display: none; }
   section.active { display: block; animation: fade .18s ease-out; }
   @keyframes fade { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
@@ -111,7 +135,7 @@
     padding: 15px; box-shadow: var(--shadow);
     transition: border-color .16s, transform .16s;
   }
-  .card:hover { border-color: #31436b; }
+  .card:hover { border-color: #3d2f3f; }
   .card h3 {
     margin: 0 0 11px; font-size: 13px; font-weight: 620; letter-spacing: .2px;
     display: flex; align-items: center; gap: 8px; color: var(--text);
@@ -164,43 +188,149 @@
   button.btn:hover { border-color: var(--accent); background: var(--panel-3); }
   button.btn:active { transform: translateY(1px); }
   button.btn.primary {
-    background: linear-gradient(180deg, var(--accent-2), #2f6fd8);
+    background: linear-gradient(180deg, var(--accent), var(--accent-2));
     border-color: rgba(255, 255, 255, .14); color: #fff;
   }
-  button.btn.primary:hover { background: linear-gradient(180deg, #4b8ef8, #3576de); border-color: var(--accent); }
-  button.btn.danger { border-color: rgba(251, 138, 138, .4); color: var(--bad); background: rgba(251, 138, 138, .08); }
-  button.btn.danger:hover { border-color: var(--bad); background: rgba(251, 138, 138, .16); }
+  button.btn.primary:hover { background: linear-gradient(180deg, #ff5471, #e22046); border-color: var(--accent); }
+  button.btn.danger { border-color: rgba(255, 95, 95, .4); color: var(--bad); background: rgba(255, 95, 95, .08); }
+  button.btn.danger:hover { border-color: var(--bad); background: rgba(255, 95, 95, .16); }
   button.btn:disabled { opacity: .4; cursor: not-allowed; }
   button.btn:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
     outline: 2px solid var(--accent); outline-offset: 2px;
   }
   .btn.sm { padding: 3px 9px; font-size: 11.5px; }
-  .inv-grid { display: grid; grid-template-columns: repeat(9, 1fr); gap: 5px; }
-  .inv-slot {
-    position: relative; min-height: 44px; padding: 5px 4px; border-radius: 7px;
-    border: 1px solid var(--line-soft); background: rgba(255, 255, 255, .02);
-    font-size: 10.5px; line-height: 1.25; overflow: hidden;
+
+  /* ---- Authentic inventory ----------------------------------------------------------------
+     The game's inventory is a 3x9 main grid, a 1x9 hotbar and a 2x2 corner of armour and offhand
+     slots. These rules reproduce that geometry at a fixed 40px slot so the panel reads as the same
+     object the player sees, not as a list of names. Slot size is a variable so inventory scaling
+     is one number. */
+  :root { --slot: 40px; --slot-gap: 2px; }
+  .mc-inv { display: inline-flex; flex-direction: column; gap: calc(10px * var(--space)); }
+  .mc-inv-row { display: flex; gap: calc(6px * var(--space)); align-items: flex-start; }
+  .mc-inv-grid { display: grid; gap: var(--slot-gap); }
+  .mc-inv-grid.main { grid-template-columns: repeat(9, var(--slot)); }
+  .mc-inv-grid.hotbar { grid-template-columns: repeat(9, var(--slot)); }
+  .mc-inv-armour { display: grid; grid-template-columns: var(--slot); gap: var(--slot-gap); }
+
+  /* One slot: the game's sunken bevel. The inner shadow sells "recessed" without an image. */
+  .mc-slot {
+    position: relative; width: var(--slot); height: var(--slot);
+    background: #1b1620; border: 1px solid #0a070c; border-radius: 3px;
+    box-shadow: inset 1px 1px 0 rgba(255, 255, 255, .06), inset -1px -1px 0 rgba(0, 0, 0, .5);
+    display: grid; place-items: center; cursor: pointer;
+    transition: background .12s, box-shadow .12s;
   }
-  .inv-slot.filled { border-color: var(--line); background: rgba(255, 255, 255, .055); }
-  .inv-slot.selected { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
-  .inv-index { position: absolute; top: 2px; right: 4px; color: var(--faint); font-size: 9px; }
-  .inv-name { display: block; color: var(--text); word-break: break-word; }
-  .inv-count { position: absolute; bottom: 2px; right: 4px; color: var(--muted); font-weight: 600; }
-  .inv-ench { display: block; color: var(--accent); font-size: 9px; }
-  /* A real item texture is 16x16, so it is drawn at its own size and pixel-scaled up, never
-     smoothed: nearest-neighbour keeps the pixel art crisp instead of blurring it. */
-  .inv-slot.has-icon { display: flex; align-items: center; justify-content: center; }
-  .inv-icon {
-    width: 32px; height: 32px; image-rendering: pixelated;
-    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .55));
+  .mc-slot:hover { background: #241c28; }
+  .mc-slot.empty { cursor: default; }
+  .mc-slot.empty:hover { background: #1b1620; }
+  /* The selected hotbar slot gets the game's white outline. */
+  .mc-slot.selected {
+    box-shadow: inset 0 0 0 2px #f4f0f4, inset 1px 1px 0 rgba(255, 255, 255, .06);
+    background: #2a2130;
   }
-  .inv-slot.has-icon .inv-count, .inv-slot.has-icon .inv-ench {
-    position: absolute; text-shadow: 0 1px 2px #000;
+  .mc-slot.cursor-holds { outline: 2px dashed var(--accent); outline-offset: 1px; }
+  .mc-item {
+    width: 32px; height: 32px; image-rendering: pixelated; pointer-events: none;
+    filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .7));
   }
-  .inv-slot.has-icon .inv-ench { top: 2px; left: 4px; }
+  /* Count in the game's own place: bottom-right, bold, with a hard shadow so it survives a light
+     texture underneath. */
+  .mc-count {
+    position: absolute; right: 2px; bottom: 0; font-size: 12px; font-weight: 700;
+    color: #fff; text-shadow: 1.5px 1.5px 0 #2a2a2a; line-height: 1.15; pointer-events: none;
+    font-family: var(--mono);
+  }
+  /* Durability: the game draws a 13x2 bar 2px above the bottom edge, green to red. */
+  .mc-dura {
+    position: absolute; left: 2px; right: 2px; bottom: 2px; height: 3px;
+    background: #000; border-radius: 1px; overflow: hidden;
+  }
+  .mc-dura > i { display: block; height: 100%; }
+  /* Enchantment glint: a slow diagonal shimmer laid over the icon, the same idea as the game's
+     animated glint but done in CSS so it needs no texture and costs nothing when idle. */
+  .mc-glint { position: absolute; inset: 0; overflow: hidden; pointer-events: none; border-radius: 3px; }
+  .mc-glint::after {
+    content: ""; position: absolute; inset: -50%;
+    background: linear-gradient(115deg, transparent 38%, rgba(214, 130, 255, .55) 48%,
+      rgba(255, 255, 255, .35) 52%, transparent 62%);
+    animation: glint 3.2s linear infinite;
+  }
+  @keyframes glint { from { transform: translateX(-60%); } to { transform: translateX(60%); } }
+  /* The armour column has a faint silhouette so an empty slot still says "helmet". */
+  .mc-slot.slot-armour { background-image: none; }
+  .mc-slot .slot-hint {
+    font-size: 8.5px; color: var(--faint); text-transform: uppercase; letter-spacing: .4px;
+    pointer-events: none;
+  }
+
+  /* A tooltip built from the snapshot, shown on hover. Position is fixed so a slot near the edge of
+     the panel cannot clip it. */
+  .mc-tip {
+    position: fixed; z-index: 60; pointer-events: none; max-width: 260px;
+    background: rgba(16, 12, 20, .97); border: 1px solid #3a2c3c; border-radius: 6px;
+    padding: 7px 9px; font-size: 12px; line-height: 1.4;
+    box-shadow: 0 10px 30px -10px rgba(0, 0, 0, .9);
+  }
+  .mc-tip .tip-name { font-weight: 650; }
+  .mc-tip .tip-ench { color: #b48cff; font-size: 11.5px; }
+  .mc-tip .tip-meta { color: var(--muted); font-size: 11px; margin-top: 3px; }
+  .mc-tip .tip-id { color: var(--faint); font-size: 10px; font-family: var(--mono); margin-top: 2px; }
+
+  /* Rarity colours, as the game names them. */
+  .rar-common { color: #ffffff; }
+  .rar-uncommon { color: #55ff55; }
+  .rar-rare { color: #5555ff; }
+  .rar-epic { color: #ff55ff; }
+
+  /* ---- PrismView -------------------------------------------------------------------------
+     The live frame fills its box and is never smoothed: a Minecraft frame is pixel art and a
+     bilinear filter would blur the HUD text a viewer is trying to read. */
+  .prism-wrap {
+    position: relative; background: #050407; border: 1px solid var(--line);
+    border-radius: var(--radius-sm); overflow: hidden; aspect-ratio: 16 / 9;
+    display: grid; place-items: center;
+  }
+  .prism-wrap img { width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; display: block; }
+  .prism-wrap .prism-note {
+    position: absolute; inset: 0; display: grid; place-items: center; text-align: center;
+    color: var(--faint); font-size: 12.5px; padding: 18px;
+  }
+  .prism-wrap .prism-live {
+    position: absolute; top: 8px; left: 8px; font-size: 10px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .8px; padding: 2px 7px; border-radius: 999px;
+    background: rgba(255, 59, 92, .9); color: #fff;
+  }
+  .prism-wrap .prism-stats {
+    position: absolute; bottom: 8px; right: 8px; font-family: var(--mono); font-size: 10px;
+    color: #fff; background: rgba(0, 0, 0, .6); padding: 2px 6px; border-radius: 4px;
+  }
+  .prism-full {
+    position: fixed; inset: 0; z-index: 80; background: #000; display: grid; place-items: center;
+  }
+  .prism-full img { width: 100vw; height: 100vh; object-fit: contain; image-rendering: pixelated; }
+  .prism-full .prism-close { position: fixed; top: 14px; right: 16px; z-index: 81; }
+  /* Remote control: a compact pad rather than a keyboard image, because a phone has no keyboard. */
+  .pad { display: grid; grid-template-columns: repeat(3, 52px); grid-template-rows: repeat(3, 52px); gap: 5px; }
+  .pad button {
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px;
+    color: var(--text); font-size: 15px; cursor: pointer; user-select: none; touch-action: none;
+  }
+  .pad button:active, .pad button.held { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .pad button.blank { visibility: hidden; }
+
+  /* ---- Radar ------------------------------------------------------------------------------
+     Drawn on a canvas so rotation and range are one transform, not a rebuild of the DOM. */
+  .radar-wrap {
+    position: relative; aspect-ratio: 1 / 1; max-width: 460px; margin: 0 auto;
+    border: 1px solid var(--line); border-radius: 50%; overflow: hidden; background: #07060a;
+  }
+  .radar-wrap canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+  .radar-legend { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; margin-top: 10px; font-size: 11px; color: var(--muted); }
+  .radar-legend .swatch { width: 9px; height: 9px; border-radius: 50%; display: inline-block; margin-right: 5px; vertical-align: 0; }
 
   input, select, textarea {
-    background: #0c1424; color: var(--text); border: 1px solid var(--line);
+    background: #0c0a0e; color: var(--text); border: 1px solid var(--line);
     border-radius: var(--radius-sm); padding: 7px 10px; font: inherit; width: 100%;
     transition: border-color .14s, box-shadow .14s;
   }
@@ -225,7 +355,7 @@
 
   .log {
     font-family: var(--mono); font-size: 11.5px; max-height: 400px; overflow: auto;
-    background: #0a1120; border: 1px solid var(--line-soft); border-radius: var(--radius-sm);
+    background: #0a080c; border: 1px solid var(--line-soft); border-radius: var(--radius-sm);
     padding: 8px 10px;
   }
   .log .line { padding: 3px 0; border-bottom: 1px solid rgba(37, 50, 82, .4); word-break: break-word; }
@@ -273,7 +403,7 @@
 
   /* The map canvas is drawn at device pixels; the wrapper keeps it inside the card. `touch-action`
      is none so a drag pans the map instead of scrolling the page underneath it. */
-  .map-wrap { position: relative; border: 1px solid var(--line-soft); border-radius: var(--radius-sm); overflow: hidden; background: #070b14; }
+  .map-wrap { position: relative; border: 1px solid var(--line-soft); border-radius: var(--radius-sm); overflow: hidden; background: #07060a; }
   .map-wrap canvas { display: block; width: 100%; height: auto; image-rendering: pixelated; cursor: grab; touch-action: none; }
   .map-wrap canvas:active { cursor: grabbing; }
   .map-legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 9px; font-size: 11px; color: var(--muted); }
@@ -319,10 +449,10 @@
     border: 1px solid var(--line); color: var(--muted); white-space: nowrap;
     text-transform: uppercase; letter-spacing: .4px;
   }
-  .pill.on { color: var(--good); border-color: rgba(94, 234, 212, .35); background: rgba(94, 234, 212, .1); }
+  .pill.on { color: var(--good); border-color: rgba(74, 222, 155, .35); background: rgba(74, 222, 155, .1); }
   .pill.off { color: var(--faint); }
-  .pill.warn { color: var(--warn); border-color: rgba(251, 191, 110, .35); background: rgba(251, 191, 110, .1); }
-  .pill.bad { color: var(--bad); border-color: rgba(251, 138, 138, .35); background: rgba(251, 138, 138, .1); }
+  .pill.warn { color: var(--warn); border-color: rgba(245, 181, 68, .35); background: rgba(245, 181, 68, .1); }
+  .pill.bad { color: var(--bad); border-color: rgba(255, 95, 95, .35); background: rgba(255, 95, 95, .1); }
 
   .chip {
     font-size: 11px; padding: 2px 9px; border-radius: 999px;
@@ -331,10 +461,10 @@
   }
   .avatar {
     width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center;
-    font-size: 11px; font-weight: 700; color: #08111f; flex: 0 0 auto;
-    background: linear-gradient(145deg, var(--accent), #7dd3fc);
+    font-size: 11px; font-weight: 700; color: #170309; flex: 0 0 auto;
+    background: linear-gradient(145deg, var(--accent), #ff8fa3);
   }
-  .avatar.off { background: linear-gradient(145deg, #3b4a6b, #2a3550); color: var(--muted); }
+  .avatar.off { background: linear-gradient(145deg, #3a2c3c, #2a1f2b); color: var(--muted); }
   .who { display: flex; align-items: center; gap: 8px; }
 
   dialog {
@@ -390,40 +520,65 @@
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation: none !important; transition: none !important; }
   }
+  /* The same switch, but chosen by the user rather than by the operating system. */
+  .reduced-motion *, .reduced-motion *::before, .reduced-motion *::after {
+    animation: none !important; transition: none !important;
+  }
+  @media (max-width: 860px) {
+    .shell { grid-template-columns: 1fr; }
+    aside { position: static; height: auto; }
+    nav { flex-direction: row; flex-wrap: wrap; }
+    nav .nav-group { display: none; }
+    nav button { width: auto; }
+  }
 </style>
 </head>
 <body>
-<header>
-  <div class="brand">
-    <span class="brand-mark" aria-hidden="true">LC</span>
-    <h1>Log Client Companion<small>Live control for your Minecraft clients</small></h1>
+<div class="shell" id="shell">
+  <aside>
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">LC</span>
+      <h1>Log Client<small>Companion console</small></h1>
+    </div>
+    <nav id="tabs" aria-label="Sections"></nav>
+    <div class="rail-foot">
+      <button class="btn" id="btn-theme">Appearance</button>
+      <button class="btn" id="btn-nodes">Clients</button>
+      <button class="btn" id="btn-rail">Hide rail</button>
+    </div>
+  </aside>
+
+  <div class="work">
+    <div class="topbar">
+      <span class="badge" id="node-count">0 clients</span>
+      <span class="badge" id="link-state">offline</span>
+      <span class="spacer"></span>
+      <button class="btn" id="btn-palette" title="Ctrl+K">Search all</button>
+      <button class="btn" id="btn-notify">Notify</button>
+      <button class="btn" id="btn-refresh">Refresh</button>
+    </div>
+
+    <main>
+      <section id="view-overview" class="active"></section>
+      <section id="view-prism"></section>
+      <section id="view-radar"></section>
+      <section id="view-bot"></section>
+      <section id="view-tasks"></section>
+      <section id="view-chat"></section>
+      <section id="view-search"></section>
+      <section id="view-world"></section>
+      <section id="view-map"></section>
+      <section id="view-metrics"></section>
+      <section id="view-network"></section>
+      <section id="view-inventory"></section>
+      <section id="view-players"></section>
+      <section id="view-modules"></section>
+      <section id="view-storage"></section>
+      <section id="view-events"></section>
+      <section id="view-appearance"></section>
+    </main>
   </div>
-  <span class="badge" id="node-count">0 clients</span>
-  <span class="badge" id="link-state">offline</span>
-  <span class="spacer"></span>
-  <button class="btn" id="btn-theme">Theme</button>
-  <button class="btn" id="btn-nodes">Clients</button>
-  <button class="btn" id="btn-notify">Notify</button>
-  <button class="btn" id="btn-refresh">Refresh</button>
-</header>
-
-<nav id="tabs"></nav>
-
-<main>
-  <section id="view-overview" class="active"></section>
-  <section id="view-bot"></section>
-  <section id="view-tasks"></section>
-  <section id="view-chat"></section>
-  <section id="view-search"></section>
-  <section id="view-world"></section>
-  <section id="view-map"></section>
-  <section id="view-metrics"></section>
-  <section id="view-inventory"></section>
-  <section id="view-players"></section>
-  <section id="view-modules"></section>
-  <section id="view-storage"></section>
-  <section id="view-events"></section>
-</main>
+</div>
 
 <div class="toast" id="toast"></div>
 
@@ -485,60 +640,72 @@ const STORE_KEY = "logclient.companion.nodes";
 const TAB_KEY = "logclient.companion.tab";
 const THEME_KEY = "logclient.companion.theme";
 const WORKSPACE_KEY = "logclient.companion.workspaces";
+const RAIL_KEY = "logclient.companion.rail";
 
 /* Themes are just the CSS custom properties the stylesheet already reads, so switching one
    recolours every panel, badge and chart at once instead of needing a rule per component.
    Only the tokens are replaced; layout, spacing and radius stay put so a theme cannot make the
    app unusable. */
 const THEMES = {
-  midnight: {
-    label: "Midnight",
+  crimson: {
+    label: "Crimson",
     vars: {
-      "--bg": "#080c18", "--bg-2": "#0d1426", "--panel": "#121b30", "--panel-2": "#18233d",
-      "--panel-3": "#1f2c4b", "--line": "#253252", "--line-soft": "rgba(37, 50, 82, .55)",
-      "--text": "#e8eeff", "--muted": "#8fa2c8", "--faint": "#62729a",
-      "--accent": "#6aa8ff", "--accent-2": "#3b82f6",
-      "--accent-glow": "rgba(96, 165, 250, .22)",
-      "--good": "#5eead4", "--warn": "#fbbf6e", "--bad": "#fb8a8a"
+      "--bg": "#08070a", "--bg-2": "#0d0b10", "--panel": "#131016", "--panel-2": "#1a151d",
+      "--panel-3": "#241c26", "--line": "#2e2430", "--line-soft": "rgba(64, 44, 58, .55)",
+      "--text": "#f2eef1", "--muted": "#a08e9b", "--faint": "#6f6070",
+      "--accent": "#ff3b5c", "--accent-2": "#d81b3f",
+      "--accent-glow": "rgba(255, 59, 92, .22)",
+      "--good": "#4ade9b", "--warn": "#f5b544", "--bad": "#ff5f5f"
     }
   },
-  ember: {
-    label: "Ember",
+  obsidian: {
+    label: "Obsidian",
     vars: {
-      "--bg": "#140a08", "--bg-2": "#1c0f0b", "--panel": "#251512", "--panel-2": "#2f1c17",
-      "--panel-3": "#3b241d", "--line": "#4a2c24", "--line-soft": "rgba(74, 44, 36, .55)",
-      "--text": "#fdeee6", "--muted": "#c9a091", "--faint": "#9a7466",
-      "--accent": "#ff9a5c", "--accent-2": "#f97316",
-      "--accent-glow": "rgba(251, 146, 60, .22)",
-      "--good": "#86efac", "--warn": "#fcd34d", "--bad": "#f87171"
+      "--bg": "#060709", "--bg-2": "#0b0d11", "--panel": "#111419", "--panel-2": "#171b22",
+      "--panel-3": "#1f242d", "--line": "#282e39", "--line-soft": "rgba(40, 46, 57, .55)",
+      "--text": "#eef1f6", "--muted": "#98a2b3", "--faint": "#667085",
+      "--accent": "#e11d48", "--accent-2": "#9f1239",
+      "--accent-glow": "rgba(225, 29, 72, .2)",
+      "--good": "#34d399", "--warn": "#fbbf24", "--bad": "#f87171"
     }
   },
-  moss: {
-    label: "Moss",
+  ash: {
+    label: "Ash",
     vars: {
-      "--bg": "#07120c", "--bg-2": "#0b1a12", "--panel": "#10241a", "--panel-2": "#163022",
-      "--panel-3": "#1d3d2c", "--line": "#244b37", "--line-soft": "rgba(36, 75, 55, .55)",
-      "--text": "#e6f5ea", "--muted": "#93bfa4", "--faint": "#648a74",
-      "--accent": "#5eead4", "--accent-2": "#10b981",
-      "--accent-glow": "rgba(52, 211, 153, .22)",
-      "--good": "#86efac", "--warn": "#fbbf6e", "--bad": "#fb8a8a"
+      "--bg": "#0a0a0b", "--bg-2": "#101012", "--panel": "#16161a", "--panel-2": "#1d1d22",
+      "--panel-3": "#26262d", "--line": "#32323a", "--line-soft": "rgba(50, 50, 58, .6)",
+      "--text": "#f4f4f6", "--muted": "#a4a4ae", "--faint": "#71717a",
+      "--accent": "#f43f5e", "--accent-2": "#be123c",
+      "--accent-glow": "rgba(244, 63, 94, .18)",
+      "--good": "#4ade80", "--warn": "#facc15", "--bad": "#f87171"
     }
   },
-  graphite: {
-    label: "Graphite",
+  bloodmoon: {
+    label: "Blood moon",
     vars: {
-      "--bg": "#0b0b0d", "--bg-2": "#121215", "--panel": "#17171b", "--panel-2": "#1f1f24",
-      "--panel-3": "#28282f", "--line": "#33333c", "--line-soft": "rgba(51, 51, 60, .55)",
-      "--text": "#f0f0f3", "--muted": "#a0a0ac", "--faint": "#6e6e7a",
-      "--accent": "#e5e7eb", "--accent-2": "#a1a1aa",
-      "--accent-glow": "rgba(229, 231, 235, .16)",
-      "--good": "#86efac", "--warn": "#fbbf6e", "--bad": "#fb8a8a"
+      "--bg": "#0d0406", "--bg-2": "#15070a", "--panel": "#1d0a0f", "--panel-2": "#270e14",
+      "--panel-3": "#33131b", "--line": "#451c26", "--line-soft": "rgba(69, 28, 38, .6)",
+      "--text": "#fdeef1", "--muted": "#c89aa5", "--faint": "#966874",
+      "--accent": "#ff2447", "--accent-2": "#a80f2b",
+      "--accent-glow": "rgba(255, 36, 71, .26)",
+      "--good": "#5eead4", "--warn": "#fbbf6e", "--bad": "#fb7185"
+    }
+  },
+  light: {
+    label: "Daylight",
+    vars: {
+      "--bg": "#f4f2f5", "--bg-2": "#ece9ee", "--panel": "#ffffff", "--panel-2": "#f7f5f8",
+      "--panel-3": "#efeaf1", "--line": "#ddd5e0", "--line-soft": "rgba(180, 160, 185, .45)",
+      "--text": "#1c141f", "--muted": "#6b5c70", "--faint": "#93849a",
+      "--accent": "#d81b3f", "--accent-2": "#a80f2b",
+      "--accent-glow": "rgba(216, 27, 63, .16)",
+      "--good": "#0f9d63", "--warn": "#b7791f", "--bad": "#c53030"
     }
   }
 };
 
 function applyTheme(name) {
-  const theme = THEMES[name] || THEMES.midnight;
+  const theme = THEMES[name] || THEMES.crimson;
   const root = document.documentElement;
   for (const [key, value] of Object.entries(theme.vars)) root.style.setProperty(key, value);
   localStorage.setItem(THEME_KEY, name);
@@ -547,7 +714,7 @@ function applyTheme(name) {
 
 function currentTheme() {
   const stored = localStorage.getItem(THEME_KEY);
-  return THEMES[stored] ? stored : "midnight";
+  return THEMES[stored] ? stored : "crimson";
 }
 
 /* A workspace is a named bundle of theme plus which tab you were on. It is the difference
@@ -574,18 +741,33 @@ function applyWorkspace(name) {
   const map = loadWorkspaces();
   const workspace = map[name];
   if (!workspace) return false;
-  applyTheme(workspace.theme || "midnight");
+  applyTheme(workspace.theme || "crimson");
   if (workspace.tab && TABS.some(t => t[0] === workspace.tab)) {
     tab = workspace.tab;
     localStorage.setItem(TAB_KEY, tab);
   }
   return true;
 }
+/* Sections, grouped so the rail reads as a tool rather than a wall of buttons. The group name is
+   drawn as a small heading; a group with an empty label is a continuation of the one above it. */
 const TABS = [
-  ["overview", "Overview"], ["bot", "Bot"], ["tasks", "Tasks"], ["chat", "Chat"],
-  ["search", "Search"], ["world", "World"], ["map", "Map"], ["metrics", "Metrics"],
-  ["inventory", "Inventory"], ["players", "Players"], ["modules", "Modules"],
-  ["storage", "Storage"], ["events", "Live feed"]
+  ["overview", "Overview", "Watch"],
+  ["prism", "PrismView", "Watch"],
+  ["radar", "Radar", "Watch"],
+  ["map", "World map", "Watch"],
+  ["world", "Surroundings", "Watch"],
+  ["inventory", "Inventory", "Control"],
+  ["bot", "Bot", "Control"],
+  ["tasks", "Tasks", "Control"],
+  ["modules", "Modules", "Control"],
+  ["chat", "Chat", "Records"],
+  ["events", "Timeline", "Records"],
+  ["players", "Players", "Records"],
+  ["storage", "Storage", "Records"],
+  ["metrics", "Metrics", "System"],
+  ["network", "Network", "System"],
+  ["search", "Search", "System"],
+  ["appearance", "Appearance", "System"]
 ];
 
 let nodes = loadNodes();
@@ -629,7 +811,9 @@ function uid() {
 // ---------------------------------------------------------------- boot
 
 function boot() {
-  applyTheme(currentTheme());
+  // The appearance store owns the theme now; the older theme key is still read as a fallback so an
+  // existing install keeps the theme it had.
+  applyAppearance(loadAppearance());
   // A link with ?token=... (and optionally ?url=...) seeds a node, so a user can open the app
   // straight from the addon without typing anything.
   const params = new URLSearchParams(location.search);
@@ -677,9 +861,15 @@ function tabCount(id) {
 function renderTabs() {
   const nav = document.getElementById("tabs");
   nav.innerHTML = "";
-  for (const [id, label] of TABS) {
+  let lastGroup = "";
+  for (const [id, label, group] of TABS) {
+    if (group && group !== lastGroup) {
+      nav.appendChild(el("div", { class: "nav-group", text: group }));
+      lastGroup = group;
+    }
     const button = document.createElement("button");
     button.className = id === tab ? "active" : "";
+    button.dataset.tab = id;
     button.appendChild(document.createTextNode(label));
     const count = tabCount(id);
     if (count !== null) button.appendChild(el("span", { class: "count", text: String(count) }));
@@ -725,20 +915,33 @@ async function apiCall(node, path, options = {}) {
   }
 }
 
+/* True while a refresh is in flight. The three-second timer fires regardless of how long the last
+ * round took, so a slow or hanging client used to start a new round on top of the old one; the
+ * rounds stacked without bound, each holding a socket and a copy of the snapshot, and the page
+ * fell further behind the longer it ran. One round at a time keeps the work bounded and the page
+ * honest about which snapshot it is showing. */
+let refreshing = false;
+
 async function refreshAll() {
+  if (refreshing) return;
   if (nodes.length === 0) { render(); return; }
-  await Promise.all(nodes.map(async node => {
-    const result = await apiCall(node, "/api/v1/snapshot");
-    if (result.ok) {
-      snapshots.set(node.id, result.data);
-      nodeState.set(node.id, { ok: true, at: Date.now() });
-    } else {
-      nodeState.set(node.id, { ok: false, error: result.error, at: Date.now() });
-    }
-  }));
-  renderHeader();
-  renderTabs();
-  render();
+  refreshing = true;
+  try {
+    await Promise.all(nodes.map(async node => {
+      const result = await apiCall(node, "/api/v1/snapshot");
+      if (result.ok) {
+        snapshots.set(node.id, result.data);
+        nodeState.set(node.id, { ok: true, at: Date.now() });
+      } else {
+        nodeState.set(node.id, { ok: false, error: result.error, at: Date.now() });
+      }
+    }));
+    renderHeader();
+    renderTabs();
+    render();
+  } finally {
+    refreshing = false;
+  }
 }
 
 function activeNode() {
@@ -877,6 +1080,571 @@ function setLink(state) {
   badge.appendChild(document.createTextNode(state));
 }
 
+// ---------------------------------------------------------------- PrismView
+//
+// The live frame is polled rather than pushed: the client serves one JPEG per request, and the
+// browser asks again as soon as the previous picture has painted. That keeps the newest frame on
+// screen without ever queueing, so a slow link shows fewer frames instead of lagging behind.
+const prismState = { busy: false, on: true, timer: null, width: 640, quality: 60, full: false, frames: 0, bytes: 0, startedAt: 0 };
+
+function renderPrism() {
+  const view = document.getElementById("view-prism");
+  view.innerHTML = "";
+  if (nodes.length === 0) { view.appendChild(notConnected()); return; }
+  const node = activeNode();
+  const snap = activeSnapshot();
+  view.appendChild(card("Client", [nodeSelect()]));
+
+  const wrap = el("div", { class: "prism-wrap" });
+  const img = el("img", { alt: "Live view of the client" });
+  const note = el("div", { class: "prism-note", text: "Waiting for the first frame..." });
+  const stats = el("div", { class: "prism-stats", text: "" });
+  wrap.appendChild(img);
+  wrap.appendChild(note);
+  wrap.appendChild(stats);
+
+  const live = el("span", { class: "prism-live", text: "live" });
+
+  const controls = el("div", { class: "row" });
+  controls.appendChild(button(prismState.on ? "Pause" : "Resume", () => {
+    prismState.on = !prismState.on;
+    render();
+  }, "btn sm"));
+  controls.appendChild(button("Fullscreen", () => openPrismFull(node), "btn sm"));
+  controls.appendChild(button("Snapshot", () => downloadFrame(node), "btn sm"));
+
+  const widthSelect = el("select", {
+    style: "width:auto",
+    onchange: (event) => { prismState.width = Number(event.target.value); }
+  }, [320, 480, 640, 960, 1280].map(w =>
+    el("option", { value: String(w), text: w + " px", selected: w === prismState.width ? "selected" : null })));
+  const qualitySelect = el("select", {
+    style: "width:auto",
+    onchange: (event) => { prismState.quality = Number(event.target.value); }
+  }, [30, 45, 60, 80, 100].map(q =>
+    el("option", { value: String(q), text: q === 100 ? "lossless" : q + "%", selected: q === prismState.quality ? "selected" : null })));
+
+  controls.appendChild(el("span", { class: "faint", style: "font-size:11.5px", text: "size" }));
+  controls.appendChild(widthSelect);
+  controls.appendChild(el("span", { class: "faint", style: "font-size:11.5px", text: "quality" }));
+  controls.appendChild(qualitySelect);
+
+  const controlRow = el("div", { class: "row", style: "margin-top:10px" }, [live, ...controls.children]);
+  view.appendChild(card("PrismView", [wrap, controlRow]));
+
+  view.appendChild(renderRemotePad(node, snap));
+
+  // Frame polling. It stops itself when the tab changes or the view is rebuilt, because the <img>
+  // it writes to is no longer connected; the next render starts a fresh loop.
+  prismState.frames = 0;
+  prismState.bytes = 0;
+  prismState.startedAt = Date.now();
+  const tick = async () => {
+    if (!img.isConnected || !prismState.on) return;
+    const started = performance.now();
+    const url = node.url.replace(/\/+$/, "") + "/api/v1/viewport?width=" + prismState.width
+      + "&quality=" + prismState.quality + "&t=" + Date.now();
+    const result = await fetchFrame(node, url);
+    if (!img.isConnected) return;
+    if (result.ok) {
+      img.src = result.url;
+      note.style.display = "none";
+      prismState.frames++;
+      prismState.bytes += result.size;
+      const fps = prismState.frames / Math.max(1, (Date.now() - prismState.startedAt) / 1000);
+      stats.textContent = fps.toFixed(1) + " fps \u00b7 " + Math.round(result.size / 1024) + " KB";
+    } else {
+      note.style.display = "";
+      note.textContent = result.error || "No frame available.";
+      stats.textContent = "";
+    }
+    // Yield to the browser so the picture can paint before asking for the next one.
+    setTimeout(tick, prismState.on ? 30 : 1000);
+  };
+  if (prismState.on) tick();
+  else { note.textContent = "Paused."; }
+}
+
+/** Fetches one frame as an object URL, so the token never appears in an <img src> history entry. */
+async function fetchFrame(node, url) {
+  const init = { headers: {} };
+  if (node.token) init.headers["Authorization"] = "Bearer " + node.token;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 6000);
+  init.signal = controller.signal;
+  try {
+    const response = await fetch(url, init);
+    if (!response.ok) {
+      let message = "HTTP " + response.status;
+      try { const body = await response.json(); if (body && body.message) message = body.message; } catch { /* not JSON */ }
+      return { ok: false, error: message };
+    }
+    const blob = await response.blob();
+    return { ok: true, url: URL.createObjectURL(blob), size: blob.size };
+  } catch (e) {
+    return { ok: false, error: e.name === "AbortError" ? "Frame timed out" : "Unreachable" };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function openPrismFull(node) {
+  const layer = el("div", { class: "prism-full" });
+  const img = el("img", { alt: "Live view" });
+  layer.appendChild(img);
+  layer.appendChild(button("Close", () => layer.remove(), "btn prism-close"));
+  document.body.appendChild(layer);
+  const tick = async () => {
+    if (!img.isConnected) return;
+    const url = node.url.replace(/\/+$/, "") + "/api/v1/viewport?width=1280&quality=70&t=" + Date.now();
+    const result = await fetchFrame(node, url);
+    if (!img.isConnected) return;
+    if (result.ok) img.src = result.url;
+    setTimeout(tick, 40);
+  };
+  tick();
+}
+
+async function downloadFrame(node) {
+  const url = node.url.replace(/\/+$/, "") + "/api/v1/viewport?width=1280&quality=100&t=" + Date.now();
+  const result = await fetchFrame(node, url);
+  if (!result.ok) { toast(result.error || "Could not capture a frame.", "bad"); return; }
+  const link = el("a", { href: result.url, download: "prismview-" + Date.now() + ".png" });
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
+
+/** The remote-control pad. Hidden entirely when the client has not enabled remote control. */
+function renderRemotePad(node, snap) {
+  const info = snap && snap.viewport ? snap.viewport : {};
+  const enabled = info.controlEnabled === true;
+  if (!enabled) {
+    return card("Remote control", [emptyState(
+      "Remote control is off on this client. Turn on Companion \u2192 Access \u2192 remote-control "
+      + "in the game to allow movement from here.")]);
+  }
+  const held = new Set();
+  const send = async () => {
+    const result = await apiCall(node, "/api/v1/control/inputs", {
+      method: "POST", body: { held: [...held] }
+    });
+    if (!result.ok) toast(result.error || "Input refused.", "bad");
+  };
+  const bind = (label, name, cls) => {
+    const b = el("button", { class: cls || "", text: label });
+    const down = (e) => { e.preventDefault(); held.add(name); b.classList.add("held"); send(); };
+    const up = (e) => { e.preventDefault(); held.delete(name); b.classList.remove("held"); send(); };
+    b.addEventListener("pointerdown", down);
+    b.addEventListener("pointerup", up);
+    b.addEventListener("pointerleave", up);
+    b.addEventListener("pointercancel", up);
+    return b;
+  };
+  const pad = el("div", { class: "pad" }, [
+    el("button", { class: "blank" }), bind("\u2191", "forward"), el("button", { class: "blank" }),
+    bind("\u2190", "left"), bind("\u25cf", "jump"), bind("\u2192", "right"),
+    el("button", { class: "blank" }), bind("\u2193", "back"), el("button", { class: "blank" })
+  ]);
+  const extras = el("div", { class: "row", style: "margin-top:8px" },
+    [bind("Sprint", "sprint", "btn sm"), bind("Sneak", "sneak", "btn sm"), bind("Attack", "attack", "btn sm")]);
+
+  const stop = async () => {
+    held.clear();
+    const result = await apiCall(node, "/api/v1/control/release", { method: "POST", body: {} });
+    toastResult(result, "All inputs released.");
+    render();
+  };
+
+  const look = el("div", { class: "row", style: "margin-top:10px" });
+  for (const [label, yaw, pitch] of [["\u2190 Look", -30, 0], ["\u2191 Look", 0, -20],
+                                     ["\u2193 Look", 0, 20], ["Look \u2192", 30, 0]]) {
+    look.appendChild(button(label, async () => {
+      const result = await apiCall(node, "/api/v1/control/look", {
+        method: "POST", body: { yaw, pitch }
+      });
+      if (!result.ok) toast(result.error || "Look refused.", "bad");
+    }, "btn sm"));
+  }
+  const hotbar = el("div", { class: "row", style: "margin-top:8px" });
+  for (let slot = 0; slot < 9; slot++) {
+    hotbar.appendChild(button(String(slot + 1), async () => {
+      const result = await apiCall(node, "/api/v1/control/hotbar", {
+        method: "POST", body: { slot }
+      });
+      if (!result.ok) toast(result.error || "Hotbar refused.", "bad");
+    }, "btn sm"));
+  }
+
+  return card("Remote control", [
+    pad, extras, look, hotbar,
+    el("div", { class: "row", style: "margin-top:10px" }, [
+      button("Emergency stop", stop, "btn danger"),
+      el("span", { class: "faint", style: "font-size:11.5px", text: "Releases every held input on the client." })
+    ])
+  ]);
+}
+
+// ---------------------------------------------------------------- Radar
+//
+// The radar draws only entities the client reported in its last snapshot. Nothing is extrapolated:
+// a marker that is not in the snapshot is not on the radar, because inventing one would make the
+// radar look more informed than the client actually is.
+const radarState = { yaw: 0, range: 64, northUp: false, dragging: false, lastX: 0 };
+
+const RADAR_KINDS = {
+  player: { label: "Players", colour: "#8fe3ff" },
+  hostile: { label: "Hostiles", colour: "#ff5f5f" },
+  passive: { label: "Passives", colour: "#7fe3a2" },
+  item: { label: "Items", colour: "#f5d76e" },
+  vehicle: { label: "Vehicles", colour: "#c8b6ff" },
+  projectile: { label: "Projectiles", colour: "#ff9f43" }
+};
+
+function renderRadar() {
+  const view = document.getElementById("view-radar");
+  view.innerHTML = "";
+  if (nodes.length === 0) { view.appendChild(notConnected()); return; }
+  const snap = activeSnapshot();
+  view.appendChild(card("Client", [nodeSelect()]));
+  if (!snap) { view.appendChild(card("Radar", [emptyState("No snapshot yet.")])); return; }
+
+  // Entities live under the world view; the fallback keeps an older client's flat list working.
+  const entities = Array.isArray(snap.world && snap.world.entities) ? snap.world.entities
+    : (Array.isArray(snap.entities) ? snap.entities : []);
+  const me = snap.world || {};
+  const wrap = el("div", { class: "radar-wrap" });
+  const canvas = el("canvas", { width: "600", height: "600" });
+  wrap.appendChild(canvas);
+
+  canvas.addEventListener("pointerdown", (e) => {
+    radarState.dragging = true; radarState.lastX = e.clientX; canvas.setPointerCapture(e.pointerId);
+  });
+  canvas.addEventListener("pointermove", (e) => {
+    if (!radarState.dragging) return;
+    radarState.yaw += (e.clientX - radarState.lastX) * 0.6;
+    radarState.lastX = e.clientX;
+    drawRadar(canvas, entities, me);
+  });
+  canvas.addEventListener("pointerup", () => { radarState.dragging = false; });
+
+  const range = el("input", {
+    type: "range", min: "16", max: "256", step: "8", value: String(radarState.range),
+    oninput: (e) => { radarState.range = Number(e.target.value); drawRadar(canvas, entities, me); }
+  });
+  const readout = el("span", { class: "readout", text: radarState.range + " m" });
+  range.addEventListener("input", () => { readout.textContent = radarState.range + " m"; });
+
+  const toggles = el("div", { class: "row", style: "margin-top:8px" }, [
+    button(radarState.northUp ? "North up" : "Follow facing", () => {
+      radarState.northUp = !radarState.northUp;
+      render();
+    }, "btn sm"),
+    button("Fullscreen", () => openRadarFull(entities, me), "btn sm")
+  ]);
+
+  view.appendChild(card("Radar", [
+    wrap,
+    el("div", { class: "row", style: "margin-top:10px" }, [
+      el("span", { class: "faint", style: "font-size:11.5px", text: "range" }), range, readout, toggles
+    ]),
+    radarLegend(entities)
+  ]));
+
+  view.appendChild(card("Nearby entities", [
+    entities.length ? entityTable(entities) : emptyState("This client reported no nearby entities.")
+  ]));
+
+  drawRadar(canvas, entities, me);
+}
+
+function radarLegend(entities) {
+  const present = new Set(entities.map(e => e.kind));
+  const legend = el("div", { class: "radar-legend" });
+  for (const [kind, meta] of Object.entries(RADAR_KINDS)) {
+    if (!present.has(kind)) continue;
+    legend.appendChild(el("span", {}, [
+      el("span", { class: "swatch", style: "background:" + meta.colour }),
+      document.createTextNode(meta.label + " (" + entities.filter(e => e.kind === kind).length + ")")
+    ]));
+  }
+  if (!legend.childNodes.length) legend.appendChild(el("span", { class: "faint", text: "No entities in range." }));
+  return legend;
+}
+
+function entityTable(entities) {
+  const table = el("table");
+  table.appendChild(el("thead", {}, [el("tr", {}, [
+    el("th", { text: "Type" }), el("th", { text: "Name" }), el("th", { text: "Distance" }),
+    el("th", { text: "Bearing" }), el("th", { text: "Height" })
+  ])]));
+  const body = el("tbody");
+  const sorted = [...entities].sort((a, b) => (a.distance || 0) - (b.distance || 0));
+  for (const entity of sorted) {
+    body.appendChild(el("tr", {}, [
+      el("td", { text: entity.kind || "unknown" }),
+      el("td", { text: entity.name || entity.type || "\u2014" }),
+      el("td", { class: "num", text: fmt(entity.distance) + " m" }),
+      el("td", { text: bearingName(entity.bearing) }),
+      el("td", { class: "num", text: (entity.dy > 0 ? "+" : "") + fmt(entity.dy) })
+    ]));
+  }
+  table.appendChild(body);
+  return table;
+}
+
+/** Draws the radar: a range ring, the player at the centre, and one dot per reported entity. */
+function drawRadar(canvas, entities, me) {
+  const ctx = canvas.getContext("2d");
+  const size = canvas.width;
+  const centre = size / 2;
+  const radius = centre - 12;
+  ctx.clearRect(0, 0, size, size);
+
+  // Background rings at a quarter, half and three quarters of the range.
+  ctx.fillStyle = "#07060a";
+  ctx.beginPath(); ctx.arc(centre, centre, radius, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = "rgba(255, 59, 92, .18)";
+  ctx.lineWidth = 2;
+  for (const frac of [0.25, 0.5, 0.75, 1]) {
+    ctx.beginPath(); ctx.arc(centre, centre, radius * frac, 0, Math.PI * 2); ctx.stroke();
+  }
+  // The crosshair marks north in north-up mode and the facing axis otherwise.
+  ctx.strokeStyle = "rgba(255, 255, 255, .12)";
+  ctx.beginPath();
+  ctx.moveTo(centre, centre - radius); ctx.lineTo(centre, centre + radius);
+  ctx.moveTo(centre - radius, centre); ctx.lineTo(centre + radius, centre);
+  ctx.stroke();
+
+  // Two independent turns: the view follows the player's facing unless north-up is chosen, and a
+  // drag adds a manual offset on top so an entity behind the player can still be inspected.
+  // The half turn is not decoration: a Minecraft yaw of 0 faces south, while the top of this
+  // canvas is north, so without it a player facing south would see the world upside down.
+  const rotation = (radarState.northUp ? 0 : -(me.yaw || 0) * Math.PI / 180 - Math.PI)
+    + (radarState.yaw || 0) * Math.PI / 180;
+  const range = radarState.range;
+
+  for (const entity of entities) {
+    const dx = entity.dx || 0;
+    const dz = entity.dz || 0;
+    const distance = Math.hypot(dx, dz);
+    if (distance > range) continue;
+    const angle = Math.atan2(dx, -dz) + rotation;
+    const r = (distance / range) * radius;
+    const x = centre + Math.sin(angle) * r;
+    const y = centre - Math.cos(angle) * r;
+    const meta = RADAR_KINDS[entity.kind] || { colour: "#c8b6ff" };
+    ctx.fillStyle = meta.colour;
+    ctx.beginPath(); ctx.arc(x, y, entity.kind === "player" ? 6 : 4.5, 0, Math.PI * 2); ctx.fill();
+    // A short tail points the way the entity is facing, which a bare dot cannot show.
+    if (typeof entity.yaw === "number") {
+      // The entity yaw is a Minecraft yaw, which points south at 0; +180 turns it into a compass
+      // bearing so the tail lines up with the bearing the table reports.
+      const heading = (entity.yaw + 180) * Math.PI / 180 + rotation;
+      ctx.strokeStyle = meta.colour;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + Math.sin(heading) * 11, y - Math.cos(heading) * 11);
+      ctx.stroke();
+    }
+    // A tick above or below the dot says the entity is higher or lower, without a second axis.
+    if (Math.abs(entity.dy || 0) >= 2) {
+      ctx.strokeStyle = (entity.dy > 0) ? "#ffffff" : "#7f7f8a";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(x + 7, y + 7);
+      ctx.lineTo(x + 7, y + 7 - Math.min(9, Math.abs(entity.dy) * 0.6) * Math.sign(entity.dy));
+      ctx.stroke();
+    }
+    if (distance < range * 0.5) {
+      ctx.fillStyle = "rgba(242, 238, 241, .75)";
+      ctx.font = "11px ui-monospace, monospace";
+      ctx.fillText(Math.round(distance) + "m", x + 8, y - 8);
+    }
+  }
+
+  // The player, always last so it is never hidden under a marker.
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath(); ctx.arc(centre, centre, 5, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = "#ff3b5c";
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(centre, centre, 9, 0, Math.PI * 2); ctx.stroke();
+
+  ctx.fillStyle = "rgba(160, 142, 155, .9)";
+  ctx.font = "12px system-ui, sans-serif";
+  ctx.fillText(radarState.northUp ? "N" : "facing", centre - 12, 20);
+}
+
+function openRadarFull(entities, me) {
+  const layer = el("div", { class: "prism-full", style: "background:rgba(5,4,7,.97)" });
+  const canvas = el("canvas", { width: "760", height: "760", style: "max-width:96vw;max-height:92vh" });
+  layer.appendChild(canvas);
+  layer.appendChild(button("Close", () => layer.remove(), "btn prism-close"));
+  document.body.appendChild(layer);
+  drawRadar(canvas, entities, me);
+}
+
+// ---------------------------------------------------------------- Network
+//
+// Every figure here is measured by the client or by this page. Packet loss and server-side latency
+// are not shown because neither can be measured from a client that only sees its own socket.
+function renderNetwork() {
+  const view = document.getElementById("view-network");
+  view.innerHTML = "";
+  if (nodes.length === 0) { view.appendChild(notConnected()); return; }
+  const node = activeNode();
+  const snap = activeSnapshot();
+  const state = nodeState.get(node ? node.id : "") || {};
+  view.appendChild(card("Client", [nodeSelect()]));
+  if (!snap) { view.appendChild(card("Network", [emptyState("No snapshot yet.")])); return; }
+
+  const net = snap.network || {};
+  const ping = net.ping ?? (snap.world && snap.world.ping);
+  const history = Array.isArray(net.pingHistory) ? net.pingHistory : [];
+
+  view.appendChild(card("Connection", [
+    el("div", { class: "tiles" }, [
+      tile("Ping", ping ?? "\u2014", "ms", ping < 80 ? "good" : ping < 200 ? "warn" : "bad", null),
+      tile("Minimum", net.pingMin ?? "\u2014", "ms", "", null),
+      tile("Average", net.pingAvg ?? "\u2014", "ms", "", null),
+      tile("Maximum", net.pingMax ?? "\u2014", "ms", "", null),
+      tile("Duration", fmtDuration(net.connectedForMs), "", "", null)
+    ]),
+    el("div", { class: "kv", style: "margin-top:10px" }, [
+      el("span", { text: "Snapshot age" }),
+      el("span", { text: state.at ? Math.round((Date.now() - state.at) / 1000) + " s" : "\u2014" })
+    ])
+  ]));
+
+  if (history.length > 1) {
+    view.appendChild(card("Ping history", [sparkline(history)]));
+  } else {
+    view.appendChild(card("Ping history", [emptyState("The client has not reported enough samples yet.")]));
+  }
+
+  view.appendChild(card("Transport", [
+    kv("API round trip", state.latencyMs !== undefined ? state.latencyMs + " ms" : "\u2014"),
+    kv("Stream latency", prismState.frames ? "measuring" : "not streaming"),
+    kv("Requests per minute limit", String(net.rateLimit || "\u2014")),
+    kv("Backend", snap.backend ? (snap.backend.connected ? "connected" : "disconnected") : "n/a")
+  ]));
+
+  view.appendChild(el("p", {
+    class: "faint",
+    style: "font-size:11.5px;margin-top:14px",
+    text: "Packet loss and server-side latency are not displayed: a Minecraft client cannot measure "
+      + "them reliably, and a made-up figure would be worse than a missing one."
+  }));
+}
+
+function fmtDuration(ms) {
+  if (!ms || ms < 0) return "\u2014";
+  const total = Math.floor(ms / 1000);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  return (h ? h + "h " : "") + (h || m ? m + "m " : "") + s + "s";
+}
+
+// ---------------------------------------------------------------- Appearance
+function renderAppearance() {
+  const view = document.getElementById("view-appearance");
+  view.innerHTML = "";
+  const settings = loadAppearance();
+
+  view.appendChild(card("Theme", [
+    el("div", { class: "row" }, Object.entries(THEMES).map(([id, theme]) =>
+      button(theme.label, () => { applyTheme(id); saveAppearance({ theme: id }); render(); },
+        "btn sm" + (settings.theme === id ? " primary" : ""))))
+  ]));
+
+  const scale = el("input", {
+    type: "range", min: "0.8", max: "1.4", step: "0.05", value: String(settings.fontScale),
+    oninput: (e) => {
+      document.documentElement.style.setProperty("--font-scale", e.target.value);
+      saveAppearance({ fontScale: Number(e.target.value) });
+    }
+  });
+  const space = el("input", {
+    type: "range", min: "0.7", max: "1.5", step: "0.05", value: String(settings.space),
+    oninput: (e) => {
+      document.documentElement.style.setProperty("--space", e.target.value);
+      saveAppearance({ space: Number(e.target.value) });
+    }
+  });
+  const slot = el("input", {
+    type: "range", min: "32", max: "56", step: "2", value: String(settings.slot),
+    oninput: (e) => {
+      document.documentElement.style.setProperty("--slot", e.target.value + "px");
+      saveAppearance({ slot: Number(e.target.value) });
+    }
+  });
+
+  view.appendChild(card("Layout", [
+    el("label", { text: "Interface scale" }), scale,
+    el("label", { text: "Spacing" }), space,
+    el("label", { text: "Inventory slot size" }), slot
+  ]));
+
+  view.appendChild(card("Motion", [
+    el("div", { class: "row" }, [
+      button(settings.reducedMotion ? "Reduced motion: on" : "Reduced motion: off", () => {
+        const next = !settings.reducedMotion;
+        document.body.classList.toggle("reduced-motion", next);
+        saveAppearance({ reducedMotion: next });
+        render();
+      }, "btn sm")
+    ]),
+    el("p", { class: "faint", style: "font-size:11.5px",
+      text: "Reduced motion stops the glint shimmer and every panel transition." })
+  ]));
+
+  view.appendChild(card("Export", [
+    el("div", { class: "row" }, [
+      button("Copy appearance JSON", async () => {
+        const json = JSON.stringify(loadAppearance(), null, 2);
+        try {
+          await navigator.clipboard.writeText(json);
+          toast("Appearance copied.", "good");
+        } catch {
+          toast("The clipboard is not available here.", "bad");
+        }
+      }, "btn sm"),
+      button("Reset", () => {
+        localStorage.removeItem(APPEARANCE_KEY);
+        applyAppearance(loadAppearance());
+        render();
+      }, "btn sm danger")
+    ])
+  ]));
+}
+
+const APPEARANCE_KEY = "logclient.companion.appearance";
+const APPEARANCE_DEFAULTS = { theme: "crimson", fontScale: 1, space: 1, slot: 40, reducedMotion: false };
+
+function loadAppearance() {
+  try {
+    const raw = localStorage.getItem(APPEARANCE_KEY);
+    return raw ? { ...APPEARANCE_DEFAULTS, ...JSON.parse(raw) } : { ...APPEARANCE_DEFAULTS };
+  } catch {
+    return { ...APPEARANCE_DEFAULTS };
+  }
+}
+
+function saveAppearance(patch) {
+  const next = { ...loadAppearance(), ...patch };
+  localStorage.setItem(APPEARANCE_KEY, JSON.stringify(next));
+}
+
+function applyAppearance(settings) {
+  applyTheme(settings.theme);
+  document.documentElement.style.setProperty("--font-scale", settings.fontScale);
+  document.documentElement.style.setProperty("--space", settings.space);
+  document.documentElement.style.setProperty("--slot", settings.slot + "px");
+  document.body.classList.toggle("reduced-motion", Boolean(settings.reducedMotion));
+}
+
 // ---------------------------------------------------------------- rendering
 
 function renderHeader() {
@@ -892,7 +1660,8 @@ function render() {
     overview: renderOverview, bot: renderBot, tasks: renderTasks, chat: renderChat,
     search: renderSearch, world: renderWorld, map: renderMap, metrics: renderMetrics,
     inventory: renderInventory, players: renderPlayers, modules: renderModules,
-    storage: renderStorage, events: renderEvents
+    storage: renderStorage, events: renderEvents, prism: renderPrism, radar: renderRadar,
+    network: renderNetwork, appearance: renderAppearance
   };
   builders[tab]();
   restoreFields(state);
@@ -1469,16 +2238,104 @@ function decodeTile(raw) {
 
     const heights = new Int16Array(256);
     for (let c = 0; c < 256; c++) { heights[c] = view.getInt16(at, true); at += 2; }
-    at += 512;                                // block indices: colour comes from height
+    // The surface block of each column. This is what makes the map look like the world: a beach is
+    // sand, a forest floor is grass, a lake is water. Heights alone can only say "high" or "low",
+    // which is why a height-only map reads as a heatmap rather than as terrain.
+    const blocks = new Uint16Array(256);
+    for (let c = 0; c < 256; c++) { blocks[c] = view.getUint16(at, true); at += 2; }
     const biomes = new Uint8Array(256);
     for (let c = 0; c < 256; c++) { biomes[c] = view.getUint8(at); at += 1; }
 
     chunks.push({
       chunkX: originChunkX + gx, chunkZ: originChunkZ + gz,
-      heights, biomes, biomePalette
+      heights, blocks, biomes, biomePalette, blockPalette
     });
   }
   return { dimension, originChunkX, originChunkZ, tileChunks, chunks };
+}
+
+/**
+ * Colours for the surface blocks a map actually shows, keyed by the block id the client records.
+ *
+ * <p>These are approximations of the vanilla textures at map scale, not the textures themselves:
+ * pulling a real sprite per block would need the resource manager in the browser, which the
+ * companion does not have. A block that is not listed still renders - it falls back to its biome
+ * tone - so a modded or unusual surface is drawn rather than left as a hole.
+ */
+const BLOCK_COLORS = {
+  "minecraft:grass_block": "#6a9c46", "minecraft:grass_path": "#9a7b4f",
+  "minecraft:dirt_path": "#9a7b4f", "minecraft:farmland": "#6b4b2a",
+  "minecraft:dirt": "#7a5636", "minecraft:coarse_dirt": "#6f4d30",
+  "minecraft:podzol": "#5c3f26", "minecraft:mycelium": "#6f6470",
+  "minecraft:sand": "#dcd29a", "minecraft:red_sand": "#bb6622",
+  "minecraft:gravel": "#8a8580", "minecraft:clay": "#a0a7b4",
+  "minecraft:stone": "#7e7e7e", "minecraft:andesite": "#88898a",
+  "minecraft:diorite": "#c4c4c4", "minecraft:granite": "#9f6b52",
+  "minecraft:deepslate": "#4d4d52", "minecraft:tuff": "#6b6b62",
+  "minecraft:calcite": "#dedfda", "minecraft:cobblestone": "#7a7a7a",
+  "minecraft:mossy_cobblestone": "#6c7a5c", "minecraft:stone_bricks": "#7b7b7b",
+  "minecraft:snow": "#f0f5f8", "minecraft:snow_block": "#f0f5f8",
+  "minecraft:ice": "#a5c8e8", "minecraft:packed_ice": "#8fb6dd",
+  "minecraft:blue_ice": "#74a8e0",
+  "minecraft:water": "#33559c", "minecraft:lava": "#d4631c",
+  "minecraft:oak_leaves": "#3f6b28", "minecraft:birch_leaves": "#5d7f42",
+  "minecraft:spruce_leaves": "#2e4b2a", "minecraft:jungle_leaves": "#3d7028",
+  "minecraft:acacia_leaves": "#4f6b22", "minecraft:dark_oak_leaves": "#2f4a1e",
+  "minecraft:mangrove_leaves": "#3b6b30", "minecraft:cherry_leaves": "#e8a8c8",
+  "minecraft:azalea_leaves": "#4f7038", "minecraft:oak_log": "#6b5334",
+  "minecraft:birch_log": "#c8c3ae", "minecraft:spruce_log": "#3b2a17",
+  "minecraft:jungle_log": "#56452b", "minecraft:acacia_log": "#67604b",
+  "minecraft:dark_oak_log": "#3a2c17",
+  "minecraft:netherrack": "#6f2a2a", "minecraft:soul_sand": "#4f3b32",
+  "minecraft:soul_soil": "#4a362d", "minecraft:basalt": "#4b4b52",
+  "minecraft:blackstone": "#2c2329", "minecraft:nether_wart_block": "#7a1414",
+  "minecraft:warped_nylium": "#2a6b62", "minecraft:crimson_nylium": "#7c2020",
+  "minecraft:end_stone": "#dbde9c", "minecraft:obsidian": "#140d20",
+  "minecraft:bedrock": "#3a3a3a", "minecraft:moss_block": "#5a7a34",
+  "minecraft:mud": "#3c3a3e", "minecraft:sculk": "#0d2126",
+  "minecraft:amethyst_block": "#8464c4", "minecraft:hay_block": "#c8a52a",
+  "minecraft:pumpkin": "#c07615", "minecraft:melon": "#6a9c2a",
+  "minecraft:terracotta": "#985e43", "minecraft:orange_terracotta": "#a15325",
+  "minecraft:yellow_terracotta": "#ba8523", "minecraft:red_terracotta": "#8f3d2f",
+  "minecraft:white_terracotta": "#d1b6a2", "minecraft:brown_terracotta": "#4d3323",
+  "minecraft:badlands_sand": "#c96f2e"
+};
+
+/** True for the ids a map should read as water rather than as flat ground. */
+const WATER_BLOCKS = new Set(["minecraft:water", "minecraft:bubble_column", "minecraft:kelp",
+  "minecraft:seagrass", "minecraft:tall_seagrass"]);
+
+/** A biome's tone, used only for blocks with no explicit colour. */
+const BIOME_TONES = {
+  "minecraft:plains": "#8bab5c", "minecraft:sunflower_plains": "#8bab5c",
+  "minecraft:forest": "#5c8a3c", "minecraft:flower_forest": "#6b9a45",
+  "minecraft:birch_forest": "#7d9c58", "minecraft:dark_forest": "#3f6b2c",
+  "minecraft:taiga": "#4a7048", "minecraft:snowy_taiga": "#6c8a72",
+  "minecraft:desert": "#d8c88a", "minecraft:savanna": "#a3a04d",
+  "minecraft:jungle": "#3f8a28", "minecraft:swamp": "#4f6b3c",
+  "minecraft:ocean": "#33559c", "minecraft:deep_ocean": "#2a4680",
+  "minecraft:river": "#3a5ea8", "minecraft:beach": "#dcd29a",
+  "minecraft:snowy_plains": "#e8eef2", "minecraft:snowy_beach": "#e8eef2",
+  "minecraft:mountains": "#8a8a8a", "minecraft:windswept_hills": "#8a8a8a",
+  "minecraft:stony_shore": "#8a8580", "minecraft:badlands": "#bb6622",
+  "minecraft:mushroom_fields": "#6f6470", "minecraft:nether_wastes": "#6f2a2a",
+  "minecraft:the_end": "#dbde9c"
+};
+
+/**
+ * The colour of one map column: its surface block if that is known, else its biome, else a height
+ * shade. Preferring the block is what makes the map read as the world rather than as a contour
+ * plot, and the fallbacks keep older captures (which recorded fewer blocks) drawable.
+ */
+function columnColor(blockId, biomeId, height) {
+  if (blockId && BLOCK_COLORS[blockId]) return BLOCK_COLORS[blockId];
+  if (biomeId && BIOME_TONES[biomeId]) return BIOME_TONES[biomeId];
+  return heightColor(height);
+}
+
+/** True when a column is water, so it can be drawn flat and translucent like a lake. */
+function isWaterColumn(blockId) {
+  return !!blockId && WATER_BLOCKS.has(blockId);
 }
 
 /** A stable colour for a biome id, so the same biome is the same colour on every tile. */
@@ -1507,9 +2364,15 @@ function heightColor(height) {
 // map re-fetched every tile on every three-second refresh: on a large explored area that is
 // thousands of requests a minute, the browser throttles them, and the map appears frozen because
 // the redraw never finishes before the next one starts.
-const tileCache = new Map();     // "dim:x:z" -> Uint8Array|null (null = known unexplored)
+const tileCache = new Map();     // "dim:x:z" -> {raw: Uint8Array|null, at: ms} (null = unexplored)
 const tileInflight = new Map();  // "dim:x:z" -> Promise, so two refreshes never fetch one tile twice
 const TILE_TIMEOUT_MS = 8000;
+/* How long a decoded tile may be reused before it is fetched again.
+ *
+ * The client re-reads a chunk it has held for 30 s and can capture new chunks at any time, so a
+ * tile held forever goes stale while still looking authoritative. This is the browser side of that
+ * window: past it the tile is refetched, which is what lets new terrain appear without a reload. */
+const TILE_TTL_MS = 30000;
 
 // Keyed by node as well as position: two bots are two different worlds, and sharing a cache entry
 // between them would draw one server's terrain as if it were the other's.
@@ -1520,12 +2383,23 @@ function tileKey(node, dimension, x, z) {
 /**
  * Fetches one terrain tile, through the cache.
  *
- * <p>A 404 is cached as null: unexplored ground stays unexplored until the page is reloaded, so a
- * region nobody has visited costs one request rather than one per refresh.
+ * <p>A cached tile is reused while it is both within {@link TILE_TTL_MS} and still the revision the
+ * server advertises. The revision wins when it is present: the client re-reads a chunk after it has
+ * held it for 30 s, and waiting out the local TTL before showing that would leave the map one window
+ * behind on every change — the "map gets stuck" symptom in miniature. An older client that sends no
+ * revision falls back to the TTL alone.
+ *
+ * <p>An unexplored tile is cached as null until the window passes: a region nobody has visited then
+ * costs one request per window rather than one per refresh, and ground captured later still appears
+ * without a reload.
  */
 function fetchTile(node, dimension, tileX, tileZ, options = {}) {
   const key = tileKey(node, dimension, tileX, tileZ);
-  if (!options.refresh && tileCache.has(key)) return Promise.resolve(tileCache.get(key));
+  const cached = tileCache.get(key);
+  const fresh = cached && (Date.now() - cached.at) < TILE_TTL_MS;
+  // A known revision that differs from the cached one is stale however recently it was fetched.
+  const superseded = cached && options.rev !== undefined && cached.rev !== options.rev;
+  if (!options.refresh && fresh && !superseded) return Promise.resolve(cached.raw);
   const pending = tileInflight.get(key);
   if (pending && !options.refresh) return pending;
 
@@ -1538,13 +2412,19 @@ function fetchTile(node, dimension, tileX, tileZ, options = {}) {
   const timer = setTimeout(() => controller.abort(), TILE_TIMEOUT_MS);
   init.signal = controller.signal;
 
+  const rev = options.rev;
   const promise = (async () => {
     try {
       const response = await fetch(url, init);
-      if (response.status === 404) { tileCache.set(key, null); return null; }
+      if (response.status === 404) {
+        // Unexplored, but only until the cache entry expires: a chunk captured a minute from now
+        // must be able to appear without a page reload.
+        tileCache.set(key, { raw: null, at: Date.now(), rev });
+        return null;
+      }
       if (!response.ok) return null;                 // transient: do not cache, retry next refresh
       const raw = await inflateTile(new Uint8Array(await response.arrayBuffer()));
-      tileCache.set(key, raw);
+      tileCache.set(key, { raw, at: Date.now(), rev });
       return raw;
     } catch {
       return null;                                   // timeout or network error: retry later
@@ -1843,8 +2723,12 @@ function drawIsoView(canvas) {
       const cy = originY + (x + z) * halfH - (value - base) * lift;
       if (cx < left || cx > right || cy < -span * lift - 40 || cy > height + 40) continue;
 
-      const top = heightColor(value);
+      const top = cellColor(grid, x, z, value);
       ctx.fillStyle = top;
+      // Water sits flat and translucent, so a lake reads as a surface rather than as a pit.
+      if (isWaterColumn(grid.blockIndex ? grid.blockIds[grid.blockIndex[z * grid.width + x]] : "")) {
+        ctx.globalAlpha = 0.85;
+      }
       ctx.beginPath();
       ctx.moveTo(cx, cy - halfH);
       ctx.lineTo(cx + halfW, cy);
@@ -1852,6 +2736,7 @@ function drawIsoView(canvas) {
       ctx.lineTo(cx - halfW, cy);
       ctx.closePath();
       ctx.fill();
+      ctx.globalAlpha = 1;
 
       // Side faces only where this column is taller than what lies behind it.
       const west = heightAt(x - 1, z);
@@ -2119,7 +3004,7 @@ function draw3DView(canvas) {
     const maxY = Math.max(c00.y, c10.y, c11.y, c01.y);
     if (maxX < -80 || minX > width + 80 || maxY < -80 || minY > height + 80) continue;
 
-    const colour = heightColor(value);
+    const colour = cellColor(grid, gx, gz, value);
     const spanX = maxX - minX;
     const spanY = maxY - minY;
 
@@ -2413,6 +3298,10 @@ function updateHint() {
     parts.push("height" in hover
       ? "X " + hover.x + " · Y " + hover.height + " · Z " + hover.z
       : "X " + hover.x + " · Z " + hover.z);
+    // Naming the surface block is the point of a block map: "sand" says far more about a spot
+    // than its height does, and it is the same id the game would report.
+    const block = blockAtBlock(hover.x, hover.z);
+    if (block) parts.push(shortBlockName(block));
   }
   if (mapView.mode === "3d") {
     parts.push("dist " + Math.round(mapView.dist || 0));
@@ -2646,6 +3535,20 @@ function stitchHeights(decodedTiles) {
   const width = maxBX - minBX + 1;
   const height = maxBZ - minBZ + 1;
   const heights = new Int16Array(width * height).fill(-2000);
+  // Surface block and biome per column, as indices into a shared string table, so the grid costs
+  // one small int per column instead of a string reference and the draw loop stays cheap.
+  const blockIndex = new Int16Array(width * height).fill(-1);
+  const biomeIndex = new Int16Array(width * height).fill(-1);
+  const blockIds = [];
+  const biomeIds = [];
+  const blockLookup = new Map();
+  const biomeLookup = new Map();
+  const intern = (table, lookup, value) => {
+    if (!value) return -1;
+    let id = lookup.get(value);
+    if (id === undefined) { id = table.length; table.push(value); lookup.set(value, id); }
+    return id;
+  };
   let minHeight = Infinity;
   let maxHeight = -Infinity;
   for (const { decoded } of decodedTiles) {
@@ -2654,8 +3557,17 @@ function stitchHeights(decodedTiles) {
       const baseZ = chunk.chunkZ * 16 - minBZ;
       for (let z = 0; z < 16; z++) {
         for (let x = 0; x < 16; x++) {
-          const value = chunk.heights[z * 16 + x];
-          heights[(baseZ + z) * width + (baseX + x)] = value;
+          const column = z * 16 + x;
+          const value = chunk.heights[column];
+          const target = (baseZ + z) * width + (baseX + x);
+          heights[target] = value;
+          if (chunk.blocks) {
+            const palette = chunk.blockPalette || [];
+            blockIndex[target] = intern(blockIds, blockLookup, palette[chunk.blocks[column]]);
+          }
+          if (chunk.biomes && chunk.biomePalette) {
+            biomeIndex[target] = intern(biomeIds, biomeLookup, chunk.biomePalette[chunk.biomes[column]]);
+          }
           if (value > -1000) {
             if (value < minHeight) minHeight = value;
             if (value > maxHeight) maxHeight = value;
@@ -2665,7 +3577,39 @@ function stitchHeights(decodedTiles) {
     }
   }
   if (!isFinite(minHeight)) { minHeight = 0; maxHeight = 0; }
-  return { heights, width, height, minBlockX: minBX, minBlockZ: minBZ, minHeight, maxHeight };
+  return { heights, blockIndex, biomeIndex, blockIds, biomeIds,
+    width, height, minBlockX: minBX, minBlockZ: minBZ, minHeight, maxHeight };
+}
+
+/**
+ * The colour of one grid cell, from its surface block, falling back to biome then height. Every
+ * draw path goes through this so the flat, isometric and 3D views agree on what a block looks like.
+ */
+function cellColor(grid, x, z, height) {
+  if (!grid || !grid.blockIndex) return heightColor(height);
+  const i = z * grid.width + x;
+  if (i < 0 || i >= grid.blockIndex.length) return heightColor(height);
+  const blockId = grid.blockIndex[i] >= 0 ? grid.blockIds[grid.blockIndex[i]] : "";
+  const biomeId = grid.biomeIndex >= 0 ? grid.biomeIds[grid.biomeIndex[i]] : "";
+  return columnColor(blockId, biomeId, height);
+}
+
+/** The surface block id at one block position, or "" where nothing was captured. */
+function blockAtBlock(bx, bz) {
+  const grid = mapView.grid;
+  if (!grid || !grid.blockIndex) return "";
+  const x = bx - grid.minBlockX;
+  const z = bz - grid.minBlockZ;
+  if (x < 0 || z < 0 || x >= grid.width || z >= grid.height) return "";
+  const id = grid.blockIndex[z * grid.width + x];
+  return id >= 0 ? grid.blockIds[id] : "";
+}
+
+/** "minecraft:grass_block" -> "Grass Block", for a readout that reads as English. */
+function shortBlockName(blockId) {
+  if (!blockId) return "";
+  const bare = blockId.includes(":") ? blockId.slice(blockId.indexOf(":") + 1) : blockId;
+  return bare.split("_").map(w => w ? w[0].toUpperCase() + w.slice(1) : w).join(" ");
 }
 
 /** Surface height at one block, or null where nothing was captured. */
@@ -2701,7 +3645,12 @@ function paintTileInto(surface, decoded, tile, tileBlocks) {
       for (let x = 0; x < 16; x++) {
         const height = chunk.heights[z * 16 + x];
         if (height <= -1000) continue;         // unknown column: leave it transparent
-        surface.ctx.fillStyle = heightColor(height);
+        const column = z * 16 + x;
+        const blockId = chunk.blocks && chunk.blockPalette
+          ? (chunk.blockPalette[chunk.blocks[column]] || "") : "";
+        const biomeId = chunk.biomes && chunk.biomePalette
+          ? (chunk.biomePalette[chunk.biomes[column]] || "") : "";
+        surface.ctx.fillStyle = columnColor(blockId, biomeId, height);
         surface.ctx.fillRect(offsetX + x, offsetZ + z, 1, 1);
       }
     }
@@ -2832,8 +3781,10 @@ function renderMap() {
   const status = dom.status;
   const wrap = dom.wrap;
   const legend = el("div", { class: "map-legend" }, [
-    el("span", {}, [el("span", { class: "swatch", style: "background:" + heightColor(70) }), el("span", { text: "Land" })]),
-    el("span", {}, [el("span", { class: "swatch", style: "background:" + heightColor(50) }), el("span", { text: "Water" })]),
+    el("span", {}, [el("span", { class: "swatch", style: "background:" + BLOCK_COLORS["minecraft:grass_block"] }), el("span", { text: "Grass" })]),
+    el("span", {}, [el("span", { class: "swatch", style: "background:" + BLOCK_COLORS["minecraft:sand"] }), el("span", { text: "Sand" })]),
+    el("span", {}, [el("span", { class: "swatch", style: "background:" + BLOCK_COLORS["minecraft:stone"] }), el("span", { text: "Stone" })]),
+    el("span", {}, [el("span", { class: "swatch", style: "background:" + BLOCK_COLORS["minecraft:water"] }), el("span", { text: "Water" })]),
     el("span", {}, [el("span", { class: "swatch", style: "background:#0a1020" }), el("span", { text: "Not captured" })]),
     el("span", {}, [el("span", { class: "swatch", style: "background:#8ab4ff;border-radius:50%" }), el("span", { text: "You" })])
   ]);
@@ -2920,9 +3871,16 @@ async function loadTerrain(node, canvas, status, stats) {
   /* The view is rebuilt only when the set of tiles actually changed. A refresh every three seconds
      used to discard the projected grid and repaint from scratch, so the map blanked and rebuilt on
      a timer and a click landing in that window had no surface to hit. Tiles already decoded are
-     reused, which also stops a refresh from re-decoding the whole capture. */
+     reused, which also stops a refresh from re-decoding the whole capture.
+
+     The signature carries each tile's content revision as well as its coordinates. Coordinates
+     alone are not enough: the client re-reads a chunk after it has been held for 30 s, and new
+     chunks can land in a tile that already exists, so a tile can change while its coordinate stays
+     the same. With only coordinates in the key the signature never changed, no tile was refetched,
+     and the map sat on its first picture forever — the "map gets stuck" report. */
+  const tileRev = tile => tile.x + "," + tile.z + "@" + (tile.rev === undefined ? "" : tile.rev);
   const signature = dimension.dimension + "|" + tileBlocks + "|"
-    + tiles.map(t => t.x + "," + t.z).sort().join(";");
+    + tiles.map(tileRev).sort().join(";");
   if (mapView.signature === signature && mapView.grid) {
     drawMap();
     appendSurfaceStats(stats, dimension);
@@ -2981,7 +3939,7 @@ async function loadTerrain(node, canvas, status, stats) {
   const worker = async () => {
     while (cursor < tiles.length) {
       const tile = tiles[cursor++];
-      const raw = await fetchTile(node, dimension.dimension, tile.x, tile.z);
+      const raw = await fetchTile(node, dimension.dimension, tile.x, tile.z, { rev: tile.rev });
       pending--;
       if (!raw) { failed++; report(); continue; }
       try {
@@ -3357,6 +4315,19 @@ function fmt(value) {
   return Number.isFinite(number) ? (Math.round(number * 10) / 10).toString() : String(value);
 }
 
+/**
+ * A true compass bearing (0 north, 90 east) as a name.
+ *
+ * <p>Kept separate from {@link compass}: that one takes a Minecraft yaw, which runs clockwise from
+ * south, so reusing it here would label north-east as south-west.
+ */
+function bearingName(degrees) {
+  if (degrees === undefined || degrees === null) return "\u2014";
+  const names = ["north", "north-east", "east", "south-east", "south", "south-west", "west", "north-west"];
+  const index = Math.round((((degrees % 360) + 360) % 360) / 45) % 8;
+  return names[index] + " (" + Math.round(degrees) + "\u00b0)";
+}
+
 /** A yaw in degrees as the nearest of eight compass names. */
 function compass(yaw) {
   if (yaw === undefined || yaw === null) return "—";
@@ -3383,28 +4354,155 @@ const SLOT_GROUPS = [
   ["Off hand", [40]]
 ];
 
-function slotCell(item, selected) {
-  const filled = item && item.itemId;
-  const classes = "inv-slot" + (filled ? " filled" : "") + (selected ? " selected" : "");
-  const cells = [el("span", { class: "inv-index", text: String(item ? item.slot : "") })];
-  const attrs = { class: classes };
-  if (filled) {
-    // The name is the fallback the icon replaces, so a slot is never blank while an icon loads.
-    cells.push(el("span", { class: "inv-name", text: item.name || shortId(item.itemId) }));
-    if (item.count > 1) cells.push(el("span", { class: "inv-count", text: "\u00d7" + item.count }));
-    if (item.enchanted) cells.push(el("span", { class: "inv-ench", text: "enchanted" }));
-    attrs["data-icon-item"] = item.itemId;
+/* Durability of one stack, or null when the item does not wear out.
+ *
+ * A snapshot from an older client carries no maxDamage, so the ratio is only computed when both
+ * numbers are present and sane: guessing a maximum would draw a bar for a stack of dirt. */
+function durabilityOf(item) {
+  const max = item && item.maxDamage;
+  if (!max || max <= 0) return null;
+  const damage = Math.max(0, Math.min(max, item.damage || 0));
+  const remaining = max - damage;
+  return { remaining, max, ratio: remaining / max };
+}
+
+/** The colour the game uses for a durability bar: green when healthy, red when nearly broken. */
+function durabilityColour(ratio) {
+  if (ratio > 0.5) return "var(--good)";
+  if (ratio > 0.25) return "var(--warn)";
+  return "var(--bad)";
+}
+
+/* Which container slot a player-inventory index is, inside the player's own screen handler.
+ *
+ * The two numbering systems differ: the inventory calls the hotbar 0-8, but the handler that
+ * receives clicks calls them 36-44. A click must use the handler's number, so the grid the player
+ * sees and the click the server receives have to be translated in exactly one place. */
+function handlerSlotFor(inventorySlot) {
+  if (inventorySlot >= 0 && inventorySlot <= 8) return inventorySlot + 36;
+  if (inventorySlot >= 9 && inventorySlot <= 35) return inventorySlot;
+  if (inventorySlot >= 36 && inventorySlot <= 39) return 39 - inventorySlot + 5;
+  if (inventorySlot === 40) return 45;
+  return inventorySlot;
+}
+
+/** The armour slot's hint letter, so an empty armour slot still reads as "chestplate". */
+function armourHint(index) {
+  return { 39: "head", 38: "chest", 37: "legs", 36: "feet" }[index] || "";
+}
+
+/**
+ * One slot, drawn the way the game draws it.
+ *
+ * <p>The icon is the item's real texture, loaded lazily; the name is only a tooltip, never printed
+ * inside the slot, because the game does not print it there either. Count, durability and the
+ * enchantment glint are each in their game position.
+ */
+function mcSlot(item, options = {}) {
+  const filled = Boolean(item && item.itemId);
+  const dura = filled ? durabilityOf(item) : null;
+  const classes = ["mc-slot"];
+  if (!filled) classes.push("empty");
+  if (options.selected) classes.push("selected");
+  if (options.hint) classes.push("slot-armour");
+  const attrs = { class: classes.join(" ") };
+  if (filled) attrs["data-icon-item"] = item.itemId;
+
+  const children = [];
+  if (!filled && options.hint) {
+    children.push(el("span", { class: "slot-hint", text: options.hint }));
   }
-  attrs.title = filled
-    ? (item.name + " (" + item.itemId + ") " + item.count + "/" + item.maxCount)
-    : "Empty";
-  return el("div", attrs, cells);
+  if (filled) {
+    if (item.glint || item.enchanted) children.push(el("div", { class: "mc-glint" }));
+    if (item.count > 1) children.push(el("span", { class: "mc-count", text: String(item.count) }));
+    if (dura) {
+      children.push(el("div", { class: "mc-dura" }, [
+        el("i", {
+          style: "width:" + Math.max(4, Math.round(dura.ratio * 100)) + "%;background:"
+            + durabilityColour(dura.ratio)
+        })
+      ]));
+    }
+    attrs["data-tip"] = JSON.stringify({
+      name: item.name || shortId(item.itemId),
+      id: item.itemId,
+      count: item.count,
+      rarity: item.rarity || "common",
+      enchants: item.enchantments || [],
+      dura: dura ? { left: dura.remaining, max: dura.max } : null
+    });
+  }
+
+  const slot = el("div", attrs, children);
+  if (filled) {
+    slot.addEventListener("mouseenter", showItemTip);
+    slot.addEventListener("mousemove", moveItemTip);
+    slot.addEventListener("mouseleave", hideItemTip);
+  }
+  if (options.onClick) slot.addEventListener("click", options.onClick);
+  return slot;
+}
+
+/** The tooltip: the name in its rarity colour, then enchantments, then the honest numbers. */
+let itemTip = null;
+function showItemTip(event) {
+  const raw = event.currentTarget.getAttribute("data-tip");
+  if (!raw) return;
+  let tip;
+  try { tip = JSON.parse(raw); } catch { return; }
+  hideItemTip();
+  const lines = [el("div", { class: "tip-name rar-" + (tip.rarity || "common"), text: tip.name })];
+  for (const enchant of tip.enchants || []) {
+    lines.push(el("div", { class: "tip-ench", text: enchant }));
+  }
+  const meta = [];
+  if (tip.count > 1) meta.push("x" + tip.count);
+  if (tip.dura) meta.push("durability " + tip.dura.left + " / " + tip.dura.max);
+  if (meta.length) lines.push(el("div", { class: "tip-meta", text: meta.join(" \u00b7 ") }));
+  lines.push(el("div", { class: "tip-id", text: tip.id }));
+  itemTip = el("div", { class: "mc-tip" }, lines);
+  document.body.appendChild(itemTip);
+  moveItemTip(event);
+}
+
+function moveItemTip(event) {
+  if (!itemTip) return;
+  const pad = 14;
+  let x = event.clientX + pad;
+  let y = event.clientY + pad;
+  const rect = itemTip.getBoundingClientRect();
+  if (x + rect.width > window.innerWidth - 8) x = event.clientX - rect.width - pad;
+  if (y + rect.height > window.innerHeight - 8) y = event.clientY - rect.height - pad;
+  itemTip.style.left = Math.max(8, x) + "px";
+  itemTip.style.top = Math.max(8, y) + "px";
+}
+
+function hideItemTip() {
+  if (itemTip && itemTip.parentNode) itemTip.parentNode.removeChild(itemTip);
+  itemTip = null;
+}
+
+/** Sends one slot click to the client, and reports the client's own answer. */
+async function clickSlot(node, slotId, button, action, syncId) {
+  if (!node) return;
+  const result = await apiCall(node, "/api/v1/inventory/click", {
+    method: "POST",
+    body: { action, slot: slotId, button, syncId }
+  });
+  if (result.ok) {
+    toastResult(result);
+    // The snapshot is a moment old; ask again so the grid shows what actually moved.
+    refreshAll();
+  } else {
+    toast(result.error || "The click was refused.", "bad");
+  }
 }
 
 function renderInventory() {
   const view = document.getElementById("view-inventory");
   view.innerHTML = "";
   if (nodes.length === 0) { view.appendChild(notConnected()); return; }
+  const node = activeNode();
   const snap = activeSnapshot();
   view.appendChild(card("Client", [nodeSelect()]));
   if (!snap) { view.appendChild(card("Inventory", [emptyState("No snapshot yet.")])); return; }
@@ -3419,37 +4517,117 @@ function renderInventory() {
   const bySlot = new Map(slots.map(item => [item.slot, item]));
   const filled = slots.filter(item => item.itemId);
   const totalItems = filled.reduce((sum, item) => sum + (item.count || 0), 0);
+  const wearable = filled.map(item => ({ item, dura: durabilityOf(item) })).filter(e => e.dura);
+  const broken = wearable.filter(e => e.dura.ratio <= 0.25);
+  const syncId = inventory.syncId ?? -1;
+  const cursor = inventory.cursor || null;
 
   view.appendChild(card("Held", [
-    kv("Selected slot", String(inventory.selectedSlot ?? "—")),
-    kv("Filled slots", filled.length + " / " + slots.length),
+    kv("Selected slot", String((inventory.selectedSlot ?? -1) + 1)),
+    kv("Filled slots", filled.length + " / 41"),
     kv("Total items", String(totalItems)),
-    kv("Enchanted", String(filled.filter(item => item.enchanted).length))
-  ]));
+    kv("Enchanted", String(filled.filter(item => item.enchanted || item.glint).length)),
+    kv("Wearable", wearable.length ? String(wearable.length) : "none"),
+    kv("Nearly broken", broken.length ? String(broken.length) : "none",
+      broken.length ? "error" : "muted"),
+    cursor ? kv("On cursor", (cursor.name || shortId(cursor.itemId)) + " x" + cursor.count, "ok") : null
+  ].filter(Boolean)));
 
-  const groups = el("div", { class: "grid tight" });
-  for (const [title, indices] of SLOT_GROUPS) {
-    const grid = el("div", { class: "inv-grid" });
-    for (const index of indices) {
-      grid.appendChild(slotCell(bySlot.get(index), index === inventory.selectedSlot));
-    }
-    groups.appendChild(card(title, [grid]));
+  // ---- the authentic panel -------------------------------------------------
+  // Armour and offhand on the left, main grid and hotbar on the right, exactly as the game's own
+  // inventory screen lays them out.
+  const panel = el("div", { class: "mc-inv" });
+  const top = el("div", { class: "mc-inv-row" });
+
+  const left = el("div", { class: "mc-inv-armour" });
+  for (const index of [39, 38, 37, 36]) {
+    left.appendChild(mcSlot(bySlot.get(index), {
+      hint: armourHint(index),
+      onClick: () => clickSlot(node, handlerSlotFor(index), 0, "pickup", syncId)
+    }));
   }
-  view.appendChild(groups);
-  loadIcons(groups, activeNode());
+  top.appendChild(left);
+
+  const right = el("div", { style: "display:flex;flex-direction:column;gap:6px" });
+  const mainGrid = el("div", { class: "mc-inv-grid main" });
+  for (let index = 9; index <= 35; index++) {
+    mainGrid.appendChild(mcSlot(bySlot.get(index), {
+      onClick: () => clickSlot(node, handlerSlotFor(index), 0, "pickup", syncId)
+    }));
+  }
+  right.appendChild(mainGrid);
+  const hotbarRow = el("div", { style: "display:flex;gap:6px;align-items:center" });
+  const hotbar = el("div", { class: "mc-inv-grid hotbar" });
+  for (let index = 0; index <= 8; index++) {
+    hotbar.appendChild(mcSlot(bySlot.get(index), {
+      selected: index === inventory.selectedSlot,
+      onClick: () => clickSlot(node, handlerSlotFor(index), 0, "pickup", syncId)
+    }));
+  }
+  hotbarRow.appendChild(hotbar);
+  // Offhand sits to the right of the hotbar in the game, with a shield silhouette when empty.
+  hotbarRow.appendChild(mcSlot(bySlot.get(40), {
+    hint: "off",
+    onClick: () => clickSlot(node, handlerSlotFor(40), 0, "pickup", syncId)
+  }));
+  right.appendChild(hotbarRow);
+  top.appendChild(right);
+  panel.appendChild(top);
+
+  const inventoryCard = card("Inventory", [panel], [
+    button("Deposit all", () => clickSlot(node, 36, 0, "quick_move", syncId), "btn sm")
+  ]);
+  view.appendChild(inventoryCard);
+  loadIcons(panel, node);
+
+  // ---- actions -------------------------------------------------------------
+  // Each button is a real vanilla gesture, named for what it does rather than for the packet it
+  // sends, because the person clicking is thinking about the item and not the protocol.
+  const actions = el("div", { class: "row" });
+  actions.appendChild(button("Drop held", () => clickSlot(node, -999, 1, "throw", syncId), "btn sm danger"));
+  actions.appendChild(button("Quick-move selected", () =>
+    clickSlot(node, handlerSlotFor(inventory.selectedSlot ?? 0), 0, "quick_move", syncId), "btn sm"));
+  for (let hot = 0; hot < 9; hot++) {
+    actions.appendChild(button("Swap \u2192 " + (hot + 1), () =>
+      clickSlot(node, handlerSlotFor(inventory.selectedSlot ?? 0), hot, "swap", syncId), "btn sm"));
+  }
+  view.appendChild(card("Actions", [actions]));
+
+  if (inventory.openTitle) {
+    const openGrid = el("div", { class: "mc-inv-grid main" });
+    const openSlots = Array.isArray(inventory.openSlots) ? inventory.openSlots : [];
+    const openBySlot = new Map(openSlots.map(item => [item.slot, item]));
+    const start = inventory.playerSlotStart || 0;
+    for (let index = 0; index < start; index++) {
+      openGrid.appendChild(mcSlot(openBySlot.get(index), {
+        onClick: () => clickSlot(node, index, 0, "pickup", syncId)
+      }));
+    }
+    view.appendChild(card(inventory.openTitle, [openGrid], [
+      button("Move all to inventory", () => {
+        for (let index = 0; index < start; index++) {
+          if (openBySlot.get(index)) clickSlot(node, index, 0, "quick_move", syncId);
+        }
+      }, "btn sm")
+    ]));
+    loadIcons(openGrid, node);
+  }
 
   if (filled.length > 0) {
-    // One embed per stack, the same shape the chat and waypoint lists use: a stripe that carries
-    // the stack's state, a header with the name and count, and the raw id underneath.
     const list = el("div", { class: "embeds", style: "max-height:420px" });
     for (const item of filled) {
-      const damaged = (item.damage || 0) > 0;
+      const dura = durabilityOf(item);
+      const damaged = dura ? dura.remaining < dura.max : (item.damage || 0) > 0;
       const tone = item.enchanted ? "var(--accent)" : damaged ? "var(--warn)" : "var(--line)";
       const badges = [];
       if (item.enchanted) badges.push(el("span", { class: "badge", style: "color:var(--accent)", text: "enchanted" }));
-      if (damaged) {
-        // Only damage points are reported; the snapshot carries no durability maximum, so the
-        // badge states the damage rather than inventing a ratio.
+      if (dura) {
+        badges.push(el("span", {
+          class: "badge",
+          style: "color:" + durabilityColour(dura.ratio),
+          text: dura.remaining + " / " + dura.max
+        }));
+      } else if (damaged) {
         badges.push(el("span", {
           class: "badge", style: "color:var(--warn)", text: "damaged " + item.damage
         }));
@@ -3458,11 +4636,14 @@ function renderInventory() {
         el("div", { class: "stripe" }),
         el("div", { class: "body" }, [
           el("div", { class: "head" }, [
-            el("span", { class: "sender", text: item.name || shortId(item.itemId) }),
+            el("span", { class: "sender rar-" + (item.rarity || "common"), text: item.name || shortId(item.itemId) }),
             el("span", { class: "badge", style: "color:var(--muted)", text: "\u00d7" + item.count }),
             ...badges,
             el("span", { class: "time", text: "slot " + item.slot })
           ]),
+          (item.enchantments || []).length
+            ? el("div", { class: "meta", style: "color:#b48cff", text: item.enchantments.join(" \u00b7 ") })
+            : null,
           el("div", { class: "meta", text: item.itemId })
         ])
       ]));
@@ -3861,7 +5042,7 @@ function renderSearch() {
   const node = activeNode();
   view.appendChild(card("Client", [nodeSelect()]));
 
-  const query = el("input", { placeholder: "Words to look for", value: searchState.q });
+  const query = el("input", { id: "search-query", placeholder: "Words to look for", value: searchState.q });
   const player = el("input", { placeholder: "Only this player (optional)", value: searchState.player });
   const limit = el("select", {}, [25, 50, 100, 200].map(n =>
     el("option", { value: String(n), text: n + " results" })));
@@ -4183,6 +5364,38 @@ function wireEvents() {
   document.getElementById("btn-nodes").onclick = () => { renderNodeList(); document.getElementById("nodes-dialog").showModal(); };
   document.getElementById("node-close").onclick = () => document.getElementById("nodes-dialog").close();
   document.getElementById("btn-refresh").onclick = () => refreshAll();
+  // The rail collapses so the work area can use the full width on a small screen or in a
+  // presentation. The choice is remembered, because someone who hides it meant it.
+  const shell = document.getElementById("shell");
+  const railButton = document.getElementById("btn-rail");
+  const setRail = (hidden) => {
+    shell.classList.toggle("rail-hidden", hidden);
+    railButton.textContent = hidden ? "Show rail" : "Hide rail";
+    localStorage.setItem(RAIL_KEY, hidden ? "1" : "0");
+  };
+  railButton.onclick = () => setRail(!shell.classList.contains("rail-hidden"));
+  setRail(localStorage.getItem(RAIL_KEY) === "1");
+  const openPalette = () => {
+    tab = "search";
+    renderTabs();
+    render();
+    const input = document.getElementById("search-query");
+    if (input) input.focus();
+  };
+  document.getElementById("btn-palette").onclick = openPalette;
+  // The button advertises Ctrl+K, so it has to be real. Escape leaves the field first, which is
+  // what a search box is expected to do, and only then returns to the overview.
+  document.addEventListener("keydown", (event) => {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+      event.preventDefault();
+      openPalette();
+      return;
+    }
+    if (event.key === "Escape" && document.activeElement
+        && document.activeElement.id === "search-query") {
+      document.activeElement.blur();
+    }
+  });
   document.getElementById("btn-notify").onclick = () => {
     const node = activeNode();
     if (!node) { toast("Add a client first.", "bad"); return; }

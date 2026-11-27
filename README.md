@@ -1160,6 +1160,8 @@ It shows a single "Disabled" line when the module is off, so it never displays s
 | `!ai perms allow\|deny <command> <user>` | Edits one command's whitelist. |
 | `!ai perms admin add\|remove <user>` | Edits the administrator list. |
 | `!ai perms reset <command>` | Returns a command to its default level. |
+| `!ai style` | Lists the four reply styles (`box`, `compact`, `plain`, `list`), marks the current one and says what each looks like. |
+| `!ai style <name>` | Renders one sample answer in that style, at your configured width, so you can see it before choosing it. |
 | `!ai save` / `!ai clear` | Save memory now / clear all memory. |
 
 ### Storage
@@ -1678,7 +1680,7 @@ across those refreshes, so a rebuild never discards your input.
 
 - **Overview** — the player, server address, game mode, in-world state and how long the client has
   been running.
-- **Live events** — a server-sent event stream (`/api/v1/events`) that pushes chat lines, bot state
+- **Timeline** (live events) — a server-sent event stream (`/api/v1/events`) that pushes chat lines, bot state
   changes and session changes as they happen. It reconnects on its own and can replay the events it
   missed from a bounded history.
 - **Bot** — the bot state, the active task, the queue length and the recent events, with **Start**,
@@ -1697,7 +1699,7 @@ across those refreshes, so a rebuild never discards your input.
 - **Search** — a search over the client's own stored log rather than the few dozen lines a snapshot
   carries, so a message from earlier in the session can be found. Filter by words, by player, and by
   how many results to return; the client does the matching and returns the matches oldest-first.
-- **World** — where the client is and what is around it, for a player who is not at that machine.
+- **Surroundings** — where the client is and what is around it, for a player who is not at that machine.
   Coordinates, health, light level, the clock and the dimension sit beside a drawn top-down map of
   the nearby blocks, coloured by material (water blue, lava orange, leaves green, and so on), with
   the player marked at the centre. Below it are the nearby entities as embeds — the stripe and
@@ -1706,8 +1708,14 @@ across those refreshes, so a rebuild never discards your input.
   among. The map answers the question a list of coordinates cannot: *where* the lava is.
 - **Players** — observed players with their message counts and last-seen times, marked online when
   the client's player list currently contains them.
-- **Stats** — session message, player, join, leave and death totals.
-- **Storage** — the segment count, the compressed size and the oldest/newest timestamps.
+- **Metrics** — the client's own telemetry: every recorded series with its latest value, its
+  minimum and maximum, and a sparkline, recorded once a second. **Export CSV** downloads the whole
+  series.
+- **Network** — ping now, minimum, average and maximum over the session, the duration, the snapshot
+  age and a ping history chart. It says plainly that packet loss and server-side latency are not
+  shown, because a Minecraft client cannot measure them reliably.
+- **Storage** — the segment count, the compressed size, the oldest and newest entry, the retention
+  policy and the session totals (messages, players seen, deaths, joins, leaves).
 - **Inventory** — the player's 41 container slots laid out the way a player knows them (armour,
   hotbar, main, off hand), with the selected slot marked. Only filled slots carry data; an empty one
   is drawn as an empty slot rather than invented. Each item is drawn using **the game's own
@@ -1717,23 +1725,67 @@ across those refreshes, so a rebuild never discards your input.
   never does. Icons are cached per client and per item and drawn with nearest-neighbour scaling, so
   pixel art stays sharp. Below the grid, each filled stack is listed as an **embed** — the same
   shape the chat log and waypoint list use — with an accent stripe for its state (enchanted,
-  damaged or plain), the item name, the count, the slot and the raw item id.
-- **Map** — the captured terrain in two views. **Flat** is the top-down map, one pixel per block.
-  **Isometric** is the same heights projected at 2:1 with a shaded side face wherever a column
-  stands above its neighbour, which turns a flat carpet into visible relief. It is drawn on the
-  canvas with no extra downloads and no extra requests: both views come from the tiles already
-  fetched. Zoom steps from 0.4× to 3×. Ground nobody has visited stays a gap in both views rather
-  than being filled in with invented land.
+  damaged or plain), the item name, the count, the slot and the raw item id. A durability bar is
+  drawn from the item's real maximum, so a nearly broken tool reads as critical rather than as a
+  full one, and an item that does not wear out draws no bar at all.
+- **Containers** — while a chest, furnace or other container is open in game, the Inventory tab adds
+  a card for it: the container's own slots above the player's, with a **Move all to inventory**
+  action. Clicking a slot acts on the slot the server sees, which is a different numbering from the
+  one the grid draws, so the translation happens in exactly one place and a click can never land on
+  the wrong stack. The screen handler's sync id is sent with every click, so an action queued
+  against a container that has since closed is refused instead of applying to the new one.
+- **World map** — the captured terrain in three views. **Flat** is the top-down map, one pixel per
+  block. **Isometric** is the same heights projected at 2:1 with a shaded side face wherever a column
+  stands above its neighbour, which turns a flat carpet into visible relief. **3D** orbits the same
+  columns from any angle, with a column budget that samples the grid on a stride so a large capture
+  stays responsive. All three are drawn on the canvas with no extra downloads and no extra requests:
+  every view comes from the tiles already fetched. Drag to pan, scroll to zoom (0.4× to 3×), and
+  click to mark a waypoint; hovering reads out the block under the cursor. Ground nobody has visited
+  stays a gap rather than being filled in with invented land, and the legend shows the block colours
+  actually in use.
 
 ### Appearance
 
-The **Theme** button opens the appearance dialog. A theme is a palette applied to the whole app at
-once, so every panel, badge, chart and icon backdrop changes together: **Midnight**, **Ember**,
-**Moss** and **Graphite**. The choice is remembered in the browser.
+The **Appearance** tab holds every visual option, and each one applies to the whole app at once so
+no panel is left behind.
+
+- **Theme** — **Crimson** (the default), **Obsidian**, **Ash**, **Blood moon** and **Daylight**. A
+  theme is the set of colour variables the stylesheet already reads, so switching one restyles every
+  panel, badge, chart, stripe and icon backdrop together. The choice is remembered in the browser.
+- **Interface scale** — text size from 0.8× to 1.4×, on top of the browser's own zoom.
+- **Spacing** — tightens or loosens panel padding and grid gaps.
+- **Inventory slot size** — resizes the inventory grid without changing the item icons.
+- **Reduced motion** — stops the enchantment glint and the panel transitions.
+
+**Copy appearance JSON** exports the whole set so it can be pasted into another browser;
+**Reset** returns to the defaults.
 
 A **workspace** saves the current theme together with the tab you are on, under a name you choose,
 and restores both in one click. Workspaces live in the browser's local storage beside the client
 list, so they are per browser, not per client.
+
+### Keyboard and layout
+
+- **Ctrl+K** opens the Search tab and puts the cursor in the query box. **Escape** leaves the box.
+- **Hide rail** collapses the sidebar to give the content the full width; the state is remembered,
+  so the next visit starts the same way.
+
+### Tabs
+
+The sidebar groups the tabs by what you are doing, and the browser remembers the last one.
+
+| Group | Tabs |
+| --- | --- |
+| Watch | Overview, PrismView, Radar, World map, Surroundings |
+| Control | Inventory, Bot, Tasks, Modules |
+| Records | Chat, Timeline, Players, Storage |
+| System | Metrics, Network, Search, Appearance |
+
+**PrismView** streams the client's screen at a chosen width and quality, with **Pause**,
+**Fullscreen** and **Snapshots**. Frames are only requested while the tab is open, and the loop stops
+when you leave it, so an unwatched tab costs nothing. **Radar** draws the nearby entities around you,
+either **north-up** or **follow facing**, and the same entities are listed underneath with their
+distance, bearing and height.
 
 ### Security
 

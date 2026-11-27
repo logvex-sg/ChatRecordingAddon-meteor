@@ -24,6 +24,8 @@ public final class CompanionConfig {
     private String bindAddress = "127.0.0.1";
     private String token = "";
     private boolean allowRemote;
+    /** Whether a viewer may drive the character. Off by default; unrelated to {@code allowRemote}. */
+    private boolean remoteControl;
     private int maxBodyBytes = DEFAULT_MAX_BODY;
     private int requestsPerMinute = 240;
     private int eventBufferSize = 200;
@@ -75,6 +77,22 @@ public final class CompanionConfig {
 
     public void setAllowRemote(boolean allowRemote) {
         this.allowRemote = allowRemote;
+    }
+
+    /**
+     * Whether a viewer may drive this client: move, look, click, pick a hotbar slot.
+     *
+     * <p>This is deliberately a second switch, not a reuse of {@link #allowRemote()}. That one says
+     * "the server may listen on a network address"; this one says "someone else may move my
+     * character". They answer different questions, and tying them together would mean opening the
+     * app to a phone on the same Wi-Fi also handed that phone the keyboard.
+     */
+    public boolean remoteControl() {
+        return remoteControl;
+    }
+
+    public void setRemoteControl(boolean remoteControl) {
+        this.remoteControl = remoteControl;
     }
 
     public int maxBodyBytes() {

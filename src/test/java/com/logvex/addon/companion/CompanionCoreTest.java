@@ -199,7 +199,9 @@ class CompanionCoreTest {
             Matcher tabsBlock = Pattern.compile(
                 "const TABS = \\[(.*?)\\n\\];", Pattern.DOTALL).matcher(html);
             assertTrue(tabsBlock.find(), "the TABS declaration must be present");
-            Matcher tabs = Pattern.compile("\\[\"([a-z-]+)\", \"[^\"]+\"\\]")
+            // A tab is ["id", "Label"] or ["id", "Label", "Group"]; the group is optional because
+            // the rail heading is a presentation detail the tab list must not depend on.
+            Matcher tabs = Pattern.compile("\\[\"([a-z-]+)\", \"[^\"]+\"(?:, \"[^\"]+\")?\\]")
                 .matcher(tabsBlock.group(1));
             List<String> tabIds = new ArrayList<>();
             while (tabs.find()) tabIds.add(tabs.group(1));

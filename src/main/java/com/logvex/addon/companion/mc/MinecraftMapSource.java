@@ -60,6 +60,10 @@ public final class MinecraftMapSource implements CompanionMapSource {
                 Map<String, Object> tileEntry = new LinkedHashMap<>();
                 tileEntry.put("x", tile[0]);
                 tileEntry.put("z", tile[1]);
+                // Content revision for this tile. Without it the browser can only see that a tile
+                // exists, not that its contents changed, so a tile whose chunks were re-read or
+                // extended looks identical and is never refetched — the map appears frozen.
+                tileEntry.put("rev", terrain.tileRevision(dimension, tile[0], tile[1]));
                 tiles.add(tileEntry);
             }
             entry.put("tiles", tiles);

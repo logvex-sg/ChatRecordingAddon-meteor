@@ -1,6 +1,7 @@
 package com.logvex.addon.chatlog.modules;
 
 import com.logvex.addon.framework.systems.modules.AddonModule;
+import com.logvex.addon.framework.utils.misc.ChatBlock;
 import com.logvex.addon.LogClient;
 import com.logvex.addon.assistant.core.ReplyFormat;
 import com.logvex.addon.chatlog.core.ChatDigest;
@@ -112,10 +113,8 @@ public class ChatDigestModule extends AddonModule {
             return;
         }
         long now = System.currentTimeMillis();
-        for (String line : ReplyFormat.render(ChatDigest.embed(summary, now),
-                ReplyFormat.DEFAULT_WIDTH)) {
-            info("%s", line);
-        }
+        ChatBlock.print(ReplyFormat.render(ChatDigest.embed(summary, now),
+            ReplyFormat.DEFAULT_WIDTH));
         if (sendWebhook.get()) {
             ChatLoggerModule logger = meteordevelopment.meteorclient.systems.modules.Modules.get()
                 .get(ChatLoggerModule.class);

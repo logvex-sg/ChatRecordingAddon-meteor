@@ -147,4 +147,26 @@ public final class FakeCompanionApi implements CompanionApi {
     public List<String> queries() {
         return List.of("messages", "players", "keywords");
     }
+
+    /** Slot clicks the router asked for, so a test can assert the exact protocol that was used. */
+    public final List<String> clicks = new ArrayList<>();
+    public int lastClickSlot;
+    public int lastClickButton;
+    public String lastClickAction;
+    public int lastClickSyncId;
+
+    @Override
+    public ActionResult clickSlot(int slotId, int button, String action, int syncId) {
+        clicks.add(action + ":" + slotId + ":" + button + ":" + syncId);
+        lastClickSlot = slotId;
+        lastClickButton = button;
+        lastClickAction = action;
+        lastClickSyncId = syncId;
+        return ActionResult.ok("Clicked.");
+    }
+
+    @Override
+    public List<String> slotActions() {
+        return com.logvex.addon.companion.core.SlotAction.wireNames();
+    }
 }

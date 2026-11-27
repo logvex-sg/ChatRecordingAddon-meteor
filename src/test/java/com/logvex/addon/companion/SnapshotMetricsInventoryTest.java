@@ -40,7 +40,10 @@ class SnapshotMetricsInventoryTest {
             base.stats(), base.storage(), base.bot(), base.world(), List.of(),
             List.of(new MetricView("fps", List.of(1000L, 2000L), List.of(60.0, 61.0), 61.0, 60.0, 61.0, 60.5)),
             new InventoryView(true, 3, List.of(
-                new ItemView(0, "minecraft:diamond", "Diamond", 12, 64, 0, false))));
+                new ItemView(0, "minecraft:diamond_pickaxe", "Diamond Pickaxe", 1, 64, 74, 1561,
+                    true, true, List.of("efficiency 5"), "rare")),
+                "", List.of(), null, 4, 9),
+            CompanionSnapshot.ViewportView.unavailable());
 
         String json = CompanionJson.write(snapshot);
 
@@ -50,7 +53,10 @@ class SnapshotMetricsInventoryTest {
         assertTrue(json.contains("\"latest\":61.0"), json);
         assertTrue(json.contains("\"inventory\":"), json);
         assertTrue(json.contains("\"available\":true"), json);
-        assertTrue(json.contains("\"itemId\":\"minecraft:diamond\""), json);
-        assertTrue(json.contains("\"count\":12"), json);
+        assertTrue(json.contains("\"itemId\":\"minecraft:diamond_pickaxe\""), json);
+        assertTrue(json.contains("\"count\":1"), json);
+        // The browser draws a durability bar from these two, so they must survive serialisation.
+        assertTrue(json.contains("\"damage\":74"), json);
+        assertTrue(json.contains("\"maxDamage\":1561"), json);
     }
 }

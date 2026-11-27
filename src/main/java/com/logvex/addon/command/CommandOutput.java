@@ -3,6 +3,8 @@ package com.logvex.addon.command;
 import com.logvex.addon.assistant.core.ReplyFormat;
 import com.logvex.addon.assistant.core.ReplyFormat.Field;
 import com.logvex.addon.assistant.modules.AssistantModule;
+import com.logvex.addon.framework.LogClientContext;
+import com.logvex.addon.framework.utils.misc.ChatBlock;
 import meteordevelopment.meteorclient.commands.Command;
 import meteordevelopment.meteorclient.systems.modules.Modules;
 
@@ -84,13 +86,38 @@ final class CommandOutput {
         }
         if (style == null) style = ReplyFormat.Style.BOX;
 
-        List<String> lines = ReplyFormat.render(new ReplyFormat.Embed(title, fields, footer, style), width);
-        int shown = Math.min(lines.size(), maxLines);
-        for (int i = 0; i < shown; i++) command.info("%s", lines.get(i));
-        if (lines.size() > maxLines) {
-            command.info("... %d more lines; %sprefix copies the full list to the clipboard.",
-                lines.size() - maxLines, prefixOrEmpty());
+        Rendered rendered = renderForChat(title, fields, footer, style, width, maxLines);
+        if (LogClientContext.mc == null || LogClientContext.mc.inGameHud == null) {
+            // No chat box to print into (e.g. run from a menu), so fall back to the command's own
+            // output rather than silently dropping the answer.
+            for (String line : rendered.lines()) command.info("%s", line);
+        } else {
+            ChatBlock.print(rendered.lines());
         }
+        if (rendered.omitted() > 0) {
+            command.info("... %d more line%s; %sprefix copies the full list to the clipboard.",
+                rendered.omitted(), rendered.omitted() == 1 ? "" : "s", prefixOrEmpty());
+        }
+    }
+
+    /** A block ready to send, with how many lines the cap dropped. */
+    record Rendered(List<String> lines, int omitted) {
+    }
+
+    /**
+     * Renders a block so it survives the chat line cap.
+     *
+     * <p>The cap has to be applied to the <em>fields</em> and the block re-rendered, never by
+     * cutting the rendered lines: a box cut at an arbitrary row ends on a bare {@code │} with no
+     * closing rule, which reads as a message that failed to send. {@link ReplyFormat#renderCapped}
+     * does that work; this method exists so the choice can be tested without a live chat box.
+     */
+    static Rendered renderForChat(String title, List<Field> fields, String footer,
+                                  ReplyFormat.Style style, int width, int maxLines) {
+        ReplyFormat.Embed embed = new ReplyFormat.Embed(title, fields, footer, style);
+        List<String> full = ReplyFormat.render(embed, width);
+        List<String> capped = ReplyFormat.renderCapped(embed, width, maxLines);
+        return new Rendered(capped, Math.max(0, full.size() - capped.size()));
     }
 
     /** The addon prefix for hint text, or empty when the config is not reachable. */

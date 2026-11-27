@@ -83,6 +83,15 @@ public class CompanionModule extends AddonModule {
         .build()
     );
 
+    private final Setting<Boolean> remoteControl = sgAccess.add(new BoolSetting.Builder()
+        .name("remote-control")
+        .description("Let the app drive this character: move, look, click and pick hotbar slots. "
+            + "Off by default; separate from allow-remote, which only decides who can reach the app.")
+        .defaultValue(false)
+        .onChanged(value -> applySettings())
+        .build()
+    );
+
     private final Setting<String> bindAddress = sgAccess.add(new StringSetting.Builder()
         .name("bind-address")
         .description("The interface to bind when remote access is allowed.")
@@ -170,6 +179,7 @@ public class CompanionModule extends AddonModule {
         try {
             config.setPort(port.get());
             config.setAllowRemote(allowRemote.get());
+            config.setRemoteControl(remoteControl.get());
             config.setBindAddress(bindAddress.get());
             config.setNodeName(nodeName.get());
             if (token.get() != null && !token.get().isBlank()) {
@@ -209,9 +219,13 @@ public class CompanionModule extends AddonModule {
         CompanionClientThread clientThread = CompanionClientThread.of(this::runOnClientThread);
         // The icon cache is bounded: a large modpack has thousands of items and the app asks for
         // the same ones on every inventory refresh.
+        MinecraftViewportSource viewportSource = new MinecraftViewportSource();
+        MinecraftControlTarget controlTarget = new MinecraftControlTarget(config::remoteControl);
+        api.setViewport(viewportSource, controlTarget);
         server = new CompanionServer(config, api, clientThread, events, loadAppHtml(),
             new MinecraftMapSource(),
-            new CompanionIconCache(new MinecraftIconSource(), 512));
+            new CompanionIconCache(new MinecraftIconSource(), 512),
+            viewportSource, controlTarget);
         try {
             server.start();
             if (boundPort() != config.port()) {

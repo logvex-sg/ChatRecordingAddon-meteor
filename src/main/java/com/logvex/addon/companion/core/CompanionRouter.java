@@ -89,6 +89,8 @@ public final class CompanionRouter {
     private final String appHtml;
     private final CompanionMapSource mapSource;
     private final CompanionIconSource iconSource;
+    private final CompanionViewportSource viewportSource;
+    private final CompanionControlTarget controlTarget;
     private final List<Route> routes = new ArrayList<>();
 
     public CompanionRouter(
@@ -134,6 +136,28 @@ public final class CompanionRouter {
         CompanionMapSource mapSource,
         CompanionIconSource iconSource
     ) {
+        this(config, api, clientThread, events, appHtml, mapSource, iconSource, null, null);
+    }
+
+    /**
+     * The complete constructor, adding live video and remote control.
+     *
+     * <p>Both may be null, in which case the viewport answers "not available" and every control
+     * request is refused with a plain reason. A build without a renderer, or a client whose owner has
+     * not enabled remote control, is therefore a working app with two features switched off rather
+     * than a broken one.
+     */
+    public CompanionRouter(
+        CompanionConfig config,
+        CompanionApi api,
+        CompanionClientThread clientThread,
+        CompanionEventBus events,
+        String appHtml,
+        CompanionMapSource mapSource,
+        CompanionIconSource iconSource,
+        CompanionViewportSource viewportSource,
+        CompanionControlTarget controlTarget
+    ) {
         this.config = config;
         this.api = api;
         this.clientThread = clientThread;
@@ -141,6 +165,8 @@ public final class CompanionRouter {
         this.appHtml = appHtml;
         this.mapSource = mapSource;
         this.iconSource = iconSource;
+        this.viewportSource = viewportSource;
+        this.controlTarget = controlTarget;
         this.auth = new CompanionAuth(config);
         this.rateLimiter = new CompanionRateLimiter(config.requestsPerMinute());
         registerRoutes();
@@ -199,6 +225,8 @@ public final class CompanionRouter {
         route("GET", "/api/v1/bot", request -> Response.json(200, call(api::snapshot).bot()));
         route("GET", "/api/v1/world", request -> Response.json(200, call(api::snapshot).world()));
         route("GET", "/api/v1/storage", request -> Response.json(200, call(api::snapshot).storage()));
+        route("GET", "/api/v1/inventory", request -> Response.json(200, call(api::snapshot).inventory()));
+        route("GET", "/api/v1/inventory/actions", request -> Response.json(200, api.slotActions()));
         route("GET", "/api/v1/queries", request -> Response.json(200, api.queries()));
 
         route("GET", "/api/v1/events", this::eventsResponse);
@@ -294,6 +322,135 @@ public final class CompanionRouter {
                     CompanionApi.ActionResult.fail("The message was empty.")));
             }
             return Response.json(200, CompanionJson.result(call(() -> api.notify(message))));
+        });
+
+        // ---------------------------------------------------------------- inventory actions
+        // The click body is validated here rather than in the Minecraft layer so a malformed request
+        // is refused before it can reach the game thread at all. The handler still re-checks the sync
+        // id and the slot range, because only it knows what is open by the time the click runs.
+        route("POST", "/api/v1/inventory/click", request -> {
+            JsonObject body = CompanionJson.parseObject(request.body());
+            SlotAction action = SlotAction.fromWire(CompanionJson.string(body, "action"));
+            if (action == null) {
+                return Response.json(400, CompanionJson.result(CompanionApi.ActionResult.fail(
+                    "An inventory click needs an action: " + String.join(", ", SlotAction.wireNames()) + ".")));
+            }
+            Integer slot = CompanionJson.integer(body, "slot", null);
+            if (slot == null) {
+                return Response.json(400, CompanionJson.result(
+                    CompanionApi.ActionResult.fail("An inventory click needs a slot.")));
+            }
+            int button = CompanionJson.integer(body, "button", 0);
+            if (button < 0 || button > 8) {
+                return Response.json(400, CompanionJson.result(CompanionApi.ActionResult.fail(
+                    "A click button must be between 0 and 8.")));
+            }
+            // A missing sync id means "whatever is open"; a present one pins the request to the
+            // handler the caller saw, which is what the app always sends.
+            int syncId = CompanionJson.integer(body, "syncId", -1);
+            return Response.json(200, CompanionJson.result(call(
+                () -> api.clickSlot(slot, button, action.wire(), syncId))));
+        });
+
+        // ---------------------------------------------------------------- PrismView
+        route("GET", "/api/v1/viewport", request -> {
+            CompanionViewportSource source = viewportSource;
+            if (source == null || !source.available()) return viewportUnavailable();
+            Integer width = intParam(request.query().get("width"));
+            Integer quality = intParam(request.query().get("quality"));
+            int q = quality == null ? 80 : Math.max(1, Math.min(100, quality));
+            int w = width == null ? 0 : Math.max(source.minWidth(), Math.min(source.maxWidth(), width));
+            CompanionViewportSource.Frame frame = call(() -> source.capture(w, q));
+            if (frame == null || frame.png() == null) return viewportUnavailable();
+            // A frame is a picture of the player's screen: never let a proxy or the browser reuse one.
+            return Response.binary(200, viewportContentType(q), frame.png());
+        });
+
+        route("GET", "/api/v1/viewport/info", request -> {
+            CompanionViewportSource source = viewportSource;
+            Map<String, Object> body = CompanionJson.map();
+            body.put("available", source != null && source.available());
+            body.put("minWidth", source == null ? 0 : source.minWidth());
+            body.put("maxWidth", source == null ? 0 : source.maxWidth());
+            body.put("controlEnabled", controlTarget != null && controlTarget.enabled());
+            body.put("inputs", CompanionControlTarget.inputNames());
+            return Response.json(200, body);
+        });
+
+        // ---------------------------------------------------------------- remote control
+        // Every control request is refused unless the client itself has remote control enabled. The
+        // switch is read per request rather than cached, so turning it off stops the very next move.
+        route("POST", "/api/v1/control/inputs", request -> {
+            String reason = controlUnavailable();
+            if (reason != null) return controlRefused(reason);
+            JsonObject body = CompanionJson.parseObject(request.body());
+            List<String> held = new ArrayList<>();
+            if (body != null && body.has("held") && body.get("held").isJsonArray()) {
+                for (JsonElement element : body.getAsJsonArray("held")) {
+                    if (element != null && element.isJsonPrimitive()) held.add(element.getAsString());
+                }
+            }
+            String failure = call(() -> controlTarget.setInputs(held));
+            return failure == null
+                ? Response.json(200, CompanionJson.result(CompanionApi.ActionResult.ok(
+                    held.isEmpty() ? "Stopped moving." : "Holding " + String.join(", ", held) + ".")))
+                : Response.json(400, CompanionJson.result(CompanionApi.ActionResult.fail(failure)));
+        });
+
+        route("POST", "/api/v1/control/look", request -> {
+            String reason = controlUnavailable();
+            if (reason != null) return controlRefused(reason);
+            JsonObject body = CompanionJson.parseObject(request.body());
+            Double yaw = CompanionJson.number(body, "yaw");
+            Double pitch = CompanionJson.number(body, "pitch");
+            if (yaw == null || pitch == null) {
+                return Response.json(400, CompanionJson.result(CompanionApi.ActionResult.fail(
+                    "A look request needs yaw and pitch in degrees.")));
+            }
+            String failure = call(() -> controlTarget.look(yaw, pitch));
+            return failure == null
+                ? Response.json(200, CompanionJson.result(CompanionApi.ActionResult.ok("Looked.")))
+                : Response.json(400, CompanionJson.result(CompanionApi.ActionResult.fail(failure)));
+        });
+
+        route("POST", "/api/v1/control/mouse", request -> {
+            String reason = controlUnavailable();
+            if (reason != null) return controlRefused(reason);
+            JsonObject body = CompanionJson.parseObject(request.body());
+            Integer button = CompanionJson.integer(body, "button", 0);
+            boolean hold = CompanionJson.bool(body, "hold", false);
+            String failure = call(() -> controlTarget.mouse(button, hold));
+            return failure == null
+                ? Response.json(200, CompanionJson.result(CompanionApi.ActionResult.ok(
+                    (hold ? "Holding" : "Released") + " mouse " + button + ".")))
+                : Response.json(400, CompanionJson.result(CompanionApi.ActionResult.fail(failure)));
+        });
+
+        route("POST", "/api/v1/control/hotbar", request -> {
+            String reason = controlUnavailable();
+            if (reason != null) return controlRefused(reason);
+            JsonObject body = CompanionJson.parseObject(request.body());
+            Integer slot = CompanionJson.integer(body, "slot", null);
+            if (slot == null) {
+                return Response.json(400, CompanionJson.result(
+                    CompanionApi.ActionResult.fail("A hotbar request needs a slot.")));
+            }
+            String failure = call(() -> controlTarget.selectHotbar(slot));
+            return failure == null
+                ? Response.json(200, CompanionJson.result(CompanionApi.ActionResult.ok(
+                    "Selected hotbar slot " + (slot + 1) + ".")))
+                : Response.json(400, CompanionJson.result(CompanionApi.ActionResult.fail(failure)));
+        });
+
+        // Releasing everything is always allowed, even when control has just been switched off: it is
+        // the one request that makes the client safer, so refusing it would be backwards.
+        route("POST", "/api/v1/control/release", request -> {
+            if (controlTarget != null) call(() -> {
+                controlTarget.releaseAll();
+                return null;
+            });
+            return Response.json(200, CompanionJson.result(
+                CompanionApi.ActionResult.ok("All inputs released.")));
         });
 
         // ---------------------------------------------------------------- map and telemetry
@@ -394,6 +551,28 @@ public final class CompanionRouter {
             params.remove("__name");
             return Response.json(200, call(() -> api.query(name, params)));
         });
+    }
+
+    /** The image type a frame is encoded as; the quality decides, because 100 means PNG. */
+    private static String viewportContentType(int quality) {
+        return quality >= 100 ? "image/png" : "image/jpeg";
+    }
+
+    /** The answer when this client cannot produce frames. */
+    private Response viewportUnavailable() {
+        return Response.json(503, error(
+            "Live view is not available. The client must be in a world with a visible window."));
+    }
+
+    /** The reason remote control cannot run, or null when it can. */
+    private String controlUnavailable() {
+        if (controlTarget == null) return "Remote control is not available on this client.";
+        if (!controlTarget.enabled()) return "Remote control is switched off on this client.";
+        return null;
+    }
+
+    private Response controlRefused(String reason) {
+        return Response.json(403, error(reason));
     }
 
     /** The answer when the map service was never started, rather than a stack trace. */

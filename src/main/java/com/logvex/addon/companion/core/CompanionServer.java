@@ -79,13 +79,34 @@ public final class CompanionServer {
         CompanionMapSource mapSource,
         CompanionIconSource iconSource
     ) {
+        this(config, api, clientThread, events, appHtml, mapSource, iconSource, null, null);
+    }
+
+    /**
+     * The complete constructor, adding live video and remote control.
+     *
+     * <p>Either of the last two may be null, and the app then reports the feature as unavailable
+     * instead of failing: a client with no renderer still has a working dashboard.
+     */
+    public CompanionServer(
+        CompanionConfig config,
+        CompanionApi api,
+        CompanionClientThread clientThread,
+        CompanionEventBus events,
+        String appHtml,
+        CompanionMapSource mapSource,
+        CompanionIconSource iconSource,
+        CompanionViewportSource viewportSource,
+        CompanionControlTarget controlTarget
+    ) {
         this.config = config;
         this.events = events;
         this.appHtml = appHtml;
         this.mapSource = mapSource;
         this.iconSource = iconSource;
         this.router = new CompanionRouter(
-            config, api, clientThread, events, appHtml, mapSource, iconSource);
+            config, api, clientThread, events, appHtml, mapSource, iconSource,
+            viewportSource, controlTarget);
     }
 
     public CompanionRouter router() {

@@ -168,7 +168,9 @@ public final class CommandCatalog {
         new Entry(Group.ASSISTANT, "ai reactions [list|log|on|off|pause|reset]",
             "Which reply categories may answer, and why one did not."),
         new Entry(Group.ASSISTANT, "ai perms [list|gui|set|allow|deny|admin|reset]",
-            "Who may run each command.")
+            "Who may run each command."),
+        new Entry(Group.ASSISTANT, "ai style [name]",
+            "Preview the reply formats and pick one.")
     );
 
     private CommandCatalog() {

@@ -68,6 +68,46 @@ public final class CompanionJson {
         }
     }
 
+    /**
+     * Reads an integer field, returning {@code fallback} when absent or not a whole number.
+     *
+     * <p>A JSON number that arrives as {@code 3.0} is accepted as 3 because a browser's
+     * {@code JSON.stringify} can produce that for an integer; {@code 3.5} is refused, since a slot
+     * index or a button is never fractional and silently truncating one would click the wrong thing.
+     */
+    public static Integer integer(JsonObject object, String name, Integer fallback) {
+        if (object == null || !object.has(name)) return fallback;
+        JsonElement element = object.get(name);
+        if (element == null || element.isJsonNull()) return fallback;
+        try {
+            double value = element.getAsDouble();
+            if (value != Math.rint(value)) return fallback;
+            if (value < Integer.MIN_VALUE || value > Integer.MAX_VALUE) return fallback;
+            return (int) value;
+        } catch (RuntimeException e) {
+            return fallback;
+        }
+    }
+
+    /**
+     * Reads a numeric field, returning null when absent or not a finite number.
+     *
+     * <p>Used for degrees, where a fraction is meaningful and a missing value must not be confused
+     * with zero: looking by 0 degrees is a real request, so absence has to answer null.
+     */
+    public static Double number(JsonObject object, String name) {
+        if (object == null || !object.has(name)) return null;
+        JsonElement element = object.get(name);
+        if (element == null || element.isJsonNull()) return null;
+        try {
+            double value = element.getAsDouble();
+            if (Double.isNaN(value) || Double.isInfinite(value)) return null;
+            return value;
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
     /** A small ordered map builder, so a response object has a stable field order. */
     public static Map<String, Object> map() {
         return new LinkedHashMap<>();

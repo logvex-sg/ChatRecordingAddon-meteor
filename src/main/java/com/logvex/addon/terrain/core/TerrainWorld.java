@@ -69,6 +69,26 @@ public final class TerrainWorld {
         return TerrainCodec.encodeTile(dimension, originX, originZ, chunks);
     }
 
+    /**
+     * The newest observation time among the chunks in one tile, or 0 when the tile is empty.
+     *
+     * <p>This is the tile's content revision. The browser needs it because a tile can gain chunks
+     * or have its surface re-read without its coordinates changing: a signature built from the tile
+     * list alone stays identical while the picture underneath it goes stale, and the map then never
+     * refetches. Comparing this value is what tells "nothing changed" apart from "same tile, new
+     * contents".
+     */
+    public long tileRevision(String dimension, int tileX, int tileZ) {
+        int originX = TerrainCodec.tileOrigin(tileX);
+        int originZ = TerrainCodec.tileOrigin(tileZ);
+        long newest = 0L;
+        for (ChunkTerrain chunk : store.chunksIn(dimension, originX, originZ,
+            originX + TerrainCodec.TILE_CHUNKS - 1, originZ + TerrainCodec.TILE_CHUNKS - 1)) {
+            newest = Math.max(newest, chunk.observedAt());
+        }
+        return newest;
+    }
+
     /** How many tiles are occupied in a dimension. */
     public int tileCount(String dimension) {
         return occupiedTiles(dimension).size();

@@ -17,7 +17,11 @@ import com.logvex.addon.chatlog.mc.LogStorageService;
 import com.logvex.addon.chatlog.modules.ChatLoggerModule;
 import com.logvex.addon.companion.core.CompanionApi;
 import com.logvex.addon.companion.core.CompanionDispatch;
+import com.logvex.addon.companion.core.CompanionGeometry;
+import com.logvex.addon.companion.core.CompanionControlTarget;
 import com.logvex.addon.companion.core.CompanionSnapshot;
+import com.logvex.addon.companion.core.CompanionViewportSource;
+import com.logvex.addon.companion.core.SlotAction;
 import com.logvex.addon.telemetry.core.TelemetryRecorder;
 import com.logvex.addon.telemetry.mc.TelemetryService;
 import com.logvex.addon.companion.core.ModuleSettings;
@@ -32,16 +36,26 @@ import com.logvex.addon.notify.core.Notification;
 import com.logvex.addon.notify.core.NotificationType;
 import net.minecraft.block.BlockState;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.world.ClientWorld;
+import net.minecraft.component.type.ItemEnchantmentsComponent;
+import net.minecraft.enchantment.Enchantment;
 import net.minecraft.entity.Entity;
+import net.minecraft.entity.ItemEntity;
 import net.minecraft.entity.LivingEntity;
+import net.minecraft.entity.vehicle.VehicleEntity;
 import net.minecraft.entity.mob.HostileEntity;
 import net.minecraft.entity.passive.PassiveEntity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.player.PlayerInventory;
+import net.minecraft.entity.projectile.ProjectileEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.registry.Registries;
+import net.minecraft.registry.entry.RegistryEntry;
+import net.minecraft.screen.ScreenHandler;
+import net.minecraft.screen.slot.SlotActionType;
+import net.minecraft.util.Rarity;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
 
@@ -74,6 +88,16 @@ public final class MinecraftCompanionApi implements CompanionApi {
 
     private final String nodeId;
     private final long startedAt = System.currentTimeMillis();
+    // Set by the module once the server exists, because the snapshot must report what the routes
+    // will actually do. Both stay null in a headless test, and the snapshot then says "unavailable".
+    private CompanionViewportSource viewportSource;
+    private CompanionControlTarget controlTarget;
+
+    /** Wires the live-view components, so the snapshot can report their real availability. */
+    public void setViewport(CompanionViewportSource source, CompanionControlTarget target) {
+        this.viewportSource = source;
+        this.controlTarget = target;
+    }
 
     public MinecraftCompanionApi(String nodeId) {
         this.nodeId = nodeId;
@@ -99,7 +123,23 @@ public final class MinecraftCompanionApi implements CompanionApi {
             world(mc),
             capabilities(),
             metrics(),
-            inventory(mc));
+            inventory(mc),
+            viewport(mc));
+    }
+
+    /**
+     * Whether this client can stream a frame, read from the same components that would serve one.
+     *
+     * <p>Deliberately a cheap check: it asks the source and target whether they are usable and does
+     * not capture anything, so a snapshot stays cheap even when the app never opens PrismView.
+     */
+    private CompanionSnapshot.ViewportView viewport(MinecraftClient mc) {
+        CompanionViewportSource source = this.viewportSource;
+        CompanionControlTarget target = this.controlTarget;
+        if (source == null) return CompanionSnapshot.ViewportView.unavailable();
+        boolean control = target != null && target.enabled();
+        return new CompanionSnapshot.ViewportView(
+            source.available(), control, source.minWidth(), source.maxWidth());
     }
 
     /**
@@ -173,16 +213,35 @@ public final class MinecraftCompanionApi implements CompanionApi {
         List<CompanionSnapshot.EntityView> out = new ArrayList<>();
         Box box = player.getBoundingBox().expand(WORLD_ENTITY_RADIUS);
         for (Entity entity : world.getOtherEntities(player, box)) {
-            if (!(entity instanceof LivingEntity living) || !living.isAlive()) continue;
-            String kind = entity instanceof PlayerEntity ? "player"
-                : entity instanceof HostileEntity ? "hostile"
-                : entity instanceof PassiveEntity ? "passive" : "other";
+            if (!entity.isAlive()) continue;
+            // Items and projectiles are not living entities but a radar is expected to show them,
+            // so the kind is decided first and the health read only where health means something.
+            String kind;
+            if (entity instanceof PlayerEntity) kind = "player";
+            else if (entity instanceof HostileEntity) kind = "hostile";
+            else if (entity instanceof PassiveEntity) kind = "passive";
+            else if (entity instanceof ItemEntity) kind = "item";
+            else if (entity instanceof ProjectileEntity) kind = "projectile";
+            else if (entity instanceof VehicleEntity) kind = "vehicle";
+            else if (entity instanceof LivingEntity) kind = "passive";
+            else continue;
+            int health = entity instanceof LivingEntity living && living.getMaxHealth() > 0
+                ? Math.round(living.getHealth()) : 0;
+            double dx = entity.getX() - player.getX();
+            double dz = entity.getZ() - player.getZ();
+            double dy = entity.getY() - player.getY();
+            double bearing = CompanionGeometry.bearing(dx, dz);
             out.add(new CompanionSnapshot.EntityView(
                 Registries.ENTITY_TYPE.getId(entity.getType()).toString(),
                 entity.getName().getString(),
                 kind,
                 round(entity.distanceTo(player)),
-                Math.round(living.getMaxHealth() <= 0 ? 0 : living.getHealth())));
+                health,
+                round(dx),
+                round(dz),
+                round(dy),
+                round(bearing),
+                entity.getYaw()));
         }
         out.sort(java.util.Comparator.comparingDouble(CompanionSnapshot.EntityView::distance));
         return out.size() > WORLD_ENTITY_LIMIT ? out.subList(0, WORLD_ENTITY_LIMIT) : out;
@@ -483,10 +542,11 @@ public final class MinecraftCompanionApi implements CompanionApi {
     }
 
     /**
-     * The player's own inventory, read-only.
+     * The player's own inventory, plus whatever container screen is open.
      *
-     * <p>Only the slots the game actually exposes are read, and an empty slot is reported as an empty
-     * slot rather than skipped, so the app can draw the real layout with its gaps.
+     * <p>The player's own 41 slots are always reported, empty ones included, so the app can draw the
+     * real grid. When a container is open, the whole screen handler is reported as well, because a
+     * click packet addresses handler slots and those numbers move with the container.
      */
     private CompanionSnapshot.InventoryView inventory(MinecraftClient mc) {
         if (mc == null || mc.player == null) return CompanionSnapshot.InventoryView.unavailable();
@@ -496,16 +556,163 @@ public final class MinecraftCompanionApi implements CompanionApi {
         for (int slot = 0; slot < size; slot++) {
             ItemStack stack = inventory.getStack(slot);
             if (stack == null || stack.isEmpty()) continue;
-            slots.add(new CompanionSnapshot.ItemView(
-                slot,
-                Registries.ITEM.getId(stack.getItem()).toString(),
-                stack.getName().getString(),
-                stack.getCount(),
-                stack.getMaxCount(),
-                stack.getDamage(),
-                stack.hasEnchantments()));
+            slots.add(itemView(slot, stack));
         }
-        return new CompanionSnapshot.InventoryView(true, inventory.selectedSlot, slots);
+
+        ScreenHandler handler = mc.player.currentScreenHandler;
+        if (handler == null) {
+            return new CompanionSnapshot.InventoryView(true, inventory.selectedSlot, slots,
+                "", List.of(), null, -1, 0);
+        }
+
+        List<CompanionSnapshot.ItemView> openSlots = new ArrayList<>(handler.slots.size());
+        for (int index = 0; index < handler.slots.size(); index++) {
+            ItemStack stack = handler.slots.get(index).getStack();
+            if (stack == null || stack.isEmpty()) continue;
+            openSlots.add(itemView(index, stack));
+        }
+        ItemStack cursor = handler.getCursorStack();
+        CompanionSnapshot.ItemView cursorView =
+            cursor == null || cursor.isEmpty() ? null : itemView(-1, cursor);
+        // The player's own screen handler is not a container: its title is the inventory's own, and
+        // calling that "a container is open" would make the app draw a second inventory beside it.
+        String title = handler == mc.player.playerScreenHandler ? "" : screenTitle(mc);
+        return new CompanionSnapshot.InventoryView(true, inventory.selectedSlot, slots,
+            title, openSlots, cursorView, handler.syncId, playerSlotStart(handler, mc));
+    }
+
+    /**
+     * Where the player's own inventory begins inside a screen handler, or 0 when it cannot be told.
+     *
+     * <p>A container's handler ends with the 36 player slots, so the player's part is always the last
+     * 36 entries. The app uses this to lay a chest out with the container's own rows above the
+     * inventory's.
+     */
+    private static int playerSlotStart(ScreenHandler handler, MinecraftClient mc) {
+        int size = handler.slots.size();
+        int playerSize = mc.player == null ? 36 : mc.player.getInventory().size();
+        return Math.max(0, size - playerSize);
+    }
+
+    /** The open screen's title, or "" when there is no screen to name. */
+    private static String screenTitle(MinecraftClient mc) {
+        Screen screen = mc.currentScreen;
+        return screen == null ? "" : screen.getTitle().getString();
+    }
+
+    /** One slot's stack, with the detail a tooltip and an enchantment glint need. */
+    private static CompanionSnapshot.ItemView itemView(int slot, ItemStack stack) {
+        return new CompanionSnapshot.ItemView(
+            slot,
+            Registries.ITEM.getId(stack.getItem()).toString(),
+            stack.getName().getString(),
+            stack.getCount(),
+            stack.getMaxCount(),
+            stack.getDamage(),
+            stack.getMaxDamage(),
+            stack.hasEnchantments(),
+            stack.hasGlint(),
+            enchantmentLines(stack),
+            rarityName(stack));
+    }
+
+    /**
+     * The stack's enchantments as "sharpness 5" lines, in the order the game lists them.
+     *
+     * <p>The registry path is used rather than a translated name because the app has no access to the
+     * client's language files; the path is stable and readable, and the app can title-case it.
+     */
+    private static List<String> enchantmentLines(ItemStack stack) {
+        ItemEnchantmentsComponent enchantments = stack.getEnchantments();
+        if (enchantments == null || enchantments.isEmpty()) return List.of();
+        List<String> out = new ArrayList<>();
+        for (RegistryEntry<Enchantment> entry : enchantments.getEnchantments()) {
+            String id = entry.getIdAsString();
+            int slash = id.indexOf(':');
+            String path = slash >= 0 ? id.substring(slash + 1) : id;
+            out.add(path.replace('_', ' ') + " " + enchantments.getLevel(entry));
+        }
+        out.sort(String::compareTo);
+        return out;
+    }
+
+    private static String rarityName(ItemStack stack) {
+        Rarity rarity = stack.getRarity();
+        if (rarity == null) return "common";
+        return switch (rarity) {
+            case UNCOMMON -> "uncommon";
+            case RARE -> "rare";
+            case EPIC -> "epic";
+            default -> "common";
+        };
+    }
+
+    // ------------------------------------------------------------------ actions
+
+    @Override
+    public List<String> slotActions() {
+        return SlotAction.wireNames();
+    }
+
+    /**
+     * Clicks a slot of the open screen handler.
+     *
+     * <p>Three things are checked before the game sees the click, because each of them is a way a
+     * stale or hostile request could move the wrong item:
+     * <ul>
+     *   <li>the client must be in a world with an open handler, or there is nothing to click;</li>
+     *   <li>the sync id must match the handler that is open now, so a click queued against a chest
+     *       that has since been closed cannot land on whatever opened next;</li>
+     *   <li>the slot must be one the handler actually has, unless it is the "outside" slot that
+     *       means a drop.</li>
+     * </ul>
+     *
+     * <p>After that the click is handed to the same interaction manager the mouse uses, so the
+     * server applies exactly the rules it applies to a player.
+     */
+    @Override
+    public ActionResult clickSlot(int slotId, int button, String action, int syncId) {
+        SlotAction parsed = SlotAction.fromWire(action);
+        if (parsed == null) {
+            return ActionResult.fail("Unknown inventory action \"" + action + "\".");
+        }
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc == null || mc.player == null || mc.interactionManager == null) {
+            return ActionResult.fail("You are not in a world.");
+        }
+        ScreenHandler handler = mc.player.currentScreenHandler;
+        if (handler == null) return ActionResult.fail("No inventory is open.");
+        if (syncId >= 0 && syncId != handler.syncId) {
+            return ActionResult.fail("That inventory has closed. Reopen it and try again.");
+        }
+        // -999 is the vanilla "outside the window" slot: a drop, or a click on nothing.
+        if (slotId != -999 && (slotId < 0 || slotId >= handler.slots.size())) {
+            return ActionResult.fail("There is no slot " + slotId + " in this inventory.");
+        }
+        if (button < 0 || button > 8) {
+            return ActionResult.fail("A click button must be between 0 and 8.");
+        }
+
+        SlotActionType type = switch (parsed) {
+            case PICKUP -> SlotActionType.PICKUP;
+            case QUICK_MOVE -> SlotActionType.QUICK_MOVE;
+            case SWAP -> SlotActionType.SWAP;
+            case THROW -> SlotActionType.THROW;
+            case CLONE -> SlotActionType.CLONE;
+        };
+        mc.interactionManager.clickSlot(handler.syncId, slotId, button, type, mc.player);
+        return ActionResult.ok(describeClick(parsed, slotId, button));
+    }
+
+    /** A short, human sentence for the app's toast, so a click is acknowledged in words. */
+    private static String describeClick(SlotAction action, int slotId, int button) {
+        return switch (action) {
+            case PICKUP -> button == 1 ? "Right-clicked slot " + slotId + "." : "Clicked slot " + slotId + ".";
+            case QUICK_MOVE -> "Shift-clicked slot " + slotId + ".";
+            case SWAP -> "Swapped slot " + slotId + " with hotbar " + (button + 1) + ".";
+            case THROW -> "Dropped from slot " + slotId + ".";
+            case CLONE -> "Copied slot " + slotId + ".";
+        };
     }
 
     // ------------------------------------------------------------------ actions

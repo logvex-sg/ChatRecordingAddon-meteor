@@ -487,6 +487,19 @@ public final class ReplyFormat {
             || (cp >= 0x20000 && cp <= 0x3FFFD);   // CJK extension B+
     }
 
+    /**
+     * A sample answer rendered in {@code style} at {@code width}.
+     *
+     * <p>Used by the {@code ai style} preview, so a user can see what a style looks like before
+     * choosing it. It lives here rather than in the command because this class is Minecraft-free
+     * and therefore testable, while a command is not.
+     */
+    public static List<String> sample(Style style, int width) {
+        return render(new Embed("Sample reply",
+            List.of(new Field("Player", "Steve"), new Field("Deaths", "3")),
+            style == Style.COMPACT ? "" : "Footer", style), width);
+    }
+
     private static String shorten(String text, int width) {
         if (text == null) return "";
         if (width <= 0) return "";

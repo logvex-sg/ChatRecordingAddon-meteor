@@ -48,6 +48,17 @@ public class AssistantCommand extends Command {
             return SINGLE_SUCCESS;
         }));
 
+        builder.then(literal("style")
+            .executes(context -> {
+                stylePreview(null);
+                return SINGLE_SUCCESS;
+            })
+            .then(argument("name", StringArgumentType.word()).executes(context -> {
+                stylePreview(StringArgumentType.getString(context, "name"));
+                return SINGLE_SUCCESS;
+            }))
+        );
+
         builder.then(literal("placeholders")
             .executes(context -> {
                 placeholders("");
@@ -267,6 +278,7 @@ public class AssistantCommand extends Command {
             "which categories may answer, and why recent messages were not answered.");
         addHelp(fields, "placeholders [section]", "the reply placeholders, one section at a time.");
         addHelp(fields, "perms [list|gui|set|allow|deny|admin|reset]", "who may run each command.");
+        addHelp(fields, "style [name]", "preview the reply formats and pick one.");
         addHelp(fields, "clear", "clear all memory.");
         CommandOutput.sendList(this, "Assistant commands", fields, "");
     }
@@ -545,6 +557,53 @@ public class AssistantCommand extends Command {
         long armed = rules.stream().filter(TriggerRule::enabled).count();
         info("%s, %s armed. %sai triggers list to show them.",
             Messages.plural(rules.size(), "trigger"), Messages.number(armed), pfx());
+    }
+
+    /**
+     * Shows what each reply style looks like, so the choice in the assistant settings is an informed
+     * one rather than a guess at what "compact" or "plain" means.
+     *
+     * @param requested one style name, or null for a preview of every style
+     */
+    private void stylePreview(String requested) {
+        AssistantModule module = assistant();
+        if (module == null) {
+            error("The assistant module is not available.");
+            return;
+        }
+        var current = module.replyStyle();
+        var width = module.replyWidth();
+
+        if (requested != null) {
+            var chosen = com.logvex.addon.assistant.core.ReplyFormat.Style.parse(requested, null);
+            if (chosen == null) {
+                error("No style called '%s'. Try box, compact, plain or list.", requested);
+                return;
+            }
+            for (String line : com.logvex.addon.assistant.core.ReplyFormat.sample(chosen, width)) {
+                info("%s", line);
+            }
+            return;
+        }
+
+        List<com.logvex.addon.assistant.core.ReplyFormat.Field> fields = new java.util.ArrayList<>();
+        for (var style : com.logvex.addon.assistant.core.ReplyFormat.Style.values()) {
+            fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field(
+                style.name().toLowerCase(Locale.ROOT) + (style == current ? " (current)" : ""),
+                describe(style)));
+        }
+        CommandOutput.send(this, "Reply styles", fields,
+            pfx() + "ai style <name> shows one. Width is " + width + ".");
+    }
+
+    /** A one-line description of a style, used in the preview list. */
+    private static String describe(com.logvex.addon.assistant.core.ReplyFormat.Style style) {
+        return switch (style) {
+            case BOX -> "bordered block, one field per line";
+            case COMPACT -> "a single line; a long footer is shortened";
+            case PLAIN -> "no decoration, just the fields";
+            case LIST -> "one label - value line per field";
+        };
     }
 
     /**

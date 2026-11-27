@@ -66,6 +66,27 @@ public interface CompanionApi {
     /** Sends a chat line as the player. Refused when the client is not in a world. */
     ActionResult sendChat(String message);
 
+    /**
+     * Clicks one slot of the open screen handler, exactly as the vanilla client does.
+     *
+     * <p>This is the only inventory write path, and it deliberately speaks the game's own click
+     * protocol rather than inventing one: {@code slotId} is a handler index from
+     * {@link CompanionSnapshot.InventoryView#openSlots()}, {@code button} is the mouse button (0 left,
+     * 1 right) or the hotbar key for a swap, and {@code action} is one of the
+     * {@link SlotAction} names. Because the server validates every click it receives, the same rules
+     * that stop a modified client from moving items into a slot it may not use apply here.
+     *
+     * @param slotId  handler slot index, or -999 to mean "outside the window" (a drop)
+     * @param button  0 left, 1 right, or the hotbar slot 0-8 for a swap
+     * @param action  "pickup", "quick_move", "swap", "clone" or "throw"
+     * @param syncId  the handler sync id the caller saw, so a click against a closed container is
+     *                refused instead of being applied to whatever opened next
+     */
+    ActionResult clickSlot(int slotId, int button, String action, int syncId);
+
+    /** The click actions the app may send, for its own validation and the app's UI. */
+    List<String> slotActions();
+
     /** Sends a command line (leading slash optional). Refused when not in a world. */
     ActionResult sendCommand(String command);
 
