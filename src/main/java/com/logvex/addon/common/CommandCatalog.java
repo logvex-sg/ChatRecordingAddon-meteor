@@ -163,6 +163,8 @@ public final class CommandCatalog {
             "The chat assistant."),
         new Entry(Group.ASSISTANT, "ai placeholders [section]",
             "The reply placeholders, one section at a time."),
+        new Entry(Group.ASSISTANT, "ai reactions [list|log|on|off|pause|reset]",
+            "Which reply categories may answer, and why one did not."),
         new Entry(Group.ASSISTANT, "ai perms [list|gui|set|allow|deny|admin|reset]",
             "Who may run each command.")
     );

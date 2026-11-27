@@ -44,6 +44,7 @@ public final class AssistantRuntime {
     private final ChatActivity activity = new ChatActivity();
 
     private TriggerSet triggers = TriggerSet.empty();
+    private final ReactionLog reactionLog = new ReactionLog();
     private AssistantConfig config = AssistantConfig.DEFAULTS;
     private PermissionSet permissions = PermissionSet.permissive();
     private boolean duplicateFilterEnabled = true;
@@ -82,12 +83,38 @@ public final class AssistantRuntime {
 
     /** Replaces the rules and drops any cooldown state for patterns that no longer exist. */
     public void setTriggers(TriggerSet triggers) {
+        ReactionGate current = this.triggers == null ? null : this.triggers.gate();
         this.triggers = triggers == null ? TriggerSet.empty() : triggers;
+        // A new rule list must not silently reopen a gate the user closed, so the existing gate is
+        // carried across. Rebuilding the rules is a separate event from changing the switches.
+        if (current != null && this.triggers.gate() != current) {
+            this.triggers = this.triggers.withGate(current);
+        }
         cooldowns.retain(this.triggers.rules().stream().map(TriggerRule::pattern).toList());
     }
 
     public TriggerSet triggers() {
         return triggers;
+    }
+
+    /** The diagnostic record of recent reaction decisions. */
+    public ReactionLog reactionLog() {
+        return reactionLog;
+    }
+
+    /**
+     * Replaces the gate every trigger is filtered through.
+     *
+     * <p>Applied to the set rather than kept beside it, so the gate travels with the rules into every
+     * path that matches them — including the ones that only hold a {@link TriggerSet}.
+     */
+    public void setGate(ReactionGate gate) {
+        this.triggers = this.triggers.withGate(gate);
+    }
+
+    /** The gate currently in force. */
+    public ReactionGate gate() {
+        return triggers.gate();
     }
 
     public void setConfig(AssistantConfig config) {
@@ -204,9 +231,21 @@ public final class AssistantRuntime {
         java.util.function.Predicate<TriggerRule> allowed = addressedToAssistant
             ? rule -> rule.pattern().strip().startsWith(prefix)
             : null;
-        TriggerRule rule = cfg.respondToTriggers()
-            ? triggers.firstMatch(sender.name(), content, allowed)
-            : null;
+        TriggerRule rule = null;
+        if (cfg.respondToTriggers()) {
+            TriggerSet.Match match =
+                triggers.firstMatchExplained(sender.name(), content, allowed, now);
+            rule = match.rule();
+            if (rule != null && !match.allowed()) {
+                // Matched but refused. Recorded rather than silently dropped: this is the case that
+                // used to be indistinguishable from "the rule does not exist", which is what made
+                // the reported bug hard to diagnose.
+                reactionLog.record(now, sender.name(), content, ReactionLog.Outcome.SKIPPED,
+                    rule, match.reason());
+                ignored++;
+                return AssistantBrain.Decision.NONE;
+            }
+        }
 
         if (rule != null) {
             // A trigger is the assistant speaking unprompted, so who may fire one is a separate
@@ -244,7 +283,11 @@ public final class AssistantRuntime {
             handled++;
             AssistantBrain.Decision decision =
                 brain.trigger(rule, sender.name(), content, cfg, now, liveStats);
-            if (decision.acts()) activity.recordReply();
+            if (decision.acts()) {
+                activity.recordReply();
+                reactionLog.record(now, sender.name(), content, ReactionLog.Outcome.REPLIED,
+                    rule, "");
+            }
             return decision;
         }
 

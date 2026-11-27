@@ -185,6 +185,41 @@ public class AssistantCommand extends Command {
             return SINGLE_SUCCESS;
         }));
 
+        builder.then(literal("reactions")
+            .executes(context -> {
+                reactions("");
+                return SINGLE_SUCCESS;
+            })
+            .then(literal("list").executes(context -> {
+                reactions("");
+                return SINGLE_SUCCESS;
+            }))
+            .then(literal("log").executes(context -> {
+                reactionLog();
+                return SINGLE_SUCCESS;
+            }))
+            .then(literal("on")
+                .then(argument("category", StringArgumentType.word()).executes(context -> {
+                    setReaction(StringArgumentType.getString(context, "category"), true);
+                    return SINGLE_SUCCESS;
+                })))
+            .then(literal("off")
+                .then(argument("category", StringArgumentType.word()).executes(context -> {
+                    setReaction(StringArgumentType.getString(context, "category"), false);
+                    return SINGLE_SUCCESS;
+                })))
+            .then(literal("pause")
+                .then(argument("minutes", com.mojang.brigadier.arguments.IntegerArgumentType.integer(0, 720))
+                    .executes(context -> {
+                        pauseReactions(com.mojang.brigadier.arguments.IntegerArgumentType
+                            .getInteger(context, "minutes"));
+                        return SINGLE_SUCCESS;
+                    })))
+            .then(literal("reset").executes(context -> {
+                resetReactions();
+                return SINGLE_SUCCESS;
+            }))
+        );
         builder.then(literal("clear").executes(context -> {
             AssistantModule module = assistant();
             if (module == null) {
@@ -224,6 +259,8 @@ public class AssistantCommand extends Command {
         addHelp(fields, "forget <key>", "remove a fact.");
         addHelp(fields, "test <message>", "see what the assistant would do.");
         addHelp(fields, "history", "recent remembered exchanges.");
+        addHelp(fields, "reactions [list|log|on <category>|off <category>|pause <minutes>|reset]",
+            "which categories may answer, and why recent messages were not answered.");
         addHelp(fields, "placeholders [section]", "the reply placeholders, one section at a time.");
         addHelp(fields, "perms [list|gui|set|allow|deny|admin|reset]", "who may run each command.");
         addHelp(fields, "clear", "clear all memory.");
@@ -670,5 +707,138 @@ public class AssistantCommand extends Command {
 
     private static AssistantModule assistant() {
         return Modules.get().get(AssistantModule.class);
+    }
+
+    // ------------------------------------------------------------------ reactions
+
+    /**
+     * Shows which reaction categories may answer, and why they might not be answering.
+     *
+     * <p>The reaction system is the part of the assistant users report as "broken": a reply that
+     * never came, or one that came when it should not have. The reason is always one of a few
+     * switches, and before this command the only way to see them was to open the GUI and read four
+     * separate settings pages. This prints every gate that can silence a reply in one block, in the
+     * order the code applies them, so the answer is visible without leaving chat.
+     */
+    private void reactions(String ignored) {
+        AssistantModule module = assistant();
+        if (module == null) {
+            error("The assistant module is not available.");
+            return;
+        }
+
+        List<com.logvex.addon.assistant.core.ReplyFormat.Field> fields = new java.util.ArrayList<>();
+        boolean master = module.reactionsEnabled();
+        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Reactions",
+            master ? "on" : "off - no category can answer"));
+        if (module.isMuted()) {
+            fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Paused",
+                "yes - " + Messages.duration(module.muteRemainingMs())));
+        }
+
+        java.util.Set<com.logvex.addon.assistant.core.ReactionCategory> enabled =
+            module.enabledCategories();
+        fields.add(com.logvex.addon.assistant.core.ReplyFormat.Field.section("Categories"));
+        for (com.logvex.addon.assistant.core.ReactionCategory category
+            : com.logvex.addon.assistant.core.ReactionCategory.all()) {
+            boolean on = enabled.contains(category);
+            String note = on ? "on" : "off";
+            if (category.conversational() && !category.defaultEnabled()) {
+                note += " (chatty, off by default)";
+            }
+            fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field(
+                category.id(), note + " - " + category.description()));
+        }
+
+        java.util.List<String> ignoredWords = module.ignoredWords();
+        if (!ignoredWords.isEmpty()) {
+            fields.add(com.logvex.addon.assistant.core.ReplyFormat.Field.section("Ignore list"));
+            fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Words",
+                Messages.truncate(String.join(", ", ignoredWords), 120)));
+        }
+
+        CommandOutput.sendLong(this, "Assistant reactions", fields,
+            pfx() + "ai reactions log - why recent messages were answered or not");
+    }
+
+    /** The recent reaction decisions, newest first, with the reason for each. */
+    private void reactionLog() {
+        AssistantModule module = assistant();
+        if (module == null) {
+            error("The assistant module is not available.");
+            return;
+        }
+        java.util.List<com.logvex.addon.assistant.core.ReactionLog.Entry> recent =
+            module.reactionLog().recent(12);
+        if (recent.isEmpty()) {
+            warning("No messages have been evaluated yet.");
+            return;
+        }
+
+        List<com.logvex.addon.assistant.core.ReplyFormat.Field> fields = new java.util.ArrayList<>();
+        // Newest first: the message the user is asking about is almost always the last one.
+        for (int i = recent.size() - 1; i >= 0; i--) {
+            com.logvex.addon.assistant.core.ReactionLog.Entry entry = recent.get(i);
+            String who = entry.sender() == null || entry.sender().isBlank()
+                ? "server" : entry.sender();
+            fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field(
+                Messages.clock(entry.at()) + " " + who,
+                Messages.truncate(entry.excerpt(), 40) + " -> " + entry.describe()));
+        }
+        com.logvex.addon.assistant.core.ReactionLog log = module.reactionLog();
+        CommandOutput.sendLong(this, "Reaction decisions", fields,
+            log.replied() + " replied, " + log.skipped() + " skipped, " + log.ignoredCount() + " ignored");
+    }
+
+    /** Turns one category on or off. */
+    private void setReaction(String typed, boolean enabled) {
+        AssistantModule module = assistant();
+        if (module == null) {
+            error("The assistant module is not available.");
+            return;
+        }
+        com.logvex.addon.assistant.core.ReactionCategory category =
+            com.logvex.addon.assistant.core.ReactionCategory.exact(typed);
+        if (category == null) {
+            error("No category called '%s'. Categories: %s.", typed,
+                com.logvex.addon.assistant.core.ReactionCategory.idList());
+            return;
+        }
+        module.setCategoryEnabled(category, enabled);
+        info("%s is now %s.", category.id(), enabled ? "on" : "off");
+    }
+
+    /** Pauses every reaction for {@code minutes}; zero resumes immediately. */
+    private void pauseReactions(int minutes) {
+        AssistantModule module = assistant();
+        if (module == null) {
+            error("The assistant module is not available.");
+            return;
+        }
+        module.pauseFor(minutes * 60);
+        if (minutes <= 0) {
+            info("Reactions resumed.");
+        } else {
+            info("Reactions paused for %s.", Messages.duration(minutes * 60_000L));
+        }
+    }
+
+    /** Restores every category to the shipped default and clears a pause. */
+    private void resetReactions() {
+        AssistantModule module = assistant();
+        if (module == null) {
+            error("The assistant module is not available.");
+            return;
+        }
+        java.util.Set<com.logvex.addon.assistant.core.ReactionCategory> defaults =
+            com.logvex.addon.assistant.core.ReactionCategory.defaultsEnabled();
+        for (com.logvex.addon.assistant.core.ReactionCategory category
+            : com.logvex.addon.assistant.core.ReactionCategory.all()) {
+            module.setCategoryEnabled(category, defaults.contains(category));
+        }
+        module.pauseFor(0);
+        module.setReactionsEnabled(true);
+        info("Reactions reset to defaults: %d of %d categories on.",
+            defaults.size(), com.logvex.addon.assistant.core.ReactionCategory.all().size());
     }
 }

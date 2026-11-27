@@ -30,7 +30,20 @@ public final class LoginPromptDetector {
         "type /login",
         "authenticate",
         "enter your password",
-        "password please"
+        "password please",
+        // Phrasings common on anarchy and cracked servers that the list above missed. Each one is
+        // an instruction to log in, not a mention of the word: "login required" and "you must log
+        // in" are things only the server says, and a player typing them is filtered out by the
+        // fromPlayer guard. A missed prompt is a silent failure, so the list errs towards covering
+        // the real wordings while still refusing bare mentions such as "i forgot my password".
+        "login required",
+        "log in required",
+        "you must log in",
+        "you must login",
+        "you need to log in",
+        "you need to login",
+        "click here to log in",
+        "click here to login"
     );
 
     /** Phrases that mean the server wants a new account, not a login. */

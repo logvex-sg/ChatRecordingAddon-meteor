@@ -18,9 +18,21 @@ import java.util.Locale;
  */
 public final class TriggerSet {
     private final List<TriggerRule> rules;
+    private final ReactionGate gate;
 
-    private TriggerSet(List<TriggerRule> rules) {
+    private TriggerSet(List<TriggerRule> rules, ReactionGate gate) {
         this.rules = List.copyOf(rules);
+        this.gate = gate == null ? ReactionGate.open() : gate;
+    }
+
+    /** The gate every match is filtered through. */
+    public ReactionGate gate() {
+        return gate;
+    }
+
+    /** A copy of this set with {@code gate} applied, so the gate travels with the rules. */
+    public TriggerSet withGate(ReactionGate gate) {
+        return new TriggerSet(rules, gate);
     }
 
     /** Builds a set, dropping null and disabled rules while preserving order. */
@@ -31,11 +43,16 @@ public final class TriggerSet {
                 if (rule != null && rule.enabled() && !rule.pattern().isBlank()) enabled.add(rule);
             }
         }
-        return new TriggerSet(enabled);
+        return new TriggerSet(enabled, ReactionGate.open());
+    }
+
+    /** Builds a set filtered through {@code gate} as well as by each rule's own switches. */
+    public static TriggerSet of(List<TriggerRule> rules, ReactionGate gate) {
+        return of(rules).withGate(gate);
     }
 
     public static TriggerSet empty() {
-        return new TriggerSet(List.of());
+        return new TriggerSet(List.of(), ReactionGate.open());
     }
 
     public List<TriggerRule> rules() {
@@ -65,13 +82,74 @@ public final class TriggerSet {
      * @param allowed an extra condition, or null to accept every rule
      */
     public TriggerRule firstMatch(String sender, String content, java.util.function.Predicate<TriggerRule> allowed) {
+        return firstMatch(sender, content, allowed, System.currentTimeMillis());
+    }
+
+    /**
+     * As above, with the clock passed in.
+     *
+     * <p>The gate is consulted here, inside the matching, rather than left to the caller. That is
+     * deliberate: the reported bug was a reaction firing from a path that had not checked the
+     * switches, so the check cannot live at the call site where a new call site can forget it.
+     * Passing {@code now} keeps the mute testable without a clock.
+     */
+    public TriggerRule firstMatch(String sender, String content,
+                                  java.util.function.Predicate<TriggerRule> allowed, long now) {
         if (content == null || content.isBlank()) return null;
         for (TriggerRule rule : rules) {
             if (allowed != null && !allowed.test(rule)) continue;
-            if (!rule.senderAllowed(sender)) continue;
+            if (!gate.check(rule, sender, content, now).allowed()) continue;
             if (matches(rule, content)) return rule;
         }
         return null;
+    }
+
+    /**
+     * The first rule that matches, together with why it was refused when it was not allowed.
+     *
+     * <p>Matching and gating are reported separately so a diagnostic can tell "nothing matched" from
+     * "something matched but the category is off". Those two look identical to a user and need
+     * different fixes.
+     */
+    public Match firstMatchExplained(String sender, String content, long now) {
+        return firstMatchExplained(sender, content, null, now);
+    }
+
+    /**
+     * As above, with an extra filter.
+     *
+     * <p>The filter is applied before the gate, exactly as in {@link #firstMatch}, so a rule excluded
+     * by the caller cannot mask a later rule that the caller would accept. Getting this order wrong
+     * once made a prefixed command unreachable behind a bare-word trigger.
+     */
+    public Match firstMatchExplained(String sender, String content,
+                                     java.util.function.Predicate<TriggerRule> allowed, long now) {
+        if (content == null || content.isBlank()) return Match.none("the message is empty");
+        for (TriggerRule rule : rules) {
+            if (allowed != null && !allowed.test(rule)) continue;
+            if (!matches(rule, content)) continue;
+            ReactionGate.Verdict verdict = gate.check(rule, sender, content, now);
+            return new Match(rule, verdict.allowed(), verdict.reason());
+        }
+        return Match.none("no rule matched");
+    }
+
+    /**
+     * A matched rule and whether the gate allowed it.
+     *
+     * @param rule    the rule whose phrase matched, or null when nothing did
+     * @param allowed whether the gate let it run
+     * @param reason  why it was refused; empty when allowed or when nothing matched
+     */
+    public record Match(TriggerRule rule, boolean allowed, String reason) {
+        public static Match none(String reason) {
+            return new Match(null, false, reason == null ? "" : reason);
+        }
+
+        /** True when a rule matched and the gate allowed it. */
+        public boolean acts() {
+            return rule != null && allowed;
+        }
     }
 
     /** True when {@code rule}'s pattern is present in {@code text} under its matching options. */
@@ -97,28 +175,14 @@ public final class TriggerSet {
         return null;
     }
 
+    /**
+     * Whether one phrase of a rule matches the line, under the rule's own comparison mode.
+     *
+     * <p>Delegated to {@link MatchMode}, which also owns the whole-word walk the old boolean pair
+     * used. Keeping the comparison in one place is what stops the four modes from drifting apart.
+     */
     private static boolean matchesPhrase(TriggerRule rule, String pattern, String text) {
         if (pattern == null || pattern.isBlank()) return false;
-
-        String haystack = rule.caseSensitive() ? text : text.toLowerCase(Locale.ROOT);
-        String needle = rule.caseSensitive() ? pattern : pattern.toLowerCase(Locale.ROOT);
-        if (needle.isEmpty()) return false;
-
-        if (!rule.wholeWord()) return haystack.contains(needle);
-
-        int from = 0;
-        while (true) {
-            int at = haystack.indexOf(needle, from);
-            if (at < 0) return false;
-            int end = at + needle.length();
-            boolean leftOk = at == 0 || !isWordChar(haystack.charAt(at - 1));
-            boolean rightOk = end >= haystack.length() || !isWordChar(haystack.charAt(end));
-            if (leftOk && rightOk) return true;
-            from = at + 1;
-        }
-    }
-
-    private static boolean isWordChar(char c) {
-        return Character.isLetterOrDigit(c) || c == '_';
+        return rule.matchMode().matches(pattern, text, rule.caseSensitive());
     }
 }

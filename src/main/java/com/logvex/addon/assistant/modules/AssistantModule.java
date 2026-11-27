@@ -9,6 +9,10 @@ import com.logvex.addon.assistant.core.ChatActivity;
 import com.logvex.addon.assistant.core.ChatMacro;
 import com.logvex.addon.assistant.core.CommandPermission;
 import com.logvex.addon.assistant.core.GreetingPools;
+import com.logvex.addon.assistant.core.IgnoredPhrases;
+import com.logvex.addon.assistant.core.ReactionCategory;
+import com.logvex.addon.assistant.core.ReactionGate;
+import com.logvex.addon.assistant.core.ReactionLog;
 import com.logvex.addon.assistant.core.MacroSet;
 import com.logvex.addon.assistant.core.PermissionLevel;
 import com.logvex.addon.assistant.core.PermissionSet;
@@ -104,6 +108,7 @@ public class AssistantModule extends AutomationModule {
 
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
     private final SettingGroup sgTriggers = settings.createGroup("Triggers");
+    private final SettingGroup sgReactions = settings.createGroup("Reactions");
     private final SettingGroup sgMemory = settings.createGroup("Memory");
     private final SettingGroup sgLimits = settings.createGroup("Limits");
     private final SettingGroup sgPacing = settings.createGroup("Send pacing");
@@ -364,6 +369,186 @@ public class AssistantModule extends AutomationModule {
         .onChanged(ignored -> rebuild())
         .build()
     );
+
+    // ------------------------------------------------------------------ reactions
+    //
+    // The switches that decide whether a matched rule may speak. They live in their own group and
+    // are deliberately separate from the rule list: a rule says *what* to answer, a switch says
+    // *whether* that kind of answer may happen at all. The reported bug was that only the first half
+    // existed in a usable form.
+
+    private final Setting<Boolean> reactionsEnabled = sgReactions.add(new BoolSetting.Builder()
+        .name("reactions-enabled")
+        .description("Master switch for automatic reactions. Off silences every trigger at once, "
+            + "without losing any of their settings.")
+        .defaultValue(true)
+        .onChanged(ignored -> rebuild())
+        .build()
+    );
+
+    private final Setting<Integer> reactionMuteSeconds = sgReactions.add(new IntSetting.Builder()
+        .name("mute-seconds")
+        .description("Pause every reaction for this many seconds. 0 means no pause. Useful when a "
+            + "conversation is busy and you want the assistant quiet without changing anything else.")
+        .defaultValue(0)
+        .min(0)
+        .max(86_400)
+        .sliderRange(0, 900)
+        .visible(reactionsEnabled::get)
+        .onChanged(this::onMuteChanged)
+        .build()
+    );
+
+    private final Setting<List<String>> ignoredWords = sgReactions.add(new StringListSetting.Builder()
+        .name("ignored-words")
+        .description("One word or phrase per line. A message containing one is never answered, "
+            + "whatever else it says. Whole words only, so 'gg' does not silence 'egg'.")
+        .defaultValue(List.of())
+        .visible(reactionsEnabled::get)
+        .onChanged(ignored -> rebuild())
+        .build()
+    );
+
+    private final Setting<Boolean> greetingsCategory = categoryToggle(ReactionCategory.GREETINGS);
+    private final Setting<Boolean> farewellsCategory = categoryToggle(ReactionCategory.FAREWELLS);
+    private final Setting<Boolean> courtesiesCategory = categoryToggle(ReactionCategory.COURTESIES);
+    private final Setting<Boolean> praiseCategory = categoryToggle(ReactionCategory.PRAISE);
+    private final Setting<Boolean> socialCategory = categoryToggle(ReactionCategory.SOCIAL);
+    private final Setting<Boolean> identityCategory = categoryToggle(ReactionCategory.IDENTITY);
+    private final Setting<Boolean> figuresCategory = categoryToggle(ReactionCategory.FIGURES);
+    private final Setting<Boolean> commandsCategory = categoryToggle(ReactionCategory.COMMANDS);
+    private final Setting<Boolean> customCategory = categoryToggle(ReactionCategory.CUSTOM);
+
+    /** One switch per category, defaulting to the category's own default. */
+    private Setting<Boolean> categoryToggle(ReactionCategory category) {
+        return sgReactions.add(new BoolSetting.Builder()
+            .name(category.id())
+            .description(category.description())
+            .defaultValue(category.defaultEnabled())
+            .visible(reactionsEnabled::get)
+            .onChanged(ignored -> rebuild())
+            .build()
+        );
+    }
+
+    /** The category switches, so the gate can be built without repeating the list. */
+    private java.util.Map<ReactionCategory, Setting<Boolean>> categoryToggles() {
+        java.util.EnumMap<ReactionCategory, Setting<Boolean>> out =
+            new java.util.EnumMap<>(ReactionCategory.class);
+        out.put(ReactionCategory.GREETINGS, greetingsCategory);
+        out.put(ReactionCategory.FAREWELLS, farewellsCategory);
+        out.put(ReactionCategory.COURTESIES, courtesiesCategory);
+        out.put(ReactionCategory.PRAISE, praiseCategory);
+        out.put(ReactionCategory.SOCIAL, socialCategory);
+        out.put(ReactionCategory.IDENTITY, identityCategory);
+        out.put(ReactionCategory.FIGURES, figuresCategory);
+        out.put(ReactionCategory.COMMANDS, commandsCategory);
+        out.put(ReactionCategory.CUSTOM, customCategory);
+        return out;
+    }
+
+    /** The categories currently switched on. */
+    public java.util.Set<ReactionCategory> enabledCategories() {
+        java.util.EnumSet<ReactionCategory> out = java.util.EnumSet.noneOf(ReactionCategory.class);
+        categoryToggles().forEach((category, toggle) -> {
+            if (toggle.get()) out.add(category);
+        });
+        return out;
+    }
+
+    /** Turns one category on or off, and applies it. */
+    public void setCategoryEnabled(ReactionCategory category, boolean enabled) {
+        Setting<Boolean> toggle = categoryToggles().get(category);
+        if (toggle == null || toggle.get() == enabled) return;
+        toggle.set(enabled);
+        rebuild();
+    }
+
+    /** The gate built from the current switches. */
+    public ReactionGate reactionGate() {
+        return new ReactionGate(enabledCategories(), IgnoredPhrases.of(ignoredWords.get()),
+            reactionsEnabled.get(), mutedUntil);
+    }
+
+    /** Epoch millis the mute expires, or 0 when nothing is paused. */
+    private long mutedUntil;
+
+    private void onMuteChanged(Object ignored) {
+        int seconds = reactionMuteSeconds.get();
+        mutedUntil = seconds <= 0 ? 0L : System.currentTimeMillis() + seconds * 1000L;
+        rebuild();
+    }
+
+    /** True when a pause is still in force. */
+    public boolean isMuted() {
+        return mutedUntil > 0 && System.currentTimeMillis() < mutedUntil;
+    }
+
+    /** How long the pause has left, in millis; 0 when nothing is paused. */
+    public long muteRemainingMs() {
+        long left = mutedUntil - System.currentTimeMillis();
+        return left > 0 ? left : 0L;
+    }
+
+    /** Whether automatic reactions are allowed at all. */
+    public boolean reactionsEnabled() {
+        return reactionsEnabled.get();
+    }
+
+    /** Turns the master switch on or off and applies it. */
+    public void setReactionsEnabled(boolean enabled) {
+        if (reactionsEnabled.get() == enabled) return;
+        reactionsEnabled.set(enabled);
+        rebuild();
+    }
+
+    /** Pauses every reaction for {@code seconds}; 0 resumes immediately. */
+    public void pauseFor(int seconds) {
+        reactionMuteSeconds.set(Math.max(0, seconds));
+        onMuteChanged(null);
+    }
+
+    /** True when {@code category}'s switch is on. */
+    public boolean categoryEnabled(ReactionCategory category) {
+        Setting<Boolean> toggle = categoryToggles().get(category);
+        return toggle != null && toggle.get();
+    }
+
+    /** The ignored words as a clean list. */
+    public java.util.List<String> ignoredWords() {
+        return IgnoredPhrases.of(ignoredWords.get()).phrases();
+    }
+
+    /** Adds one word to the ignore list; a duplicate is ignored rather than written twice. */
+    public void addIgnoredWord(String word) {
+        if (word == null || word.isBlank()) return;
+        String value = word.strip();
+        java.util.List<String> current = new java.util.ArrayList<>(ignoredWords.get());
+        for (String existing : current) {
+            if (existing != null && existing.strip().equalsIgnoreCase(value)) return;
+        }
+        current.add(value);
+        ignoredWords.set(current);
+        rebuild();
+    }
+
+    /** Removes one word from the ignore list. */
+    public void removeIgnoredWord(String word) {
+        if (word == null || word.isBlank()) return;
+        String needle = word.strip();
+        java.util.List<String> current = new java.util.ArrayList<>(ignoredWords.get());
+        boolean changed = current.removeIf(existing ->
+            existing != null && existing.strip().equalsIgnoreCase(needle));
+        if (!changed) return;
+        ignoredWords.set(current);
+        rebuild();
+    }
+
+    /** The diagnostic record of recent reaction decisions. */
+    public ReactionLog reactionLog() {
+        return runtime.reactionLog();
+    }
+
 
     private final Setting<Boolean> rememberConversations = sgMemory.add(new BoolSetting.Builder()
         .name("remember-conversations")
@@ -1194,7 +1379,10 @@ public class AssistantModule extends AutomationModule {
             TriggerAudience.normalise(triggerAllowList.get())
         );
         service.memory().setHistoryCapacity(historySize.get());
+        // The gate goes on after the rules, because it is applied to the set the runtime holds. A
+        // rebuild must not reopen a switch the user closed, so this runs on every rebuild.
         runtime.setTriggers(parsed);
+        runtime.setGate(reactionGate());
         runtime.brain().setTriggerSet(parsed);
         runtime.setConfig(config);
         runtime.setPermissions(buildPermissions());

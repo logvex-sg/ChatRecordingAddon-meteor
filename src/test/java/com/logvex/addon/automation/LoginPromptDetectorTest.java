@@ -81,6 +81,32 @@ class LoginPromptDetectorTest {
             String prose = "please log in ".repeat(40);
             assertFalse(LoginPromptDetector.isLoginPrompt(prose));
         }
+
+        @Test
+        void theAdditionalServerWordingsAreRecognised() {
+            assertTrue(LoginPromptDetector.isLoginPrompt("Login required"));
+            assertTrue(LoginPromptDetector.isLoginPrompt("LOGIN REQUIRED TO PLAY"));
+            assertTrue(LoginPromptDetector.isLoginPrompt("You must log in to play here"));
+            assertTrue(LoginPromptDetector.isLoginPrompt("You need to login first"));
+            assertTrue(LoginPromptDetector.isLoginPrompt("Click here to login"));
+            assertTrue(LoginPromptDetector.isLoginPrompt("Log in required before you can move"));
+        }
+
+        @Test
+        void aPlayerSayingThoseWordingsIsStillRefused() {
+            // The extra phrases must not open a hole: a player must never be able to make the
+            // client send a password, whatever they type.
+            assertFalse(LoginPromptDetector.isLoginPrompt("login required lol", true));
+            assertFalse(LoginPromptDetector.isLoginPrompt("you must log in", true));
+            assertFalse(LoginPromptDetector.isLoginPrompt("click here to login", true));
+        }
+
+        @Test
+        void aBareMentionOfLoginIsStillNotAPrompt() {
+            assertFalse(LoginPromptDetector.isLoginPrompt("login"));
+            assertFalse(LoginPromptDetector.isLoginPrompt("the login plugin is broken again"));
+            assertFalse(LoginPromptDetector.isLoginPrompt("i love the login screen"));
+        }
     }
 
     @Nested

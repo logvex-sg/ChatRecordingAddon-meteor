@@ -186,7 +186,8 @@ public final class HelpPages {
             }
             out.add(new TriggerRule(sigil + "cmds" + (i + 1), false, true, "", text,
                 TriggerRule.ReplyMode.PRIVATE, TriggerRule.TRIGGER_COOLDOWN_MS, 0, false, false,
-                true, "", "", TriggerRule.DEFAULT_WHISPER, TriggerRule.EmbedMode.ON));
+                true, "", "", TriggerRule.DEFAULT_WHISPER, TriggerRule.EmbedMode.ON,
+                MatchMode.WHOLE_WORD, ReactionCategory.COMMANDS, ""));
         }
         return List.copyOf(out);
     }
@@ -209,7 +210,8 @@ public final class HelpPages {
         }
         return new TriggerRule(sigil + "cmds", false, true, "", text.toString(),
             TriggerRule.ReplyMode.PRIVATE, TriggerRule.TRIGGER_COOLDOWN_MS, 0, false, false,
-            true, "", "", TriggerRule.DEFAULT_WHISPER);
+            true, "", "", TriggerRule.DEFAULT_WHISPER, TriggerRule.EmbedMode.ON,
+            MatchMode.WHOLE_WORD, ReactionCategory.COMMANDS, "");
     }
 
     /** The curated grouping, exposed so a test can check every name in it is real. */

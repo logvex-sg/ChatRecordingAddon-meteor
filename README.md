@@ -1153,7 +1153,7 @@ and releases any input it pressed when it is disabled.
 | `log-panic` | Disconnects when health, food, inventory space, a hostile mob or another player crosses a rule you enabled. Off by default; every rule is opt-in, and there is a grace period after joining. |
 | `log-reconnect` | Reconnects to the last **multiplayer** server after a disconnect, using vanilla's own connection screen, with a bounded backoff and a retry cap. |
 | `server-monitor` | Prints a periodic status line (duration, game mode, latency, free slots) and a session summary on leave, using only what the client can observe. |
-| `auto-login` | Answers a server's `/login` prompt with the password stored for that server. Only sends in reply to a recognised prompt, never on join, so a password cannot be sent as public chat on a server without an auth plugin. Passwords live in a separate owner-only file, never in the Meteor config. |
+| `auto-login` | Answers a server's `/login` prompt with the password stored for that server. Only sends in reply to a recognised prompt, never on join, so a password cannot be sent as public chat on a server without an auth plugin. Passwords live in a separate owner-only file, never in the Meteor config. A prompt stays answerable for 30 seconds, so one that arrives before the world is ready or during the send cooldown is still used rather than dropped, and the module reads chat ahead of the chat filter so a hide rule cannot silence the prompt. |
 | `watchlist-alerts` | Raises a notification when a player on the chat log's watchlist joins or leaves. Only real transitions alert, so a server that announces a join twice does not produce two notices. |
 | `death-tracker` | Remembers where you died. `!deaths` lists them newest first, `!back` shows the most recent in your current dimension. Coordinates from another dimension are reported, never offered as a return target. |
 | `auto-creative` | Imports a material list (or takes typed entries), acquires the items in Creative mode and can hand the ordered list to the Schematic Dropper queue. See below. |
@@ -2057,6 +2057,7 @@ The addon registers a `!log` command (alias `!la`). Run `!log help` for the list
 | `!ai test <message>` | Shows what the assistant would do with a message. |
 | `!ai history` | Recent remembered exchanges. |
 | `!ai placeholders [section]` | Lists placeholders one section at a time, with current values. |
+| `!ai reactions [list\|log\|on\|off\|pause\|reset]` | Which reply categories may answer, why a recent message was or was not answered, and the switches that change it. |
 | `!ai save` / `!ai clear` | Save memory now / clear all memory. |
 
 Commands are registered through the addon's own `PostInit` hook, and are intercepted from the

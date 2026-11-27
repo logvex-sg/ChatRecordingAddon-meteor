@@ -4,6 +4,9 @@ import com.logvex.addon.assistant.core.AssistantMemory;
 import com.logvex.addon.assistant.core.ChatActivity;
 import com.logvex.addon.assistant.core.ChatMacro;
 import com.logvex.addon.assistant.core.TriggerRule;
+import com.logvex.addon.assistant.core.MatchMode;
+import com.logvex.addon.assistant.core.ReactionCategory;
+import com.logvex.addon.assistant.core.ReactionLog;
 import com.logvex.addon.assistant.modules.AssistantModule;
 import com.logvex.addon.stats.ServerStats;
 import com.logvex.addon.stats.StatusCommand;
@@ -33,6 +36,9 @@ import java.util.List;
 public class AssistantScreen extends WindowScreen {
     private static final Color MUTED = new Color(150, 150, 150);
     private static final Color ACCENT = new Color(140, 200, 255);
+    private static final Color GOOD = new Color(150, 220, 150);
+    private static final Color BAD = new Color(255, 140, 140);
+    private static final Color WARN = new Color(255, 200, 120);
 
     private final AssistantModule module;
     private int tab;
@@ -43,6 +49,7 @@ public class AssistantScreen extends WindowScreen {
     private String newFactKey = "";
     private String newFactValue = "";
     private String newMacro = "";
+    private String newIgnoredWord = "";
     private String macroNotice = "";
 
     public AssistantScreen(AssistantModule module) {
@@ -64,17 +71,19 @@ public class AssistantScreen extends WindowScreen {
         }
 
         WTable tabs = add(theme.table()).expandX().widget();
-        tabButton(tabs, "Triggers", 0);
-        tabButton(tabs, "Macros", 1);
-        tabButton(tabs, "Memory", 2);
-        tabButton(tabs, "Status", 3);
+        tabButton(tabs, "Reactions", 0);
+        tabButton(tabs, "Triggers", 1);
+        tabButton(tabs, "Macros", 2);
+        tabButton(tabs, "Memory", 3);
+        tabButton(tabs, "Status", 4);
 
         add(theme.horizontalSeparator()).expandX();
         switch (tab) {
-            case 1 -> renderMacros();
-            case 2 -> renderMemory();
-            case 3 -> renderStatus();
-            default -> renderTriggers();
+            case 1 -> renderTriggers();
+            case 2 -> renderMacros();
+            case 3 -> renderMemory();
+            case 4 -> renderStatus();
+            default -> renderReactions();
         }
     }
 
@@ -82,6 +91,140 @@ public class AssistantScreen extends WindowScreen {
         WButton button = table.add(theme.button(index == tab ? "[" + label + "]" : label)).widget();
         button.action = () -> {
             tab = index;
+            taskAfterRender = this::render;
+        };
+    }
+
+    // ------------------------------------------------------------------ reactions
+    //
+    // The tab that answers "why did it answer that, and how do I stop it?". It shows the master
+    // switch, one switch per category, the ignore list and the recent decisions with their reasons.
+    // The Triggers tab below edits what a rule says; this one decides whether it may speak at all.
+
+    private void renderReactions() {
+        add(theme.label("Reactions decide whether the assistant may speak at all. Every category "
+            + "starts off except commands and your own rules, so a fresh install answers !tps and "
+            + "nothing else. Turn on only what you want to hear.")).expandX().widget().color(MUTED);
+
+        renderReactionMaster();
+        add(theme.horizontalSeparator("Categories")).expandX();
+        renderReactionCategories();
+        add(theme.horizontalSeparator("Ignored words")).expandX();
+        renderIgnoredWords();
+        add(theme.horizontalSeparator("Recent decisions")).expandX();
+        renderReactionLog();
+    }
+
+    private void renderReactionMaster() {
+        WTable master = add(theme.table()).expandX().widget();
+        boolean on = module.reactionsEnabled();
+        WButton toggle = master.add(theme.button(on ? "Reactions: on" : "Reactions: off")).widget();
+        toggle.action = () -> {
+            module.setReactionsEnabled(!on);
+            taskAfterRender = this::render;
+        };
+        WButton mute = master.add(theme.button(module.isMuted() ? "Muted, tap to resume" : "Pause 5 min"))
+            .widget();
+        mute.action = () -> {
+            module.pauseFor(module.isMuted() ? 0 : 300);
+            taskAfterRender = this::render;
+        };
+        if (module.isMuted()) {
+            master.add(theme.label("paused")).widget().color(WARN);
+        }
+        master.row();
+
+        if (!on) {
+            add(theme.label("Everything below is inactive until reactions are switched on. The "
+                + "settings are kept, so switching back on restores exactly what you had."))
+                .expandX().widget().color(WARN);
+        }
+    }
+
+    private void renderReactionCategories() {
+        WTable table = add(theme.table()).expandX().widget();
+        for (ReactionCategory category : ReactionCategory.all()) {
+            boolean enabled = module.categoryEnabled(category);
+            WButton button = table.add(
+                theme.button((enabled ? "[on] " : "[off] ") + category.label())).widget();
+            button.action = () -> {
+                module.setCategoryEnabled(category, !enabled);
+                taskAfterRender = this::render;
+            };
+            table.add(theme.label(category.description())).expandCellX().widget()
+                .color(enabled ? GOOD : MUTED);
+            table.row();
+        }
+        add(theme.label("Off is the default for anything conversational, which is what stops the "
+            + "assistant answering bye, gtg and cya without being asked.")).expandX().widget()
+            .color(MUTED);
+    }
+
+    private void renderIgnoredWords() {
+        List<String> words = module.ignoredWords();
+        add(theme.label(words.isEmpty()
+            ? "Nothing ignored. Add a word and any message containing it is never answered."
+            : words.size() + " word" + (words.size() == 1 ? "" : "s") + " ignored, whole words only."))
+            .expandX().widget().color(MUTED);
+
+        WTable addRow = add(theme.table()).expandX().widget();
+        WTextBox field = addRow.add(theme.textBox(newIgnoredWord, "word or phrase"))
+            .expandCellX().widget();
+        field.action = () -> newIgnoredWord = field.get();
+        WButton addButton = addRow.add(theme.button("Ignore")).widget();
+        addButton.action = () -> {
+            String value = field.get() == null ? "" : field.get().strip();
+            if (value.isEmpty()) return;
+            module.addIgnoredWord(value);
+            newIgnoredWord = "";
+            taskAfterRender = this::render;
+        };
+        addRow.row();
+
+        if (words.isEmpty()) return;
+        WTable list = add(theme.table()).expandX().widget();
+        for (String word : words) {
+            list.add(theme.label(word)).expandCellX().widget();
+            WButton remove = list.add(theme.button("Remove")).widget();
+            remove.action = () -> {
+                module.removeIgnoredWord(word);
+                taskAfterRender = this::render;
+            };
+            list.row();
+        }
+    }
+
+    private void renderReactionLog() {
+        ReactionLog log = module.reactionLog();
+        if (log == null) {
+            add(theme.label("No decisions recorded yet.")).expandX().widget().color(MUTED);
+            return;
+        }
+        WTable counts = add(theme.table()).expandX().widget();
+        counts.add(theme.label("Replied")).widget().color(MUTED);
+        counts.add(theme.label(String.valueOf(log.replied()))).widget().color(GOOD);
+        counts.add(theme.label("Skipped")).widget().color(MUTED);
+        counts.add(theme.label(String.valueOf(log.skipped()))).widget().color(WARN);
+        counts.row();
+
+        List<ReactionLog.Entry> entries = log.recent(12);
+        if (entries.isEmpty()) {
+            add(theme.label("Nothing yet. Send a message in chat and the decision appears here."))
+                .expandX().widget().color(MUTED);
+            return;
+        }
+        WTable table = add(theme.table()).expandX().widget();
+        for (ReactionLog.Entry entry : entries) {
+            table.add(theme.label(entry.sender())).widget().color(MUTED);
+            table.add(theme.label(entry.excerpt())).expandCellX().widget();
+            table.add(theme.label(entry.describe())).widget()
+                .color(entry.outcome() == ReactionLog.Outcome.REPLIED ? GOOD : MUTED);
+            table.row();
+        }
+
+        WButton clear = add(theme.button("Clear this list")).widget();
+        clear.action = () -> {
+            log.clear();
             taskAfterRender = this::render;
         };
     }
@@ -201,6 +344,36 @@ public class AssistantScreen extends WindowScreen {
         });
         behaviour.row();
 
+        // Category and comparison. Both are pickers, for the same reason the delivery mode is: a
+        // typed category that does not parse falls back to CUSTOM and quietly changes which switch
+        // governs the rule, and a mistyped regex matches nothing at all.
+        WTable classification = add(theme.table()).expandX().widget();
+        WButton category = classification.add(
+            theme.button("Category: " + rule.category().label())).widget();
+        category.action = () -> {
+            TriggerRule current = TriggerRule.decode(encodedAt(index, rule));
+            TriggerRule base = current == null ? rule : current;
+            module.replaceRule(index, base.withCategory(nextCategory(base.category())).encode());
+            taskAfterRender = this::render;
+        };
+        WButton match = classification.add(
+            theme.button("Match: " + rule.matchMode().label())).widget();
+        match.action = () -> {
+            TriggerRule current = TriggerRule.decode(encodedAt(index, rule));
+            TriggerRule base = current == null ? rule : current;
+            module.replaceRule(index, base.withMatchMode(nextMatchMode(base.matchMode())).encode());
+            taskAfterRender = this::render;
+        };
+        // A regex the user mistyped matches nothing, so say so here rather than leaving a rule that
+        // looks armed and never fires.
+        if (rule.matchMode() == MatchMode.REGEX) {
+            MatchMode.Compiled compiled = rule.matchMode().compile(rule.pattern(), rule.caseSensitive());
+            if (!compiled.ok()) {
+                classification.add(theme.label(compiled.problem())).widget().color(BAD);
+            }
+        }
+        classification.row();
+
         WTable toggles = add(theme.table()).expandX().widget();
         toggles.add(theme.toggle("Case sensitive", rule::caseSensitive, value -> {
             TriggerRule current = TriggerRule.decode(encodedAt(index, rule));
@@ -232,6 +405,12 @@ public class AssistantScreen extends WindowScreen {
         aliasBox.action = () -> {
             TriggerRule current = TriggerRule.decode(encodedAt(index, rule));
             module.replaceRule(index, (current == null ? rule : current).withAliases(aliasBox.get()).encode());
+        };
+        WTextBox denyBox = identity.add(theme.textBox(rule.denySenders(), "never from (comma separated)"))
+            .expandCellX().widget();
+        denyBox.action = () -> {
+            TriggerRule current = TriggerRule.decode(encodedAt(index, rule));
+            module.replaceRule(index, (current == null ? rule : current).withDenySenders(denyBox.get().strip()).encode());
         };
         WTextBox poolBox = identity.add(theme.textBox(rule.pool(), "reply variants, separated by |"))
             .expandCellX().widget();
@@ -295,6 +474,16 @@ public class AssistantScreen extends WindowScreen {
 
     private static TriggerRule.EmbedMode nextEmbed(TriggerRule.EmbedMode mode) {
         TriggerRule.EmbedMode[] all = TriggerRule.EmbedMode.values();
+        return all[(mode.ordinal() + 1) % all.length];
+    }
+
+    private static ReactionCategory nextCategory(ReactionCategory category) {
+        ReactionCategory[] all = ReactionCategory.values();
+        return all[(category.ordinal() + 1) % all.length];
+    }
+
+    private static MatchMode nextMatchMode(MatchMode mode) {
+        MatchMode[] all = MatchMode.values();
         return all[(mode.ordinal() + 1) % all.length];
     }
 

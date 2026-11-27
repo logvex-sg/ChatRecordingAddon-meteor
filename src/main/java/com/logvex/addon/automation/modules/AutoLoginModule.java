@@ -4,6 +4,7 @@ import com.logvex.addon.automation.core.LoginAttemptPolicy;
 import com.logvex.addon.automation.core.LoginCredentialStore;
 import com.logvex.addon.automation.core.LoginPassword;
 import com.logvex.addon.automation.core.LoginPromptDetector;
+import com.logvex.addon.automation.core.PendingPrompt;
 import com.logvex.addon.framework.SafeEventHandler;
 import com.logvex.addon.notify.core.NotificationType;
 import meteordevelopment.meteorclient.events.game.ReceiveMessageEvent;
@@ -13,8 +14,6 @@ import meteordevelopment.meteorclient.settings.IntSetting;
 import meteordevelopment.meteorclient.settings.Setting;
 import meteordevelopment.meteorclient.settings.SettingGroup;
 import meteordevelopment.orbit.EventHandler;
-
-import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Answers a server's login prompt with the password stored for that server.
@@ -73,8 +72,14 @@ public class AutoLoginModule extends AutomationModule {
 
     private final LoginCredentialStore store = new LoginCredentialStore();
     private volatile LoginAttemptPolicy policy = new LoginAttemptPolicy();
-    /** Set by the message handler, drained on the next tick so the send happens off the chat thread. */
-    private final AtomicReference<String> pendingPrompt = new AtomicReference<>();
+    /**
+     * The prompt waiting to be answered.
+     *
+     * <p>Not consumed on arrival: the message handler cannot send, and the send happens on a tick.
+     * Holding the prompt instead of a bare string is what lets a prompt survive the tick that could
+     * not act on it — see {@link PendingPrompt} for why that was the bug.
+     */
+    private final PendingPrompt pending = new PendingPrompt();
     private boolean storeLoaded;
     /** Set once the "no password stored" hint has been printed, so a repeating prompt cannot spam. */
     private boolean warnedMissing;
@@ -92,7 +97,7 @@ public class AutoLoginModule extends AutomationModule {
     public void onActivate() {
         loadStore();
         newPolicy();
-        pendingPrompt.set(null);
+        pending.clear();
         if (store.size() == 0) {
             info("No passwords stored. Set one with %sautologin gui while connected.",
                 com.logvex.addon.framework.systems.config.ClientConfig.get().prefix());
@@ -103,7 +108,7 @@ public class AutoLoginModule extends AutomationModule {
 
     @Override
     public void onDeactivate() {
-        pendingPrompt.set(null);
+        pending.clear();
         policy.reset();
         info("Auto Login off.");
     }
@@ -112,7 +117,7 @@ public class AutoLoginModule extends AutomationModule {
     protected void onWorldJoin() {
         // A reconnect is a new session: the previous attempt count and outcome do not carry over.
         newPolicy();
-        pendingPrompt.set(null);
+        pending.clear();
         warnedMissing = false;
         warnedInvalid = false;
         warnedRegister = false;
@@ -121,7 +126,7 @@ public class AutoLoginModule extends AutomationModule {
     @Override
     protected void onWorldLeave() {
         policy.reset();
-        pendingPrompt.set(null);
+        pending.clear();
     }
 
     /** Rebuilds the policy so a changed attempt limit or cooldown applies without a reconnect. */
@@ -129,7 +134,23 @@ public class AutoLoginModule extends AutomationModule {
         policy = new LoginAttemptPolicy(maxAttempts.get(), cooldownSeconds.get() * 1000L);
     }
 
-    @EventHandler
+    /**
+     * Priority for the chat handler: one above {@code HIGHEST}.
+     *
+     * <p>{@link ReceiveMessageEvent} is cancellable and the bus stops dispatching the moment a
+     * listener cancels it, so a login prompt that a hide rule suppresses never reaches this module
+     * and the player is never logged in. The chat filter cancels at {@code HIGHEST}, and the bus
+     * breaks a priority tie by subscription order — the filter subscribes once at bootstrap, before
+     * any module can be enabled, so matching its priority would leave this handler behind it and the
+     * bug intact. Being strictly higher is what actually puts this handler first.
+     *
+     * <p>Reading ahead of the filter is also the safe order: this handler only reads the text and
+     * notes that a prompt arrived. It never sends from here, and it never uncancels the event, so a
+     * hidden message stays hidden.
+     */
+    private static final int BEFORE_FILTER = meteordevelopment.orbit.EventPriority.HIGHEST + 1;
+
+    @EventHandler(priority = BEFORE_FILTER)
     private void onMessage(ReceiveMessageEvent event) {
         // Posted for every chat line; a throw here would take the chat pipeline down with it.
         SafeEventHandler.run("AutoLoginModule.onMessage", () -> {
@@ -140,13 +161,13 @@ public class AutoLoginModule extends AutomationModule {
 
             if (LoginPromptDetector.isLoginSuccess(text, fromPlayer)) {
                 policy.markSuccess();
-                pendingPrompt.set(null);
+                pending.clear();
                 if (announce.get()) info("Logged in.");
                 return;
             }
             if (LoginPromptDetector.isLoginFailure(text, fromPlayer)) {
                 policy.markFailure();
-                pendingPrompt.set(null);
+                pending.clear();
                 warning("The server rejected the stored password. Not retrying; fix it with %sautologin gui.",
                     com.logvex.addon.framework.systems.config.ClientConfig.get().prefix());
                 notifyUser(NotificationType.CONNECTION, "Auto Login", "Password rejected by the server.");
@@ -154,7 +175,7 @@ public class AutoLoginModule extends AutomationModule {
             }
             if (LoginPromptDetector.isLoginPrompt(text, fromPlayer)) {
                 policy.notePrompt();
-                pendingPrompt.set(text);
+                pending.offer(text, System.currentTimeMillis());
                 return;
             }
             if (LoginPromptDetector.isRegisterPrompt(text)) {
@@ -172,7 +193,11 @@ public class AutoLoginModule extends AutomationModule {
     private void onTick(TickEvent.Post event) {
         SafeEventHandler.guard("AutoLoginModule.onTick", () -> {
             if (!enabledPerServer.get()) return;
-            if (pendingPrompt.getAndSet(null) == null) return;
+
+            long now = System.currentTimeMillis();
+            // Peek, never consume. The prompt is cleared only once it has been answered or is
+            // provably unanswerable, so a tick that cannot send leaves it for the next one.
+            if (pending.peek(now) == null) return;
             if (mc.player == null || mc.getNetworkHandler() == null) return;
 
             String password = store.get(serverKey());
@@ -201,16 +226,21 @@ public class AutoLoginModule extends AutomationModule {
                 return;
             }
 
-            long now = System.currentTimeMillis();
             if (!policy.shouldSend(now)) {
                 if (policy.exhausted()) {
+                    // Out of attempts is final for this session, so the prompt can never be used.
+                    pending.clear();
                     warning("Gave up after %d login attempts.", policy.attempts());
                     notifyUser(NotificationType.CONNECTION, "Auto Login", "Gave up after repeated prompts.");
                 }
+                // A cooldown is temporary: keep the prompt so the send happens when it expires,
+                // instead of dropping the only prompt the server was going to give.
                 return;
             }
 
             policy.markSent(now);
+            // Consumed here, because this is the point where the prompt has been acted on.
+            pending.clear();
             // sendChatCommand strips the leading slash itself, so the password goes out as a command
             // rather than as public chat. This is the one place the value is used, and it is not logged.
             mc.getNetworkHandler().sendChatCommand("login " + password);
@@ -295,9 +325,14 @@ public class AutoLoginModule extends AutomationModule {
         Runnable[] refresh = new Runnable[1];
 
         Runnable doSave = () -> {
-            String value = field.get();
-            if (value == null || value.isEmpty()) {
-                warning("Type a password first.");
+            // The same validation the setup screen applies. Without it this path stored a value
+            // with a trailing space or a pasted newline, reported "Saved", and then refused to send
+            // it on every prompt — a saved password that silently never works.
+            String value = LoginPassword.tidy(field.get());
+            LoginPassword.Problem problem = LoginPassword.check(value);
+            if (problem != LoginPassword.Problem.OK) {
+                warning("%s", problem.message());
+                status.set(problem.message());
                 return;
             }
             store().put(serverKey(), value);

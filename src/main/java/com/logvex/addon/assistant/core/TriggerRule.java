@@ -32,7 +32,10 @@ public record TriggerRule(
     String aliases,
     String pool,
     String whisper,
-    EmbedMode embedMode
+    EmbedMode embedMode,
+    MatchMode matchMode,
+    ReactionCategory category,
+    String denySenders
 ) {
     /**
      * The shipped form, for every rule that does not name a layout.
@@ -40,6 +43,21 @@ public record TriggerRule(
      * <p>Kept so a rule can be built without naming the layout, which is what almost every caller
      * and every test wants. The default is {@link EmbedMode#AUTO}: a reply that is written as
      * labelled clauses becomes a block, and a single line stays a single line.
+     */
+    public TriggerRule(String pattern, boolean caseSensitive, boolean wholeWord, String sender,
+                       String reply, ReplyMode mode, long cooldownMs, int sessionLimit,
+                       boolean sound, boolean remember, boolean enabled, String aliases,
+                       String pool, String whisper, EmbedMode embedMode) {
+        this(pattern, caseSensitive, wholeWord, sender, reply, mode, cooldownMs, sessionLimit,
+            sound, remember, enabled, aliases, pool, whisper, embedMode, null, null, "");
+    }
+
+    /**
+     * The form from before reactions were categorised, kept so every existing call site compiles.
+     *
+     * <p>A rule built this way has no explicit category, so it inherits the category of the shipped
+     * rule with the same pattern. A rule the operator invented is {@link ReactionCategory#CUSTOM}
+     * and stays enabled, which is what a hand-written rule has always meant.
      */
     public TriggerRule(String pattern, boolean caseSensitive, boolean wholeWord, String sender,
                        String reply, ReplyMode mode, long cooldownMs, int sessionLimit,
@@ -190,6 +208,19 @@ public record TriggerRule(
         if (pool == null) pool = "";
         if (whisper == null || whisper.isBlank()) whisper = DEFAULT_WHISPER;
         whisper = whisper.strip();
+        if (denySenders == null) denySenders = "";
+        // A rule that names no mode keeps the meaning of the booleans it was saved with, so an
+        // existing config cannot change behaviour just by being loaded by a newer build.
+        matchMode = MatchMode.resolve(matchMode, wholeWord);
+        // Same reasoning for the category: an older config has none, so the shipped table decides.
+        // Reading those as CUSTOM would leave every courtesy answering and defeat the fix. While
+        // the shipped table itself is being built there is nothing to look up yet, so the rule keeps
+        // the category its builder gave it.
+        if (category == null) {
+            category = ReactionCategory.buildingShippedTable()
+                ? ReactionCategory.CUSTOM
+                : ReactionCategory.ofShippedPattern(pattern);
+        }
     }
 
     /**
@@ -386,11 +417,62 @@ public record TriggerRule(
             sessionLimit, sound, remember, enabled, aliases, pool, value, embedMode);
     }
 
-    /** True when this rule may fire for a message from {@code from}. */
+    /** How the phrase is compared: exact, substring, whole word or regex. */
+    public TriggerRule withMatchMode(MatchMode value) {
+        return new TriggerRule(pattern, caseSensitive, wholeWord, sender, reply, mode, cooldownMs,
+            sessionLimit, sound, remember, enabled, aliases, pool, whisper, embedMode,
+            value == null ? MatchMode.WHOLE_WORD : value, category, denySenders);
+    }
+
+    /** The reaction category, which decides whether the rule may run at all. */
+    public TriggerRule withCategory(ReactionCategory value) {
+        return new TriggerRule(pattern, caseSensitive, wholeWord, sender, reply, mode, cooldownMs,
+            sessionLimit, sound, remember, enabled, aliases, pool, whisper, embedMode,
+            matchMode, value == null ? ReactionCategory.CUSTOM : value, denySenders);
+    }
+
+    /** Players this rule never answers, comma separated. Empty means nobody is blocked. */
+    public TriggerRule withDenySenders(String value) {
+        return new TriggerRule(pattern, caseSensitive, wholeWord, sender, reply, mode, cooldownMs,
+            sessionLimit, sound, remember, enabled, aliases, pool, whisper, embedMode,
+            matchMode, category, value);
+    }
+
+    /** The denied names as a clean list, lower-cased, without blanks. */
+    public List<String> denyList() {
+        return names(denySenders);
+    }
+
+    /** The allowed names as a clean list, lower-cased, without blanks. */
+    public List<String> senderList() {
+        return names(sender);
+    }
+
+    private static List<String> names(String field) {
+        if (field == null || field.isBlank()) return List.of();
+        List<String> out = new java.util.ArrayList<>(4);
+        for (String name : field.split(",")) {
+            String trimmed = name.trim();
+            if (!trimmed.isEmpty()) out.add(trimmed.toLowerCase(Locale.ROOT));
+        }
+        return List.copyOf(out);
+    }
+
+    /**
+     * True when this rule may fire for a message from {@code from}.
+     *
+     * <p>A denied name always wins over an allowed one: a rule that says "sender=Steve;deny=Steve"
+     * is contradictory, and the safe reading is the one that stays silent.
+     */
     public boolean senderAllowed(String from) {
+        String name = from == null ? "" : from.trim();
+        if (!denyList().isEmpty() && denyList().contains(name.toLowerCase(Locale.ROOT))) return false;
         if (sender.isBlank()) return true;
-        if (from == null) return false;
-        return sender.equalsIgnoreCase(from.trim());
+        if (name.isEmpty()) return false;
+        // A comma list is honoured here too, so one rule can serve a small group.
+        List<String> allowed = senderList();
+        if (allowed.size() <= 1) return sender.equalsIgnoreCase(name);
+        return allowed.contains(name.toLowerCase(Locale.ROOT));
     }
 
     /** The aliases as a clean list, lower-cased, without blanks or the pattern itself. */
@@ -419,12 +501,61 @@ public record TriggerRule(
      * <p>{@code reply} is a literal line and no pool sentence is appended, so a rule always answers
      * the same way. A pipe left in a reply by an older build is not a random choice: its first
      * alternative is used, so a migrated rule renders a clean line instead of printing the pipe.
-     * {@code pool} is retained only so a stored rule still round-trips; nothing reads it.
+     *
+     * <p>When {@code pool} is set, that is the source instead: see {@link #poolLines()} and
+     * {@link #chosenReply(java.util.Random, String)}.
      *
      * @param random unused, kept so existing call sites and tests do not change
      */
     public String chosenReply(java.util.Random random) {
-        return ResponseVariants.first(reply);
+        return chosenReply(random, "");
+    }
+
+    /**
+     * The reply for one delivery, drawn from the pool when there is one.
+     *
+     * <p>A pool is the configured list of alternative wordings for one rule, separated by
+     * {@code |} — the format the greeting settings already use, so an operator writes both the same
+     * way. With no pool the single {@code reply} is returned, so nothing changes for a rule that
+     * does not use one.
+     *
+     * <p>Selection is stable for a given speaker and rule rather than random per line. A reply that
+     * changes on every ask reads as if the assistant were broken; picking by a hash of the speaker
+     * means two players asking the same thing get different wordings, while each of them gets a
+     * consistent one. The hash also makes the whole thing testable without a clock.
+     *
+     * @param random unused; selection is derived from {@code speaker} so it is reproducible
+     * @param speaker the person being answered, which selects the wording
+     */
+    public String chosenReply(java.util.Random random, String speaker) {
+        List<String> pool = poolLines();
+        if (pool.isEmpty()) return ResponseVariants.first(reply);
+        String key = (pattern == null ? "" : pattern) + '\u0000'
+            + (speaker == null ? "" : speaker.toLowerCase(Locale.ROOT));
+        int index = Math.floorMod(key.hashCode(), pool.size());
+        return pool.get(index);
+    }
+
+    /**
+     * The pool as clean alternatives, or an empty list when none is configured.
+     *
+     * <p>Blank entries are dropped, so a trailing {@code |} cannot produce an empty reply, and a
+     * pool of exactly one entry is treated as "the reply", which is how a single-wording pool
+     * behaves in the greeting settings.
+     */
+    public List<String> poolLines() {
+        if (pool == null || pool.isBlank()) return List.of();
+        List<String> out = new java.util.ArrayList<>(4);
+        for (String part : pool.split("\\|")) {
+            String trimmed = part.trim();
+            if (!trimmed.isEmpty()) out.add(trimmed);
+        }
+        return List.copyOf(out);
+    }
+
+    /** True when this rule answers from a pool rather than from one fixed line. */
+    public boolean hasPool() {
+        return !poolLines().isEmpty();
     }
 
     /** The effective cooldown: never negative. */
@@ -486,7 +617,10 @@ public record TriggerRule(
             + ";cooldown=" + cooldownMs + ";limit=" + sessionLimit + ";sound=" + sound
             + ";remember=" + remember + ";enabled=" + enabled
             + ";aliases=" + aliases + ";pool=" + pool + ";whisper=" + whisper
-            + ";embed=" + embedMode.encoded();
+            + ";embed=" + embedMode.encoded()
+            + ";match=" + matchMode.id()
+            + ";category=" + category.id()
+            + ";deny=" + denySenders;
     }
 
     public static TriggerRule decode(String encoded) {
@@ -523,6 +657,9 @@ public record TriggerRule(
         String pool = "";
         String whisper = DEFAULT_WHISPER;
         EmbedMode embedMode = EmbedMode.AUTO;
+        MatchMode matchMode = null;
+        ReactionCategory category = null;
+        String denySenders = "";
         java.util.Set<String> seen = new java.util.HashSet<>();
 
         for (int i = 1; i < parts.length; i++) {
@@ -551,6 +688,9 @@ public record TriggerRule(
                 case "pool", "signoff" -> pool = value;
                 case "whisper", "msgcmd", "tell" -> whisper = value;
                 case "embed", "block", "format" -> embedMode = EmbedMode.parse(value, EmbedMode.AUTO);
+                case "match" -> matchMode = MatchMode.parse(value, null);
+                case "category", "kind", "group" -> category = ReactionCategory.parse(value, null);
+                case "deny", "blacklist", "blocked" -> denySenders = value;
                 default -> {
                     // Unknown key from a newer build: ignore it.
                 }
@@ -558,7 +698,8 @@ public record TriggerRule(
         }
 
         return new TriggerRule(pattern, caseSensitive, wholeWord, sender, reply, mode,
-            cooldown, limit, sound, remember, enabled, aliases, pool, whisper, embedMode);
+            cooldown, limit, sound, remember, enabled, aliases, pool, whisper, embedMode,
+            matchMode, category, denySenders);
     }
 
     /**
@@ -710,87 +851,92 @@ public record TriggerRule(
      * {@code where am i}.
      */
     public static java.util.List<TriggerRule> preconfigured() {
+        return ReactionCategory.duringShippedBuild(TriggerRule::buildShippedTable);
+    }
+
+    /** Builds the shipped table; only {@link #preconfigured()} calls this. */
+    private static java.util.List<TriggerRule> buildShippedTable() {
         java.util.List<TriggerRule> out = new java.util.ArrayList<>();
 
         // ---------------------------------------------------------------- greetings and courtesies
-        out.add(rule("hello", "Hello {player}!", "hi there,hey there,hello there"));
-        out.add(rule("good morning", "Morning, {player}!", "morning"));
-        out.add(rule("good night", "Night, {player}.", "gn"));
-        out.add(rule("thank you", "You are welcome, {player}.", "thanks,ty,thx"));
-        out.add(rule("goodbye", "See you, {player}.", "bye,cya,gtg,g2g"));
-        out.add(rule("good bot", "Thank you, {player}.", "nice bot"));
-        out.add(rule("good game", "Good game!", "gg,wp"));
-        out.add(rule("welcome back", "Welcome back, {player}.", "wb"));
-        out.add(rule("well played", "Well played.", "nice one"));
-        out.add(rule("how are you", "Running well, {player}.", "how is it going"));
-        out.add(rule("nice to meet you", "Likewise, {player}.", "pleased to meet you"));
-        out.add(rule("see you later", "Later, {player}.", "see you soon"));
-        out.add(rule("have a good day", "You too, {player}.", "have a nice day"));
-        out.add(rule("sorry", "No harm done, {player}.", "my bad,apologies"));
-        out.add(rule("congratulations", "Congratulations, {player}!", "congrats"));
-        out.add(rule("happy birthday", "Happy birthday, {player}!", "hbd"));
-        out.add(rule("good luck", "Good luck, {player}!", "gl"));
-        out.add(rule("no problem", "No problem.", "np"));
-        out.add(rule("you are welcome", "Any time.", "youre welcome"));
-        out.add(rule("laughing out loud", "Glad that landed.", "lol,lmao"));
+        out.add(rule("hello", "Hello {player}!", "hi there,hey there,hello there", ReactionCategory.GREETINGS));
+        out.add(rule("good morning", "Morning, {player}!", "morning", ReactionCategory.GREETINGS));
+        out.add(rule("good night", "Night, {player}.", "gn", ReactionCategory.GREETINGS));
+        out.add(rule("thank you", "You are welcome, {player}.", "thanks,ty,thx", ReactionCategory.COURTESIES));
+        out.add(rule("goodbye", "See you, {player}.", "bye,cya,gtg,g2g", ReactionCategory.FAREWELLS));
+        out.add(rule("good bot", "Thank you, {player}.", "nice bot", ReactionCategory.PRAISE));
+        out.add(rule("good game", "Good game!", "gg,wp", ReactionCategory.PRAISE));
+        out.add(rule("welcome back", "Welcome back, {player}.", "wb", ReactionCategory.GREETINGS));
+        out.add(rule("well played", "Well played.", "nice one", ReactionCategory.PRAISE));
+        out.add(rule("how are you", "Running well, {player}.", "how is it going", ReactionCategory.SOCIAL));
+        out.add(rule("nice to meet you", "Likewise, {player}.", "pleased to meet you", ReactionCategory.SOCIAL));
+        out.add(rule("see you later", "Later, {player}.", "see you soon", ReactionCategory.FAREWELLS));
+        out.add(rule("have a good day", "You too, {player}.", "have a nice day", ReactionCategory.GREETINGS));
+        out.add(rule("sorry", "No harm done, {player}.", "my bad,apologies", ReactionCategory.COURTESIES));
+        out.add(rule("congratulations", "Congratulations, {player}!", "congrats", ReactionCategory.PRAISE));
+        out.add(rule("happy birthday", "Happy birthday, {player}!", "hbd", ReactionCategory.SOCIAL));
+        out.add(rule("good luck", "Good luck, {player}!", "gl", ReactionCategory.SOCIAL));
+        out.add(rule("no problem", "No problem.", "np", ReactionCategory.COURTESIES));
+        out.add(rule("you are welcome", "Any time.", "youre welcome", ReactionCategory.COURTESIES));
+        out.add(rule("laughing out loud", "Glad that landed.", "lol,lmao", ReactionCategory.SOCIAL));
 
         // ---------------------------------------------------------------- identity and help
-        out.add(rule("who are you", "{name}", "what are you"));
+        out.add(rule("who are you", "{name}", "what are you", ReactionCategory.IDENTITY));
         out.add(rule("what can you do", "{prefix}help",
             "help me,commands,what commands are there,!help"));
-        out.add(rule("what is the prefix", "{prefix}"));
-        out.add(rule("what do you know", "{factcount} facts. {prefix}facts", "your memory"));
-        out.add(rule("tell me a joke", "Mining joke: it is too deep.", "joke"));
-        out.add(rule("what is your name", "I am {name}.", "your name"));
-        out.add(rule("are you a bot", "I am {name}, running in this client.", "are you real"));
-        out.add(rule("can you see this", "Yes, I read chat.", "do you read chat"));
-        out.add(rule("how do i use you", "{prefix}help lists every command.", "how do i ask"));
-        out.add(rule("are you recording", "This client logs chat locally.", "do you log chat"));
+        out.add(rule("what is the prefix", "{prefix}", "", ReactionCategory.IDENTITY));
+        out.add(rule("what do you know", "{factcount} facts. {prefix}facts", "your memory", ReactionCategory.IDENTITY));
+        out.add(rule("tell me a joke", "Mining joke: it is too deep.", "joke", ReactionCategory.IDENTITY));
+        out.add(rule("what is your name", "I am {name}.", "your name", ReactionCategory.IDENTITY));
+        out.add(rule("are you a bot", "I am {name}, running in this client.", "are you real", ReactionCategory.IDENTITY));
+        out.add(rule("can you see this", "Yes, I read chat.", "do you read chat", ReactionCategory.IDENTITY));
+        out.add(rule("how do i use you", "{prefix}help lists every command.", "how do i ask", ReactionCategory.IDENTITY));
+        out.add(rule("are you recording", "This client logs chat locally.", "do you log chat", ReactionCategory.IDENTITY));
         out.add(rule("do you report me", "Only what you file yourself with {prefix}report.",
-            "are you a snitch"));
+            "are you a snitch", ReactionCategory.IDENTITY));
 
         // ---------------------------------------------------------------- live figures, asked in prose
         //
         // Units are already inside the value where the value carries one, so no template appends
         // "ms" or "/20" to {ping}, {mspt} or {tps}.
-        out.add(rule("what time is it", "{worldtime}", "time now"));
-        out.add(rule("where am i", "{coords} in {biome}, facing {facing}", "my coords,coordinates"));
-        out.add(rule("what is my ping", "{ping}, {verdict}", "my latency"));
-        out.add(rule("what is the weather", "{weather}", "weather now"));
-        out.add(rule("what server is this", "{server} ({dimension})", "which server"));
-        out.add(rule("what is the tps", "TPS {tps}, {mspt} ms per tick, {verdict}", "server tps"));
-        out.add(rule("what is the mspt", "{mspt} ms per tick", "tick time"));
-        out.add(rule("what is the tick rate", "TPS {tps}, {mspt} ms per tick", "server speed"));
-        out.add(rule("how many players", "{playercount} of {maxplayers}", "player count"));
-        out.add(rule("who is online", "{playercount} players. {prefix}who", "online now"));
-        out.add(rule("what is my health", "{health} hp, {food} food", "my hp"));
-        out.add(rule("what is my armour", "{armor} points", "my armor,what is my armor"));
-        out.add(rule("what am i holding", "{held}, offhand {offhand}", "my hand"));
-        out.add(rule("what is my gamemode", "{gamemode}", "my mode"));
-        out.add(rule("what is my level", "Level {level}, {xp} to next"));
-        out.add(rule("what is my speed", "{speed} blocks/s", "how fast am i"));
-        out.add(rule("what effects do i have", "{effects}", "my potions"));
-        out.add(rule("what dimension is this", "{dimension}", "which dimension"));
-        out.add(rule("what is the difficulty", "{difficulty}", "server difficulty"));
-        out.add(rule("what day is it", "World day {day}, time {worldtime}", "world day"));
-        out.add(rule("what is my fps", "{fps} fps", "my framerate"));
-        out.add(rule("how long have i been on", "{sessiontime}", "my session"));
+        out.add(rule("what time is it", "{worldtime}", "time now", ReactionCategory.IDENTITY));
+        out.add(rule("where am i", "{coords} in {biome}, facing {facing}", "my coords,coordinates", ReactionCategory.FIGURES));
+        out.add(rule("what is my ping", "{ping}, {verdict}", "my latency", ReactionCategory.FIGURES));
+        out.add(rule("what is the weather", "{weather}", "weather now", ReactionCategory.FIGURES));
+        out.add(rule("what server is this", "{server} ({dimension})", "which server", ReactionCategory.FIGURES));
+        out.add(rule("what is the tps", "TPS {tps}, {mspt} ms per tick, {verdict}", "server tps", ReactionCategory.FIGURES));
+        out.add(rule("what is the mspt", "{mspt} ms per tick", "tick time", ReactionCategory.FIGURES));
+        out.add(rule("what is the tick rate", "TPS {tps}, {mspt} ms per tick", "server speed", ReactionCategory.FIGURES));
+        out.add(rule("how many players", "{playercount} of {maxplayers}", "player count", ReactionCategory.FIGURES));
+        out.add(rule("who is online", "{playercount} players. {prefix}who", "online now", ReactionCategory.FIGURES));
+        out.add(rule("what is my health", "{health} hp, {food} food", "my hp", ReactionCategory.FIGURES));
+        out.add(rule("what is my armour", "{armor} points", "my armor,what is my armor", ReactionCategory.FIGURES));
+        out.add(rule("what am i holding", "{held}, offhand {offhand}", "my hand", ReactionCategory.FIGURES));
+        out.add(rule("what is my gamemode", "{gamemode}", "my mode", ReactionCategory.FIGURES));
+        out.add(rule("what is my level", "Level {level}, {xp} to next", "", ReactionCategory.FIGURES));
+        out.add(rule("what is my speed", "{speed} blocks/s", "how fast am i", ReactionCategory.FIGURES));
+        out.add(rule("what effects do i have", "{effects}", "my potions", ReactionCategory.FIGURES));
+        out.add(rule("what dimension is this", "{dimension}", "which dimension", ReactionCategory.FIGURES));
+        out.add(rule("what is the difficulty", "{difficulty}", "server difficulty", ReactionCategory.FIGURES));
+        out.add(rule("what day is it", "World day {day}, time {worldtime}", "world day", ReactionCategory.FIGURES));
+        out.add(rule("what is my fps", "{fps} fps", "my framerate", ReactionCategory.FIGURES));
+        out.add(rule("how long have i been on", "{sessiontime}", "my session", ReactionCategory.FIGURES));
         out.add(rule("how much memory", "{memoryused} of {memorymax} MB, {memorypercent}%",
-            "client ram"));
-        out.add(rule("what is my xp", "Level {level}, {xp} to next", "my experience"));
-        out.add(rule("what is my hunger", "{food} food, {saturation} saturation", "my food"));
-        out.add(rule("what is my air", "{air} air", "bubble level"));
+            "client ram", ReactionCategory.FIGURES));
+        out.add(rule("what is my xp", "Level {level}, {xp} to next", "my experience", ReactionCategory.FIGURES));
+        out.add(rule("what is my hunger", "{food} food, {saturation} saturation", "my food", ReactionCategory.FIGURES));
+        out.add(rule("what is my air", "{air} air", "bubble level", ReactionCategory.FIGURES));
 
         // ---------------------------------------------------------------- server figures in prose
-        out.add(rule("what is the server brand", "{serverbrand}", "server software"));
-        out.add(rule("what version is the server", "{serverversion}", "server version"));
-        out.add(rule("how long has the server run", "{serveruptime}", "server uptime"));
-        out.add(rule("is the server lagging", "TPS {tps}, {verdict}", "is it laggy"));
-        out.add(rule("am i lagging", "{ping}, {verdict}", "my connection"));
-        out.add(rule("is the server up", "{serverstatus}", "server state"));
+        out.add(rule("what is the server brand", "{serverbrand}", "server software", ReactionCategory.FIGURES));
+        out.add(rule("what version is the server", "{serverversion}", "server version", ReactionCategory.FIGURES));
+        out.add(rule("how long has the server run", "{serveruptime}", "server uptime", ReactionCategory.FIGURES));
+        out.add(rule("is the server lagging", "TPS {tps}, {verdict}", "is it laggy", ReactionCategory.FIGURES));
+        out.add(rule("am i lagging", "{ping}, {verdict}", "my connection", ReactionCategory.FIGURES));
+        out.add(rule("is the server up", "{serverstatus}", "server state", ReactionCategory.FIGURES));
         out.add(rule("what client is this", "Client {clientversion}, Fabric {fabricversion}",
-            "client version"));
-        out.add(rule("how many mods", "Mods loaded: {modcount}", "mod count"));
+            "client version", ReactionCategory.FIGURES));
+        out.add(rule("how many mods", "Mods loaded: {modcount}", "mod count", ReactionCategory.FIGURES));
 
         // ---------------------------------------------------------------- command-shaped rules
         //
@@ -890,7 +1036,8 @@ public record TriggerRule(
      */
     private static TriggerRule commandRule(String pattern, String reply) {
         return new TriggerRule(pattern, false, true, "", reply, ReplyMode.PRIVATE,
-            TRIGGER_COOLDOWN_MS, 0, false, false, true, "", "", DEFAULT_WHISPER);
+            TRIGGER_COOLDOWN_MS, 0, false, false, true, "", "", DEFAULT_WHISPER,
+            EmbedMode.AUTO, MatchMode.WHOLE_WORD, ReactionCategory.COMMANDS, "");
     }
 
     /**
@@ -902,17 +1049,45 @@ public record TriggerRule(
      */
     private static TriggerRule embedRule(String pattern, String reply) {
         return new TriggerRule(pattern, false, true, "", reply, ReplyMode.PRIVATE,
-            TRIGGER_COOLDOWN_MS, 0, false, false, true, "", "", DEFAULT_WHISPER, EmbedMode.ON);
+            TRIGGER_COOLDOWN_MS, 0, false, false, true, "", "", DEFAULT_WHISPER, EmbedMode.ON,
+            MatchMode.WHOLE_WORD, ReactionCategory.COMMANDS, "");
     }
 
     /** A whispered rule at the shipped cooldown, whole-word matched, with optional aliases. */
     private static TriggerRule rule(String pattern, String reply, String aliases) {
+        return rule(pattern, reply, aliases, ReactionCategory.SOCIAL);
+    }
+
+    /**
+     * A conversational rule in a named category.
+     *
+     * <p>The category decides whether a fresh install answers it: every conversational category
+     * starts off, so shipping a courtesy here is not the same as making the assistant answer it.
+     */
+    private static TriggerRule rule(String pattern, String reply, String aliases,
+                                    ReactionCategory category) {
         return new TriggerRule(pattern, false, true, "", reply, ReplyMode.PRIVATE,
-            TRIGGER_COOLDOWN_MS, 0, false, false, true, aliases, "", DEFAULT_WHISPER);
+            TRIGGER_COOLDOWN_MS, 0, false, false, true, aliases, "", DEFAULT_WHISPER,
+            EmbedMode.AUTO, MatchMode.WHOLE_WORD, category, "");
     }
 
     private static TriggerRule rule(String pattern, String reply) {
         return rule(pattern, reply, "");
+    }
+
+    /**
+     * The shipped rule whose pattern is {@code pattern}, or null when it is not a shipped one.
+     *
+     * <p>Compared case-insensitively and trimmed, because the pattern arrives from a saved config
+     * that a user may have edited by hand.
+     */
+    public static TriggerRule shippedRuleFor(String pattern) {
+        if (pattern == null || pattern.isBlank()) return null;
+        String needle = pattern.strip();
+        for (TriggerRule shipped : preconfigured()) {
+            if (shipped.pattern().strip().equalsIgnoreCase(needle)) return shipped;
+        }
+        return null;
     }
 
     private static String str(Object value) {
