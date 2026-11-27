@@ -67,6 +67,11 @@ public final class BotFakes {
         /** How many times the controller asked for a threat scan; one per tick is the goal. */
         public int hostileScans;
         public final List<String> unloaded = new ArrayList<>();
+        /** When true, {@link #lightAt} reports darkness until a light is placed at that position. */
+        public boolean darkUntilLit;
+        /** When true, placing a torch never raises the light level: a rejected placement. */
+        public boolean lightStaysDark;
+        private final java.util.Set<BlockPos3> lit = new java.util.HashSet<>();
 
         @Override
         public boolean canRun() {
@@ -134,7 +139,26 @@ public final class BotFakes {
 
         @Override
         public int lightAt(BlockPos3 pos) {
-            return 15;
+            if (lightStaysDark) return darkUntilLit ? 0 : 15;
+            if (!darkUntilLit) return 15;
+            return lit.contains(pos) ? 14 : 0;
+        }
+
+        /** Records that a light was placed, so {@link #lightAt} can report the new level. */
+        void markLit(BlockPos3 pos) {
+            lit.add(pos);
+        }
+
+        /** Removes a block from the world, as a real mine does. */
+        void removeBlock(BlockPos3 pos) {
+            for (Map.Entry<String, List<BlockPos3>> entry : blocks.entrySet()) {
+                // The map may hold an immutable List.of(...) from the test, so copy before removing.
+                if (entry.getValue().contains(pos)) {
+                    List<BlockPos3> copy = new ArrayList<>(entry.getValue());
+                    copy.remove(pos);
+                    entry.setValue(copy);
+                }
+            }
         }
     }
 
@@ -201,7 +225,10 @@ public final class BotFakes {
     /** An inventory backed by a simple id-to-count map. */
     public static final class FakeInventory implements InventoryPort {
         public final Map<String, Integer> items = new LinkedHashMap<>();
+        /** Items handed to {@link #dropHeld()}, so a test can assert what was discarded. */
+        public final List<String> dropped = new ArrayList<>();
         public int selectedSlot;
+        private String held = "";
 
         @Override
         public InventorySnapshot snapshot() {
@@ -233,11 +260,17 @@ public final class BotFakes {
 
         @Override
         public boolean moveToHotbar(String itemId, int amount) {
-            return items.containsKey(itemId);
+            if (!items.containsKey(itemId) || items.getOrDefault(itemId, 0) <= 0) return false;
+            held = itemId;
+            return true;
         }
 
         @Override
         public boolean dropHeld() {
+            if (held.isEmpty()) return false;
+            dropped.add(held);
+            items.remove(held);
+            held = "";
             return true;
         }
 
@@ -313,16 +346,22 @@ public final class BotFakes {
         public boolean mineResult = true;
         public boolean attackResult = true;
         public boolean eatResult = true;
+        /** The world a placement should update, so the light level reflects a real place. */
+        public FakeWorld world;
 
         @Override
         public boolean mine(BlockPos3 pos) {
             calls.add("mine:" + pos);
-            return mineResult;
+            if (!mineResult) return false;
+            // A real mine removes the block; the fake must too, or a replant reads stale ground.
+            if (world != null) world.removeBlock(pos);
+            return true;
         }
 
         @Override
         public boolean place(BlockPos3 pos, String itemId) {
             calls.add("place:" + pos + ":" + itemId);
+            if (world != null) world.markLit(pos);
             return true;
         }
 
@@ -429,6 +468,19 @@ public final class BotFakes {
         public List<String> foods() {
             return new ArrayList<>(foods);
         }
+
+        /** Seed to crop, so the farming executor's crop-to-seed inverse can be exercised. */
+        public final Map<String, String> crops = new LinkedHashMap<>();
+
+        @Override
+        public String cropForSeed(String seedId) {
+            return crops.getOrDefault(seedId, "");
+        }
+
+        @Override
+        public List<String> matureCropsFor(String itemId) {
+            return List.of(itemId);
+        }
     }
 
     /** Fixed recipe table for planning tests. */
@@ -511,6 +563,7 @@ public final class BotFakes {
         public BotConfig config = BotConfig.DEFAULTS;
 
         public TaskContext context() {
+            actions.world = world;
             return new TaskContext(world, player, inventory, nav, actions, knowledge, recipes, build,
                 clock, config, memory);
         }

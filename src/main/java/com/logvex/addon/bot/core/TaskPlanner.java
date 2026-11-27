@@ -53,8 +53,17 @@ public final class TaskPlanner {
         alias("attack", TaskType.COMBAT);
         alias("kill", TaskType.COMBAT);
         alias("defend", TaskType.COMBAT);
-        alias("hunt", TaskType.COMBAT);
         alias("combat", TaskType.COMBAT);
+        alias("light", TaskType.LIGHTING);
+        alias("lighting", TaskType.LIGHTING);
+        alias("torch", TaskType.LIGHTING);
+        alias("illuminate", TaskType.LIGHTING);
+        alias("hunt", TaskType.HUNTING);
+        alias("hunting", TaskType.HUNTING);
+        alias("tidy", TaskType.TIDY);
+        alias("clean", TaskType.TIDY);
+        alias("cleanup", TaskType.TIDY);
+        alias("dump", TaskType.TIDY);
     }
 
     private static void alias(String word, TaskType type) {
@@ -100,8 +109,16 @@ public final class TaskPlanner {
             return tasks;
         }
         if (type == TaskType.STORAGE || type == TaskType.INVENTORY || type == TaskType.MAINTENANCE
-            || type == TaskType.COMBAT) {
+            || type == TaskType.COMBAT || type == TaskType.TIDY || type == TaskType.LIGHTING) {
             tasks.add(new BotTask(type, goal.description()).required(goal.amount()));
+            return tasks;
+        }
+        if (type == TaskType.HUNTING) {
+            // The hunted species is the objective's item, e.g. "hunt 8 minecraft:zombie".
+            if (goal.itemId().isEmpty()) return tasks;
+            tasks.add(new BotTask(TaskType.HUNTING, goal.description())
+                .itemId(goal.itemId())
+                .required(goal.amount()));
             return tasks;
         }
 

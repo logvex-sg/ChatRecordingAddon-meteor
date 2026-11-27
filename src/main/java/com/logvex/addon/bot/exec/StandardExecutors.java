@@ -29,6 +29,9 @@ public final class StandardExecutors {
         registry.register(new TransportExecutor());
         registry.register(new MaintenanceExecutor());
         registry.register(new CombatExecutor());
+        registry.register(new LightingExecutor());
+        registry.register(new HuntingExecutor());
+        registry.register(new TidyExecutor());
         registry.register(new EatExecutor());
         return registry;
     }

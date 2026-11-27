@@ -375,9 +375,18 @@ the world for real, before every action:
   paused at the safety limit, and only when the inventory actually holds something edible — a bot
   with an empty pack would otherwise ask to eat forever.
 - **`COMBAT`** is a real task type, reachable from an objective (`fight`, `attack`, `kill`, `defend`,
-  `hunt`, `combat`) or directly with `!log tasks add combat [amount]`. It needs no item, because the
+  `combat`) or directly with `!log tasks add combat [amount]`. It needs no item, because the
   target is whatever hostile is in range. Like every other executor it only reports `DONE` on an
   observed effect in the world — a swing that never connected does not count as a kill.
+- **`HUNTING`** targets one species rather than "whatever is hostile" (`hunt`, `hunting`). The
+  species is the objective's item, so `hunt 8 minecraft:cow` kills cows and nothing else. Progress
+  is measured from the drop appearing in the inventory, because a mob that vanishes from the scan
+  may simply have walked away or despawned.
+- **`LIGHTING`** places torches on dark ground (`light`, `lighting`, `torch`, `illuminate`). It
+  reads the real light level, walks to the darkest reachable spot, and only counts a placement when
+  the level there actually rose — a torch the server refused is not a fix.
+- **`TIDY`** frees inventory space (`tidy`, `clean`, `cleanup`, `dump`). Only a fixed list of bulk
+  blocks is droppable, so a tidy pass can never discard a tool, an ore or food.
 
 The same figures are visible in three places, so a pause is always explainable: the `!log tasks`
 block has a **Survival** section with health and food meters and the threat line, the `bot-status`
@@ -2069,6 +2078,9 @@ The addon registers a `!log` command (alias `!la`). Run `!log help` for the list
 | `!log tasks <start\|pause\|resume\|stop\|clear>` | Controls the automation. |
 | `!log tasks add <type> <item> [amount]` | Queues a task, e.g. `!log tasks add mining diamond_ore 64`. |
 | `!log tasks add combat [amount]` | Fights nearby hostile mobs. No item is needed, because the target is whatever is in range. |
+| `!log tasks add hunting <species> [amount]` | Hunts one mob type, e.g. `!log tasks add hunting minecraft:cow 8`. |
+| `!log tasks add lighting [amount]` | Places torches on dark ground until the count is met or the area is lit. |
+| `!log tasks add tidy [amount]` | Frees inventory slots by dropping bulk junk; tools, ores and food are never dropped. |
 | `!log waypoints [list]` | Lists saved waypoints. |
 | `!log waypoints add <name>` | Saves your current position as a waypoint. |
 | `!log import <file>` | Imports a material list (or a schematic) from a path, without the file dialog. |

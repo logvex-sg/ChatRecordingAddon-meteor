@@ -20,6 +20,14 @@ import java.util.List;
 public final class FarmingExecutor implements TaskExecutor {
     private static final double REACH = 4.0;
 
+    /** The seeds the game has, so the crop-to-seed inverse can be looked up. */
+    private static final java.util.List<String> SEED_CANDIDATES = java.util.List.of(
+        "minecraft:wheat_seeds",
+        "minecraft:beetroot_seeds",
+        "minecraft:carrot",
+        "minecraft:potato",
+        "minecraft:nether_wart");
+
     @Override
     public TaskType type() {
         return TaskType.FARMING;
@@ -28,6 +36,37 @@ public final class FarmingExecutor implements TaskExecutor {
     @Override
     public void begin(BotTask task, TaskContext context) {
         task.setParameter("baseline", Integer.toString(context.inventory().snapshot().countOf(task.itemId())));
+        // Resolve the seed once, up front. This used to be read from a parameter nothing ever set,
+        // so replanting silently never happened and a farm was harvested to bare soil.
+        task.setParameter("seed", seedFor(task, context));
+    }
+
+    /**
+     * The seed that replants {@code itemId}, or empty when none can be determined.
+     *
+     * <p>The crop tells us the seed: harvesting wheat yields wheat_seeds, but a carrot crop yields
+     * carrots, which are their own seed. {@link ItemKnowledge#cropForSeed} maps seed to crop, so the
+     * inverse is found by asking which known seed plants this crop.
+     */
+    private static String seedFor(BotTask task, TaskContext context) {
+        String explicit = task.parameter("seed", "");
+        if (!explicit.isEmpty()) return explicit;
+        if (context.items() == null) return "";
+        // A harvested item that is itself a seed (carrot, potato) replants directly.
+        if (context.items().isSeed(task.itemId())) return task.itemId();
+        for (String seed : SEED_CANDIDATES) {
+            if (context.items().cropForSeed(seed).equals(cropBlockFor(task.itemId()))) return seed;
+        }
+        return "";
+    }
+
+    /** Crop item to crop block, for the few that differ by name. */
+    private static String cropBlockFor(String itemId) {
+        return switch (itemId) {
+            case "minecraft:wheat" -> "minecraft:wheat";
+            case "minecraft:beetroot" -> "minecraft:beetroots";
+            default -> itemId;
+        };
     }
 
     @Override
@@ -78,7 +117,17 @@ public final class FarmingExecutor implements TaskExecutor {
     private void replant(BotTask task, TaskContext context, BlockPos3 pos) {
         String seed = task.parameter("seed", "");
         if (seed.isEmpty() || context.inventory().snapshot().countOf(seed) <= 0) return;
+        // A seed needs soil under it. Placing into a hole the harvest left would waste the seed and
+        // report a replant that never happened.
+        BlockPos3 below = new BlockPos3(pos.x(), pos.y() - 1, pos.z());
+        String ground = context.world().blockAt(below);
+        if (ground == null || !isSoil(ground)) return;
+        if (!context.world().isReplaceable(pos)) return;
         context.actions().place(pos, seed);
+    }
+
+    private static boolean isSoil(String blockId) {
+        return blockId.endsWith("farmland") || blockId.endsWith("soul_sand") || blockId.endsWith("dirt");
     }
 
     private static List<String> matureBlocks(String itemId, TaskContext context) {
