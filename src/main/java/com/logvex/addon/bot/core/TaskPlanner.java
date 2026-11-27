@@ -113,16 +113,8 @@ public final class TaskPlanner {
             tasks.add(new BotTask(type, goal.description()).required(goal.amount()));
             return tasks;
         }
-        if (type == TaskType.HUNTING) {
-            // The hunted species is the objective's item, e.g. "hunt 8 minecraft:zombie".
-            if (goal.itemId().isEmpty()) return tasks;
-            tasks.add(new BotTask(TaskType.HUNTING, goal.description())
-                .itemId(goal.itemId())
-                .required(goal.amount()));
-            return tasks;
-        }
-
-        // Gathering-family: one task that collects the item.
+        // Gathering-family: one task that collects or targets the objective's item. A hunt lands
+        // here too, with the species as the item.
         if (goal.itemId().isEmpty()) return tasks;
         tasks.add(new BotTask(type, goal.description())
             .itemId(goal.itemId())

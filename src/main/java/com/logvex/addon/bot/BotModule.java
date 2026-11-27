@@ -501,6 +501,18 @@ public class BotModule extends AddonModule {
     }
 
     /**
+     * True when {@code entityId} is a real entity type.
+     *
+     * <p>A hunt names a mob, not an item, so validating it against the item registry would reject
+     * every valid target.
+     */
+    public boolean knowsEntity(String entityId) {
+        if (entityId == null || entityId.isBlank()) return false;
+        Identifier id = Identifier.tryParse(entityId);
+        return id != null && Registries.ENTITY_TYPE.containsId(id);
+    }
+
+    /**
      * The closest registry item to {@code itemId}, or "" when nothing is close enough.
      *
      * <p>Only used for an error message, so the search is deliberately cheap: a shared namespace and

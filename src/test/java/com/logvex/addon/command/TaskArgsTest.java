@@ -30,6 +30,23 @@ class TaskArgsTest {
     }
 
     @Test
+    @DisplayName("the new task types are reachable by their command names")
+    void parsesNewTaskTypes() {
+        assertEquals(TaskType.LIGHTING, TaskArgs.parseType("lighting"));
+        assertEquals(TaskType.HUNTING, TaskArgs.parseType("hunting"));
+        assertEquals(TaskType.TIDY, TaskArgs.parseType("tidy"));
+    }
+
+    @Test
+    @DisplayName("mob ids survive normalisation so a hunt target keeps its namespace")
+    void normalisesMobIds() {
+        assertEquals("minecraft:cow", TaskArgs.normaliseItem("cow"));
+        assertEquals("minecraft:cow", TaskArgs.normaliseItem(" COW "));
+        assertEquals("minecraft:zombie_villager", TaskArgs.normaliseItem("zombie villager"));
+        assertEquals("minecraft:cow", TaskArgs.normaliseItem("minecraft:cow"));
+    }
+
+    @Test
     @DisplayName("the accepted-name list contains every task type")
     void listsEveryType() {
         String list = TaskArgs.typeNames();

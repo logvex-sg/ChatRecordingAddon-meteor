@@ -341,6 +341,18 @@ class NewFeaturesTest {
     }
 
     @Test
+    void aLightingGoalPlansWithoutNeedingAnItem() {
+        BotFakes.Harness h = new BotFakes.Harness();
+        var goal = new com.logvex.addon.bot.core.GoalManager.Goal(1, "light up the base", "lighting", "", 6);
+
+        var tasks = TaskPlanner.plan(goal, h.context());
+
+        assertEquals(1, tasks.size());
+        assertEquals(TaskType.LIGHTING, tasks.get(0).type());
+        assertEquals(6, tasks.get(0).required());
+    }
+
+    @Test
     void everyNewTaskTypeHasAnExecutor() {
         var registry = com.logvex.addon.bot.exec.StandardExecutors.create();
         for (TaskType type : List.of(TaskType.LIGHTING, TaskType.HUNTING, TaskType.TIDY)) {

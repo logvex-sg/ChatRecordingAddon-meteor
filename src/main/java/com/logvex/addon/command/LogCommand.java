@@ -889,9 +889,21 @@ public class LogCommand extends Command {
             return;
         }
         String itemId = TaskArgs.normaliseItem(item);
-        boolean needsItem = type != TaskType.COMBAT;
+        // Lighting and tidying need no argument: they act on whatever is around the player. A hunt
+        // names a mob, so its argument is checked against the entity registry, not the item one.
+        boolean needsItem = type != TaskType.COMBAT && type != TaskType.LIGHTING
+            && type != TaskType.TIDY;
+        boolean needsEntity = type == TaskType.HUNTING;
         if (needsItem && itemId.isEmpty()) {
             error("Give an item, for example oak_log or minecraft:oak_log.");
+            return;
+        }
+        if (needsEntity && itemId.isEmpty()) {
+            error("Give a mob type, for example minecraft:cow.");
+            return;
+        }
+        if (needsEntity && !bot.knowsEntity(itemId)) {
+            error("%s is not a known mob type. Use a registry id such as minecraft:cow.", itemId);
             return;
         }
         // Refused here rather than queued: an id the registry does not know can never be found in
@@ -908,7 +920,7 @@ public class LogCommand extends Command {
         }
         BotTask task = new BotTask(type, itemId).itemId(itemId).required(amount);
         if (bot.controller().queue().add(task)) {
-            if (needsItem) info("Queued %s x%d.", itemId, amount);
+            if (needsItem || needsEntity) info("Queued %s x%d.", itemId, amount);
             else info("Queued %s.", type.toString());
         } else {
             error("The queue is full; remove a task first.");
