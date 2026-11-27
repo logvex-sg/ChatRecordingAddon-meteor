@@ -315,16 +315,50 @@ public final class ReplyFormat {
                 : field.label() + " - " + field.value();
             // Rows wrap rather than truncate: a help row whose permission level was cut off is
             // worse than one that continues on the next line. Continuations are indented so they
-            // read as part of the entry above instead of as an unlabelled new one — without the
-            // indent a wrapped row looked like two separate commands.
-            List<String> wrapped = wrap(row, width);
-            lines.add(wrapped.get(0));
-            for (int i = 1; i < wrapped.size(); i++) {
-                lines.addAll(wrap(CONTINUATION + wrapped.get(i), width));
-            }
+            // read as part of the entry above instead of as an unlabelled new one.
+            lines.addAll(wrapIndented(row, width, CONTINUATION));
         }
         if (!embed.footer().isBlank()) lines.addAll(wrap(embed.footer(), width));
         return List.copyOf(lines);
+    }
+
+    /**
+     * Wraps {@code text} and prefixes every continuation line with {@code indent}.
+     *
+     * <p>The indent is applied <em>before</em> measuring, not after. Wrapping first and prefixing
+     * afterwards pushes each continuation two columns past the limit, and re-wrapping that pushes it
+     * past again — which is how a long row ended up with one continuation line flush at column zero,
+     * reading as a separate entry rather than the rest of the row above.
+     */
+    static List<String> wrapIndented(String text, int width, String indent) {
+        List<String> out = new ArrayList<>();
+        if (text == null || text.isEmpty()) {
+            out.add("");
+            return List.copyOf(out);
+        }
+        String lead = indent == null ? "" : indent;
+        int indentWidth = displayWidth(lead);
+        // An indent wider than the line leaves no room to continue into; fall back to no indent
+        // rather than looping forever on a row that can never be made to fit.
+        if (indentWidth >= width) {
+            return wrap(text, width);
+        }
+        String rest = text;
+        boolean first = true;
+        while (true) {
+            int room = first ? width : width - indentWidth;
+            String prefix = first ? "" : lead;
+            if (displayWidth(rest) <= room) {
+                out.add(prefix + rest);
+                break;
+            }
+            int cut = breakAt(rest, room);
+            out.add(prefix + rest.substring(0, cut).stripTrailing());
+            rest = rest.substring(cut).stripLeading();
+            first = false;
+            if (rest.isEmpty()) break;
+        }
+        return List.copyOf(out);
     }
 
     /**

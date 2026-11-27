@@ -318,6 +318,43 @@ class ReplyFormatTest {
         assertFalse(lines.get(1).contains("\u0000"), "the marker must never reach the chat box");
     }
 
+    @Test
+    @DisplayName("every continuation of a wrapped list row keeps its indent")
+    void everyContinuationLineKeepsItsIndent() {
+        // The case that exposed the bug: a wrapped chunk longer than the room left after the
+        // indent. The old code prefixed after wrapping and re-wrapped the prefixed text, so this
+        // line came out flush at column zero and read as a separate entry.
+        List<ReplyFormat.Field> fields = List.of(new ReplyFormat.Field("custom",
+            "on - Rules you wrote yourself. On by default, because writing one is the instruction"
+                + " to run it."));
+        List<String> lines = ReplyFormat.render(new ReplyFormat.Embed("", fields, "",
+            ReplyFormat.Style.LIST), 20);
+
+        assertTrue(lines.size() > 2, "the row must wrap: " + lines);
+        for (int i = 1; i < lines.size(); i++) {
+            assertTrue(lines.get(i).startsWith("  "),
+                "continuation " + i + " lost its indent and reads as a separate row: '"
+                    + lines.get(i) + "'");
+        }
+        for (String line : lines) {
+            assertTrue(ReplyFormat.displayWidth(line) <= 20,
+                "no row may exceed the width: '" + line + "'");
+        }
+    }
+
+    @Test
+    @DisplayName("a narrow block still emits every word")
+    void aNarrowBlockStillEmitsEveryWord() {
+        List<ReplyFormat.Field> fields = List.of(new ReplyFormat.Field("a", "one two three"));
+        List<String> lines = ReplyFormat.render(new ReplyFormat.Embed("T", fields, "",
+            ReplyFormat.Style.LIST), 12);
+
+        String joined = String.join(" ", lines).replaceAll("\\s+", " ").strip();
+        for (String word : List.of("one", "two", "three")) {
+            assertTrue(joined.contains(word), "word '" + word + "' was dropped: " + lines);
+        }
+    }
+
     // ------------------------------------------------------------------ self-reply guard
 
     @Test

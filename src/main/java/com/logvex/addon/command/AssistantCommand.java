@@ -194,6 +194,10 @@ public class AssistantCommand extends Command {
                 reactions("");
                 return SINGLE_SUCCESS;
             }))
+            .then(literal("detail").executes(context -> {
+                reactions("detail");
+                return SINGLE_SUCCESS;
+            }))
             .then(literal("log").executes(context -> {
                 reactionLog();
                 return SINGLE_SUCCESS;
@@ -259,7 +263,7 @@ public class AssistantCommand extends Command {
         addHelp(fields, "forget <key>", "remove a fact.");
         addHelp(fields, "test <message>", "see what the assistant would do.");
         addHelp(fields, "history", "recent remembered exchanges.");
-        addHelp(fields, "reactions [list|log|on <category>|off <category>|pause <minutes>|reset]",
+        addHelp(fields, "reactions [detail|log|on <c>|off <c>|pause <min>|reset]",
             "which categories may answer, and why recent messages were not answered.");
         addHelp(fields, "placeholders [section]", "the reply placeholders, one section at a time.");
         addHelp(fields, "perms [list|gui|set|allow|deny|admin|reset]", "who may run each command.");
@@ -719,46 +723,59 @@ public class AssistantCommand extends Command {
      * switches, and before this command the only way to see them was to open the GUI and read four
      * separate settings pages. This prints every gate that can silence a reply in one block, in the
      * order the code applies them, so the answer is visible without leaving chat.
+     *
+     * @param mode {@code ""} for the compact table, {@code "detail"} to add each category's rules
      */
-    private void reactions(String ignored) {
+    private void reactions(String mode) {
         AssistantModule module = assistant();
         if (module == null) {
             error("The assistant module is not available.");
             return;
         }
+        boolean detail = "detail".equalsIgnoreCase(mode) || "list".equalsIgnoreCase(mode);
 
         List<com.logvex.addon.assistant.core.ReplyFormat.Field> fields = new java.util.ArrayList<>();
         boolean master = module.reactionsEnabled();
         fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Reactions",
-            master ? "on" : "off - no category can answer"));
+            master ? "on" : "off - nothing can answer"));
         if (module.isMuted()) {
             fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Paused",
-                "yes - " + Messages.duration(module.muteRemainingMs())));
+                Messages.duration(module.muteRemainingMs()) + " left"));
         }
 
         java.util.Set<com.logvex.addon.assistant.core.ReactionCategory> enabled =
             module.enabledCategories();
-        fields.add(com.logvex.addon.assistant.core.ReplyFormat.Field.section("Categories"));
+        java.util.List<String> on = new java.util.ArrayList<>();
+        java.util.List<String> off = new java.util.ArrayList<>();
         for (com.logvex.addon.assistant.core.ReactionCategory category
             : com.logvex.addon.assistant.core.ReactionCategory.all()) {
-            boolean on = enabled.contains(category);
-            String note = on ? "on" : "off";
-            if (category.conversational() && !category.defaultEnabled()) {
-                note += " (chatty, off by default)";
+            (enabled.contains(category) ? on : off).add(category.id());
+        }
+        // Two rows instead of one per category: the question is "which are on", and a column of
+        // nine rows buries that answer in the one or two rows that differ from the default.
+        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Answering",
+            on.isEmpty() ? "none" : String.join(", ", on)));
+        fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Silent",
+            off.isEmpty() ? "none" : String.join(", ", off)));
+
+        if (detail) {
+            fields.add(com.logvex.addon.assistant.core.ReplyFormat.Field.section("What each covers"));
+            for (com.logvex.addon.assistant.core.ReactionCategory category
+                : com.logvex.addon.assistant.core.ReactionCategory.all()) {
+                fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field(
+                    category.label(), category.description()));
             }
-            fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field(
-                category.id(), note + " - " + category.description()));
         }
 
         java.util.List<String> ignoredWords = module.ignoredWords();
         if (!ignoredWords.isEmpty()) {
-            fields.add(com.logvex.addon.assistant.core.ReplyFormat.Field.section("Ignore list"));
-            fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Words",
-                Messages.truncate(String.join(", ", ignoredWords), 120)));
+            fields.add(new com.logvex.addon.assistant.core.ReplyFormat.Field("Ignored",
+                Messages.truncate(String.join(", ", ignoredWords), 90)));
         }
 
-        CommandOutput.sendLong(this, "Assistant reactions", fields,
-            pfx() + "ai reactions log - why recent messages were answered or not");
+        CommandOutput.send(this, "Assistant reactions", fields, detail
+            ? pfx() + "ai reactions - back to the summary"
+            : pfx() + "ai reactions detail - what each category covers");
     }
 
     /** The recent reaction decisions, newest first, with the reason for each. */
