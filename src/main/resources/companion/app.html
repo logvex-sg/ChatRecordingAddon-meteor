@@ -271,9 +271,11 @@
   .metric-head .val { font-family: var(--mono); font-size: 12px; color: var(--accent); }
   .metric-head .range { margin-left: auto; font-size: 10.5px; color: var(--faint); font-family: var(--mono); }
 
-  /* The map canvas is drawn at device pixels; the wrapper keeps it inside the card. */
+  /* The map canvas is drawn at device pixels; the wrapper keeps it inside the card. `touch-action`
+     is none so a drag pans the map instead of scrolling the page underneath it. */
   .map-wrap { position: relative; border: 1px solid var(--line-soft); border-radius: var(--radius-sm); overflow: hidden; background: #070b14; }
-  .map-wrap canvas { display: block; width: 100%; height: auto; image-rendering: pixelated; cursor: crosshair; }
+  .map-wrap canvas { display: block; width: 100%; height: auto; image-rendering: pixelated; cursor: grab; touch-action: none; }
+  .map-wrap canvas:active { cursor: grabbing; }
   .map-legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 9px; font-size: 11px; color: var(--muted); }
   .map-legend .swatch { width: 10px; height: 10px; border-radius: 3px; display: inline-block; margin-right: 5px; vertical-align: -1px; }
   .map-hint { font-size: 11.5px; color: var(--faint); margin-top: 7px; }
@@ -1583,82 +1585,160 @@ function loadIcons(root, node) {
 }
 
 // Tracks the in-flight map draw, so the periodic refresh does not restart it from scratch.
+// Tracks the in-flight map draw, so the periodic refresh does not restart it from scratch.
 const mapRun = { key: "", busy: false, dimension: "" };
 
 // The canvas, status line and stats live here rather than being rebuilt by every render, because
 // render() replaces the whole view every three seconds. Rebuilding the canvas discarded every
 // painted pixel and restarted the fetch, which is why the map could never finish on a slow link.
-const mapDom = { node: null, canvas: null, status: null, stats: null, wrap: null };
+const mapDom = { node: null, canvas: null, status: null, stats: null, wrap: null, hint: null };
+
+/* What the map is showing, kept outside the DOM so the three-second rebuild cannot reset it.
+
+   `cx`/`cz` are the block coordinates at the centre of the view and `zoom` is screen pixels per
+   block. A null centre means "not positioned yet", and the next paint fits the whole capture.
+   `proj` holds the transform the last paint used, so a click is inverted with the exact numbers
+   that drew the picture rather than a second copy of the maths that could drift from it. */
+const mapView = {
+  mode: "iso", zoom: 1, cx: null, cz: null,
+  hover: null, pending: null, proj: null, signature: "",
+  surface: null, grid: null, waypoints: [], player: null,
+  dragging: false, moved: false
+};
 
 function mapCanvas(node) {
   if (mapDom.node !== node.id || !mapDom.canvas) {
     mapDom.node = node.id;
-    mapDom.canvas = el("canvas", { width: "512", height: "512" });
+    mapDom.canvas = el("canvas", { width: "640", height: "400" });
     mapDom.status = el("div", { class: "map-hint", text: "Loading terrain…" });
+    mapDom.hint = el("div", { class: "map-hint", text: "Drag to pan · scroll to zoom · click to mark a waypoint" });
     mapDom.stats = el("div", {});
     mapDom.wrap = el("div", { class: "map-wrap" }, [mapDom.canvas]);
+    wireMap(mapDom.canvas);
   }
   return mapDom;
 }
 
-// ---------------------------------------------------------------- isometric view
+/** Sizes the backing store to the wrapper, so the map fills the card instead of a fixed 512px. */
+function fitCanvas(canvas) {
+  const wrap = mapDom.wrap;
+  const width = Math.max(260, Math.round((wrap && wrap.clientWidth) || 640));
+  const height = Math.max(200, Math.min(520, Math.round(width * 0.62)));
+  if (canvas.width !== width || canvas.height !== height) {
+    canvas.width = width;
+    canvas.height = height;
+  }
+  return { ctx: canvas.getContext("2d"), width, height };
+}
 
-/* The isometric view is the same captured terrain the flat map draws, projected at 2:1 and given
-   a vertical side wall wherever a column stands above its neighbour. Nothing is interpolated or
-   guessed: a column that was never observed is skipped, so an unexplored region is a gap rather
-   than invented relief.
+/** Centres the view on the capture and picks a zoom that shows all of it, with a small margin so
+ *  a waypoint on the edge of the capture is not drawn flush against the border. */
+function fitView(width, height) {
+  const surface = mapView.surface;
+  const grid = mapView.grid;
+  const pad = 0.9;
+  if (mapView.mode === "flat" && surface && surface.blocksW > 0) {
+    mapView.cx = surface.minBlockX + surface.blocksW / 2;
+    mapView.cz = surface.minBlockZ + surface.blocksH / 2;
+    mapView.zoom = Math.max(0.12,
+      Math.min(width * pad / surface.blocksW, height * pad / surface.blocksH));
+    return;
+  }
+  if (grid && grid.width > 0) {
+    mapView.cx = grid.minBlockX + grid.width / 2;
+    mapView.cz = grid.minBlockZ + grid.height / 2;
+    const spanX = (grid.width + grid.height) * 2;
+    const spanY = (grid.width + grid.height) + (grid.maxHeight - grid.minHeight);
+    mapView.zoom = Math.max(0.12,
+      Math.min(3, Math.min(width * pad / spanX, height * pad / spanY)));
+  }
+}
 
-   It is a CPU projection onto a 2D canvas, not a WebGL renderer. That keeps it dependency-free and
-   readable on any machine the game runs on, at the cost of redrawing on change rather than every
-   frame, which is the right trade for a map that updates every few seconds. */
+// ---------------------------------------------------------------- drawing
 
-const isoState = { zoom: 1, mode: "iso" };
+function drawMap() {
+  if (!mapDom.canvas) return;
+  if (mapView.mode === "iso") drawIsoView(mapDom.canvas);
+  else drawFlatView(mapDom.canvas);
+  updateHint();
+}
 
 /**
- * Projects a grid of heights into an isometric canvas.
+ * Blits the captured surface at the current pan and zoom.
  *
- * @param heights column heights, unknown columns marked with a value <= -1000
- * @param width   columns across
- * @param height  rows down
+ * <p>The surface is one pixel per block and never changes once painted, so panning and zooming are
+ * a single scaled copy rather than a repaint of every column. That is what keeps a drag smooth on a
+ * large capture, where redrawing per pointer event would cost a million fills a frame.
  */
-function drawIsometric(canvas, heights, width, height, options = {}) {
-  const zoom = options.zoom || 1;
-  const halfW = 2 * zoom;          // 2:1 isometric, the ratio players expect
-  const halfH = 1 * zoom;
-  const lift = zoom;               // one block of height raises the pixel this much
-
-  let minHeight = Infinity;
-  let maxHeight = -Infinity;
-  for (const value of heights) {
-    if (value <= -1000) continue;
-    if (value < minHeight) minHeight = value;
-    if (value > maxHeight) maxHeight = value;
-  }
-  if (!isFinite(minHeight)) minHeight = 0;
-  if (!isFinite(maxHeight)) maxHeight = minHeight;
-
-  const spanX = (width + height) * halfW;
-  const spanY = (width + height) * halfH + (maxHeight - minHeight) * lift;
-  canvas.width = Math.max(1, Math.ceil(spanX) + 4);
-  canvas.height = Math.max(1, Math.ceil(spanY) + 4);
-  const ctx = canvas.getContext("2d");
+function drawFlatView(canvas) {
+  const { ctx, width, height } = fitCanvas(canvas);
+  if (!ctx) return;
+  const surface = mapView.surface;
   ctx.fillStyle = "#0a1020";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillRect(0, 0, width, height);
+  if (!surface) { paintEmpty(ctx, width, height); return; }
+  if (mapView.cx === null) fitView(width, height);
 
-  const originX = 2 + height * halfW;
-  const originY = 2 + (maxHeight - minHeight) * lift;
-  const heightAt = (x, z) => (x < 0 || z < 0 || x >= width || z >= height)
-    ? -2000 : heights[z * width + x];
+  const scale = mapView.zoom;
+  const originX = width / 2 - (mapView.cx - surface.minBlockX) * scale;
+  const originY = height / 2 - (mapView.cz - surface.minBlockZ) * scale;
+  ctx.imageSmoothingEnabled = scale < 1;
+  ctx.drawImage(surface.canvas, originX, originY, surface.blocksW * scale, surface.blocksH * scale);
 
-  // Painter's algorithm: draw back to front so a nearer column covers a farther one. Within a
-  // column the top diamond is drawn first, then the two visible side faces, so the block looks
-  // solid instead of a floating tile.
-  for (let z = 0; z < height; z++) {
-    for (let x = 0; x < width; x++) {
+  mapView.proj = { kind: "flat", originX, originY, scale,
+    minBlockX: surface.minBlockX, minBlockZ: surface.minBlockZ };
+  drawOverlays(ctx, width, height);
+}
+
+/**
+ * Projects the captured heights isometrically and draws the columns back to front.
+ *
+ * <p>2:1 projection with a shaded side face wherever a column stands above its neighbour, which is
+ * what turns a flat carpet of diamonds into visible relief. Nothing is interpolated or guessed: a
+ * column that was never observed is skipped, so an unexplored region is a gap rather than invented
+ * terrain. Columns outside the viewport are culled, so panning a large capture stays cheap.
+ *
+ * <p>This is a CPU projection onto a 2D canvas, not a WebGL renderer. That keeps it dependency-free
+ * and readable on any machine the game runs on, at the cost of redrawing on change rather than
+ * every frame, which is the right trade for a map that updates every few seconds.
+ */
+function drawIsoView(canvas) {
+  const { ctx, width, height } = fitCanvas(canvas);
+  if (!ctx) return;
+  const grid = mapView.grid;
+  ctx.fillStyle = "#0a1020";
+  ctx.fillRect(0, 0, width, height);
+  if (!grid) { paintEmpty(ctx, width, height); return; }
+  if (mapView.cx === null) fitView(width, height);
+
+  const zoom = mapView.zoom;
+  const halfW = 2 * zoom;
+  const halfH = zoom;
+  const lift = zoom;
+  const base = grid.minHeight;
+  const span = Math.max(1, grid.maxHeight - grid.minHeight);
+
+  // Anchor the projection on the height of the column at the centre, so panning does not make the
+  // whole surface slide vertically as the reference column changes.
+  const refHeight = heightAtBlock(Math.round(mapView.cx), Math.round(mapView.cz));
+  const ref = refHeight === null ? base : refHeight;
+  const originX = width / 2 - (mapView.cx - mapView.cz) * halfW;
+  const originY = height / 2 - (mapView.cx + mapView.cz) * halfH + (ref - base) * lift;
+
+  mapView.proj = { kind: "iso", originX, originY, halfW, halfH, lift, minHeight: base };
+
+  const heightAt = (x, z) => (x < 0 || z < 0 || x >= grid.width || z >= grid.height)
+    ? -2000 : grid.heights[z * grid.width + x];
+  const left = -2 * halfW;
+  const right = width + 2 * halfW;
+
+  for (let z = 0; z < grid.height; z++) {
+    for (let x = 0; x < grid.width; x++) {
       const value = heightAt(x, z);
       if (value <= -1000) continue;
       const cx = originX + (x - z) * halfW;
-      const cy = originY + (x + z) * halfH - (value - minHeight) * lift;
+      const cy = originY + (x + z) * halfH - (value - base) * lift;
+      if (cx < left || cx > right || cy < -span * lift - 40 || cy > height + 40) continue;
 
       const top = heightColor(value);
       ctx.fillStyle = top;
@@ -1670,8 +1750,7 @@ function drawIsometric(canvas, heights, width, height, options = {}) {
       ctx.closePath();
       ctx.fill();
 
-      // Side faces only where this column is taller than what lies behind/below it, which is what
-      // turns a flat carpet of diamonds into visible relief.
+      // Side faces only where this column is taller than what lies behind it.
       const west = heightAt(x - 1, z);
       const south = heightAt(x, z - 1);
       const dropWest = value - (west <= -1000 ? value : west);
@@ -1700,8 +1779,282 @@ function drawIsometric(canvas, heights, width, height, options = {}) {
       }
     }
   }
-  return { minHeight, maxHeight, columns: width * height };
+
+  drawOverlays(ctx, width, height);
 }
+
+function paintEmpty(ctx, width, height) {
+  ctx.fillStyle = "#0a1020";
+  ctx.fillRect(0, 0, width, height);
+  ctx.fillStyle = "#62729a";
+  ctx.font = "13px ui-sans-serif, system-ui";
+  ctx.textAlign = "center";
+  ctx.fillText("Nothing captured in this area yet", width / 2, height / 2);
+  ctx.textAlign = "start";
+}
+
+// ---------------------------------------------------------------- overlays
+
+/** Screen position of one block, using the transform the last paint actually used. */
+function projectBlock(bx, bz, height) {
+  const p = mapView.proj;
+  if (!p) return null;
+  if (p.kind === "flat") {
+    return { x: p.originX + (bx - p.minBlockX) * p.scale,
+             y: p.originY + (bz - p.minBlockZ) * p.scale };
+  }
+  const h = height === null || height === undefined ? p.minHeight : height;
+  return { x: p.originX + (bx - bz) * p.halfW,
+           y: p.originY + (bx + bz) * p.halfH - (h - p.minHeight) * p.lift };
+}
+
+/** Draws waypoints, the player and the cursor ring over the finished surface. */
+function drawOverlays(ctx, width, height) {
+  if (!mapView.proj) return;
+
+  for (const point of mapView.waypoints) {
+    if (mapView.dimension && point.dimension && point.dimension !== mapView.dimension) continue;
+    if (typeof point.x !== "number" || typeof point.z !== "number") continue;
+    const height = heightAtBlock(Math.round(point.x), Math.round(point.z));
+    const at = projectBlock(point.x, point.z, height);
+    if (!at) continue;
+    if (at.x < -40 || at.x > width + 40 || at.y < -30 || at.y > height + 30) continue;
+    drawMarker(ctx, at.x, at.y, waypointTone(point.category), point.name, height !== null);
+  }
+
+  const player = mapView.player;
+  if (player) {
+    const at = projectBlock(player.x, player.z, heightAtBlock(player.x, player.z));
+    if (at) {
+      ctx.save();
+      ctx.strokeStyle = "#8ab4ff";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(at.x, at.y, 6, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(at.x - 9, at.y);
+      ctx.lineTo(at.x + 9, at.y);
+      ctx.moveTo(at.x, at.y - 9);
+      ctx.lineTo(at.x, at.y + 9);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  const hover = mapView.hover;
+  if (hover) {
+    const at = projectBlock(hover.x, hover.z, "height" in hover ? hover.height : null);
+    if (at) {
+      ctx.save();
+      ctx.strokeStyle = "rgba(255,255,255,.55)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(at.x, at.y, 5, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+}
+
+/** A filled dot when the ground beneath it was captured, a hollow one when it was not. */
+function drawMarker(ctx, x, y, color, label, solid) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(x, y, 4.5, 0, Math.PI * 2);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.7;
+  ctx.fillStyle = solid ? color : "#0a1020";
+  ctx.fill();
+  ctx.stroke();
+  if (label) {
+    const text = label.length > 16 ? label.slice(0, 15) + "\u2026" : label;
+    ctx.font = "10.5px ui-sans-serif, system-ui";
+    const wide = ctx.measureText(text).width;
+    ctx.fillStyle = "rgba(6,10,20,.82)";
+    ctx.fillRect(x + 7, y - 7, wide + 7, 14);
+    ctx.fillStyle = color;
+    ctx.fillText(text, x + 10, y + 3.5);
+  }
+  ctx.restore();
+}
+
+function updateHint() {
+  if (!mapDom.hint) return;
+  const parts = ["Drag to pan", "scroll to zoom", "click to mark a waypoint"];
+  const hover = mapView.hover;
+  if (hover) {
+    parts.push("height" in hover
+      ? "X " + hover.x + " · Y " + hover.height + " · Z " + hover.z
+      : "X " + hover.x + " · Z " + hover.z);
+  }
+  parts.push("zoom " + mapView.zoom.toFixed(2) + "\u00d7");
+  mapDom.hint.textContent = parts.join(" · ");
+}
+
+// ---------------------------------------------------------------- interaction
+
+/**
+ * Inverts the projection under the pointer.
+ *
+ * <p>The flat view inverts in one step. The isometric view cannot, because a screen point maps to a
+ * column only once its height is known, and the height is what the projection was used to find. So
+ * every height in the capture is tried, each is inverted exactly, and the diamond test keeps the
+ * ones the pointer is actually inside. The front-most winner is the column the painter's algorithm
+ * drew last, which is the one on screen. A point over ground that was never captured, or on a side
+ * face, returns no height rather than a guess.
+ */
+function screenToBlock(px, py) {
+  const p = mapView.proj;
+  if (!p) return null;
+  if (p.kind === "flat") {
+    const bx = Math.floor(p.minBlockX + (px - p.originX) / p.scale);
+    const bz = Math.floor(p.minBlockZ + (py - p.originY) / p.scale);
+    const height = heightAtBlock(bx, bz);
+    return height === null ? { x: bx, z: bz } : { x: bx, z: bz, height };
+  }
+
+  // `x - z` falls straight out of the horizontal axis and does not depend on height.
+  const a = (px - p.originX) / p.halfW;
+
+  /* The vertical axis mixes (x + z) with the column height, so a pixel alone cannot name a column
+     without knowing how tall it is. Rather than iterating towards a guess, try every height the
+     capture actually holds: for each one the projection inverts exactly, so the candidate is a real
+     column, and the diamond test says whether the pointer is inside its top face. The front-most
+     candidate wins, which is the column the painter's algorithm drew last and therefore the one on
+     screen. That is exact, and it costs one pass over the relief range per event. */
+  const grid = mapView.grid;
+  if (grid) {
+    let best = null;
+    for (let h = grid.maxHeight; h >= grid.minHeight; h--) {
+      const b = (py - p.originY + (h - p.minHeight) * p.lift) / p.halfH;
+      const bx = Math.round((a + b) / 2);
+      const bz = Math.round((b - a) / 2);
+      if (heightAtBlock(bx, bz) !== h) continue;
+      const centre = projectBlock(bx, bz, h);
+      if (!centre) continue;
+      const inside = Math.abs(px - centre.x) / p.halfW + Math.abs(py - centre.y) / p.halfH;
+      if (inside > 1.0001) continue;
+      if (!best || bx + bz > best.x + best.z) best = { x: bx, z: bz, height: h };
+    }
+    if (best) return best;
+  }
+
+  // Over a gap, or on a side face rather than a top: name the column on the base plane but report
+  // no height, so a mark is not placed at an elevation nothing was captured at.
+  const b = (py - p.originY) / p.halfH;
+  return { x: Math.round((a + b) / 2), z: Math.round((b - a) / 2) };
+}
+
+/** Moves the centre so the picture follows a drag of the given screen distance. */
+function panBy(dx, dy) {
+  const p = mapView.proj;
+  if (!p) return;
+  if (p.kind === "flat") {
+    mapView.cx -= dx / p.scale;
+    mapView.cz -= dy / p.scale;
+    return;
+  }
+  // The projection is (x - z, x + z), so a screen drag is undone by solving that pair.
+  const a = -dx / p.halfW;
+  const b = -dy / p.halfH;
+  mapView.cx += (a + b) / 2;
+  mapView.cz += (b - a) / 2;
+}
+
+function zoomBy(factor) {
+  mapView.zoom = Math.max(0.12, Math.min(8, mapView.zoom * factor));
+  drawMap();
+}
+
+/** Turns a click into a pending mark, which the Waypoints card then names and saves. */
+function markAt(point) {
+  if (!point) return;
+  if (!("height" in point)) {
+    toast("No captured surface there, so there is no height to mark.", "warn");
+    return;
+  }
+  mapView.pending = { x: point.x, y: point.height, z: point.z };
+  render();
+  toast("Marked " + point.x + ", " + point.height + ", " + point.z + " — name it below.", "good");
+}
+
+/**
+ * Pointer handling for both modes. Pointer events cover mouse, pen and touch in one path, and
+ * `touch-action: none` on the canvas stops a drag from scrolling the page instead of panning.
+ * A press that moves more than a few pixels is a pan and never becomes a mark, so a slightly shaky
+ * click does not drop a waypoint nobody asked for.
+ */
+function wireMap(canvas) {
+  let drag = null;
+  const local = event => {
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: (event.clientX - rect.left) * (canvas.width / Math.max(1, rect.width)),
+      y: (event.clientY - rect.top) * (canvas.height / Math.max(1, rect.height))
+    };
+  };
+
+  canvas.addEventListener("pointerdown", event => {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    drag = { x: event.clientX, y: event.clientY };
+    mapView.dragging = true;
+    mapView.moved = false;
+    // Capture keeps a drag alive when the pointer leaves the canvas. It throws when the browser has
+    // no active pointer for that id (synthetic events, or a pointer already released), and a thrown
+    // error here would abort the whole press and lose the click that follows.
+    try {
+      if (canvas.setPointerCapture) canvas.setPointerCapture(event.pointerId);
+    } catch { /* no capture: dragging still works while the pointer stays over the canvas */ }
+  });
+
+  canvas.addEventListener("pointermove", event => {
+    if (drag) {
+      const dx = event.clientX - drag.x;
+      const dy = event.clientY - drag.y;
+      if (!mapView.moved && Math.abs(dx) + Math.abs(dy) > 4) mapView.moved = true;
+      if (mapView.moved) {
+        panBy(dx, dy);
+        drag.x = event.clientX;
+        drag.y = event.clientY;
+        drawMap();
+      }
+      return;
+    }
+    const at = local(event);
+    mapView.hover = screenToBlock(at.x, at.y);
+    drawMap();
+  });
+
+  const release = event => {
+    if (!drag) return;
+    const moved = mapView.moved;
+    drag = null;
+    mapView.dragging = false;
+    mapView.moved = false;
+    if (!moved) {
+      const at = local(event);
+      markAt(screenToBlock(at.x, at.y));
+    }
+  };
+  canvas.addEventListener("pointerup", release);
+  canvas.addEventListener("pointercancel", () => {
+    drag = null;
+    mapView.dragging = false;
+    mapView.moved = false;
+  });
+  canvas.addEventListener("pointerleave", () => {
+    if (drag) return;
+    mapView.hover = null;
+    drawMap();
+  });
+  canvas.addEventListener("wheel", event => {
+    event.preventDefault();
+    zoomBy(event.deltaY < 0 ? 1.15 : 1 / 1.15);
+  }, { passive: false });
+}
+
+// ---------------------------------------------------------------- height grid
 
 /** Multiplies an "rgb(r,g,b)" colour towards black (negative) or white (positive). */
 function shade(color, amount) {
@@ -1718,109 +2071,100 @@ function shade(color, amount) {
 }
 
 /**
- * Builds one height grid from every tile in a dimension.
+ * Builds one height grid from every tile that decoded, keyed by absolute block coordinates.
+ *
+ * <p>Absolute rather than tile-relative, because a waypoint stores world coordinates: the grid has
+ * to answer "what is the surface at block 137, -42" for a marker to land where the player marked
+ * it, not merely somewhere inside the drawn picture.
  *
  * <p>Returns null when no tile decoded, so the caller can say "nothing captured" instead of drawing
  * an empty grid that looks like flat land.
  */
 function stitchHeights(decodedTiles) {
   if (decodedTiles.length === 0) return null;
-  let minChunkX = Infinity, maxChunkX = -Infinity;
-  let minChunkZ = Infinity, maxChunkZ = -Infinity;
+  let minBX = Infinity, maxBX = -Infinity, minBZ = Infinity, maxBZ = -Infinity;
   for (const { decoded } of decodedTiles) {
     for (const chunk of decoded.chunks) {
-      minChunkX = Math.min(minChunkX, chunk.chunkX);
-      maxChunkX = Math.max(maxChunkX, chunk.chunkX);
-      minChunkZ = Math.min(minChunkZ, chunk.chunkZ);
-      maxChunkZ = Math.max(maxChunkZ, chunk.chunkZ);
+      minBX = Math.min(minBX, chunk.chunkX * 16);
+      maxBX = Math.max(maxBX, chunk.chunkX * 16 + 15);
+      minBZ = Math.min(minBZ, chunk.chunkZ * 16);
+      maxBZ = Math.max(maxBZ, chunk.chunkZ * 16 + 15);
     }
   }
-  if (!isFinite(minChunkX)) return null;
-  const width = (maxChunkX - minChunkX + 1) * 16;
-  const height = (maxChunkZ - minChunkZ + 1) * 16;
+  if (!isFinite(minBX)) return null;
+  const width = maxBX - minBX + 1;
+  const height = maxBZ - minBZ + 1;
   const heights = new Int16Array(width * height).fill(-2000);
+  let minHeight = Infinity;
+  let maxHeight = -Infinity;
   for (const { decoded } of decodedTiles) {
     for (const chunk of decoded.chunks) {
-      const baseX = (chunk.chunkX - minChunkX) * 16;
-      const baseZ = (chunk.chunkZ - minChunkZ) * 16;
+      const baseX = chunk.chunkX * 16 - minBX;
+      const baseZ = chunk.chunkZ * 16 - minBZ;
       for (let z = 0; z < 16; z++) {
         for (let x = 0; x < 16; x++) {
-          heights[(baseZ + z) * width + (baseX + x)] = chunk.heights[z * 16 + x];
+          const value = chunk.heights[z * 16 + x];
+          heights[(baseZ + z) * width + (baseX + x)] = value;
+          if (value > -1000) {
+            if (value < minHeight) minHeight = value;
+            if (value > maxHeight) maxHeight = value;
+          }
         }
       }
     }
   }
-  return { heights, width, height };
+  if (!isFinite(minHeight)) { minHeight = 0; maxHeight = 0; }
+  return { heights, width, height, minBlockX: minBX, minBlockZ: minBZ, minHeight, maxHeight };
 }
 
-function renderMap() {
-  const view = document.getElementById("view-map");
-  view.innerHTML = "";
-  if (nodes.length === 0) { view.appendChild(notConnected()); return; }
-  const node = activeNode();
-  view.appendChild(card("Client", [nodeSelect()]));
+/** Surface height at one block, or null where nothing was captured. */
+function heightAtBlock(bx, bz) {
+  const grid = mapView.grid;
+  if (!grid) return null;
+  const x = bx - grid.minBlockX;
+  const z = bz - grid.minBlockZ;
+  if (x < 0 || z < 0 || x >= grid.width || z >= grid.height) return null;
+  const value = grid.heights[z * grid.width + x];
+  return value <= -1000 ? null : value;
+}
 
-  const dom = mapCanvas(node);
-  const status = dom.status;
-  const canvas = dom.canvas;
-  const wrap = dom.wrap;
-  const legend = el("div", { class: "map-legend" }, [
-    el("span", {}, [el("span", { class: "swatch", style: "background:" + heightColor(70) }), el("span", { text: "Land" })]),
-    el("span", {}, [el("span", { class: "swatch", style: "background:" + heightColor(50) }), el("span", { text: "Water" })]),
-    el("span", {}, [el("span", { class: "swatch", style: "background:#0a1020" }), el("span", { text: "Not captured" })])
-  ]);
+/** An offscreen surface at one pixel per block, painted once per refresh. */
+function makeSurface(minBlockX, minBlockZ, blocksW, blocksH) {
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, blocksW);
+  canvas.height = Math.max(1, blocksH);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  ctx.fillStyle = "#0a1020";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  return { canvas, ctx, minBlockX, minBlockZ, blocksW, blocksH };
+}
 
-  // Switching mode redraws from the cache; it never refetches, because both views use the same
-  // decoded heights.
-  const modeRow = el("div", { class: "row", style: "gap:6px;margin-bottom:9px" });
-  for (const [mode, label] of [["flat", "Flat"], ["iso", "Isometric"]]) {
-    const choice = button(label, () => {
-      isoState.mode = mode;
-      renderMap();
-    }, "btn" + (isoState.mode === mode ? " primary" : ""));
-    modeRow.appendChild(choice);
-  }
-  if (isoState.mode === "iso") {
-    const zoomOut = button("\u2212", () => {
-      isoState.zoom = Math.max(0.4, Math.round((isoState.zoom - 0.2) * 10) / 10);
-      renderMap();
-    }, "btn sm");
-    const zoomIn = button("+", () => {
-      isoState.zoom = Math.min(3, Math.round((isoState.zoom + 0.2) * 10) / 10);
-      renderMap();
-    }, "btn sm");
-    modeRow.appendChild(el("span", { class: "faint", style: "font-size:11.5px;margin-left:6px",
-      text: "Zoom " + isoState.zoom.toFixed(1) + "\u00d7" }));
-    modeRow.appendChild(zoomOut);
-    modeRow.appendChild(zoomIn);
-  }
-
-  view.appendChild(card("Surface", [modeRow, wrap, legend, status]));
-
-  const stats = dom.stats;
-  view.appendChild(card("Captured", [stats]));
-
-  const waypointBody = el("div", {});
-  view.appendChild(card("Waypoints", [waypointBody]));
-
-  if (mapRun.busy) {
-    // A draw is already running for this node: leave its canvas alone and let it finish.
-    if (mapHealth.total > 0) {
-      status.textContent = mapHealth.drawn + " of " + mapHealth.total + " tiles · " + mapHealth.state;
+function paintTileInto(surface, decoded, tile, tileBlocks) {
+  const baseX = tile.x * tileBlocks - surface.minBlockX;
+  const baseZ = tile.z * tileBlocks - surface.minBlockZ;
+  for (const chunk of decoded.chunks) {
+    const offsetX = baseX + (chunk.chunkX - decoded.originChunkX) * 16;
+    const offsetZ = baseZ + (chunk.chunkZ - decoded.originChunkZ) * 16;
+    for (let z = 0; z < 16; z++) {
+      for (let x = 0; x < 16; x++) {
+        const height = chunk.heights[z * 16 + x];
+        if (height <= -1000) continue;         // unknown column: leave it transparent
+        surface.ctx.fillStyle = heightColor(height);
+        surface.ctx.fillRect(offsetX + x, offsetZ + z, 1, 1);
+      }
     }
-  } else {
-    mapRun.busy = true;
-    loadTerrain(node, canvas, status, stats).finally(() => { mapRun.busy = false; });
   }
-  loadWaypoints(node, waypointBody);
 }
+
+// ---------------------------------------------------------------- waypoints
 
 // Waypoint categories get a colour so a list of marks is scannable. An unknown category still
 // renders, greyed, rather than disappearing from the list.
 const WAYPOINT_TONES = {
   home: "var(--good)", base: "var(--good)", portal: "#c4b5fd", village: "#7dd3fc",
   danger: "var(--bad)", death: "var(--bad)", resource: "var(--warn)", mining: "var(--warn)",
-  structure: "#f0abfc", other: "var(--faint)"
+  other: "var(--faint)"
 };
 
 function waypointTone(category) {
@@ -1830,10 +2174,17 @@ function waypointTone(category) {
 async function loadWaypoints(node, body) {
   const result = await apiCall(node, "/api/v1/waypoints");
   body.innerHTML = "";
-  if (!result.ok) { body.appendChild(emptyState("Waypoints are not available: " + result.error)); return; }
+  if (!result.ok) {
+    mapView.waypoints = [];
+    body.appendChild(emptyState("Waypoints are not available: " + result.error));
+    return;
+  }
   const points = Array.isArray(result.data) ? result.data : [];
+  mapView.waypoints = points;
+  drawMap();                                   // markers are drawn onto the surface
+
   if (points.length === 0) {
-    body.appendChild(emptyState("No waypoints yet. Mark one where you stand."));
+    body.appendChild(emptyState("No waypoints yet. Click the map to mark one."));
   } else {
     const list = el("div", { class: "embeds", style: "max-height:320px" });
     for (const point of points) {
@@ -1848,32 +2199,122 @@ async function loadWaypoints(node, body) {
         toastResult(response, "Waypoint deleted.");
         if (response.ok) loadWaypoints(node, body);
       }, "btn sm danger");
+      const go = button("Centre", () => {
+        mapView.cx = point.x;
+        mapView.cz = point.z;
+        if (mapView.zoom < 2) mapView.zoom = 2;
+        drawMap();
+        if (mapDom.canvas) mapDom.canvas.scrollIntoView({ block: "center", behavior: "smooth" });
+      }, "btn sm");
       list.appendChild(el("div", { class: "embed" }, [
         el("div", { class: "stripe", style: "background:" + waypointTone(point.category) }),
         el("div", { class: "body" }, [
           head, meta,
-          el("div", { class: "row", style: "margin-top:7px" }, [remove])
+          el("div", { class: "row", style: "margin-top:7px" }, [go, remove])
         ])
       ]));
     }
     body.appendChild(list);
   }
 
+  const pending = mapView.pending;
   const nameInput = el("input", { placeholder: "Name (e.g. Base)" });
   const categoryInput = el("input", { placeholder: "Category (optional)" });
-  const markHere = button("Mark where I stand", async () => {
+  const save = async () => {
     const name = nameInput.value.trim();
     if (!name) { toast("A waypoint needs a name."); return; }
     let query = "?name=" + encodeURIComponent(name);
     if (categoryInput.value.trim()) query += "&category=" + encodeURIComponent(categoryInput.value.trim());
+    // Coordinates are only sent when the mark came from a map click; without them the addon marks
+    // wherever the player is standing, which is the same endpoint and the same screen.
+    if (pending) query += "&x=" + pending.x + "&y=" + pending.y + "&z=" + pending.z;
     const response = await apiCall(node, "/api/v1/waypoints" + query, { method: "POST" });
     toastResult(response, "Waypoint saved.");
-    if (response.ok) loadWaypoints(node, body);
-  }, "btn primary");
-  body.appendChild(el("div", { style: "margin-top:12px" }, [
-    el("label", { text: "Add a waypoint at your current position" }),
-    el("div", { class: "row" }, [nameInput, categoryInput, markHere])
-  ]));
+    if (response.ok) {
+      mapView.pending = null;
+      loadWaypoints(node, body);
+    }
+  };
+  nameInput.addEventListener("keydown", event => { if (event.key === "Enter") save(); });
+
+  if (pending) {
+    const cancel = button("Cancel", () => {
+      mapView.pending = null;
+      render();
+    }, "btn sm");
+    body.appendChild(el("div", { style: "margin-top:12px" }, [
+      el("label", { text: "Mark at " + pending.x + ", " + pending.y + ", " + pending.z }),
+      el("div", { class: "row" }, [nameInput, categoryInput,
+        button("Save mark", save, "btn primary"), cancel])
+    ]));
+  } else {
+    body.appendChild(el("div", { style: "margin-top:12px" }, [
+      el("label", { text: "Add a waypoint at your current position" }),
+      el("div", { class: "row" }, [nameInput, categoryInput,
+        button("Mark where I stand", save, "btn primary")])
+    ]));
+  }
+}
+
+// ---------------------------------------------------------------- map view
+
+function renderMap() {
+  const view = document.getElementById("view-map");
+  view.innerHTML = "";
+  if (nodes.length === 0) { view.appendChild(notConnected()); return; }
+  const node = activeNode();
+  view.appendChild(card("Client", [nodeSelect()]));
+
+  const snap = activeSnapshot();
+  const world = snap && snap.world;
+  mapView.player = world && world.inWorld ? { x: world.blockX, z: world.blockZ } : null;
+
+  const dom = mapCanvas(node);
+  const status = dom.status;
+  const wrap = dom.wrap;
+  const legend = el("div", { class: "map-legend" }, [
+    el("span", {}, [el("span", { class: "swatch", style: "background:" + heightColor(70) }), el("span", { text: "Land" })]),
+    el("span", {}, [el("span", { class: "swatch", style: "background:" + heightColor(50) }), el("span", { text: "Water" })]),
+    el("span", {}, [el("span", { class: "swatch", style: "background:#0a1020" }), el("span", { text: "Not captured" })]),
+    el("span", {}, [el("span", { class: "swatch", style: "background:#8ab4ff;border-radius:50%" }), el("span", { text: "You" })])
+  ]);
+
+  // Switching mode redraws from the cache; it never refetches, because both views use the same
+  // decoded heights.
+  const modeRow = el("div", { class: "row", style: "gap:6px;margin-bottom:9px" });
+  for (const [mode, label] of [["flat", "Flat"], ["iso", "Isometric"]]) {
+    modeRow.appendChild(button(label, () => {
+      mapView.mode = mode;
+      drawMap();
+      renderMap();
+    }, "btn" + (mapView.mode === mode ? " primary" : "")));
+  }
+  modeRow.appendChild(button("\u2212", () => zoomBy(1 / 1.2), "btn sm"));
+  modeRow.appendChild(button("+", () => zoomBy(1.2), "btn sm"));
+  modeRow.appendChild(button("Fit", () => {
+    mapView.cx = null;
+    mapView.cz = null;
+    drawMap();
+  }, "btn sm"));
+
+  view.appendChild(card("Surface", [modeRow, wrap, dom.hint, legend, status]));
+
+  const stats = dom.stats;
+  view.appendChild(card("Captured", [stats]));
+
+  const waypointBody = el("div", {});
+  view.appendChild(card("Waypoints", [waypointBody]));
+
+  if (mapRun.busy) {
+    // A draw is already running for this node: leave its canvas alone and let it finish.
+    if (mapHealth.total > 0) {
+      status.textContent = mapHealth.drawn + " of " + mapHealth.total + " tiles · " + mapHealth.state;
+    }
+  } else {
+    mapRun.busy = true;
+    loadTerrain(node, dom.canvas, status, stats).finally(() => { mapRun.busy = false; });
+  }
+  loadWaypoints(node, waypointBody);
 }
 
 async function loadTerrain(node, canvas, status, stats) {
@@ -1884,6 +2325,7 @@ async function loadTerrain(node, canvas, status, stats) {
   }
   const data = meta.data || {};
   const dimensions = Array.isArray(data.dimensions) ? data.dimensions : [];
+  const tileBlocks = Number(data.tileBlocks) || 128;
   stats.innerHTML = "";
   stats.appendChild(kv("Chunks captured", String(data.totalChunks || 0), "mono"));
   stats.appendChild(kv("Blocks mapped", String(data.mappedBlocks || 0), "mono"));
@@ -1892,61 +2334,57 @@ async function loadTerrain(node, canvas, status, stats) {
 
   if (dimensions.length === 0) {
     status.textContent = "No terrain captured yet. Enable the terrain-map module in the addon.";
-    drawEmptyMap(canvas);
+    clearSurface("Nothing captured in this area yet");
     return;
   }
 
   // Prefer the overworld, else the first dimension with tiles.
   const dimension = dimensions.find(d => d.dimension === "minecraft:overworld") || dimensions[0];
   mapRun.dimension = dimension.dimension;
+  mapView.dimension = dimension.dimension;
   const tiles = Array.isArray(dimension.tiles) ? dimension.tiles : [];
   if (tiles.length === 0) {
     status.textContent = "That dimension has no tiles yet.";
-    drawEmptyMap(canvas);
+    clearSurface("Nothing captured in this area yet");
     return;
   }
+
+  /* The view is rebuilt only when the set of tiles actually changed. A refresh every three seconds
+     used to discard the projected grid and repaint from scratch, so the map blanked and rebuilt on
+     a timer and a click landing in that window had no surface to hit. Tiles already decoded are
+     reused, which also stops a refresh from re-decoding the whole capture. */
+  const signature = dimension.dimension + "|" + tileBlocks + "|"
+    + tiles.map(t => t.x + "," + t.z).sort().join(";");
+  if (mapView.signature === signature && mapView.grid) {
+    drawMap();
+    appendSurfaceStats(stats, dimension);
+    return;
+  }
+  mapView.signature = signature;
 
   const minX = Math.min(...tiles.map(t => t.x));
   const maxX = Math.max(...tiles.map(t => t.x));
   const minZ = Math.min(...tiles.map(t => t.z));
   const maxZ = Math.max(...tiles.map(t => t.z));
-  const cols = maxX - minX + 1;
-  const rows = maxZ - minZ + 1;
-  const pixelsPerTile = 128;                   // 8 chunks x 16 blocks
-  canvas.width = cols * pixelsPerTile;
-  canvas.height = rows * pixelsPerTile;
-  const ctx = canvas.getContext("2d");
-  ctx.fillStyle = "#0a1020";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  const blocksW = (maxX - minX + 1) * tileBlocks;
+  const blocksH = (maxZ - minZ + 1) * tileBlocks;
+  const minBlockX = minX * tileBlocks;
+  const minBlockZ = minZ * tileBlocks;
 
-  // Draw each tile the moment it arrives instead of waiting for the whole set. On a large area the
-  // last tile can take a while, and a map that shows nothing until then is indistinguishable from a
-  // frozen one. The health line reports progress so a slow map is visibly slow rather than stuck.
+  // A canvas past this size is not worth the memory for a map that is panned rather than printed,
+  // so a capture that large falls back to drawing the visible columns instead of a full surface.
+  const surface = blocksW * blocksH <= 16000000
+    ? makeSurface(minBlockX, minBlockZ, blocksW, blocksH)
+    : null;
+  mapView.surface = surface;
+  mapView.grid = null;                       // not built until every tile is in
+
   let drawn = 0;
   let failed = 0;
   let pending = tiles.length;
   const total = tiles.length;
   const startedAt = Date.now();
-
-  // Kept so the isometric pass can project the same heights without fetching anything again.
   const decodedTiles = [];
-
-  const paint = (decoded, tile) => {
-    const offsetX = (tile.x - minX) * pixelsPerTile;
-    const offsetY = (tile.z - minZ) * pixelsPerTile;
-    for (const chunk of decoded.chunks) {
-      const baseX = offsetX + (chunk.chunkX - decoded.originChunkX) * 16;
-      const baseY = offsetY + (chunk.chunkZ - decoded.originChunkZ) * 16;
-      for (let z = 0; z < 16; z++) {
-        for (let x = 0; x < 16; x++) {
-          const height = chunk.heights[z * 16 + x];
-          if (height <= -1000) continue;        // unknown column: leave it transparent
-          ctx.fillStyle = heightColor(height);
-          ctx.fillRect(baseX + x, baseY + z, 1, 1);
-        }
-      }
-    }
-  };
 
   const report = () => {
     const elapsed = Math.max(1, Date.now() - startedAt);
@@ -1967,8 +2405,9 @@ async function loadTerrain(node, canvas, status, stats) {
   };
   report();
 
-  // Bounded parallelism: a handful of tiles at once keeps the network busy without opening
-  // hundreds of sockets, which is what made a large map stall.
+  // Draw each tile the moment it arrives instead of waiting for the whole set. On a large area the
+  // last tile can take a while, and a map that shows nothing until then is indistinguishable from a
+  // frozen one. The health line reports progress so a slow map is visibly slow rather than stuck.
   const CONCURRENCY = 6;
   let cursor = 0;
   const worker = async () => {
@@ -1980,7 +2419,10 @@ async function loadTerrain(node, canvas, status, stats) {
       try {
         const decoded = decodeTile(raw);
         decodedTiles.push({ decoded, tile });
-        paint(decoded, tile);
+        if (surface) {
+          paintTileInto(surface, decoded, tile, tileBlocks);
+          if (mapView.mode === "flat") drawMap();      // progressive, as before
+        }
         drawn++;
       } catch (e) {
         failed++;
@@ -1996,37 +2438,56 @@ async function loadTerrain(node, canvas, status, stats) {
     mapHealth.state = "error";
   }
 
-  // The flat map is already painted above; the isometric view is projected from the same decoded
-  // heights, so switching modes costs no extra requests.
-  if (isoState.mode === "iso" && decodedTiles.length > 0) {
-    const grid = stitchHeights(decodedTiles);
-    if (grid) {
-      const relief = drawIsometric(canvas, grid.heights, grid.width, grid.height,
-        { zoom: isoState.zoom });
-      stats.appendChild(kv("Relief", relief.minHeight + "…" + relief.maxHeight, "mono"));
-    }
+  // Both views read the same decoded heights, so switching mode costs no extra requests.
+  const grid = stitchHeights(decodedTiles);
+  mapView.grid = grid;
+  if (grid && mapView.cx === null) {
+    const { width, height } = fitCanvas(canvas);
+    fitView(width, height);
   }
+  drawMap();
 
-  stats.appendChild(kv("Tiles", drawn + " / " + total + (failed ? " (" + failed + " failed)" : ""), "mono"));
+  if (grid) {
+    stats.appendChild(kv("Relief", grid.minHeight + "…" + grid.maxHeight, "mono"));
+    stats.appendChild(kv("Surface", grid.width + " × " + grid.height + " blocks", "mono"));
+  }
+  appendSurfaceStats(stats, dimension, drawn + " / " + total + (failed ? " (" + failed + " failed)" : ""));
+}
+
+/** The rows that describe the current draw, shared by a fresh paint and a cached redraw. */
+function appendSurfaceStats(stats, dimension, tileRow) {
+  if (tileRow) stats.appendChild(kv("Tiles", tileRow, "mono"));
+  else if (mapHealth.total) {
+    stats.appendChild(kv("Tiles", mapHealth.drawn + " / " + mapHealth.total
+      + (mapHealth.failed ? " (" + mapHealth.failed + " failed)" : ""), "mono"));
+  }
   stats.appendChild(kv("Map state", mapHealth.state, mapHealth.state === "live" ? "ok" : "warn"));
   stats.appendChild(kv("Tile cache", tileCache.size + " entries", "mono"));
-  if (dimension.biomes) {
+  if (dimension && dimension.biomes) {
     const top = Object.entries(dimension.biomes).slice(0, 6)
       .map(([name, count]) => shortId(name) + " " + count).join(", ");
     stats.appendChild(kv("Biomes", top || "—", "mono"));
   }
 }
 
-function drawEmptyMap(canvas) {
-  canvas.width = 512;
-  canvas.height = 240;
-  const ctx = canvas.getContext("2d");
+/** Drops the drawn surface, so an empty capture says so instead of showing stale terrain. */
+function clearSurface(message) {
+  mapView.surface = null;
+  mapView.grid = null;
+  mapView.proj = null;
+  mapView.signature = "";
+  mapView.cx = null;
+  mapView.cz = null;
+  if (!mapDom.canvas) return;
+  const { ctx, width, height } = fitCanvas(mapDom.canvas);
+  if (!ctx) return;
   ctx.fillStyle = "#0a1020";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillRect(0, 0, width, height);
   ctx.fillStyle = "#62729a";
   ctx.font = "13px ui-sans-serif, system-ui";
   ctx.textAlign = "center";
-  ctx.fillText("Nothing captured in this area yet", canvas.width / 2, canvas.height / 2);
+  ctx.fillText(message, width / 2, height / 2);
+  ctx.textAlign = "start";
 }
 
 // ---------------------------------------------------------------- metrics
