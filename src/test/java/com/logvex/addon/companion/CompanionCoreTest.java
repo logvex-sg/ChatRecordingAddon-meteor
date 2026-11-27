@@ -263,6 +263,23 @@ class CompanionCoreTest {
     }
 
     @Test
+    @DisplayName("two bots do not share cached terrain")
+    void tileCacheIsScopedPerClient() throws Exception {
+        try (InputStream in = getClass().getResourceAsStream("/companion/app.html")) {
+            assertNotNull(in, "companion/app.html must ship in the jar");
+            String html = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+
+            // Regression: the cache was keyed by dimension and tile position only. Two connected
+            // bots are two different worlds, so the second would be drawn with the first's terrain.
+            Matcher key = Pattern.compile(
+                "function tileKey\\(node, dimension, x, z\\)").matcher(html);
+            assertTrue(key.find(), "tileKey must take the node, so the cache cannot cross clients");
+            assertTrue(html.contains("(node && node.id ? node.id : \"?\")"),
+                "the tile key must include the client id");
+        }
+    }
+
+    @Test
     @DisplayName("a stalled publisher does not block on a subscriber")
     void subscriberNeverBlocksPublisher() throws Exception {
         CompanionEventBus bus = new CompanionEventBus(10);

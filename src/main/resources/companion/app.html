@@ -1325,8 +1325,10 @@ const tileCache = new Map();     // "dim:x:z" -> Uint8Array|null (null = known u
 const tileInflight = new Map();  // "dim:x:z" -> Promise, so two refreshes never fetch one tile twice
 const TILE_TIMEOUT_MS = 8000;
 
-function tileKey(dimension, x, z) {
-  return dimension + ":" + x + ":" + z;
+// Keyed by node as well as position: two bots are two different worlds, and sharing a cache entry
+// between them would draw one server's terrain as if it were the other's.
+function tileKey(node, dimension, x, z) {
+  return (node && node.id ? node.id : "?") + "|" + dimension + ":" + x + ":" + z;
 }
 
 /**
@@ -1336,7 +1338,7 @@ function tileKey(dimension, x, z) {
  * region nobody has visited costs one request rather than one per refresh.
  */
 function fetchTile(node, dimension, tileX, tileZ, options = {}) {
-  const key = tileKey(dimension, tileX, tileZ);
+  const key = tileKey(node, dimension, tileX, tileZ);
   if (!options.refresh && tileCache.has(key)) return Promise.resolve(tileCache.get(key));
   const pending = tileInflight.get(key);
   if (pending && !options.refresh) return pending;
