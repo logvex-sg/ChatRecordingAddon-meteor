@@ -595,7 +595,7 @@ const snapshots = new Map();   // nodeId -> snapshot
 
 // The map's own health, kept outside the DOM so a redraw does not lose it. A map that is still
 // fetching is "synchronising", never "live": the two must not be able to look the same.
-const mapHealth = { state: "idle", drawn: 0, total: 0, failed: 0, at: 0 };
+const mapHealth = { state: "idle", drawn: 0, total: 0, failed: 0, at: 0, drawn3d: 0, stride3d: 1 };
 const nodeState = new Map();   // nodeId -> {ok, error, at}
 let eventSource = null;
 const feed = [];
@@ -1603,7 +1603,10 @@ const mapView = {
   mode: "iso", zoom: 1, cx: null, cz: null,
   hover: null, pending: null, proj: null, signature: "",
   surface: null, grid: null, waypoints: [], player: null,
-  dragging: false, moved: false
+  dragging: false, moved: false,
+  // Orbit camera for the 3D view. `yaw` turns around the vertical axis, `pitch` is the elevation
+  // of the camera above the horizon, and `dist` is how far it sits from the target, in blocks.
+  yaw: -0.62, pitch: 0.72, dist: null, targetY: null
 };
 
 function mapCanvas(node) {
@@ -1647,6 +1650,10 @@ function fitView(width, height) {
   if (grid && grid.width > 0) {
     mapView.cx = grid.minBlockX + grid.width / 2;
     mapView.cz = grid.minBlockZ + grid.height / 2;
+    if (mapView.mode === "3d") {
+      fitCameraToGrid(width, height, pad);
+      return;
+    }
     const spanX = (grid.width + grid.height) * 2;
     const spanY = (grid.width + grid.height) + (grid.maxHeight - grid.minHeight);
     mapView.zoom = Math.max(0.12,
@@ -1654,11 +1661,56 @@ function fitView(width, height) {
   }
 }
 
+/**
+ * Picks a camera distance that makes the whole capture fill the frame.
+ *
+ * <p>A closed form is tempting but wrong here: the capture is a ground plane seen at an angle, so its
+ * screen size is not proportional to the diagonal and a formula over-shoots by half the frame. So the
+ * corners are projected at a trial distance and the distance is corrected by the measured overshoot,
+ * twice, which converges because screen size is very nearly inversely proportional to distance.
+ */
+function fitCameraToGrid(width, height, pad) {
+  const grid = mapView.grid;
+  mapView.targetY = (grid.minHeight + grid.maxHeight) / 2;
+  const corners = [
+    [grid.minBlockX, grid.minBlockZ], [grid.minBlockX + grid.width, grid.minBlockZ],
+    [grid.minBlockX, grid.minBlockZ + grid.height],
+    [grid.minBlockX + grid.width, grid.minBlockZ + grid.height]
+  ];
+  const heights = [grid.minHeight + 1, grid.maxHeight + 1];
+
+  const measure = (dist) => {
+    mapView.dist = dist;
+    const camera = buildCamera(width, height);
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (const [bx, bz] of corners) {
+      for (const by of heights) {
+        const at = projectWorld(camera, bx, by, bz);
+        if (!at) return null;
+        x0 = Math.min(x0, at.x); x1 = Math.max(x1, at.x);
+        y0 = Math.min(y0, at.y); y1 = Math.max(y1, at.y);
+      }
+    }
+    return {w: x1 - x0, h: y1 - y0};
+  };
+
+  let dist = Math.max(24, Math.hypot(grid.width, grid.height) * 0.9);
+  for (let pass = 0; pass < 3; pass++) {
+    const bounds = measure(dist);
+    if (!bounds || bounds.w <= 0 || bounds.h <= 0) break;
+    const fill = Math.max(bounds.w / (width * pad), bounds.h / (height * pad));
+    if (fill <= 0) break;
+    dist = Math.max(16, dist * fill);
+  }
+  mapView.dist = dist;
+}
+
 // ---------------------------------------------------------------- drawing
 
 function drawMap() {
   if (!mapDom.canvas) return;
-  if (mapView.mode === "iso") drawIsoView(mapDom.canvas);
+  if (mapView.mode === "3d") draw3DView(mapDom.canvas);
+  else if (mapView.mode === "iso") drawIsoView(mapDom.canvas);
   else drawFlatView(mapDom.canvas);
   updateHint();
 }
@@ -1783,6 +1835,422 @@ function drawIsoView(canvas) {
   drawOverlays(ctx, width, height);
 }
 
+// ---------------------------------------------------------------- 3D view
+
+/* A small 4x4 matrix kit, column-major like WebGL so it reads the same as a shader would. The 3D
+   view needs a perspective camera, and that is one matrix multiply per vertex; spelling the same
+   arithmetic out per axis would be slower and much harder to check. */
+
+function mat4Identity() {
+  const m = new Float64Array(16);
+  m[0] = m[5] = m[10] = m[15] = 1;
+  return m;
+}
+
+/** `a * b`, both column-major. */
+function mat4Mul(a, b) {
+  const out = new Float64Array(16);
+  for (let col = 0; col < 4; col++) {
+    for (let row = 0; row < 4; row++) {
+      let sum = 0;
+      for (let k = 0; k < 4; k++) sum += a[k * 4 + row] * b[col * 4 + k];
+      out[col * 4 + row] = sum;
+    }
+  }
+  return out;
+}
+
+function mat4Perspective(fovY, aspect, near, far) {
+  const f = 1 / Math.tan(fovY / 2);
+  const m = new Float64Array(16);
+  m[0] = f / aspect;
+  m[5] = f;
+  m[10] = (far + near) / (near - far);
+  m[11] = -1;
+  m[14] = (2 * far * near) / (near - far);
+  return m;
+}
+
+/** A look-at view matrix from an eye point towards a target. */
+function mat4LookAt(eye, target, up) {
+  let zx = eye[0] - target[0], zy = eye[1] - target[1], zz = eye[2] - target[2];
+  let len = Math.hypot(zx, zy, zz) || 1;
+  zx /= len; zy /= len; zz /= len;
+  let xx = up[1] * zz - up[2] * zy, xy = up[2] * zx - up[0] * zz, xz = up[0] * zy - up[1] * zx;
+  len = Math.hypot(xx, xy, xz) || 1;
+  xx /= len; xy /= len; xz /= len;
+  const yx = zy * xz - zz * xy, yy = zz * xx - zx * xz, yz = zx * xy - zy * xx;
+  const m = new Float64Array(16);
+  m[0] = xx; m[4] = xy; m[8] = xz;
+  m[1] = yx; m[5] = yy; m[9] = yz;
+  m[2] = zx; m[6] = zy; m[10] = zz;
+  m[12] = -(xx * eye[0] + xy * eye[1] + xz * eye[2]);
+  m[13] = -(yx * eye[0] + yy * eye[1] + yz * eye[2]);
+  m[14] = -(zx * eye[0] + zy * eye[1] + zz * eye[2]);
+  m[15] = 1;
+  return m;
+}
+
+/** The inverse of a 4x4, or null when it is singular. Used to turn a pixel back into a ray. */
+function mat4Invert(m) {
+  const a00 = m[0], a01 = m[1], a02 = m[2], a03 = m[3];
+  const a10 = m[4], a11 = m[5], a12 = m[6], a13 = m[7];
+  const a20 = m[8], a21 = m[9], a22 = m[10], a23 = m[11];
+  const a30 = m[12], a31 = m[13], a32 = m[14], a33 = m[15];
+
+  const b00 = a00 * a11 - a01 * a10, b01 = a00 * a12 - a02 * a10;
+  const b02 = a00 * a13 - a03 * a10, b03 = a01 * a12 - a02 * a11;
+  const b04 = a01 * a13 - a03 * a11, b05 = a02 * a13 - a03 * a12;
+  const b06 = a20 * a31 - a21 * a30, b07 = a20 * a32 - a22 * a30;
+  const b08 = a20 * a33 - a23 * a30, b09 = a21 * a32 - a22 * a31;
+  const b10 = a21 * a33 - a23 * a31, b11 = a22 * a33 - a23 * a32;
+
+  const det = b00 * b11 - b01 * b10 + b02 * b09 + b03 * b08 - b04 * b07 + b05 * b06;
+  if (!det) return null;
+  const d = 1 / det;
+
+  const out = new Float64Array(16);
+  out[0] = (a11 * b11 - a12 * b10 + a13 * b09) * d;
+  out[1] = (a02 * b10 - a01 * b11 - a03 * b09) * d;
+  out[2] = (a31 * b05 - a32 * b04 + a33 * b03) * d;
+  out[3] = (a22 * b04 - a21 * b05 - a23 * b03) * d;
+  out[4] = (a12 * b08 - a10 * b11 - a13 * b07) * d;
+  out[5] = (a00 * b11 - a02 * b08 + a03 * b07) * d;
+  out[6] = (a32 * b02 - a30 * b05 - a33 * b01) * d;
+  out[7] = (a20 * b05 - a22 * b02 + a23 * b01) * d;
+  out[8] = (a10 * b10 - a11 * b08 + a13 * b06) * d;
+  out[9] = (a01 * b08 - a00 * b10 - a03 * b06) * d;
+  out[10] = (a30 * b04 - a31 * b02 + a33 * b00) * d;
+  out[11] = (a21 * b02 - a20 * b04 - a23 * b00) * d;
+  out[12] = (a11 * b07 - a10 * b09 - a12 * b06) * d;
+  out[13] = (a00 * b09 - a01 * b07 + a02 * b06) * d;
+  out[14] = (a31 * b01 - a30 * b03 - a32 * b00) * d;
+  out[15] = (a20 * b03 - a21 * b01 + a22 * b00) * d;
+  return out;
+}
+
+/** The vertical field of view, widened on a tall frame so the fit is even either way round. */
+function cameraFov(width, height) {
+  const base = 0.92;
+  if (width >= height) return base;
+  return Math.min(1.5, base * (height / Math.max(1, width)));
+}
+
+/**
+ * Builds the orbit camera and the single matrix that takes a world point to canvas pixels.
+ *
+ * <p>World axes are Minecraft's: x and z lie on the ground and y is up. The camera orbits the point
+ * `cx, targetY, cz`, which is the capture centre raised to its mean surface height, so a hilly
+ * capture is framed by its bulk rather than by its lowest block.
+ */
+function buildCamera(width, height) {
+  const grid = mapView.grid;
+  const pitch = Math.max(0.10, Math.min(1.45, mapView.pitch));
+  // Clamped here as well as in the gestures: this is the one place a camera is built, so a stored or
+  // restored distance can never put the eye inside the terrain.
+  const dist = Math.max(12, mapView.dist || 200);
+  const targetY = mapView.targetY === null
+    ? (grid ? (grid.minHeight + grid.maxHeight) / 2 : 64)
+    : mapView.targetY;
+  const target = [mapView.cx || 0, targetY, mapView.cz || 0];
+  const eye = [
+    target[0] + Math.cos(pitch) * Math.sin(mapView.yaw) * dist,
+    target[1] + Math.sin(pitch) * dist,
+    target[2] + Math.cos(pitch) * Math.cos(mapView.yaw) * dist
+  ];
+  const view = mat4LookAt(eye, target, [0, 1, 0]);
+  const proj = mat4Perspective(cameraFov(width, height), width / Math.max(1, height),
+    Math.max(0.5, dist / 500), dist * 6 + 400);
+  return {
+    eye, target, dist, view, proj, vp: mat4Mul(proj, view), width, height,
+    // Kept separately so a click can be turned back into a ray without rebuilding the matrices.
+    invVp: mat4Invert(mat4Mul(proj, view))
+  };
+}
+
+/** Projects a world point to canvas pixels, or null when it is behind the camera. */
+function projectWorld(camera, x, y, z) {
+  const m = camera.vp;
+  const cx = m[0] * x + m[4] * y + m[8] * z + m[12];
+  const cy = m[1] * x + m[5] * y + m[9] * z + m[13];
+  const cw = m[3] * x + m[7] * y + m[11] * z + m[15];
+  if (cw <= 0.0001) return null;
+  return {
+    x: (cx / cw * 0.5 + 0.5) * camera.width,
+    y: (1 - (cy / cw * 0.5 + 0.5)) * camera.height
+  };
+}
+
+/** How many columns the 3D view draws at once. Beyond this the grid is sampled on a stride. */
+const COLUMN_BUDGET_3D = 26000;
+
+/**
+ * Draws the capture as shaded terrain seen through an orbit camera.
+ *
+ * <p>Every column is a top face plus the side faces that turn towards the camera. Depth is resolved
+ * by painting far columns first, so nearer ground covers farther ground the way a painter layers a
+ * scene; a height field has a well-defined distance order, so a z-buffer would be wasted work.
+ *
+ * <p>Lighting comes from a fixed direction rather than from the camera, so relief keeps the same
+ * shading as the view turns and the shape of the land stays readable from every angle.
+ */
+function draw3DView(canvas) {
+  const { ctx, width, height } = fitCanvas(canvas);
+  if (!ctx) return;
+  const grid = mapView.grid;
+  if (!grid) { paintEmpty(ctx, width, height); return; }
+  if (mapView.cx === null || mapView.dist === null) fitView(width, height);
+
+  const camera = buildCamera(width, height);
+  mapView.proj = { kind: "3d", camera };
+
+  // Sky above, ground below: the horizon reads as distance instead of as empty canvas.
+  const sky = ctx.createLinearGradient(0, 0, 0, height);
+  sky.addColorStop(0, "#0d1728");
+  sky.addColorStop(0.6, "#0a1020");
+  sky.addColorStop(1, "#080d18");
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, width, height);
+
+  const rawAt = (x, z) => (x < 0 || z < 0 || x >= grid.width || z >= grid.height)
+    ? -2000 : grid.heights[z * grid.width + x];
+  const heightAt = (x, z) => {
+    const value = rawAt(x, z);
+    return value <= -1000 ? null : value;
+  };
+
+  /* A capture can hold far more columns than a frame can usefully show, so sample on a stride when
+     it does. Each drawn column then stands for a stride-sized patch of ground, which keeps the
+     silhouette right while cutting the work to a fixed budget. */
+  const total = grid.width * grid.height;
+  const stride = Math.max(1, Math.ceil(Math.sqrt(total / COLUMN_BUDGET_3D)));
+
+  // Farthest first. Sorting by the distance from the eye to the column centre gives the painter's
+  // order for any yaw, which a fixed corner-to-corner walk only does when the view is axis-aligned.
+  const eye = camera.eye;
+  const order = [];
+  for (let gz = 0; gz < grid.height; gz += stride) {
+    for (let gx = 0; gx < grid.width; gx += stride) {
+      if (rawAt(gx, gz) <= -1000) continue;
+      const wx = grid.minBlockX + gx + stride / 2;
+      const wz = grid.minBlockZ + gz + stride / 2;
+      const wy = rawAt(gx, gz) + 1;
+      const dx = wx - eye[0], dy = wy - eye[1], dz = wz - eye[2];
+      order.push({ gx, gz, d: dx * dx + dy * dy + dz * dz });
+    }
+  }
+  order.sort((a, b) => b.d - a.d);
+
+  const light = [-0.40, 0.84, -0.36];
+  const lightLen = Math.hypot(light[0], light[1], light[2]);
+  light[0] /= lightLen; light[1] /= lightLen; light[2] /= lightLen;
+
+  const step = stride;
+  let drawn = 0;
+
+  for (const cell of order) {
+    const { gx, gz } = cell;
+    const value = rawAt(gx, gz);
+    const wx = grid.minBlockX + gx;
+    const wz = grid.minBlockZ + gz;
+    const top = value + 1;
+
+    // The four corners of the top face, shared by the top fill and the side faces below it.
+    const c00 = projectWorld(camera, wx, top, wz);
+    const c10 = projectWorld(camera, wx + step, top, wz);
+    const c11 = projectWorld(camera, wx + step, top, wz + step);
+    const c01 = projectWorld(camera, wx, top, wz + step);
+    if (!c00 || !c10 || !c11 || !c01) continue;
+
+    const minX = Math.min(c00.x, c10.x, c11.x, c01.x);
+    const maxX = Math.max(c00.x, c10.x, c11.x, c01.x);
+    const minY = Math.min(c00.y, c10.y, c11.y, c01.y);
+    const maxY = Math.max(c00.y, c10.y, c11.y, c01.y);
+    if (maxX < -80 || minX > width + 80 || maxY < -80 || minY > height + 80) continue;
+
+    const colour = heightColor(value);
+    const spanX = maxX - minX;
+    const spanY = maxY - minY;
+
+    // A column smaller than a pixel is not worth a path; a dot keeps its colour and costs nothing.
+    if (Math.max(spanX, spanY) < 1.7) {
+      ctx.fillStyle = colour;
+      ctx.fillRect((minX + maxX) / 2, (minY + maxY) / 2, 1.4, 1.4);
+      drawn++;
+      continue;
+    }
+
+    // Side faces, but only the ones turned towards the eye. Without this test a column would paint
+    // its far side over the ground behind it and the terrain would look inside out.
+    const midX = wx + step / 2;
+    const midZ = wz + step / 2;
+    const sides = [
+      { nx: 1, nz: 0, ax: wx + step, az: wz, bx: wx + step, bz: wz + step, tone: -0.26 },
+      { nx: -1, nz: 0, ax: wx, az: wz, bx: wx, bz: wz + step, tone: -0.34 },
+      { nx: 0, nz: 1, ax: wx, az: wz + step, bx: wx + step, bz: wz + step, tone: -0.42 },
+      { nx: 0, nz: -1, ax: wx, az: wz, bx: wx + step, bz: wz, tone: -0.50 }
+    ];
+    for (const side of sides) {
+      if (side.nx * (eye[0] - midX) + side.nz * (eye[2] - midZ) <= 0) continue;
+      const neighbour = heightAt(gx + side.nx * step, gz + side.nz * step);
+      const floor = neighbour === null ? grid.minHeight - 4 : neighbour;
+      const drop = Math.min(value - floor, 64);
+      if (drop <= 0) continue;
+      const aTop = projectWorld(camera, side.ax, top, side.az);
+      const bTop = projectWorld(camera, side.bx, top, side.bz);
+      const aLow = projectWorld(camera, side.ax, top - drop, side.az);
+      const bLow = projectWorld(camera, side.bx, top - drop, side.bz);
+      if (!aTop || !bTop || !aLow || !bLow) continue;
+      ctx.fillStyle = shade(colour, side.tone);
+      ctx.beginPath();
+      ctx.moveTo(aTop.x, aTop.y);
+      ctx.lineTo(bTop.x, bTop.y);
+      ctx.lineTo(bLow.x, bLow.y);
+      ctx.lineTo(aLow.x, aLow.y);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // Top face. The normal comes from the local slope, so a hillside turns away from the sun and a
+    // plateau catches it, which is what makes the relief legible in a still frame.
+    const left = heightAt(gx - step, gz);
+    const right = heightAt(gx + step, gz);
+    const back = heightAt(gx, gz - step);
+    const front = heightAt(gx, gz + step);
+    const nx = (left === null ? value : left) - (right === null ? value : right);
+    const nz = (back === null ? value : back) - (front === null ? value : front);
+    const nLen = Math.hypot(nx, 2, nz) || 1;
+    const lambert = (nx * light[0] + 2 * light[1] + nz * light[2]) / nLen;
+    ctx.fillStyle = shade(colour, (Math.max(0, Math.min(1, lambert * 0.5 + 0.6)) - 0.7) * 0.9);
+    ctx.beginPath();
+    ctx.moveTo(c00.x, c00.y);
+    ctx.lineTo(c10.x, c10.y);
+    ctx.lineTo(c11.x, c11.y);
+    ctx.lineTo(c01.x, c01.y);
+    ctx.closePath();
+    ctx.fill();
+    drawn++;
+  }
+
+  mapHealth.drawn3d = drawn;
+  mapHealth.stride3d = stride;
+  drawOverlays(ctx, width, height);
+}
+
+/**
+ * Turns a pixel into the block under it, by casting a ray into the height field.
+ *
+ * <p>The ray walks the grid cell by cell (a 2D DDA over x and z), and in each cell asks whether the
+ * ray is below that column's top by the time it leaves. The first such cell is the visible one.
+ * Walking cells rather than sampling along the ray in fixed steps is what makes the answer exact:
+ * a fixed-step march straddles two cells near a cliff and can name the neighbour, which shows up as
+ * a click landing one block off. Stepping also costs one iteration per cell crossed rather than one
+ * per fraction of a block, so a long ray is cheap.
+ */
+function pick3D(px, py) {
+  const p = mapView.proj;
+  const grid = mapView.grid;
+  if (!p || p.kind !== "3d" || !grid || !p.camera.invVp) return null;
+  const camera = p.camera;
+  const inv = camera.invVp;
+
+  const unproject = (z) => {
+    const nx = px / camera.width * 2 - 1;
+    const ny = 1 - py / camera.height * 2;
+    const w = inv[3] * nx + inv[7] * ny + inv[11] * z + inv[15];
+    if (!w) return null;
+    return [
+      (inv[0] * nx + inv[4] * ny + inv[8] * z + inv[12]) / w,
+      (inv[1] * nx + inv[5] * ny + inv[9] * z + inv[13]) / w,
+      (inv[2] * nx + inv[6] * ny + inv[10] * z + inv[14]) / w
+    ];
+  };
+
+  const near = unproject(0);
+  const far = unproject(1);
+  if (!near || !far) return null;
+
+  let dx = far[0] - near[0], dy = far[1] - near[1], dz = far[2] - near[2];
+  const length = Math.hypot(dx, dy, dz) || 1;
+  dx /= length; dy /= length; dz /= length;
+
+  const topAt = (gx, gz) => {
+    if (gx < 0 || gz < 0 || gx >= grid.width || gz >= grid.height) return null;
+    const value = grid.heights[gz * grid.width + gx];
+    return value <= -1000 ? null : value + 1;
+  };
+
+  /* Enter the grid before walking it. A ray that starts far outside would otherwise spend its whole
+     iteration budget crossing empty space, and a pixel that looks at the ground from a camera far
+     away would resolve to nothing. The slab test gives the distance at which the ray is inside the
+     grid's x and z bounds, and the walk begins there. */
+  const gMinX = grid.minBlockX, gMaxX = grid.minBlockX + grid.width;
+  const gMinZ = grid.minBlockZ, gMaxZ = grid.minBlockZ + grid.height;
+  let tEnter = 0;
+  let tLeave = Infinity;
+  for (const [origin, direction, low, high] of [
+    [near[0], dx, gMinX, gMaxX],
+    [near[2], dz, gMinZ, gMaxZ]
+  ]) {
+    if (direction === 0) {
+      if (origin < low || origin > high) return null;
+      continue;
+    }
+    const t0 = (low - origin) / direction;
+    const t1 = (high - origin) / direction;
+    tEnter = Math.max(tEnter, Math.min(t0, t1));
+    tLeave = Math.min(tLeave, Math.max(t0, t1));
+  }
+  if (tEnter >= tLeave) return null;
+
+  // A hair inside the grid, so a ray entering exactly on a boundary does not start on the far side.
+  tEnter += 1e-4;
+  const startX = near[0] + dx * tEnter;
+  const startZ = near[2] + dz * tEnter;
+
+  let gx = Math.floor(startX) - grid.minBlockX;
+  let gz = Math.floor(startZ) - grid.minBlockZ;
+  const stepX = dx > 0 ? 1 : -1;
+  const stepZ = dz > 0 ? 1 : -1;
+  const invDx = dx === 0 ? Infinity : 1 / dx;
+  const invDz = dz === 0 ? Infinity : 1 / dz;
+
+  // Distance along the ray to the next cell boundary on each axis.
+  const boundaryX = grid.minBlockX + gx + (stepX > 0 ? 1 : 0);
+  const boundaryZ = grid.minBlockZ + gz + (stepZ > 0 ? 1 : 0);
+  let tMaxX = dx === 0 ? Infinity : (boundaryX - near[0]) * invDx;
+  let tMaxZ = dz === 0 ? Infinity : (boundaryZ - near[2]) * invDz;
+  const tDeltaX = dx === 0 ? Infinity : Math.abs(invDx);
+  const tDeltaZ = dz === 0 ? Infinity : Math.abs(invDz);
+
+  let t = tEnter;
+  const limit = grid.width + grid.height + 8;
+  for (let guard = 0; guard < limit; guard++) {
+    const tExit = Math.min(tMaxX, tMaxZ, tLeave);
+    const top = topAt(gx, gz);
+    if (top !== null) {
+      // The ray is inside this cell from t to tExit. It hits the column when its height drops to the
+      // column top within that span; entering already below the top is an immediate hit.
+      const yEnter = near[1] + dy * t;
+      const yExit = near[1] + dy * tExit;
+      if (yEnter <= top || (dy < 0 && yExit <= top)) {
+        return { x: gx + grid.minBlockX, z: gz + grid.minBlockZ, height: top - 1 };
+      }
+    }
+    if (tExit === Infinity || tExit >= tLeave) break;
+    t = tExit;
+    if (tMaxX < tMaxZ) {
+      gx += stepX;
+      tMaxX += tDeltaX;
+    } else {
+      gz += stepZ;
+      tMaxZ += tDeltaZ;
+    }
+    if (gx < 0 || gz < 0 || gx >= grid.width || gz >= grid.height) break;
+  }
+  return null;
+}
+
 function paintEmpty(ctx, width, height) {
   ctx.fillStyle = "#0a1020";
   ctx.fillRect(0, 0, width, height);
@@ -1802,6 +2270,11 @@ function projectBlock(bx, bz, height) {
   if (p.kind === "flat") {
     return { x: p.originX + (bx - p.minBlockX) * p.scale,
              y: p.originY + (bz - p.minBlockZ) * p.scale };
+  }
+  if (p.kind === "3d") {
+    const grid = mapView.grid;
+    const y = (height === null || height === undefined ? (grid ? grid.minHeight : 64) : height) + 1;
+    return projectWorld(p.camera, bx, y, bz);
   }
   const h = height === null || height === undefined ? p.minHeight : height;
   return { x: p.originX + (bx - bz) * p.halfW,
@@ -1881,14 +2354,21 @@ function drawMarker(ctx, x, y, color, label, solid) {
 
 function updateHint() {
   if (!mapDom.hint) return;
-  const parts = ["Drag to pan", "scroll to zoom", "click to mark a waypoint"];
+  const parts = mapView.mode === "3d"
+    ? ["Drag to orbit", "scroll to dolly", "click to mark a waypoint"]
+    : ["Drag to pan", "scroll to zoom", "click to mark a waypoint"];
   const hover = mapView.hover;
   if (hover) {
     parts.push("height" in hover
       ? "X " + hover.x + " · Y " + hover.height + " · Z " + hover.z
       : "X " + hover.x + " · Z " + hover.z);
   }
-  parts.push("zoom " + mapView.zoom.toFixed(2) + "\u00d7");
+  if (mapView.mode === "3d") {
+    parts.push("dist " + Math.round(mapView.dist || 0));
+    parts.push("yaw " + Math.round((mapView.yaw * 180 / Math.PI + 360) % 360) + "\u00b0");
+  } else {
+    parts.push("zoom " + mapView.zoom.toFixed(2) + "\u00d7");
+  }
   mapDom.hint.textContent = parts.join(" · ");
 }
 
@@ -1946,6 +2426,12 @@ function screenToBlock(px, py) {
   return { x: Math.round((a + b) / 2), z: Math.round((b - a) / 2) };
 }
 
+/** The block under a pixel, in whichever mode is showing. */
+function pickAt(px, py) {
+  if (mapView.mode === "3d") return pick3D(px, py);
+  return screenToBlock(px, py);
+}
+
 /** Moves the centre so the picture follows a drag of the given screen distance. */
 function panBy(dx, dy) {
   const p = mapView.proj;
@@ -1953,6 +2439,13 @@ function panBy(dx, dy) {
   if (p.kind === "flat") {
     mapView.cx -= dx / p.scale;
     mapView.cz -= dy / p.scale;
+    return;
+  }
+  if (p.kind === "3d") {
+    // A drag in 3D orbits: horizontal turns the camera, vertical raises or lowers it. The rates are
+    // fixed rather than scaled by distance, so the same drag always turns the view the same amount.
+    mapView.yaw -= dx * 0.006;
+    mapView.pitch = Math.max(0.10, Math.min(1.45, mapView.pitch + dy * 0.005));
     return;
   }
   // The projection is (x - z, x + z), so a screen drag is undone by solving that pair.
@@ -1963,7 +2456,14 @@ function panBy(dx, dy) {
 }
 
 function zoomBy(factor) {
-  mapView.zoom = Math.max(0.12, Math.min(8, mapView.zoom * factor));
+  if (mapView.mode === "3d") {
+    // In 3D, "zoom" is a dolly: the camera moves closer to or further from its target.
+    const grid = mapView.grid;
+    const limit = grid ? Math.max(18, Math.hypot(grid.width, grid.height) * 2.4) : 900;
+    mapView.dist = Math.max(12, Math.min(limit, (mapView.dist || 200) / factor));
+  } else {
+    mapView.zoom = Math.max(0.12, Math.min(8, mapView.zoom * factor));
+  }
   drawMap();
 }
 
@@ -2022,7 +2522,7 @@ function wireMap(canvas) {
       return;
     }
     const at = local(event);
-    mapView.hover = screenToBlock(at.x, at.y);
+    mapView.hover = pickAt(at.x, at.y);
     drawMap();
   });
 
@@ -2034,7 +2534,7 @@ function wireMap(canvas) {
     mapView.moved = false;
     if (!moved) {
       const at = local(event);
-      markAt(screenToBlock(at.x, at.y));
+      markAt(pickAt(at.x, at.y));
     }
   };
   canvas.addEventListener("pointerup", release);
@@ -2202,7 +2702,15 @@ async function loadWaypoints(node, body) {
       const go = button("Centre", () => {
         mapView.cx = point.x;
         mapView.cz = point.z;
-        if (mapView.zoom < 2) mapView.zoom = 2;
+        if (mapView.mode === "3d") {
+          // Aim the orbit camera at the waypoint's own height, and pull in close enough to read it.
+          mapView.targetY = (typeof point.y === "number" ? point.y : null);
+          const grid = mapView.grid;
+          mapView.dist = Math.max(18, Math.min(mapView.dist || 120, grid
+            ? Math.hypot(grid.width, grid.height) * 0.45 : 120));
+        } else if (mapView.zoom < 2) {
+          mapView.zoom = 2;
+        }
         drawMap();
         if (mapDom.canvas) mapDom.canvas.scrollIntoView({ block: "center", behavior: "smooth" });
       }, "btn sm");
@@ -2279,12 +2787,16 @@ function renderMap() {
     el("span", {}, [el("span", { class: "swatch", style: "background:#8ab4ff;border-radius:50%" }), el("span", { text: "You" })])
   ]);
 
-  // Switching mode redraws from the cache; it never refetches, because both views use the same
+  // Switching mode redraws from the cache; it never refetches, because all three views use the same
   // decoded heights.
   const modeRow = el("div", { class: "row", style: "gap:6px;margin-bottom:9px" });
-  for (const [mode, label] of [["flat", "Flat"], ["iso", "Isometric"]]) {
+  for (const [mode, label] of [["flat", "Flat"], ["iso", "Isometric"], ["3d", "3D"]]) {
     modeRow.appendChild(button(label, () => {
       mapView.mode = mode;
+      if (mode === "3d" && mapView.dist === null) {
+        mapView.cx = null;
+        mapView.cz = null;
+      }
       drawMap();
       renderMap();
     }, "btn" + (mapView.mode === mode ? " primary" : "")));
@@ -2294,6 +2806,11 @@ function renderMap() {
   modeRow.appendChild(button("Fit", () => {
     mapView.cx = null;
     mapView.cz = null;
+    mapView.dist = null;
+    if (mapView.mode === "3d") {
+      mapView.yaw = -0.62;
+      mapView.pitch = 0.72;
+    }
     drawMap();
   }, "btn sm"));
 
