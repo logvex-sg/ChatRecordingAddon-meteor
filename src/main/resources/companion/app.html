@@ -1233,6 +1233,51 @@ function renderBot() {
 
 // ---------------------------------------------------------------- tasks
 
+/** The accent a task state carries: green while it runs, amber while it waits, red when it failed. */
+function taskTone(state) {
+  const id = String(state || "").toLowerCase();
+  if (id === "running") return "var(--accent)";
+  if (id === "failed" || id === "cancelled") return "var(--bad)";
+  if (id === "done" || id === "completed" || id === "succeeded") return "var(--good)";
+  return "var(--warn)";
+}
+
+/** One queued task as an embed: state stripe, type and description, then the timings underneath. */
+function taskEmbed(task, node) {
+  const head = el("div", { class: "head" }, [
+    el("span", { class: "sender", text: task.type || "task" }),
+    el("span", { class: "badge", text: task.state || "queued" }),
+    el("span", { class: "badge", style: "color:var(--muted)", text: "priority " + task.priority }),
+    el("span", { class: "time", text: "queued " + fmtAgo(task.enqueuedAt) })
+  ]);
+
+  const body = el("div", { class: "body" }, [head]);
+  if (task.description) body.appendChild(el("div", { class: "text", text: task.description }));
+
+  const meta = [];
+  if (task.startedAt) meta.push("started " + fmtAgo(task.startedAt));
+  // A failure reason is the whole point of showing a failed task, so it gets its own line rather
+  // than being folded into the meta row where a long message would be lost.
+  if (task.failureReason) meta.push(task.failureReason);
+  meta.push(task.id);
+  body.appendChild(el("div", { class: "meta", text: meta.join(" · ") }));
+
+  // Only a task that is still waiting or running can be cancelled; offering the button on a
+  // finished task would be a control that always fails.
+  const live = ["queued", "running", "paused"].includes(String(task.state || "").toLowerCase());
+  if (live) {
+    body.appendChild(el("div", { class: "row", style: "margin-top:7px" }, [
+      button("Cancel", () => act(node, "/api/v1/tasks/" + encodeURIComponent(task.id),
+        {}, "Cancelled.", "DELETE"), "btn danger sm")
+    ]));
+  }
+
+  return el("div", { class: "embed", style: "--tone:" + taskTone(task.state) }, [
+    el("div", { class: "stripe" }),
+    body
+  ]);
+}
+
 function renderTasks() {
   const view = document.getElementById("view-tasks");
   view.innerHTML = "";
@@ -1242,29 +1287,17 @@ function renderTasks() {
   view.appendChild(card("Client", [nodeSelect()]));
   if (!snap) { view.appendChild(card("Tasks", [emptyState("No snapshot yet.")])); return; }
 
-  const rows = snap.tasks.map(task => el("tr", {}, [
-    el("td", { text: task.state }),
-    el("td", { text: task.type }),
-    el("td", { text: task.description || "—" }),
-    el("td", { text: task.priority }),
-    el("td", { text: fmtAgo(task.enqueuedAt) }),
-    el("td", {}, [button("Cancel", () => act(node, "/api/v1/tasks/" + encodeURIComponent(task.id), {}, "Cancelled.", "DELETE"), "btn danger")])
-  ]));
-
-  const table = snap.tasks.length === 0
-    ? emptyState("The bot's queue is empty.")
-    : el("table", {}, [
-        el("thead", {}, [el("tr", {}, ["State", "Type", "Description", "Priority", "Queued", ""].map(h => el("th", { text: h })))]),
-        el("tbody", {}, rows)
-      ]);
-
-  view.appendChild(card("Task queue (" + snap.tasks.length + ")", [table]));
+  // Tasks are embeds like the chat, entity and inventory lists: the stripe carries the state, so a
+  // failed task stands out without reading the word, and the fields the table had no room for
+  // (start time, failure reason) have somewhere to go.
+  const tasks = Array.isArray(snap.tasks) ? snap.tasks : [];
+  view.appendChild(card("Task queue (" + tasks.length + ")", [tasks.length
+    ? el("div", { class: "embeds" }, tasks.map(task => taskEmbed(task, node)))
+    : emptyState("The bot's queue is empty.")]));
 }
 
 // ---------------------------------------------------------------- chat
 
-// The label and accent a message type carries in the chat log. Kept next to the view so a type the
-// client adds shows as its raw id rather than as an unstyled line, which is what happened before.
 // The label and accent a message type carries in the chat log. The colour lives here, next to the
 // label, so a type cannot end up with a badge and no accent. An id the client adds later falls back
 // to the neutral tone instead of rendering as an unstyled line.
