@@ -11,7 +11,11 @@ import org.junit.jupiter.api.Test;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -184,6 +188,32 @@ class CompanionCoreTest {
     }
 
     @Test
+    @DisplayName("every tab has a matching section, so no tab opens onto nothing")
+    void everyTabHasASection() throws Exception {
+        try (InputStream in = getClass().getResourceAsStream("/companion/app.html")) {
+            assertNotNull(in, "companion/app.html must ship in the jar");
+            String html = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+
+            Matcher tabs = Pattern.compile("\\[\"([a-z-]+)\", \"[^\"]+\"\\]").matcher(html);
+            List<String> tabIds = new ArrayList<>();
+            while (tabs.find()) tabIds.add(tabs.group(1));
+
+            Matcher sections = Pattern.compile("id=\"view-([a-z-]+)\"").matcher(html);
+            Set<String> sectionIds = new HashSet<>();
+            while (sections.find()) sectionIds.add(sections.group(1));
+
+            assertFalse(tabIds.isEmpty(), "the tab list must parse");
+            for (String id : tabIds) {
+                assertTrue(sectionIds.contains(id), "tab '" + id + "' has no <section id=\"view-" + id + "\">");
+            }
+            // The reverse matters too: an orphan section is dead markup nobody can reach.
+            for (String id : sectionIds) {
+                assertTrue(tabIds.contains(id), "section view-" + id + " is not reachable from a tab");
+            }
+        }
+    }
+
+    @Test
     @DisplayName("a stalled publisher does not block on a subscriber")
     void subscriberNeverBlocksPublisher() throws Exception {
         CompanionEventBus bus = new CompanionEventBus(10);
@@ -208,7 +238,7 @@ class CompanionCoreTest {
         String json = CompanionJson.write(CompanionSnapshot.empty("node", "Log LogClientContext", "12.0.0"));
         com.google.gson.JsonObject root = com.google.gson.JsonParser.parseString(json).getAsJsonObject();
         for (String key : List.of("node", "modules", "tasks", "players", "chat", "stats", "storage",
-            "bot", "capabilities")) {
+            "bot", "world", "metrics", "inventory", "capabilities")) {
             assertTrue(root.has(key), "the app reads snapshot." + key);
         }
         com.google.gson.JsonObject node = root.getAsJsonObject("node");

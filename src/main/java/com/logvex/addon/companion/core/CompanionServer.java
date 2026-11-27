@@ -34,11 +34,13 @@ public final class CompanionServer {
     private final CompanionRouter router;
     private final CompanionEventBus events;
     private final String appHtml;
+    private final CompanionMapSource mapSource;
 
     private HttpServer server;
     private ExecutorService workers;
     private final AtomicBoolean running = new AtomicBoolean(false);
 
+    /** A server with no map service; the map endpoints answer "not available". */
     public CompanionServer(
         CompanionConfig config,
         CompanionApi api,
@@ -46,10 +48,22 @@ public final class CompanionServer {
         CompanionEventBus events,
         String appHtml
     ) {
+        this(config, api, clientThread, events, appHtml, null);
+    }
+
+    public CompanionServer(
+        CompanionConfig config,
+        CompanionApi api,
+        CompanionClientThread clientThread,
+        CompanionEventBus events,
+        String appHtml,
+        CompanionMapSource mapSource
+    ) {
         this.config = config;
         this.events = events;
         this.appHtml = appHtml;
-        this.router = new CompanionRouter(config, api, clientThread, events, appHtml);
+        this.mapSource = mapSource;
+        this.router = new CompanionRouter(config, api, clientThread, events, appHtml, mapSource);
     }
 
     public CompanionRouter router() {
@@ -170,7 +184,8 @@ public final class CompanionServer {
     }
 
     private void write(HttpExchange exchange, CompanionRouter.Response response) throws IOException {
-        byte[] bytes = response.body() == null ? new byte[0] : response.body().getBytes(StandardCharsets.UTF_8);
+        byte[] bytes = response.binary() != null ? response.binary()
+            : response.body() == null ? new byte[0] : response.body().getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", response.contentType());
         exchange.getResponseHeaders().set("X-Content-Type-Options", "nosniff");
         exchange.getResponseHeaders().set("Cache-Control", "no-store");

@@ -17,6 +17,8 @@ import com.logvex.addon.chatlog.modules.ChatLoggerModule;
 import com.logvex.addon.companion.core.CompanionApi;
 import com.logvex.addon.companion.core.CompanionDispatch;
 import com.logvex.addon.companion.core.CompanionSnapshot;
+import com.logvex.addon.telemetry.core.TelemetryRecorder;
+import com.logvex.addon.telemetry.mc.TelemetryService;
 import com.logvex.addon.companion.core.ModuleSettings;
 import com.logvex.addon.framework.LogClientContext;
 import com.logvex.addon.framework.systems.config.ConfigManager;
@@ -36,6 +38,8 @@ import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.mob.HostileEntity;
 import net.minecraft.entity.passive.PassiveEntity;
 import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.entity.player.PlayerInventory;
+import net.minecraft.item.ItemStack;
 import net.minecraft.registry.Registries;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
@@ -92,7 +96,9 @@ public final class MinecraftCompanionApi implements CompanionApi {
             storage(log, Modules.get().get(ChatLoggerModule.class)),
             bot(bot),
             world(mc),
-            capabilities());
+            capabilities(),
+            metrics(),
+            inventory(mc));
     }
 
     /**
@@ -432,7 +438,61 @@ public final class MinecraftCompanionApi implements CompanionApi {
         out.add("events");
         out.add("storage");
         out.add("world");
+        out.add("terrain-map");
+        out.add("telemetry");
+        out.add("inventory");
+        out.add("waypoints");
         return out;
+    }
+
+    /**
+     * The telemetry series, with the same statistics the recorder keeps.
+     *
+     * <p>An empty series is not sent at all: a metric the client has never measured is absent rather
+     * than a row of zeros, so the app can say "no data yet" honestly.
+     */
+    private List<CompanionSnapshot.MetricView> metrics() {
+        TelemetryRecorder recorder = TelemetryService.get().recorder();
+        List<CompanionSnapshot.MetricView> out = new ArrayList<>();
+        for (String metric : recorder.metrics()) {
+            TelemetryRecorder.Series series = recorder.series(metric);
+            if (series == null || series.size() == 0) continue;
+            out.add(new CompanionSnapshot.MetricView(
+                metric,
+                series.timestamps(),
+                series.values(),
+                series.latest(),
+                series.min(),
+                series.max(),
+                series.average()));
+        }
+        return out;
+    }
+
+    /**
+     * The player's own inventory, read-only.
+     *
+     * <p>Only the slots the game actually exposes are read, and an empty slot is reported as an empty
+     * slot rather than skipped, so the app can draw the real layout with its gaps.
+     */
+    private CompanionSnapshot.InventoryView inventory(MinecraftClient mc) {
+        if (mc == null || mc.player == null) return CompanionSnapshot.InventoryView.unavailable();
+        PlayerInventory inventory = mc.player.getInventory();
+        List<CompanionSnapshot.ItemView> slots = new ArrayList<>();
+        int size = inventory.size();
+        for (int slot = 0; slot < size; slot++) {
+            ItemStack stack = inventory.getStack(slot);
+            if (stack == null || stack.isEmpty()) continue;
+            slots.add(new CompanionSnapshot.ItemView(
+                slot,
+                Registries.ITEM.getId(stack.getItem()).toString(),
+                stack.getName().getString(),
+                stack.getCount(),
+                stack.getMaxCount(),
+                stack.getDamage(),
+                stack.hasEnchantments()));
+        }
+        return new CompanionSnapshot.InventoryView(true, inventory.selectedSlot, slots);
     }
 
     // ------------------------------------------------------------------ actions

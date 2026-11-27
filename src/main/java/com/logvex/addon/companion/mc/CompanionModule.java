@@ -206,7 +206,8 @@ public class CompanionModule extends AddonModule {
         events = new CompanionEventBus(200);
         api = new MinecraftCompanionApi(nodeId);
         CompanionClientThread clientThread = CompanionClientThread.of(this::runOnClientThread);
-        server = new CompanionServer(config, api, clientThread, events, loadAppHtml());
+        server = new CompanionServer(config, api, clientThread, events, loadAppHtml(),
+            new MinecraftMapSource());
         try {
             server.start();
             publishDiscovery();

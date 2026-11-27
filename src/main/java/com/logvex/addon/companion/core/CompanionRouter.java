@@ -38,8 +38,23 @@ public final class CompanionRouter {
         }
     }
 
-    /** A response: a status, a content type and a body. */
-    public record Response(int status, String contentType, String body) {
+    /**
+     * A response: a status, a content type and a body.
+     *
+     * <p>{@code binary} carries a payload that is not text (a terrain tile). When it is set the
+     * transport writes it verbatim and ignores {@code body}; when it is null the body is written as
+     * UTF-8. The three-argument constructor keeps the ordinary text case short.
+     */
+    public record Response(int status, String contentType, String body, byte[] binary) {
+        public Response(int status, String contentType, String body) {
+            this(status, contentType, body, null);
+        }
+
+        /** A response whose body is raw bytes, such as a compressed terrain tile. */
+        public static Response binary(int status, String contentType, byte[] value) {
+            return new Response(status, contentType, "", value == null ? new byte[0] : value);
+        }
+
         public static Response json(int status, Object value) {
             return new Response(status, "application/json; charset=utf-8", CompanionJson.write(value));
         }
@@ -72,6 +87,7 @@ public final class CompanionRouter {
     private final CompanionClientThread clientThread;
     private final CompanionEventBus events;
     private final String appHtml;
+    private final CompanionMapSource mapSource;
     private final List<Route> routes = new ArrayList<>();
 
     public CompanionRouter(
@@ -81,11 +97,30 @@ public final class CompanionRouter {
         CompanionEventBus events,
         String appHtml
     ) {
+        this(config, api, clientThread, events, appHtml, null);
+    }
+
+    /**
+     * The full constructor, with the map and telemetry source.
+     *
+     * <p>{@code mapSource} may be null, in which case the map endpoints answer "not available"
+     * instead of failing. That keeps the router usable in a test or on a build where the terrain
+     * service was not started.
+     */
+    public CompanionRouter(
+        CompanionConfig config,
+        CompanionApi api,
+        CompanionClientThread clientThread,
+        CompanionEventBus events,
+        String appHtml,
+        CompanionMapSource mapSource
+    ) {
         this.config = config;
         this.api = api;
         this.clientThread = clientThread;
         this.events = events;
         this.appHtml = appHtml;
+        this.mapSource = mapSource;
         this.auth = new CompanionAuth(config);
         this.rateLimiter = new CompanionRateLimiter(config.requestsPerMinute());
         registerRoutes();
@@ -241,6 +276,80 @@ public final class CompanionRouter {
             return Response.json(200, CompanionJson.result(call(() -> api.notify(message))));
         });
 
+        // ---------------------------------------------------------------- map and telemetry
+        route("GET", "/api/v1/terrain", request -> {
+            CompanionMapSource source = mapSource;
+            if (source == null) return mapUnavailable();
+            return Response.json(200, source.terrainMeta());
+        });
+
+        route("GET", "/api/v1/terrain/{dimension}/{tileX}/{tileZ}", request -> {
+            CompanionMapSource source = mapSource;
+            if (source == null) return mapUnavailable();
+            String dimension = request.query().get("__dimension");
+            Integer tileX = intParam(request.query().get("__tileX"));
+            Integer tileZ = intParam(request.query().get("__tileZ"));
+            if (dimension == null || dimension.isBlank() || tileX == null || tileZ == null) {
+                return Response.json(400, error("A tile request needs a dimension and two tile coordinates."));
+            }
+            byte[] tile = call(() -> source.terrainTile(dimension, tileX, tileZ));
+            if (tile == null) {
+                // 404 is the honest answer for unexplored terrain; the app draws a hole, not sea level.
+                return Response.json(404, error("No terrain has been captured for that tile."));
+            }
+            return Response.binary(200, "application/octet-stream", tile);
+        });
+
+        route("GET", "/api/v1/waypoints", request -> {
+            CompanionMapSource source = mapSource;
+            if (source == null) return mapUnavailable();
+            String dimension = request.query().get("dimension");
+            return Response.json(200, call(() -> source.waypoints(dimension)));
+        });
+
+        route("POST", "/api/v1/waypoints", request -> {
+            CompanionMapSource source = mapSource;
+            if (source == null) return mapUnavailable();
+            String name = request.query().get("name");
+            if (name == null || name.isBlank()) {
+                return Response.json(400, error("A waypoint needs a name."));
+            }
+            String category = request.query().get("category");
+            Integer x = intParam(request.query().get("x"));
+            Integer y = intParam(request.query().get("y"));
+            Integer z = intParam(request.query().get("z"));
+            Map<String, Object> stored = call(() -> source.addWaypoint(name, category, x, y, z));
+            if (stored == null) {
+                return Response.json(409, error("The client is not in a world, so there is no place to mark."));
+            }
+            return Response.json(200, stored);
+        });
+
+        route("DELETE", "/api/v1/waypoints/{key}", request -> {
+            CompanionMapSource source = mapSource;
+            if (source == null) return mapUnavailable();
+            String key = request.query().get("__key");
+            if (key == null || key.isBlank()) {
+                return Response.json(400, error("A waypoint key is required."));
+            }
+            boolean removed = call(() -> source.removeWaypoint(key));
+            if (!removed) return Response.json(404, error("No waypoint has that key."));
+            return Response.json(200, CompanionJson.result(CompanionApi.ActionResult.ok("Waypoint removed.")));
+        });
+
+        route("GET", "/api/v1/telemetry", request -> {
+            CompanionMapSource source = mapSource;
+            if (source == null) return mapUnavailable();
+            return Response.json(200, call(source::telemetry));
+        });
+
+        route("GET", "/api/v1/telemetry/export.csv", request -> {
+            CompanionMapSource source = mapSource;
+            if (source == null) return mapUnavailable();
+            String csv = call(source::telemetryCsv);
+            return new Response(200, "text/csv; charset=utf-8", csv == null ? "" : csv);
+        });
+
         route("GET", "/api/v1/query/{name}", request -> {
             String name = request.query().get("__name");
             Map<String, String> params = new LinkedHashMap<>(request.query());
@@ -248,6 +357,21 @@ public final class CompanionRouter {
             params.remove("__name");
             return Response.json(200, call(() -> api.query(name, params)));
         });
+    }
+
+    /** The answer when the map service was never started, rather than a stack trace. */
+    private Response mapUnavailable() {
+        return Response.json(503, error("The map service is not running on this client."));
+    }
+
+    /** Parses an optional integer query value; null when absent or not a number. */
+    private static Integer intParam(String value) {
+        if (value == null || value.isBlank()) return null;
+        try {
+            return Integer.parseInt(value.trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     private void route(String method, String pattern, Handler handler) {

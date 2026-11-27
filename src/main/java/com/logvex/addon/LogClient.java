@@ -72,6 +72,11 @@ public class LogClient extends MeteorAddon {
         com.logvex.addon.chatlog.mc.SessionTimelineService.get().init(LogClientContext.EVENT_BUS);
         com.logvex.addon.chatlog.mc.PlayerIdentityService.get().init(LogClientContext.EVENT_BUS);
         com.logvex.addon.world.mc.WorldService.get().init(LogClientContext.EVENT_BUS);
+        // Terrain capture and telemetry are subscribed at bootstrap for the same reason the world
+        // service is: they must keep working while the companion module is off, and they must load
+        // their stored data before the first request arrives.
+        com.logvex.addon.terrain.mc.TerrainService.get().init(LogClientContext.EVENT_BUS);
+        com.logvex.addon.telemetry.mc.TelemetryService.get().init(LogClientContext.EVENT_BUS);
 
         Modules.get().add(new ChatLoggerModule());
         Modules.get().add(new ChatMonitorModule());
@@ -117,6 +122,7 @@ public class LogClient extends MeteorAddon {
 
         // World intelligence: remembers discovered places, biomes, resources and chunks per world.
         Modules.get().add(new com.logvex.addon.world.modules.WorldIntelligenceModule());
+        Modules.get().add(new com.logvex.addon.terrain.modules.TerrainMapModule());
 
         // Configurable chat assistant: keyword triggers, memory and memory commands. The decision
         // logic is Minecraft-free; this is its Minecraft-facing shell.
@@ -222,6 +228,7 @@ public class LogClient extends MeteorAddon {
         flush("session-timeline", () -> com.logvex.addon.chatlog.mc.SessionTimelineService.get().shutdown());
         flush("player-identity", () -> com.logvex.addon.chatlog.mc.PlayerIdentityService.get().shutdown());
         flush("world", () -> com.logvex.addon.world.mc.WorldService.get().shutdown());
+        flush("terrain", () -> com.logvex.addon.terrain.mc.TerrainService.get().shutdown());
         flush("assistant", () -> com.logvex.addon.assistant.mc.AssistantService.get().shutdown());
         flush("update", () -> com.logvex.addon.update.mc.UpdateService.get().engine().shutdown());
     }

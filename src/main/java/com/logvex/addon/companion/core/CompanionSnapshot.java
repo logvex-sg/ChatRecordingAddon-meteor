@@ -23,9 +23,11 @@ public record CompanionSnapshot(
     StorageView storage,
     BotView bot,
     WorldView world,
-    List<String> capabilities
+    List<String> capabilities,
+    List<MetricView> metrics,
+    InventoryView inventory
 ) {
-    public static final String API_VERSION = "14";
+    public static final String API_VERSION = "15";
 
     /** Identity and connection state of this client. */
     public record NodeInfo(
@@ -211,6 +213,47 @@ public record CompanionSnapshot(
         }
     }
 
+    /**
+     * One telemetry series as the app's graphs need it: its recent samples and honest statistics.
+     *
+     * <p>{@code latest}, {@code min}, {@code max} and {@code average} are {@link Double#NaN} when the
+     * series is empty, which serialises as JSON {@code null} rather than a misleading zero. The app
+     * shows "no data" for those, because a client that never measured a value should not claim one.
+     */
+    public record MetricView(
+        String name,
+        List<Long> timestamps,
+        List<Double> values,
+        double latest,
+        double min,
+        double max,
+        double average
+    ) {
+    }
+
+    /**
+     * The player's own inventory, read-only.
+     *
+     * <p>Slots are the container indices Minecraft uses (0-8 hotbar, 9-35 main, 36-39 armour,
+     * 40 offhand), so the app can draw the same layout the game does. {@code itemId} is empty for an
+     * empty slot, which is a real state and not a missing value.
+     */
+    public record InventoryView(
+        boolean available,
+        int selectedSlot,
+        List<ItemView> slots
+    ) {
+        /** An inventory that could not be read, because the client is not in a world. */
+        public static InventoryView unavailable() {
+            return new InventoryView(false, -1, List.of());
+        }
+    }
+
+    /** One inventory slot: what is in it and how many. */
+    public record ItemView(int slot, String itemId, String name, int count, int maxCount, int damage,
+                           boolean enchanted) {
+    }
+
     /** One nearby block, with the distance that puts it in scan order. */
     public record BlockView(int x, int y, int z, String id, double distance) {
     }
@@ -234,6 +277,8 @@ public record CompanionSnapshot(
             new StorageView(0, 0, 0, 0, 0),
             new BotView("Disabled", "", 0, 0, 0, false, List.of()),
             WorldView.empty(),
-            List.of());
+            List.of(),
+            List.of(),
+            InventoryView.unavailable());
     }
 }
