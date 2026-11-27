@@ -88,6 +88,7 @@ public final class CompanionRouter {
     private final CompanionEventBus events;
     private final String appHtml;
     private final CompanionMapSource mapSource;
+    private final CompanionIconSource iconSource;
     private final List<Route> routes = new ArrayList<>();
 
     public CompanionRouter(
@@ -115,12 +116,31 @@ public final class CompanionRouter {
         String appHtml,
         CompanionMapSource mapSource
     ) {
+        this(config, api, clientThread, events, appHtml, mapSource, null);
+    }
+
+    /**
+     * The full constructor, with an icon source as well.
+     *
+     * <p>{@code iconSource} may be null, in which case item icons answer "not available" and the app
+     * shows item names. That keeps the router usable in tests and on a build with no client.
+     */
+    public CompanionRouter(
+        CompanionConfig config,
+        CompanionApi api,
+        CompanionClientThread clientThread,
+        CompanionEventBus events,
+        String appHtml,
+        CompanionMapSource mapSource,
+        CompanionIconSource iconSource
+    ) {
         this.config = config;
         this.api = api;
         this.clientThread = clientThread;
         this.events = events;
         this.appHtml = appHtml;
         this.mapSource = mapSource;
+        this.iconSource = iconSource;
         this.auth = new CompanionAuth(config);
         this.rateLimiter = new CompanionRateLimiter(config.requestsPerMinute());
         registerRoutes();
@@ -298,6 +318,23 @@ public final class CompanionRouter {
                 return Response.json(404, error("No terrain has been captured for that tile."));
             }
             return Response.binary(200, "application/octet-stream", tile);
+        });
+
+        route("GET", "/api/v1/items/{item}/icon", request -> {
+            CompanionIconSource source = iconSource;
+            if (source == null) {
+                return Response.json(503, error("Item icons are not available on this client."));
+            }
+            String item = request.query().get("__item");
+            if (item == null || item.isBlank()) {
+                return Response.json(400, error("An icon request needs an item id."));
+            }
+            byte[] png = call(() -> source.icon(item));
+            if (png == null) {
+                // An unknown item has no icon; the app keeps the item's name on screen.
+                return Response.json(404, error("No icon for that item."));
+            }
+            return Response.binary(200, "image/png", png);
         });
 
         route("GET", "/api/v1/waypoints", request -> {

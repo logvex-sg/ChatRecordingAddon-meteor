@@ -194,7 +194,13 @@ class CompanionCoreTest {
             assertNotNull(in, "companion/app.html must ship in the jar");
             String html = new String(in.readAllBytes(), StandardCharsets.UTF_8);
 
-            Matcher tabs = Pattern.compile("\\[\"([a-z-]+)\", \"[^\"]+\"\\]").matcher(html);
+            // Scoped to the TABS declaration. The looser pattern this used to use also matched any
+            // other ["id", "Label"] pair in the file, so an unrelated array looked like a tab.
+            Matcher tabsBlock = Pattern.compile(
+                "const TABS = \\[(.*?)\\n\\];", Pattern.DOTALL).matcher(html);
+            assertTrue(tabsBlock.find(), "the TABS declaration must be present");
+            Matcher tabs = Pattern.compile("\\[\"([a-z-]+)\", \"[^\"]+\"\\]")
+                .matcher(tabsBlock.group(1));
             List<String> tabIds = new ArrayList<>();
             while (tabs.find()) tabIds.add(tabs.group(1));
 

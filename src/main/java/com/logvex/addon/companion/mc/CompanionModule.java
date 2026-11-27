@@ -12,6 +12,7 @@ import com.logvex.addon.companion.core.CompanionClientThread;
 import com.logvex.addon.companion.core.CompanionConfig;
 import com.logvex.addon.companion.core.CompanionDiscovery;
 import com.logvex.addon.companion.core.CompanionEventBus;
+import com.logvex.addon.companion.core.CompanionIconCache;
 import com.logvex.addon.companion.core.CompanionJson;
 import com.logvex.addon.companion.core.CompanionServer;
 import com.logvex.addon.companion.gui.CompanionScreen;
@@ -206,8 +207,11 @@ public class CompanionModule extends AddonModule {
         events = new CompanionEventBus(200);
         api = new MinecraftCompanionApi(nodeId);
         CompanionClientThread clientThread = CompanionClientThread.of(this::runOnClientThread);
+        // The icon cache is bounded: a large modpack has thousands of items and the app asks for
+        // the same ones on every inventory refresh.
         server = new CompanionServer(config, api, clientThread, events, loadAppHtml(),
-            new MinecraftMapSource());
+            new MinecraftMapSource(),
+            new CompanionIconCache(new MinecraftIconSource(), 512));
         try {
             server.start();
             if (boundPort() != config.port()) {

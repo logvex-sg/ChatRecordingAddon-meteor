@@ -35,6 +35,7 @@ public final class CompanionServer {
     private final CompanionEventBus events;
     private final String appHtml;
     private final CompanionMapSource mapSource;
+    private final CompanionIconSource iconSource;
 
     /**
      * How many ports above the configured one to try. Sixteen is enough for a normal handful of
@@ -65,11 +66,26 @@ public final class CompanionServer {
         String appHtml,
         CompanionMapSource mapSource
     ) {
+        this(config, api, clientThread, events, appHtml, mapSource, null);
+    }
+
+    /** The full constructor, with an icon source for the inventory. */
+    public CompanionServer(
+        CompanionConfig config,
+        CompanionApi api,
+        CompanionClientThread clientThread,
+        CompanionEventBus events,
+        String appHtml,
+        CompanionMapSource mapSource,
+        CompanionIconSource iconSource
+    ) {
         this.config = config;
         this.events = events;
         this.appHtml = appHtml;
         this.mapSource = mapSource;
-        this.router = new CompanionRouter(config, api, clientThread, events, appHtml, mapSource);
+        this.iconSource = iconSource;
+        this.router = new CompanionRouter(
+            config, api, clientThread, events, appHtml, mapSource, iconSource);
     }
 
     public CompanionRouter router() {

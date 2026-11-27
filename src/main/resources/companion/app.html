@@ -187,6 +187,17 @@
   .inv-name { display: block; color: var(--text); word-break: break-word; }
   .inv-count { position: absolute; bottom: 2px; right: 4px; color: var(--muted); font-weight: 600; }
   .inv-ench { display: block; color: var(--accent); font-size: 9px; }
+  /* A real item texture is 16x16, so it is drawn at its own size and pixel-scaled up, never
+     smoothed: nearest-neighbour keeps the pixel art crisp instead of blurring it. */
+  .inv-slot.has-icon { display: flex; align-items: center; justify-content: center; }
+  .inv-icon {
+    width: 32px; height: 32px; image-rendering: pixelated;
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .55));
+  }
+  .inv-slot.has-icon .inv-count, .inv-slot.has-icon .inv-ench {
+    position: absolute; text-shadow: 0 1px 2px #000;
+  }
+  .inv-slot.has-icon .inv-ench { top: 2px; left: 4px; }
 
   input, select, textarea {
     background: #0c1424; color: var(--text); border: 1px solid var(--line);
@@ -388,6 +399,7 @@
   <span class="badge" id="node-count">0 clients</span>
   <span class="badge" id="link-state">offline</span>
   <span class="spacer"></span>
+  <button class="btn" id="btn-theme">Theme</button>
   <button class="btn" id="btn-nodes">Clients</button>
   <button class="btn" id="btn-notify">Notify</button>
   <button class="btn" id="btn-refresh">Refresh</button>
@@ -443,6 +455,25 @@
   </div>
 </dialog>
 
+<dialog id="theme-dialog" class="wide">
+  <h3 style="margin-top:0">Appearance</h3>
+  <p class="muted" style="font-size:12.5px;margin:0 0 12px">
+    A theme recolours the whole app. A workspace remembers a theme and the tab you were on, so a
+    setup you like is one click away.
+  </p>
+  <div class="kv" style="margin-bottom:8px"><span>Theme</span></div>
+  <div class="row" id="theme-choices" style="flex-wrap:wrap;margin-bottom:16px"></div>
+  <div class="kv" style="margin-bottom:8px"><span>Workspaces</span></div>
+  <div class="row" id="workspace-choices" style="flex-wrap:wrap;margin-bottom:10px"></div>
+  <div class="row">
+    <input id="workspace-name" placeholder="Workspace name" style="flex:1">
+    <button class="btn primary" id="workspace-save">Save current</button>
+  </div>
+  <div class="row" style="margin-top:14px">
+    <button class="btn" id="theme-close">Done</button>
+  </div>
+</dialog>
+
 <script>
 "use strict";
 /* The companion app. It talks to one or more Log Client clients over their companion API and never
@@ -450,6 +481,104 @@
 
 const STORE_KEY = "logclient.companion.nodes";
 const TAB_KEY = "logclient.companion.tab";
+const THEME_KEY = "logclient.companion.theme";
+const WORKSPACE_KEY = "logclient.companion.workspaces";
+
+/* Themes are just the CSS custom properties the stylesheet already reads, so switching one
+   recolours every panel, badge and chart at once instead of needing a rule per component.
+   Only the tokens are replaced; layout, spacing and radius stay put so a theme cannot make the
+   app unusable. */
+const THEMES = {
+  midnight: {
+    label: "Midnight",
+    vars: {
+      "--bg": "#080c18", "--bg-2": "#0d1426", "--panel": "#121b30", "--panel-2": "#18233d",
+      "--panel-3": "#1f2c4b", "--line": "#253252", "--line-soft": "rgba(37, 50, 82, .55)",
+      "--text": "#e8eeff", "--muted": "#8fa2c8", "--faint": "#62729a",
+      "--accent": "#6aa8ff", "--accent-2": "#3b82f6",
+      "--accent-glow": "rgba(96, 165, 250, .22)",
+      "--good": "#5eead4", "--warn": "#fbbf6e", "--bad": "#fb8a8a"
+    }
+  },
+  ember: {
+    label: "Ember",
+    vars: {
+      "--bg": "#140a08", "--bg-2": "#1c0f0b", "--panel": "#251512", "--panel-2": "#2f1c17",
+      "--panel-3": "#3b241d", "--line": "#4a2c24", "--line-soft": "rgba(74, 44, 36, .55)",
+      "--text": "#fdeee6", "--muted": "#c9a091", "--faint": "#9a7466",
+      "--accent": "#ff9a5c", "--accent-2": "#f97316",
+      "--accent-glow": "rgba(251, 146, 60, .22)",
+      "--good": "#86efac", "--warn": "#fcd34d", "--bad": "#f87171"
+    }
+  },
+  moss: {
+    label: "Moss",
+    vars: {
+      "--bg": "#07120c", "--bg-2": "#0b1a12", "--panel": "#10241a", "--panel-2": "#163022",
+      "--panel-3": "#1d3d2c", "--line": "#244b37", "--line-soft": "rgba(36, 75, 55, .55)",
+      "--text": "#e6f5ea", "--muted": "#93bfa4", "--faint": "#648a74",
+      "--accent": "#5eead4", "--accent-2": "#10b981",
+      "--accent-glow": "rgba(52, 211, 153, .22)",
+      "--good": "#86efac", "--warn": "#fbbf6e", "--bad": "#fb8a8a"
+    }
+  },
+  graphite: {
+    label: "Graphite",
+    vars: {
+      "--bg": "#0b0b0d", "--bg-2": "#121215", "--panel": "#17171b", "--panel-2": "#1f1f24",
+      "--panel-3": "#28282f", "--line": "#33333c", "--line-soft": "rgba(51, 51, 60, .55)",
+      "--text": "#f0f0f3", "--muted": "#a0a0ac", "--faint": "#6e6e7a",
+      "--accent": "#e5e7eb", "--accent-2": "#a1a1aa",
+      "--accent-glow": "rgba(229, 231, 235, .16)",
+      "--good": "#86efac", "--warn": "#fbbf6e", "--bad": "#fb8a8a"
+    }
+  }
+};
+
+function applyTheme(name) {
+  const theme = THEMES[name] || THEMES.midnight;
+  const root = document.documentElement;
+  for (const [key, value] of Object.entries(theme.vars)) root.style.setProperty(key, value);
+  localStorage.setItem(THEME_KEY, name);
+  return theme;
+}
+
+function currentTheme() {
+  const stored = localStorage.getItem(THEME_KEY);
+  return THEMES[stored] ? stored : "midnight";
+}
+
+/* A workspace is a named bundle of theme plus which tab you were on. It is the difference
+   between "I configured this once" and "I configure it every time I open the app". */
+function loadWorkspaces() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(WORKSPACE_KEY) || "{}");
+    return raw && typeof raw === "object" ? raw : {};
+  } catch { return {}; }
+}
+
+function saveWorkspaces(map) {
+  localStorage.setItem(WORKSPACE_KEY, JSON.stringify(map));
+}
+
+function saveWorkspace(name, extra) {
+  const map = loadWorkspaces();
+  map[name] = Object.assign({ theme: currentTheme(), tab }, extra || {});
+  saveWorkspaces(map);
+  return map;
+}
+
+function applyWorkspace(name) {
+  const map = loadWorkspaces();
+  const workspace = map[name];
+  if (!workspace) return false;
+  applyTheme(workspace.theme || "midnight");
+  if (workspace.tab && TABS.some(t => t[0] === workspace.tab)) {
+    tab = workspace.tab;
+    localStorage.setItem(TAB_KEY, tab);
+  }
+  return true;
+}
 const TABS = [
   ["overview", "Overview"], ["bot", "Bot"], ["tasks", "Tasks"], ["chat", "Chat"],
   ["search", "Search"], ["world", "World"], ["map", "Map"], ["metrics", "Metrics"],
@@ -498,6 +627,7 @@ function uid() {
 // ---------------------------------------------------------------- boot
 
 function boot() {
+  applyTheme(currentTheme());
   // A link with ?token=... (and optionally ?url=...) seeds a node, so a user can open the app
   // straight from the addon without typing anything.
   const params = new URLSearchParams(location.search);
@@ -527,14 +657,17 @@ function boot() {
 // A few tabs carry a number worth seeing before the tab is opened: how much is queued, how many
 // players are known, how many modules are on. It comes from the active snapshot, so an unreachable
 // client shows no count rather than a stale one.
+// Every field is read defensively: a snapshot from an older or newer client may omit one, and a
+// missing list must cost a badge, not the whole tab bar.
 function tabCount(id) {
   const snap = activeSnapshot();
   if (!snap) return null;
+  const list = key => Array.isArray(snap[key]) ? snap[key] : [];
   switch (id) {
-    case "tasks": return snap.tasks.length || null;
-    case "chat": return snap.chat.length || null;
-    case "players": return snap.players.length || null;
-    case "modules": return snap.modules.filter(m => m.active).length || null;
+    case "tasks": return list("tasks").length || null;
+    case "chat": return list("chat").length || null;
+    case "players": return list("players").length || null;
+    case "modules": return list("modules").filter(m => m && m.active).length || null;
     default: return null;
   }
 }
@@ -1371,6 +1504,84 @@ function fetchTile(node, dimension, tileX, tileZ, options = {}) {
   return promise;
 }
 
+// ---------------------------------------------------------------- item icons
+
+// The game's own item textures, one request per item. Keyed by node as well as item: two clients
+// can run different resource packs, so the same item can legitimately have two different pictures.
+// A null entry means "this item has no icon", which is cached so an inventory holding an unknown
+// item does not re-ask on every refresh.
+const iconCache = new Map();     // "nodeId|itemId" -> objectURL|null
+const iconInflight = new Map();
+const ICON_TIMEOUT_MS = 6000;
+
+function iconKey(node, itemId) {
+  return (node && node.id ? node.id : "?") + "|" + itemId;
+}
+
+/** The cached icon URL for an item, fetching it once. Resolves to null when there is no icon. */
+function fetchIcon(node, itemId) {
+  if (!node || !itemId) return Promise.resolve(null);
+  const key = iconKey(node, itemId);
+  if (iconCache.has(key)) return Promise.resolve(iconCache.get(key));
+  const pending = iconInflight.get(key);
+  if (pending) return pending;
+
+  const url = node.url.replace(/\/+$/, "") + "/api/v1/items/"
+    + encodeURIComponent(itemId) + "/icon";
+  const init = { headers: {} };
+  if (node.token) init.headers["Authorization"] = "Bearer " + node.token;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ICON_TIMEOUT_MS);
+  init.signal = controller.signal;
+
+  const promise = (async () => {
+    try {
+      const response = await fetch(url, init);
+      if (!response.ok) {
+        // 404 is a real answer (no icon for that item); anything else is transient and retried.
+        if (response.status === 404) iconCache.set(key, null);
+        return null;
+      }
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      iconCache.set(key, objectUrl);
+      return objectUrl;
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timer);
+      iconInflight.delete(key);
+    }
+  })();
+  iconInflight.set(key, promise);
+  return promise;
+}
+
+/**
+ * Fills every [data-icon-item] element inside a container with its icon.
+ *
+ * <p>The element starts as a name label, so the grid is readable before any request finishes and
+ * stays readable if an icon never arrives. The image replaces the label only once it has decoded,
+ * so a broken image can never show as an empty box.
+ */
+function loadIcons(root, node) {
+  if (!root) return;
+  for (const slot of root.querySelectorAll("[data-icon-item]")) {
+    const itemId = slot.getAttribute("data-icon-item");
+    if (!itemId || slot.getAttribute("data-icon-loaded") === "1") continue;
+    slot.setAttribute("data-icon-loaded", "1");
+    fetchIcon(node, itemId).then(url => {
+      if (!url || !slot.isConnected) return;
+      const img = el("img", { class: "inv-icon", alt: "", src: url });
+      img.addEventListener("load", () => {
+        slot.classList.add("has-icon");
+        const label = slot.querySelector(".inv-name");
+        if (label) label.replaceWith(img); else slot.appendChild(img);
+      }, { once: true });
+    });
+  }
+}
+
 // Tracks the in-flight map draw, so the periodic refresh does not restart it from scratch.
 const mapRun = { key: "", busy: false, dimension: "" };
 
@@ -1390,6 +1601,158 @@ function mapCanvas(node) {
   return mapDom;
 }
 
+// ---------------------------------------------------------------- isometric view
+
+/* The isometric view is the same captured terrain the flat map draws, projected at 2:1 and given
+   a vertical side wall wherever a column stands above its neighbour. Nothing is interpolated or
+   guessed: a column that was never observed is skipped, so an unexplored region is a gap rather
+   than invented relief.
+
+   It is a CPU projection onto a 2D canvas, not a WebGL renderer. That keeps it dependency-free and
+   readable on any machine the game runs on, at the cost of redrawing on change rather than every
+   frame, which is the right trade for a map that updates every few seconds. */
+
+const isoState = { zoom: 1, mode: "iso" };
+
+/**
+ * Projects a grid of heights into an isometric canvas.
+ *
+ * @param heights column heights, unknown columns marked with a value <= -1000
+ * @param width   columns across
+ * @param height  rows down
+ */
+function drawIsometric(canvas, heights, width, height, options = {}) {
+  const zoom = options.zoom || 1;
+  const halfW = 2 * zoom;          // 2:1 isometric, the ratio players expect
+  const halfH = 1 * zoom;
+  const lift = zoom;               // one block of height raises the pixel this much
+
+  let minHeight = Infinity;
+  let maxHeight = -Infinity;
+  for (const value of heights) {
+    if (value <= -1000) continue;
+    if (value < minHeight) minHeight = value;
+    if (value > maxHeight) maxHeight = value;
+  }
+  if (!isFinite(minHeight)) minHeight = 0;
+  if (!isFinite(maxHeight)) maxHeight = minHeight;
+
+  const spanX = (width + height) * halfW;
+  const spanY = (width + height) * halfH + (maxHeight - minHeight) * lift;
+  canvas.width = Math.max(1, Math.ceil(spanX) + 4);
+  canvas.height = Math.max(1, Math.ceil(spanY) + 4);
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#0a1020";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const originX = 2 + height * halfW;
+  const originY = 2 + (maxHeight - minHeight) * lift;
+  const heightAt = (x, z) => (x < 0 || z < 0 || x >= width || z >= height)
+    ? -2000 : heights[z * width + x];
+
+  // Painter's algorithm: draw back to front so a nearer column covers a farther one. Within a
+  // column the top diamond is drawn first, then the two visible side faces, so the block looks
+  // solid instead of a floating tile.
+  for (let z = 0; z < height; z++) {
+    for (let x = 0; x < width; x++) {
+      const value = heightAt(x, z);
+      if (value <= -1000) continue;
+      const cx = originX + (x - z) * halfW;
+      const cy = originY + (x + z) * halfH - (value - minHeight) * lift;
+
+      const top = heightColor(value);
+      ctx.fillStyle = top;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - halfH);
+      ctx.lineTo(cx + halfW, cy);
+      ctx.lineTo(cx, cy + halfH);
+      ctx.lineTo(cx - halfW, cy);
+      ctx.closePath();
+      ctx.fill();
+
+      // Side faces only where this column is taller than what lies behind/below it, which is what
+      // turns a flat carpet of diamonds into visible relief.
+      const west = heightAt(x - 1, z);
+      const south = heightAt(x, z - 1);
+      const dropWest = value - (west <= -1000 ? value : west);
+      const dropSouth = value - (south <= -1000 ? value : south);
+      if (dropWest > 0) {
+        const depth = Math.min(dropWest, 24) * lift;
+        ctx.fillStyle = shade(top, -0.28);
+        ctx.beginPath();
+        ctx.moveTo(cx - halfW, cy);
+        ctx.lineTo(cx, cy + halfH);
+        ctx.lineTo(cx, cy + halfH + depth);
+        ctx.lineTo(cx - halfW, cy + depth);
+        ctx.closePath();
+        ctx.fill();
+      }
+      if (dropSouth > 0) {
+        const depth = Math.min(dropSouth, 24) * lift;
+        ctx.fillStyle = shade(top, -0.42);
+        ctx.beginPath();
+        ctx.moveTo(cx + halfW, cy);
+        ctx.lineTo(cx, cy + halfH);
+        ctx.lineTo(cx, cy + halfH + depth);
+        ctx.lineTo(cx + halfW, cy + depth);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+  }
+  return { minHeight, maxHeight, columns: width * height };
+}
+
+/** Multiplies an "rgb(r,g,b)" colour towards black (negative) or white (positive). */
+function shade(color, amount) {
+  const match = /rgb\((\d+),\s*(\d+),\s*(\d+)\)/.exec(color);
+  if (!match) return color;
+  const adjust = value => {
+    const base = Number(value);
+    const shifted = amount >= 0
+      ? base + (255 - base) * amount
+      : base * (1 + amount);
+    return Math.max(0, Math.min(255, Math.round(shifted)));
+  };
+  return "rgb(" + adjust(match[1]) + "," + adjust(match[2]) + "," + adjust(match[3]) + ")";
+}
+
+/**
+ * Builds one height grid from every tile in a dimension.
+ *
+ * <p>Returns null when no tile decoded, so the caller can say "nothing captured" instead of drawing
+ * an empty grid that looks like flat land.
+ */
+function stitchHeights(decodedTiles) {
+  if (decodedTiles.length === 0) return null;
+  let minChunkX = Infinity, maxChunkX = -Infinity;
+  let minChunkZ = Infinity, maxChunkZ = -Infinity;
+  for (const { decoded } of decodedTiles) {
+    for (const chunk of decoded.chunks) {
+      minChunkX = Math.min(minChunkX, chunk.chunkX);
+      maxChunkX = Math.max(maxChunkX, chunk.chunkX);
+      minChunkZ = Math.min(minChunkZ, chunk.chunkZ);
+      maxChunkZ = Math.max(maxChunkZ, chunk.chunkZ);
+    }
+  }
+  if (!isFinite(minChunkX)) return null;
+  const width = (maxChunkX - minChunkX + 1) * 16;
+  const height = (maxChunkZ - minChunkZ + 1) * 16;
+  const heights = new Int16Array(width * height).fill(-2000);
+  for (const { decoded } of decodedTiles) {
+    for (const chunk of decoded.chunks) {
+      const baseX = (chunk.chunkX - minChunkX) * 16;
+      const baseZ = (chunk.chunkZ - minChunkZ) * 16;
+      for (let z = 0; z < 16; z++) {
+        for (let x = 0; x < 16; x++) {
+          heights[(baseZ + z) * width + (baseX + x)] = chunk.heights[z * 16 + x];
+        }
+      }
+    }
+  }
+  return { heights, width, height };
+}
+
 function renderMap() {
   const view = document.getElementById("view-map");
   view.innerHTML = "";
@@ -1406,7 +1769,33 @@ function renderMap() {
     el("span", {}, [el("span", { class: "swatch", style: "background:" + heightColor(50) }), el("span", { text: "Water" })]),
     el("span", {}, [el("span", { class: "swatch", style: "background:#0a1020" }), el("span", { text: "Not captured" })])
   ]);
-  view.appendChild(card("Surface", [wrap, legend, status]));
+
+  // Switching mode redraws from the cache; it never refetches, because both views use the same
+  // decoded heights.
+  const modeRow = el("div", { class: "row", style: "gap:6px;margin-bottom:9px" });
+  for (const [mode, label] of [["flat", "Flat"], ["iso", "Isometric"]]) {
+    const choice = button(label, () => {
+      isoState.mode = mode;
+      renderMap();
+    }, "btn" + (isoState.mode === mode ? " primary" : ""));
+    modeRow.appendChild(choice);
+  }
+  if (isoState.mode === "iso") {
+    const zoomOut = button("\u2212", () => {
+      isoState.zoom = Math.max(0.4, Math.round((isoState.zoom - 0.2) * 10) / 10);
+      renderMap();
+    }, "btn sm");
+    const zoomIn = button("+", () => {
+      isoState.zoom = Math.min(3, Math.round((isoState.zoom + 0.2) * 10) / 10);
+      renderMap();
+    }, "btn sm");
+    modeRow.appendChild(el("span", { class: "faint", style: "font-size:11.5px;margin-left:6px",
+      text: "Zoom " + isoState.zoom.toFixed(1) + "\u00d7" }));
+    modeRow.appendChild(zoomOut);
+    modeRow.appendChild(zoomIn);
+  }
+
+  view.appendChild(card("Surface", [modeRow, wrap, legend, status]));
 
   const stats = dom.stats;
   view.appendChild(card("Captured", [stats]));
@@ -1539,6 +1928,9 @@ async function loadTerrain(node, canvas, status, stats) {
   const total = tiles.length;
   const startedAt = Date.now();
 
+  // Kept so the isometric pass can project the same heights without fetching anything again.
+  const decodedTiles = [];
+
   const paint = (decoded, tile) => {
     const offsetX = (tile.x - minX) * pixelsPerTile;
     const offsetY = (tile.z - minZ) * pixelsPerTile;
@@ -1586,7 +1978,9 @@ async function loadTerrain(node, canvas, status, stats) {
       pending--;
       if (!raw) { failed++; report(); continue; }
       try {
-        paint(decodeTile(raw), tile);
+        const decoded = decodeTile(raw);
+        decodedTiles.push({ decoded, tile });
+        paint(decoded, tile);
         drawn++;
       } catch (e) {
         failed++;
@@ -1600,6 +1994,17 @@ async function loadTerrain(node, canvas, status, stats) {
     status.textContent = "No tile could be read for " + shortId(dimension.dimension)
       + ". The client may be reconnecting; this is not a live map.";
     mapHealth.state = "error";
+  }
+
+  // The flat map is already painted above; the isometric view is projected from the same decoded
+  // heights, so switching modes costs no extra requests.
+  if (isoState.mode === "iso" && decodedTiles.length > 0) {
+    const grid = stitchHeights(decodedTiles);
+    if (grid) {
+      const relief = drawIsometric(canvas, grid.heights, grid.width, grid.height,
+        { zoom: isoState.zoom });
+      stats.appendChild(kv("Relief", relief.minHeight + "…" + relief.maxHeight, "mono"));
+    }
   }
 
   stats.appendChild(kv("Tiles", drawn + " / " + total + (failed ? " (" + failed + " failed)" : ""), "mono"));
@@ -1945,15 +2350,18 @@ function slotCell(item, selected) {
   const filled = item && item.itemId;
   const classes = "inv-slot" + (filled ? " filled" : "") + (selected ? " selected" : "");
   const cells = [el("span", { class: "inv-index", text: String(item ? item.slot : "") })];
+  const attrs = { class: classes };
   if (filled) {
+    // The name is the fallback the icon replaces, so a slot is never blank while an icon loads.
     cells.push(el("span", { class: "inv-name", text: item.name || shortId(item.itemId) }));
     if (item.count > 1) cells.push(el("span", { class: "inv-count", text: "\u00d7" + item.count }));
     if (item.enchanted) cells.push(el("span", { class: "inv-ench", text: "enchanted" }));
+    attrs["data-icon-item"] = item.itemId;
   }
-  return el("div", {
-    class: classes,
-    title: filled ? (item.name + " (" + item.itemId + ") " + item.count + "/" + item.maxCount) : "Empty"
-  }, cells);
+  attrs.title = filled
+    ? (item.name + " (" + item.itemId + ") " + item.count + "/" + item.maxCount)
+    : "Empty";
+  return el("div", attrs, cells);
 }
 
 function renderInventory() {
@@ -1991,6 +2399,7 @@ function renderInventory() {
     groups.appendChild(card(title, [grid]));
   }
   view.appendChild(groups);
+  loadIcons(groups, activeNode());
 
   if (filled.length > 0) {
     const rows = filled.map(item => el("div", { class: "kv" }, [
@@ -2644,7 +3053,72 @@ function renderNodeList() {
   }
 }
 
+/**
+ * Draws the theme and workspace controls.
+ *
+ * <p>Rebuilt from storage every time the dialog opens, so a workspace deleted in another tab does
+ * not linger as a button that does nothing.
+ */
+function renderThemeDialog() {
+  const themeRow = document.getElementById("theme-choices");
+  themeRow.innerHTML = "";
+  const active = currentTheme();
+  for (const [name, theme] of Object.entries(THEMES)) {
+    const swatch = el("span", {
+      style: "display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:7px;"
+        + "vertical-align:-1px;background:" + theme.vars["--accent"]
+    });
+    const choice = el("button", {
+      class: "btn" + (name === active ? " primary" : ""),
+      title: theme.label
+    }, [swatch, el("span", { text: theme.label })]);
+    choice.onclick = () => { applyTheme(name); renderThemeDialog(); render(); };
+    themeRow.appendChild(choice);
+  }
+
+  const workspaceRow = document.getElementById("workspace-choices");
+  workspaceRow.innerHTML = "";
+  const workspaces = loadWorkspaces();
+  const names = Object.keys(workspaces);
+  if (names.length === 0) {
+    workspaceRow.appendChild(el("span", { class: "faint", text: "No saved workspaces yet." }));
+    return;
+  }
+  for (const name of names) {
+    const apply = el("button", { class: "btn", text: name, title: "Apply " + name });
+    apply.onclick = () => {
+      applyWorkspace(name);
+      renderThemeDialog();
+      renderTabs();
+      render();
+      toast("Applied workspace \"" + name + "\".", "good");
+    };
+    const remove = el("button", { class: "btn sm", text: "\u00d7", title: "Delete " + name });
+    remove.onclick = () => {
+      const map = loadWorkspaces();
+      delete map[name];
+      saveWorkspaces(map);
+      renderThemeDialog();
+    };
+    workspaceRow.appendChild(el("div", { class: "row", style: "gap:4px" }, [apply, remove]));
+  }
+}
+
 function wireEvents() {
+  document.getElementById("btn-theme").onclick = () => {
+    renderThemeDialog();
+    document.getElementById("theme-dialog").showModal();
+  };
+  document.getElementById("theme-close").onclick = () => document.getElementById("theme-dialog").close();
+  document.getElementById("workspace-save").onclick = () => {
+    const input = document.getElementById("workspace-name");
+    const name = input.value.trim();
+    if (!name) { toast("Give the workspace a name.", "bad"); return; }
+    saveWorkspace(name);
+    input.value = "";
+    renderThemeDialog();
+    toast("Saved workspace \"" + name + "\".", "good");
+  };
   document.getElementById("btn-nodes").onclick = () => { renderNodeList(); document.getElementById("nodes-dialog").showModal(); };
   document.getElementById("node-close").onclick = () => document.getElementById("nodes-dialog").close();
   document.getElementById("btn-refresh").onclick = () => refreshAll();

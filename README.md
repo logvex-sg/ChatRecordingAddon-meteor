@@ -1671,6 +1671,30 @@ across those refreshes, so a rebuild never discards your input.
   the client's player list currently contains them.
 - **Stats** — session message, player, join, leave and death totals.
 - **Storage** — the segment count, the compressed size and the oldest/newest timestamps.
+- **Inventory** — the player's 41 container slots laid out the way a player knows them (armour,
+  hotbar, main, off hand), with the selected slot marked. Only filled slots carry data; an empty one
+  is drawn as an empty slot rather than invented. Each item is drawn using **the game's own
+  texture** rather than a name or an approximation: the icon is the sprite the item's baked model
+  uses, so a resource pack changes the app exactly as it changes the game. A slot whose item has no
+  icon keeps its name, so the grid is readable before the images arrive and stays readable if one
+  never does. Icons are cached per client and per item and drawn with nearest-neighbour scaling, so
+  pixel art stays sharp.
+- **Map** — the captured terrain in two views. **Flat** is the top-down map, one pixel per block.
+  **Isometric** is the same heights projected at 2:1 with a shaded side face wherever a column
+  stands above its neighbour, which turns a flat carpet into visible relief. It is drawn on the
+  canvas with no extra downloads and no extra requests: both views come from the tiles already
+  fetched. Zoom steps from 0.4× to 3×. Ground nobody has visited stays a gap in both views rather
+  than being filled in with invented land.
+
+### Appearance
+
+The **Theme** button opens the appearance dialog. A theme is a palette applied to the whole app at
+once, so every panel, badge, chart and icon backdrop changes together: **Midnight**, **Ember**,
+**Moss** and **Graphite**. The choice is remembered in the browser.
+
+A **workspace** saves the current theme together with the tab you are on, under a name you choose,
+and restores both in one click. Workspaces live in the browser's local storage beside the client
+list, so they are per browser, not per client.
 
 ### Security
 
@@ -1733,6 +1757,14 @@ All responses are JSON. Authenticate with the token unless noted.
 | GET | `/api/v1/players` | The observed players. |
 | GET | `/api/v1/world` | Where the client is: dimension, position, yaw/pitch, the block it stands on, health, light level, world time and weather, plus the nearby blocks and entities. `inWorld` is `false` and the lists are empty when no world is loaded. |
 | GET | `/api/v1/storage` | The segment count, compressed size and oldest/newest timestamps. |
+| GET | `/api/v1/items/{id}/icon` | The item's own texture as PNG bytes, taken from the item's baked model, so a resource pack is respected. The id is namespaced and percent-encoded (`minecraft%3Adiamond`). `404` for an item with no icon; the app then shows the item's name. `503` on a client with no icon support. |
+| GET | `/api/v1/terrain` | What terrain has been captured: totals and, per dimension, the tile coordinates with chunk bounds and biome counts. |
+| GET | `/api/v1/terrain/{dimension}/{tileX}/{tileZ}` | One terrain tile as deflate-compressed bytes. `404` for ground nobody has visited, so the map can draw a gap instead of inventing land. |
+| GET | `/api/v1/waypoints` | The saved waypoints. |
+| POST | `/api/v1/waypoints?name=...&category=...` | Marks a waypoint where the client stands. |
+| DELETE | `/api/v1/waypoints/{key}` | Removes one waypoint. |
+| GET | `/api/v1/telemetry` | The metric series for the charts. |
+| GET | `/api/v1/telemetry/export.csv` | The same series as CSV. |
 | GET | `/api/v1/queries` | The names the query endpoint accepts. |
 | GET | `/api/v1/query/{name}` | `messages`, `players` or `stats`, with `q`, `player` and `limit` filters. |
 | POST | `/api/v1/command` | Runs a line as if typed: `{"command":"/tpa Steve"}`. It goes through the same send event the game posts for typed input, so a macro such as `!tpa <player>` expands and an addon command such as `!log status` runs. |
