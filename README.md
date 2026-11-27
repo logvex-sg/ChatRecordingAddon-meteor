@@ -1678,7 +1678,9 @@ across those refreshes, so a rebuild never discards your input.
   uses, so a resource pack changes the app exactly as it changes the game. A slot whose item has no
   icon keeps its name, so the grid is readable before the images arrive and stays readable if one
   never does. Icons are cached per client and per item and drawn with nearest-neighbour scaling, so
-  pixel art stays sharp.
+  pixel art stays sharp. Below the grid, each filled stack is listed as an **embed** — the same
+  shape the chat log and waypoint list use — with an accent stripe for its state (enchanted,
+  damaged or plain), the item name, the count, the slot and the raw item id.
 - **Map** — the captured terrain in two views. **Flat** is the top-down map, one pixel per block.
   **Isometric** is the same heights projected at 2:1 with a shaded side face wherever a column
   stands above its neighbour, which turns a flat carpet into visible relief. It is drawn on the

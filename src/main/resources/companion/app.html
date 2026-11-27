@@ -2402,11 +2402,35 @@ function renderInventory() {
   loadIcons(groups, activeNode());
 
   if (filled.length > 0) {
-    const rows = filled.map(item => el("div", { class: "kv" }, [
-      el("span", { text: (item.name || shortId(item.itemId)) + " \u00d7" + item.count }),
-      el("span", { text: item.itemId + (item.damage ? " (damaged " + item.damage + ")" : "") })
-    ]));
-    view.appendChild(card("Contents", rows));
+    // One embed per stack, the same shape the chat and waypoint lists use: a stripe that carries
+    // the stack's state, a header with the name and count, and the raw id underneath.
+    const list = el("div", { class: "embeds", style: "max-height:420px" });
+    for (const item of filled) {
+      const damaged = (item.damage || 0) > 0;
+      const tone = item.enchanted ? "var(--accent)" : damaged ? "var(--warn)" : "var(--line)";
+      const badges = [];
+      if (item.enchanted) badges.push(el("span", { class: "badge", style: "color:var(--accent)", text: "enchanted" }));
+      if (damaged) {
+        // Only damage points are reported; the snapshot carries no durability maximum, so the
+        // badge states the damage rather than inventing a ratio.
+        badges.push(el("span", {
+          class: "badge", style: "color:var(--warn)", text: "damaged " + item.damage
+        }));
+      }
+      list.appendChild(el("div", { class: "embed", style: "--tone:" + tone }, [
+        el("div", { class: "stripe" }),
+        el("div", { class: "body" }, [
+          el("div", { class: "head" }, [
+            el("span", { class: "sender", text: item.name || shortId(item.itemId) }),
+            el("span", { class: "badge", style: "color:var(--muted)", text: "\u00d7" + item.count }),
+            ...badges,
+            el("span", { class: "time", text: "slot " + item.slot })
+          ]),
+          el("div", { class: "meta", text: item.itemId })
+        ])
+      ]));
+    }
+    view.appendChild(card("Contents", [list]));
   }
 }
 
