@@ -134,13 +134,7 @@ public final class AutomationSupport {
 
     /** True when a hostile mob is within {@code radius} blocks of the player. */
     public static boolean hostileNearby(double radius) {
-        ClientPlayerEntity player = mc.player;
-        if (player == null || mc.world == null) return false;
-        Box box = player.getBoundingBox().expand(radius);
-        for (Entity entity : mc.world.getOtherEntities(player, box)) {
-            if (entity instanceof HostileEntity) return true;
-        }
-        return false;
+        return com.logvex.addon.common.Hostiles.anyWithin(mc.player, radius);
     }
 
     /** True when another player is within {@code radius} blocks. */

@@ -435,14 +435,9 @@ public final class MinecraftCompanionApi implements CompanionApi {
             active == null ? "" : active.describe());
     }
 
-    /** True when a monster is within {@code radius}; read straight from the client world. */
+    /** True when a monster is within {@code radius}; served from the shared per-tick scan. */
     private boolean hostileNearby(ClientPlayerEntity player, int radius) {
-        if (player == null || player.getWorld() == null) return false;
-        Box box = player.getBoundingBox().expand(Math.max(1, radius));
-        for (Entity entity : player.getWorld().getOtherEntities(player, box)) {
-            if (entity instanceof HostileEntity hostile && hostile.isAlive()) return true;
-        }
-        return false;
+        return com.logvex.addon.common.Hostiles.anyWithin(player, Math.max(1, radius));
     }
 
     private List<String> capabilities() {

@@ -201,10 +201,7 @@ public final class MinecraftWorldPort implements WorldPort {
     @Override
     public boolean hostileNearby(int radius) {
         if (mc.world == null || mc.player == null) return false;
-        Box box = mc.player.getBoundingBox().expand(Math.max(1, radius));
-        for (Entity entity : mc.world.getOtherEntities(mc.player, box)) {
-            if (entity instanceof HostileEntity hostile && hostile.isAlive()) return true;
-        }
-        return false;
+        // Shared, per-tick cached scan: the safety stop and auto-eat both ask in the same tick.
+        return com.logvex.addon.common.Hostiles.anyWithin(mc.player, Math.max(1, radius));
     }
 }

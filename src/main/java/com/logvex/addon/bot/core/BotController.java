@@ -42,6 +42,9 @@ public final class BotController {
     private long nextRetryAt;
     private long stateSince;
     private boolean autoStart = true;
+    /** Set once per tick by {@link #tick()}, so the threat scan runs at most once. */
+    private boolean threatComputed;
+    private boolean threatCached;
 
     public BotController(ExecutorRegistry executors, BotListener listener, BotClock clock) {
         this.executors = executors == null ? new ExecutorRegistry() : executors;
@@ -230,13 +233,18 @@ public final class BotController {
         long now = clock.now();
         long startNanos = System.nanoTime();
         performance.beginTick(now);
+        // One threat scan per tick, however many places in this tick ask for it.
+        threatComputed = false;
         try {
             scheduler.tick();
             if (context == null) return;
 
             // Eating is scheduled before the safety gate: a hungry bot should feed itself rather
             // than be paused by the very threshold the meal is meant to keep it above.
-            if (state.isActive()) maybeScheduleEat();
+            if (state.isActive()) {
+                boolean threatened = threatNearby();
+                maybeScheduleEat(threatened);
+            }
 
             SafetyController.Stop stop = evaluateSafety();
             if (stop != SafetyController.Stop.NONE) {
@@ -277,12 +285,20 @@ public final class BotController {
     /**
      * True when a hostile mob is inside the configured safety radius.
      *
-     * <p>The scan is skipped when the user turned the threat stop off, so a bot that does not care
-     * about mobs does not pay for an entity query every tick.
+     * <p>Computed at most once per tick. The tick asks twice — once before the safety gate, to
+     * decide whether a meal is worth queueing, and once for the gate itself — and entities do not
+     * move within a tick, so the second ask reuses the first. {@link #tick()} clears the flag on
+     * entry, which is what makes "once per tick" exact rather than a guess based on the clock.
+     *
+     * <p>The scan is skipped entirely when the user turned the threat stop off, so a bot that does
+     * not care about mobs never pays for the query.
      */
     private boolean threatNearby() {
         if (!config.stopOnThreat() || context.world() == null) return false;
-        return context.world().hostileNearby(config.threatRadius());
+        if (threatComputed) return threatCached;
+        threatCached = context.world().hostileNearby(config.threatRadius());
+        threatComputed = true;
+        return threatCached;
     }
 
     /**
@@ -290,13 +306,15 @@ public final class BotController {
      *
      * <p>This runs before the safety check so the bot eats while it still can, instead of waiting
      * for the food level to fall through the safety threshold and pausing the whole run.
+     *
+     * @param threatened whether a hostile is close, already computed for this tick
      */
-    private void maybeScheduleEat() {
+    private void maybeScheduleEat(boolean threatened) {
         if (!config.autoEat() || context == null || context.player() == null) return;
         if (queue.hasType(TaskType.EAT)) return;
         // Threat outranks hunger here too: queueing a meal the bot cannot stop to eat would only
         // leave it standing next to the mob it is about to be paused for.
-        if (threatNearby()) return;
+        if (threatened) return;
         if (!safety.shouldEat(context.player(), FoodSource.hasFood(context))) return;
         BotTask eat = new BotTask(TaskType.EAT, "Eat something")
             .priority(TaskPriority.CRITICAL)

@@ -23,7 +23,6 @@ import com.logvex.addon.bot.mc.MinecraftBuildPort;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.registry.Registries;
 import net.minecraft.util.Identifier;
-import net.minecraft.util.math.Box;
 import com.logvex.addon.bot.mc.MinecraftInventoryPort;
 import com.logvex.addon.bot.mc.MinecraftItemKnowledge;
 import com.logvex.addon.bot.mc.MinecraftNavPort;
@@ -807,16 +806,14 @@ public class BotModule extends AddonModule {
         return state + " (" + controller.queue().size() + " queued)";
     }
 
-    /** True when a hostile mob is within {@code radius}; mirrors what the safety stop sees. */
+    /**
+     * True when a hostile mob is within {@code radius}; mirrors what the safety stop sees.
+     *
+     * <p>Delegates to the shared scan, so the HUD, the command and the controller all read the same
+     * cached answer for the tick instead of each walking the entity list.
+     */
     public boolean threatNearby(int radius) {
-        MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc.player == null || mc.world == null) return false;
-        Box box = mc.player.getBoundingBox().expand(Math.max(1, radius));
-        for (net.minecraft.entity.Entity entity : mc.world.getOtherEntities(mc.player, box)) {
-            if (entity instanceof net.minecraft.entity.mob.HostileEntity hostile && hostile.isAlive()) {
-                return true;
-            }
-        }
-        return false;
+        return com.logvex.addon.common.Hostiles.anyWithin(MinecraftClient.getInstance().player,
+            Math.max(1, radius));
     }
 }

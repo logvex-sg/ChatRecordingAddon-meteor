@@ -64,6 +64,8 @@ public final class BotFakes {
         public final List<String> entities = new ArrayList<>();
         public final List<com.logvex.addon.bot.core.EntityRef> entityRefs = new ArrayList<>();
         public boolean hostileNearby;
+        /** How many times the controller asked for a threat scan; one per tick is the goal. */
+        public int hostileScans;
         public final List<String> unloaded = new ArrayList<>();
 
         @Override
@@ -121,6 +123,7 @@ public final class BotFakes {
 
         @Override
         public boolean hostileNearby(int radius) {
+            hostileScans++;
             return hostileNearby;
         }
 

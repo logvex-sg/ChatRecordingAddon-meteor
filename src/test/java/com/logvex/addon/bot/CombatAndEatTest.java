@@ -314,6 +314,44 @@ class CombatAndEatTest {
             "a meal queued next to a mob is a meal the bot cannot eat");
     }
 
+    @Test
+    void oneTickAsksForTheThreatScanOnce() {
+        BotFakes.Harness h = new BotFakes.Harness();
+        h.knowledge.foods.add("minecraft:bread");
+        h.inventory.items.put("minecraft:bread", 2);
+        // Hungry and threatened: both the auto-eat check and the safety gate want the answer.
+        h.player.food = 6;
+        h.world.hostileNearby = true;
+
+        BotController controller = new BotController(StandardExecutors.create(), new BotListener() {
+        }, h.clock);
+        controller.setConfig(h.config);
+        controller.setContext(h.context());
+        controller.start();
+
+        controller.tick();
+
+        assertEquals(1, h.world.hostileScans,
+            "the tick asks twice but must scan once; was " + h.world.hostileScans);
+    }
+
+    @Test
+    void aThreatOffBotNeverScansAtAll() {
+        BotFakes.Harness h = new BotFakes.Harness();
+        h.config = BotConfig.builder().stopOnThreat(false).build();
+        h.player.food = 20;
+
+        BotController controller = new BotController(StandardExecutors.create(), new BotListener() {
+        }, h.clock);
+        controller.setConfig(h.config);
+        controller.setContext(h.context());
+        controller.start();
+
+        for (int i = 0; i < 5; i++) controller.tick();
+
+        assertEquals(0, h.world.hostileScans, "an opted-out bot must not pay for the query");
+    }
+
     // ------------------------------------------------------------------ planning
     @Test
     void combatIsReachableFromNaturalWords() {
