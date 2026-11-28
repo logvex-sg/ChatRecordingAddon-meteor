@@ -1751,7 +1751,9 @@ no panel is left behind.
 
 - **Theme** — **Crimson** (the default), **Obsidian**, **Ash**, **Blood moon** and **Daylight**. A
   theme is the set of colour variables the stylesheet already reads, so switching one restyles every
-  panel, badge, chart, stripe and icon backdrop together. The choice is remembered in the browser.
+  panel, badge, chart, stripe, icon backdrop and canvas together. The choice is remembered in the
+  browser. Faint text is kept at or above 4.5:1 against every surface in every theme, so the
+  secondary labels stay readable rather than decorative.
 - **Interface scale** — text size from 0.8× to 1.4×, on top of the browser's own zoom.
 - **Spacing** — tightens or loosens panel padding and grid gaps.
 - **Inventory slot size** — resizes the inventory grid without changing the item icons.
@@ -1766,9 +1768,20 @@ list, so they are per browser, not per client.
 
 ### Keyboard and layout
 
-- **Ctrl+K** opens the Search tab and puts the cursor in the query box. **Escape** leaves the box.
-- **Hide rail** collapses the sidebar to give the content the full width; the state is remembered,
-  so the next visit starts the same way.
+- **Ctrl+K** opens the Search tab and puts the cursor in the query box. **Escape** leaves the box,
+  and closes any open dialog.
+- On a wide window the sections sit in a rail beside the content. **Hide rail** collapses it to give
+  the content the full width and leaves a small tab on the window edge to bring it back; the state
+  is remembered, so the next visit starts the same way.
+- On a narrow window the rail becomes a header: the brand, the status badges and the three tools on
+  one row, and the sections on a single strip that scrolls sideways underneath. Nothing is cut off
+  and no section is hidden — the strip is the same list, scrolled rather than wrapped, so a phone
+  keeps most of its screen for the panel you are reading. Collapsing the sections there hides only
+  the strip and keeps the header, so there is always something to tap.
+- The rail's own list scrolls, while **Appearance**, **Clients** and **Hide rail** stay pinned to
+  the bottom of the window, so they are reachable on a short screen.
+- Every colour on a canvas — the map background, the radar's rings and its empty surface — is read
+  from the active theme, so a theme change reaches the drawings as well as the panels.
 
 ### Tabs
 

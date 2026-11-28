@@ -65,8 +65,11 @@ function draw(entities, options) {
     fillText(t, x, y) { texts.push({ t, x, y }); }
   };
   const canvas = { width: 600, height: 600, getContext: () => ctx };
-  const fn = new Function('radarState', 'RADAR_KINDS', radarBody + '\nreturn drawRadar;')(
-    radarState, RADAR_KINDS);
+  // drawRadar reads its colours from the themed root through themeColor, which the page defines
+  // next to its other constants. The stub keeps the drawing deterministic without a DOM.
+  const themeColor = (name, fallback) => (name === '--accent' ? '#ff3b5c' : fallback);
+  const fn = new Function('radarState', 'RADAR_KINDS', 'themeColor',
+    radarBody + '\nreturn drawRadar;')(radarState, RADAR_KINDS, themeColor);
   fn(canvas, entities, options.me || { yaw: 0 });
   // Entity markers are 4.5 px (6 for a player); the rings and the player dot are larger.
   const markers = arcs.filter(a => Math.abs(a.r - 4.5) < 0.01 || Math.abs(a.r - 6) < 0.01);

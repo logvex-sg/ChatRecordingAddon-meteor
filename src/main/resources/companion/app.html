@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Log Client Companion</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23ff3b5c'/%3E%3Ctext x='16' y='22' font-family='system-ui,sans-serif' font-size='15' font-weight='700' fill='%23fff' text-anchor='middle'%3ELC%3C/text%3E%3C/svg%3E">
 <style>
   :root {
     --bg: #08070a;
@@ -15,7 +16,7 @@
     --line-soft: rgba(64, 44, 58, .55);
     --text: #f2eef1;
     --muted: #a08e9b;
-    --faint: #6f6070;
+    --faint: #8f838f;
     --accent: #ff3b5c;
     --accent-2: #d81b3f;
     --accent-glow: rgba(255, 59, 92, .22);
@@ -27,6 +28,10 @@
     --mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, monospace;
     --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     --shadow: 0 1px 2px rgba(0, 0, 0, .45), 0 10px 28px -14px rgba(0, 0, 0, .85);
+    /* Card surfaces are their own tokens so they follow the theme; they used to be a fixed
+       navy gradient, which read as a different product on every theme but that one. */
+    --card-top: rgba(30, 24, 32, .72);
+    --card-bottom: rgba(22, 17, 25, .92);
     /* Layout scale: every gap and padding below is multiplied by --space, so density is one knob. */
     --space: 1;
     --font-scale: 1;
@@ -62,8 +67,22 @@
     padding: calc(14px * var(--space)) calc(10px * var(--space));
     background: linear-gradient(180deg, var(--bg-2), var(--panel) 40%);
     border-right: 1px solid var(--line);
-    overflow-y: auto;
+    /* The rail scrolls its own list, not itself: the foot then stays pinned to the bottom of
+       the window instead of sliding out of reach on a short screen. */
+    overflow: hidden;
   }
+  /* A hidden rail must not take the only way to show it again with it, so the toggle is drawn
+     as a tab on the window edge while the rail is collapsed. */
+  .rail-reveal {
+    position: fixed; left: 0; top: 50%; transform: translateY(-50%); z-index: 25;
+    display: none; align-items: center; justify-content: center;
+    width: 22px; height: 76px; padding: 0; cursor: pointer;
+    background: var(--panel-2); color: var(--muted);
+    border: 1px solid var(--line); border-left: none;
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  }
+  .rail-reveal:hover { color: var(--text); border-color: var(--accent); }
+  .shell.rail-hidden .rail-reveal { display: flex; }
   .brand { display: flex; align-items: center; gap: 9px; padding: 2px 6px 14px; }
   .brand-mark {
     width: 28px; height: 28px; border-radius: 9px; display: grid; place-items: center;
@@ -74,7 +93,11 @@
   .brand h1 { font-size: 13.5px; margin: 0; font-weight: 650; letter-spacing: .1px; line-height: 1.2; }
   .brand h1 small { display: block; font-size: 10px; font-weight: 500; color: var(--faint); letter-spacing: .3px; }
 
-  nav { display: flex; flex-direction: column; gap: 2px; }
+  nav {
+    display: flex; flex-direction: column; gap: 2px;
+    flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden;
+    scrollbar-width: thin; padding-right: 2px;
+  }
   nav .nav-group {
     font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .9px;
     color: var(--faint); padding: 12px 8px 4px;
@@ -82,7 +105,7 @@
   nav button {
     display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
     background: transparent; color: var(--muted); border: 1px solid transparent;
-    padding: 7px 10px; border-radius: var(--radius-sm); cursor: pointer;
+    padding: 7px 10px; border-radius: var(--radius-sm); cursor: pointer; flex: 0 0 auto;
     font-size: 12.5px; font-weight: 500; transition: background .14s, color .14s, border-color .14s;
   }
   nav button:hover { color: var(--text); background: var(--panel-2); }
@@ -95,7 +118,7 @@
     font-size: 10px; margin-left: auto; padding: 0 5px; border-radius: 999px;
     background: rgba(255, 255, 255, .1); color: inherit;
   }
-  aside .rail-foot { margin-top: auto; padding-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+  aside .rail-foot { margin-top: auto; padding-top: 12px; display: flex; flex-direction: column; gap: 6px; flex: 0 0 auto; }
 
   .topbar {
     display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
@@ -130,7 +153,7 @@
   .grid.tight { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 11px; }
 
   .card {
-    background: linear-gradient(180deg, rgba(24, 35, 61, .72), rgba(18, 27, 48, .92));
+    background: linear-gradient(180deg, var(--card-top), var(--card-bottom));
     border: 1px solid var(--line); border-radius: var(--radius);
     padding: 15px; box-shadow: var(--shadow);
     transition: border-color .16s, transform .16s;
@@ -358,7 +381,7 @@
     background: #0a080c; border: 1px solid var(--line-soft); border-radius: var(--radius-sm);
     padding: 8px 10px;
   }
-  .log .line { padding: 3px 0; border-bottom: 1px solid rgba(37, 50, 82, .4); word-break: break-word; }
+  .log .line { padding: 3px 0; border-bottom: 1px solid var(--line-soft); word-break: break-word; }
   .log .line:last-child { border-bottom: none; }
   .log .t { color: var(--faint); }
   .log .ev-chat { color: var(--accent); }
@@ -382,6 +405,7 @@
   .embed .badge {
     font-size: 10px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
     padding: 1px 6px; border-radius: 999px; border: 1px solid currentColor; opacity: .85;
+    color: var(--tone, var(--faint));
   }
   .embed .time { margin-left: auto; font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; }
   .embed .text { margin-top: 4px; font-size: 12.5px; line-height: 1.45; word-break: break-word; white-space: pre-wrap; }
@@ -389,7 +413,6 @@
 
   /* The message type sets --tone inline, so the stripe and badge cannot drift from the label table. */
   .embed .stripe { background: var(--tone, var(--faint)); }
-  .embed .badge { color: var(--tone, var(--faint)); }
 
   /* Sparklines: a drawn series, never a decorative squiggle. The SVG is sized by its container. */
   .spark { width: 100%; height: 46px; display: block; overflow: visible; }
@@ -417,14 +440,6 @@
   .group-head:first-child { margin-top: 0; }
   .group-head .spacer { flex: 1; }
   .group-head .hint { font-weight: 500; letter-spacing: .3px; color: var(--faint); opacity: .8; }
-  .group-head {
-    display: flex; align-items: center; gap: 8px; margin: 18px 0 9px;
-    font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .8px;
-    color: var(--faint);
-  }
-  .group-head:first-child { margin-top: 0; }
-  .group-head .spacer { flex: 1; }
-  .group-head .hint { font-weight: 500; letter-spacing: .3px; opacity: .8; }
   .empty { color: var(--faint); padding: 22px 14px; text-align: center; font-size: 12.5px; }
   .error { color: var(--bad); }
   .ok { color: var(--good); }
@@ -472,7 +487,7 @@
     border-radius: var(--radius); max-width: min(560px, calc(100vw - 24px)); width: 92%; padding: 20px;
     box-shadow: 0 24px 60px -20px rgba(0, 0, 0, .8);
   }
-  dialog::backdrop { background: rgba(4, 8, 16, .7); backdrop-filter: blur(3px); }
+  dialog::backdrop { background: rgba(4, 2, 5, .7); backdrop-filter: blur(3px); }
   dialog h3 { margin-top: 0; font-size: 15px; }
   dialog.wide { max-width: min(780px, calc(100vw - 24px)); }
 
@@ -508,14 +523,18 @@
   .search-hit .body { flex: 1; word-break: break-word; }
 
   @media (max-width: 620px) {
-    header { padding: 10px 13px; }
     main { padding: 13px 13px 48px; }
-    nav { padding: 10px 13px 0; overflow-x: auto; flex-wrap: nowrap; }
     .tiles { grid-template-columns: repeat(2, 1fr); }
     /* Two columns need room for a label and a usable control. Below this the label would leave a
        slider too short to drag, so each setting stacks instead. */
     .setting { grid-template-columns: 1fr; }
     .settings-list { max-height: 62vh; }
+    /* Compact chrome: the status badges and the three tools have to share one phone width without
+       pushing each other off the edge, so they lose padding and size rather than overflow. */
+    .rail-foot .btn { padding: 4px 7px; font-size: 11px; }
+    .topbar { padding: 8px 12px; }
+    .topbar .btn { padding: 4px 8px; font-size: 11.5px; }
+    .topbar .badge { font-size: 10px; padding: 2px 7px; }
   }
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation: none !important; transition: none !important; }
@@ -524,17 +543,60 @@
   .reduced-motion *, .reduced-motion *::before, .reduced-motion *::after {
     animation: none !important; transition: none !important;
   }
+  /* Below this the rail becomes a header: brand and tools on one row, the sections on a single
+     scrolling strip underneath. It used to wrap seventeen chips into five stacked rows, which ate
+     most of a phone screen before a single card was visible. */
   @media (max-width: 860px) {
-    .shell { grid-template-columns: 1fr; }
-    aside { position: static; height: auto; }
-    nav { flex-direction: row; flex-wrap: wrap; }
+    /* One column, two rows. Without `align-content: start` the two auto rows share the leftover
+       viewport height, which opened a dead band between the section strip and the tools bar. */
+    .shell { grid-template-columns: 1fr; align-content: start; }
+    aside {
+      position: sticky; top: 0; z-index: 15; height: auto;
+      display: grid; grid-template-columns: auto 1fr auto; align-items: center;
+      grid-template-areas: "brand . foot" "nav nav nav";
+      gap: 6px 10px; padding: 8px 12px;
+      border-right: none; border-bottom: 1px solid var(--line);
+      background: rgba(10, 8, 12, .92);
+      backdrop-filter: blur(14px) saturate(140%);
+    }
+    .brand { grid-area: brand; padding: 0; }
+    .brand h1 small, .brand h1 { display: none; }
+    /* `aside .rail-foot` in the base rules is more specific than a bare class, so the row layout
+       has to be declared with the same specificity or the three buttons stay stacked. */
+    aside .rail-foot {
+      grid-area: foot; margin: 0; padding: 0;
+      flex-direction: row; justify-content: flex-end; gap: 6px;
+    }
+    nav {
+      grid-area: nav; flex-direction: row; flex-wrap: nowrap; gap: 4px;
+      /* `min-width: 0` is what lets the strip scroll instead of widening the header: a grid
+         item's default min-width is its min-content width, which a nowrap row makes enormous. */
+      min-width: 0;
+      overflow-x: auto; overflow-y: hidden; min-height: 0; padding: 0 0 2px;
+      scrollbar-width: thin; overscroll-behavior-x: contain;
+    }
     nav .nav-group { display: none; }
-    nav button { width: auto; }
+    nav button { width: auto; flex: 0 0 auto; white-space: nowrap; }
+    /* Two sticky bars would fight for the top edge, so the topbar scrolls away and the section
+       strip stays. It also scrolls sideways rather than wrapping into a second header row. */
+    .topbar {
+      position: static; flex-wrap: nowrap; overflow-x: auto;
+      scrollbar-width: none; gap: 6px;
+    }
+    .topbar::-webkit-scrollbar { display: none; }
+    .topbar .spacer { flex: 1 0 0; }
+    .topbar .btn { flex: 0 0 auto; }
+    /* On a phone the "rail" is only the section strip, so collapsing it keeps the brand and the
+       tools: hiding the whole header would leave nothing to tap. */
+    .shell.rail-hidden aside { display: grid; }
+    .shell.rail-hidden nav { display: none; }
+    .shell.rail-hidden .rail-reveal { display: flex; }
   }
 </style>
 </head>
 <body>
 <div class="shell" id="shell">
+  <button class="rail-reveal" id="btn-rail-reveal" aria-label="Show sections" title="Show sections">&#9656;</button>
   <aside>
     <div class="brand">
       <span class="brand-mark" aria-hidden="true">LC</span>
@@ -639,6 +701,13 @@
 const STORE_KEY = "logclient.companion.nodes";
 const TAB_KEY = "logclient.companion.tab";
 const THEME_KEY = "logclient.companion.theme";
+/* Canvas drawing cannot use CSS variables, so the few colours it needs are read back from the
+   themed root. Before this the map and radar painted a hardcoded navy canvas and a hardcoded
+   crimson accent, so they ignored whatever theme the rest of the window was using. */
+function themeColor(name, fallback) {
+  const value = getComputedStyle(document.documentElement).getPropertyValue(name);
+  return value && value.trim() ? value.trim() : fallback;
+}
 const WORKSPACE_KEY = "logclient.companion.workspaces";
 const RAIL_KEY = "logclient.companion.rail";
 
@@ -652,8 +721,9 @@ const THEMES = {
     vars: {
       "--bg": "#08070a", "--bg-2": "#0d0b10", "--panel": "#131016", "--panel-2": "#1a151d",
       "--panel-3": "#241c26", "--line": "#2e2430", "--line-soft": "rgba(64, 44, 58, .55)",
-      "--text": "#f2eef1", "--muted": "#a08e9b", "--faint": "#6f6070",
+      "--text": "#f2eef1", "--muted": "#a08e9b", "--faint": "#8f838f",
       "--accent": "#ff3b5c", "--accent-2": "#d81b3f",
+      "--card-top": "rgba(30, 24, 32, .72)", "--card-bottom": "rgba(22, 17, 25, .92)",
       "--accent-glow": "rgba(255, 59, 92, .22)",
       "--good": "#4ade9b", "--warn": "#f5b544", "--bad": "#ff5f5f"
     }
@@ -663,8 +733,9 @@ const THEMES = {
     vars: {
       "--bg": "#060709", "--bg-2": "#0b0d11", "--panel": "#111419", "--panel-2": "#171b22",
       "--panel-3": "#1f242d", "--line": "#282e39", "--line-soft": "rgba(40, 46, 57, .55)",
-      "--text": "#eef1f6", "--muted": "#98a2b3", "--faint": "#667085",
+      "--text": "#eef1f6", "--muted": "#98a2b3", "--faint": "#80889a",
       "--accent": "#e11d48", "--accent-2": "#9f1239",
+      "--card-top": "rgba(26, 30, 38, .72)", "--card-bottom": "rgba(19, 22, 28, .92)",
       "--accent-glow": "rgba(225, 29, 72, .2)",
       "--good": "#34d399", "--warn": "#fbbf24", "--bad": "#f87171"
     }
@@ -674,8 +745,9 @@ const THEMES = {
     vars: {
       "--bg": "#0a0a0b", "--bg-2": "#101012", "--panel": "#16161a", "--panel-2": "#1d1d22",
       "--panel-3": "#26262d", "--line": "#32323a", "--line-soft": "rgba(50, 50, 58, .6)",
-      "--text": "#f4f4f6", "--muted": "#a4a4ae", "--faint": "#71717a",
+      "--text": "#f4f4f6", "--muted": "#a4a4ae", "--faint": "#898991",
       "--accent": "#f43f5e", "--accent-2": "#be123c",
+      "--card-top": "rgba(32, 32, 38, .72)", "--card-bottom": "rgba(24, 24, 29, .92)",
       "--accent-glow": "rgba(244, 63, 94, .18)",
       "--good": "#4ade80", "--warn": "#facc15", "--bad": "#f87171"
     }
@@ -685,8 +757,9 @@ const THEMES = {
     vars: {
       "--bg": "#0d0406", "--bg-2": "#15070a", "--panel": "#1d0a0f", "--panel-2": "#270e14",
       "--panel-3": "#33131b", "--line": "#451c26", "--line-soft": "rgba(69, 28, 38, .6)",
-      "--text": "#fdeef1", "--muted": "#c89aa5", "--faint": "#966874",
+      "--text": "#fdeef1", "--muted": "#c89aa5", "--faint": "#a27a84",
       "--accent": "#ff2447", "--accent-2": "#a80f2b",
+      "--card-top": "rgba(42, 17, 25, .72)", "--card-bottom": "rgba(30, 11, 16, .92)",
       "--accent-glow": "rgba(255, 36, 71, .26)",
       "--good": "#5eead4", "--warn": "#fbbf6e", "--bad": "#fb7185"
     }
@@ -696,8 +769,9 @@ const THEMES = {
     vars: {
       "--bg": "#f4f2f5", "--bg-2": "#ece9ee", "--panel": "#ffffff", "--panel-2": "#f7f5f8",
       "--panel-3": "#efeaf1", "--line": "#ddd5e0", "--line-soft": "rgba(180, 160, 185, .45)",
-      "--text": "#1c141f", "--muted": "#6b5c70", "--faint": "#93849a",
+      "--text": "#1c141f", "--muted": "#6b5c70", "--faint": "#726677",
       "--accent": "#d81b3f", "--accent-2": "#a80f2b",
+      "--card-top": "rgba(255, 255, 255, .92)", "--card-bottom": "rgba(252, 250, 253, .98)",
       "--accent-glow": "rgba(216, 27, 63, .16)",
       "--good": "#0f9d63", "--warn": "#b7791f", "--bad": "#c53030"
     }
@@ -1467,7 +1541,7 @@ function drawRadar(canvas, entities, me) {
   // The player, always last so it is never hidden under a marker.
   ctx.fillStyle = "#ffffff";
   ctx.beginPath(); ctx.arc(centre, centre, 5, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = "#ff3b5c";
+  ctx.strokeStyle = themeColor("--accent", "#ff3b5c");
   ctx.lineWidth = 2;
   ctx.beginPath(); ctx.arc(centre, centre, 9, 0, Math.PI * 2); ctx.stroke();
 
@@ -2657,7 +2731,7 @@ function drawFlatView(canvas) {
   const { ctx, width, height } = fitCanvas(canvas);
   if (!ctx) return;
   const surface = mapView.surface;
-  ctx.fillStyle = "#0a1020";
+  ctx.fillStyle = themeColor("--bg", "#08070a");
   ctx.fillRect(0, 0, width, height);
   if (!surface) { paintEmpty(ctx, width, height); return; }
   if (mapView.cx === null) fitView(width, height);
@@ -2689,7 +2763,7 @@ function drawIsoView(canvas) {
   const { ctx, width, height } = fitCanvas(canvas);
   if (!ctx) return;
   const grid = mapView.grid;
-  ctx.fillStyle = "#0a1020";
+  ctx.fillStyle = themeColor("--bg", "#08070a");
   ctx.fillRect(0, 0, width, height);
   if (!grid) { paintEmpty(ctx, width, height); return; }
   if (mapView.cx === null) fitView(width, height);
@@ -2943,7 +3017,7 @@ function draw3DView(canvas) {
   // Sky above, ground below: the horizon reads as distance instead of as empty canvas.
   const sky = ctx.createLinearGradient(0, 0, 0, height);
   sky.addColorStop(0, "#0d1728");
-  sky.addColorStop(0.6, "#0a1020");
+  sky.addColorStop(0.6, themeColor("--bg", "#08070a"));
   sky.addColorStop(1, "#080d18");
   ctx.fillStyle = sky;
   ctx.fillRect(0, 0, width, height);
@@ -3188,7 +3262,7 @@ function pick3D(px, py) {
 }
 
 function paintEmpty(ctx, width, height) {
-  ctx.fillStyle = "#0a1020";
+  ctx.fillStyle = themeColor("--bg", "#08070a");
   ctx.fillRect(0, 0, width, height);
   ctx.fillStyle = "#62729a";
   ctx.font = "13px ui-sans-serif, system-ui";
@@ -3273,7 +3347,7 @@ function drawMarker(ctx, x, y, color, label, solid) {
   ctx.arc(x, y, 4.5, 0, Math.PI * 2);
   ctx.strokeStyle = color;
   ctx.lineWidth = 1.7;
-  ctx.fillStyle = solid ? color : "#0a1020";
+  ctx.fillStyle = solid ? color : themeColor("--bg", "#08070a");
   ctx.fill();
   ctx.stroke();
   if (label) {
@@ -3630,7 +3704,7 @@ function makeSurface(minBlockX, minBlockZ, blocksW, blocksH) {
   canvas.height = Math.max(1, blocksH);
   const ctx = canvas.getContext("2d");
   if (!ctx) return null;
-  ctx.fillStyle = "#0a1020";
+  ctx.fillStyle = themeColor("--bg", "#08070a");
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   return { canvas, ctx, minBlockX, minBlockZ, blocksW, blocksH };
 }
@@ -3785,7 +3859,7 @@ function renderMap() {
     el("span", {}, [el("span", { class: "swatch", style: "background:" + BLOCK_COLORS["minecraft:sand"] }), el("span", { text: "Sand" })]),
     el("span", {}, [el("span", { class: "swatch", style: "background:" + BLOCK_COLORS["minecraft:stone"] }), el("span", { text: "Stone" })]),
     el("span", {}, [el("span", { class: "swatch", style: "background:" + BLOCK_COLORS["minecraft:water"] }), el("span", { text: "Water" })]),
-    el("span", {}, [el("span", { class: "swatch", style: "background:#0a1020" }), el("span", { text: "Not captured" })]),
+    el("span", {}, [el("span", { class: "swatch", style: "background:var(--bg)" }), el("span", { text: "Not captured" })]),
     el("span", {}, [el("span", { class: "swatch", style: "background:#8ab4ff;border-radius:50%" }), el("span", { text: "You" })])
   ]);
 
@@ -4007,7 +4081,7 @@ function clearSurface(message) {
   if (!mapDom.canvas) return;
   const { ctx, width, height } = fitCanvas(mapDom.canvas);
   if (!ctx) return;
-  ctx.fillStyle = "#0a1020";
+  ctx.fillStyle = themeColor("--bg", "#08070a");
   ctx.fillRect(0, 0, width, height);
   ctx.fillStyle = "#62729a";
   ctx.font = "13px ui-sans-serif, system-ui";
@@ -5371,9 +5445,14 @@ function wireEvents() {
   const setRail = (hidden) => {
     shell.classList.toggle("rail-hidden", hidden);
     railButton.textContent = hidden ? "Show rail" : "Hide rail";
+    // The collision-free tab on the window edge is the only way back once the rail is gone, so
+    // it has to follow the same state rather than being toggled separately.
+    const reveal = document.getElementById("btn-rail-reveal");
+    reveal.setAttribute("aria-expanded", hidden ? "false" : "true");
     localStorage.setItem(RAIL_KEY, hidden ? "1" : "0");
   };
   railButton.onclick = () => setRail(!shell.classList.contains("rail-hidden"));
+  document.getElementById("btn-rail-reveal").onclick = () => setRail(false);
   setRail(localStorage.getItem(RAIL_KEY) === "1");
   const openPalette = () => {
     tab = "search";
@@ -5391,8 +5470,12 @@ function wireEvents() {
       openPalette();
       return;
     }
-    if (event.key === "Escape" && document.activeElement
-        && document.activeElement.id === "search-query") {
+    if (event.key !== "Escape") return;
+    // A dialog is closed by Escape because that is what every other dialog on the system does.
+    // Without this the key did nothing and the only way out was the Close button.
+    const open = document.querySelector("dialog[open]");
+    if (open) { open.close(); return; }
+    if (document.activeElement && document.activeElement.id === "search-query") {
       document.activeElement.blur();
     }
   });

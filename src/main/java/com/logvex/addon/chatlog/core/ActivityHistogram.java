@@ -47,10 +47,13 @@ public final class ActivityHistogram {
         long start = nowMs - Math.floorMod(nowMs, bucketMillis);
         Bucket last = buckets.peekLast();
         if (last == null || last.start() < start) {
-            // A new bucket begins. If time jumped several buckets (a pause, a lag spike), the empty
-            // buckets in between are materialised so the graph shows the gap honestly instead of
-            // compressing it away.
-            long next = last == null ? start : last.start() + bucketMillis;
+            // A new bucket begins. Empty buckets in between are materialised so the graph shows a
+            // gap honestly, but only as far back as the window reaches: a clock that leaps years
+            // (a resume from sleep, an old log replayed, a corrected system time) must not allocate
+            // one bucket per elapsed interval, which is millions of them and exhausts the heap.
+            long next = last == null
+                ? start
+                : Math.max(last.start() + bucketMillis, start - (capacity - 1) * bucketMillis);
             while (next <= start) {
                 buckets.addLast(new Bucket(next, 0));
                 next += bucketMillis;
