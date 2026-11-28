@@ -279,13 +279,16 @@ public final class ReplyFormat {
     /** A horizontal rule with a corner at each end and an optional label after the first. */
     private static String border(String left, String right, String label, int width) {
         // A label wider than the rule would push the right corner off the line, so it is shortened.
-        // Two corners and one leading rule take three columns; the label and fill take the rest.
-        String text = label.isBlank() ? "" : " " + label + " ";
-        int room = width - 3;
-        if (displayWidth(text) > room) {
-            text = " " + shorten(label, Math.max(1, room - 2)) + " ";
+        int limit = Math.max(2, width);
+        // Two corners and one rule always show, so this is all a label may fill.
+        int budget = Math.max(0, limit - 3);
+        String text = label == null || label.isBlank() ? "" : " " + label + " ";
+        if (displayWidth(text) > budget) {
+            // At a very small width even " label " does not fit, and the padding spaces have to go
+            // before the corner does: keeping them pushed the row one column past the frame.
+            text = budget <= 1 ? "" : " " + shorten(label, budget - 2) + " ";
         }
-        int fill = Math.max(0, room - displayWidth(text));
+        int fill = Math.max(0, limit - 2 - displayWidth(text) - 1);
         return left + HORIZONTAL + text + HORIZONTAL.repeat(fill) + right;
     }
 
@@ -400,7 +403,10 @@ public final class ReplyFormat {
             int w = codePointWidth(cp);
             if (used + w > limit) {
                 // A space before the budget is the nicer cut; otherwise cut exactly here.
-                return lastSpace > 0 ? lastSpace : i;
+                // A wide glyph alone in a budget of one column fits nowhere, so the cut must still
+                // take it: returning 0 here left the remainder unchanged and `wrap` looped for ever.
+                if (lastSpace > 0) return lastSpace;
+                return i > 0 ? i : Character.charCount(cp);
             }
             if (cp == ' ') lastSpace = i;
             used += w;
@@ -414,9 +420,7 @@ public final class ReplyFormat {
         if (!embed.title().isBlank()) sb.append(embed.title()).append(" | ");
         for (int i = 0; i < embed.fields().size(); i++) {
             if (i > 0) sb.append(" | ");
-            Field field = embed.fields().get(i);
-            if (!field.label().isBlank()) sb.append(field.label()).append(' ');
-            sb.append(field.value());
+            sb.append(fieldText(embed.fields().get(i)));
         }
         if (!embed.footer().isBlank()) sb.append(" | ").append(embed.footer());
         return shorten(sb.toString(), width);
@@ -427,12 +431,23 @@ public final class ReplyFormat {
         if (!embed.title().isBlank()) sb.append(embed.title()).append(": ");
         for (int i = 0; i < embed.fields().size(); i++) {
             if (i > 0) sb.append(", ");
-            Field field = embed.fields().get(i);
-            if (!field.label().isBlank()) sb.append(field.label()).append(' ');
-            sb.append(field.value());
+            sb.append(fieldText(embed.fields().get(i)));
         }
         if (!embed.footer().isBlank()) sb.append(". ").append(embed.footer());
         return shorten(sb.toString(), width);
+    }
+
+    /**
+     * One field as inline text: {@code label value}, or the bare name of a section.
+     *
+     * <p>A section field carries its name behind an internal marker, which is only meaningful to the
+     * layouts that draw a rule. Inline styles have no rule to draw, so they show the name on its
+     * own; appending the field blindly put the marker itself in the chat box.
+     */
+    private static String fieldText(Field field) {
+        if (field.value().startsWith(SECTION)) return field.value().substring(SECTION.length());
+        if (field.label().isBlank()) return field.value();
+        return field.label() + " " + field.value();
     }
 
     private static String pad(String text, int width) {

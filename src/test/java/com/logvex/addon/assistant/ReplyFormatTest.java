@@ -19,6 +19,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -616,5 +617,63 @@ class ReplyFormatTest {
             PermissionSet.DefaultPolicy.OPEN, true);
         String after = allHelpPages(brain, SenderIdentity.unverified("Stranger"), opened);
         assertTrue(after.contains("!ping"), "opening the command makes it visible: " + after);
+    }
+
+    @Test
+    @DisplayName("a wide glyph in a one-column budget still advances instead of looping for ever")
+    void wideGlyphNarrowerThanItsBudgetTerminates() {
+        // breakAt used to return 0 when the first glyph was two columns wide and the budget one,
+        // so wrapping re-cut the same string with no progress: an unbounded loop that filled the
+        // heap and froze the client. A timeout is the assertion — completing at all is the property.
+        List<ReplyFormat.Field> fields = List.of(
+            new ReplyFormat.Field("L", "\u30b9\u30c6\u30fc\u30b8"));
+        assertTimeoutPreemptively(java.time.Duration.ofSeconds(5), () -> {
+            for (ReplyFormat.Style style : ReplyFormat.Style.values()) {
+                List<String> lines = ReplyFormat.render(
+                    new ReplyFormat.Embed("T", fields, "F", style), 1);
+                assertFalse(lines.isEmpty(), style + " still emits rows");
+                // The wrapping styles must keep the text; the inline styles shorten by design.
+                boolean wraps = style == ReplyFormat.Style.BOX || style == ReplyFormat.Style.LIST;
+                if (wraps) {
+                    String joined = String.join("", lines);
+                    assertTrue(joined.contains("\u30b9"),
+                        style + " kept the text: '" + joined + "'");
+                }
+            }
+        });
+    }
+
+    @Test
+    @DisplayName("a reply at the narrowest configurable width keeps its frame")
+    void narrowestConfiguredWidthKeepsItsFrame() {
+        // reply-width is bounded at 20, so this is the worst case a user can actually select.
+        List<ReplyFormat.Field> fields = List.of(
+            new ReplyFormat.Field("Heap used", "512 of 2048 MB"),
+            ReplyFormat.Field.section("Session"),
+            new ReplyFormat.Field("Uptime", "00:12:34"));
+        for (ReplyFormat.Style style : ReplyFormat.Style.values()) {
+            for (String line : ReplyFormat.render(
+                    new ReplyFormat.Embed("Memory", fields, "client figures", style), 20)) {
+                assertTrue(ReplyFormat.displayWidth(line) <= 20,
+                    style + " row is wider than the frame: '" + line + "'");
+                assertFalse(line.contains("\u0000"),
+                    style + " leaked the internal section marker: '" + line + "'");
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("an inline style shows a section name without its internal marker")
+    void inlineStylesRenderSectionNames() {
+        List<ReplyFormat.Field> fields = List.of(
+            ReplyFormat.Field.section("Memory"),
+            new ReplyFormat.Field("Facts", "3"));
+        for (ReplyFormat.Style style : List.of(ReplyFormat.Style.PLAIN, ReplyFormat.Style.COMPACT)) {
+            String line = ReplyFormat.oneLine(
+                new ReplyFormat.Embed("!about", fields, "", style), 120);
+            assertFalse(line.contains("\u0000"),
+                style + " put the marker in chat instead of the name: '" + line + "'");
+            assertTrue(line.contains("Memory"), style + " kept the section name: '" + line + "'");
+        }
     }
 }
