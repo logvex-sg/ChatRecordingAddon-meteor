@@ -195,6 +195,20 @@ public final class AssistantRuntime {
     }
 
     /**
+     * Evaluates one message from a sender known only by name, with the speaker's own latency.
+     *
+     * <p>The name-based form exists for callers that only have a chat line. It carries the
+     * requester's figure as well so a test or a log replay can answer {@code !ping} about the
+     * speaker without reaching into {@link SenderIdentity}.
+     */
+    public AssistantBrain.Decision handle(String sender, String content, long now,
+                                          ServerStats stats, StatusCommands.Settings statusSettings,
+                                          int requesterPing) {
+        return handle(SenderIdentity.unverified(sender), content, now, stats, statusSettings,
+            requesterPing);
+    }
+
+    /**
      * Evaluates one message, with the speaker's own latency.
      *
      * <p>Only the module can read a player's latency from the tab list, so it is passed in rather
@@ -222,6 +236,10 @@ public final class AssistantRuntime {
         }
 
         AssistantConfig cfg = config;
+        // The command path and the trigger path must agree on whose latency {ping} reports. A caller
+        // that could not read the figure passes a negative value; for the local player the client's
+        // own reading is that figure, so resolve it once here rather than in each path.
+        int speakerPing = requesterPing >= 0 || !sender.local() ? requesterPing : liveStats.latency();
         // A bare-word trigger must not swallow a prefixed command: with the shipped table, a trigger
         // for "hello" would answer "!hello" before the command parser ever saw it, making the command
         // unreachable. A trigger the user wrote *with* the prefix ("!remember") is deliberate, so it
@@ -282,7 +300,7 @@ public final class AssistantRuntime {
             }
             handled++;
             AssistantBrain.Decision decision =
-                brain.trigger(rule, sender.name(), content, cfg, now, liveStats);
+                brain.trigger(rule, sender.name(), content, cfg, now, liveStats, speakerPing);
             if (decision.acts()) {
                 activity.recordReply();
                 reactionLog.record(now, sender.name(), content, ReactionLog.Outcome.REPLIED,
@@ -296,7 +314,7 @@ public final class AssistantRuntime {
             // reply is counted separately from a trigger reply.
             AssistantBrain.Decision command =
                 brain.command(sender, content, cfg, now, liveStats, statusSettings, permissions,
-                    activity, helpEnabled, requesterPing);
+                    activity, helpEnabled, speakerPing);
             if (command != null && command.acts()) {
                 if (command.denied()) {
                     // A refusal gets its own budget. Charging it to the shared budget would let any

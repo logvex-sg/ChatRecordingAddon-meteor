@@ -37,9 +37,19 @@ public final class ResponseTemplate {
         return REGISTRY;
     }
 
-    /** The data a template can interpolate. */
+    /**
+     * The data a template can interpolate.
+     *
+     * @param requesterPing  the speaker's round-trip latency, or a negative value when not known
+     * @param requesterKnown true when the reply is about a specific asker, so {@code {ping}} may
+     *                       only answer from {@code requesterPing} and reports {@code n/a} when
+     *                       that is unknown. False means nobody in particular asked — a preview or
+     *                       a join greeting — and this client's own reading is the only one it
+     *                       could be about.
+     */
     public record Context(String player, String message, String server, AssistantMemory memory,
-                          long now, ServerStats stats, String assistant, String prefix) {
+                          long now, ServerStats stats, String assistant, String prefix,
+                          int requesterPing, boolean requesterKnown) {
         /**
          * {@code {name}} and {@code {prefix}} need the assistant's own identity, which a reply
          * cannot read from anywhere else, so the caller that owns the config passes them in.
@@ -48,6 +58,17 @@ public final class ResponseTemplate {
             if (stats == null) stats = ServerStats.OFFLINE;
             if (assistant == null) assistant = "";
             if (prefix == null) prefix = "";
+        }
+
+        /**
+         * A context with no particular asker, so {@code {ping}} falls back to this client.
+         *
+         * <p>Kept as an overload so a caller that is not answering a specific player — a preview,
+         * a join greeting, a unit test — does not have to say so.
+         */
+        public Context(String player, String message, String server, AssistantMemory memory,
+                       long now, ServerStats stats, String assistant, String prefix) {
+            this(player, message, server, memory, now, stats, assistant, prefix, -1, false);
         }
 
         /** A context with no live figures; every stats placeholder then resolves to {@code n/a}. */
@@ -67,6 +88,23 @@ public final class ResponseTemplate {
         public static Context of(String player, String message, AssistantMemory memory, long now,
                                  ServerStats stats) {
             return new Context(player, message, "", memory, now, stats);
+        }
+
+        /**
+         * The same context attributed to the speaker, so {@code {ping}} and {@code {verdict}}
+         * answer about whoever asked instead of about this client.
+         *
+         * @param latency the speaker's round-trip time, or a negative value when it could not be read
+         */
+        public Context forRequester(int latency) {
+            return new Context(player, message, server, memory, now, stats, assistant, prefix,
+                latency, true);
+        }
+
+        /** The latency to report for {@code {ping}}, or a negative value for {@code n/a}. */
+        public int attributedLatency() {
+            if (requesterPing >= 0) return requesterPing;
+            return requesterKnown ? -1 : stats.latency();
         }
     }
 

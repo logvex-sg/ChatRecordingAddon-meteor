@@ -212,7 +212,8 @@ public final class StatusTemplate {
             case "mspt" -> s.mspt() < 0f
                 ? UNAVAILABLE : String.format(Locale.ROOT, "%.1f", s.mspt());
             case "ping" -> ping(s, ctx);
-            case "verdict" -> s.offline() ? "offline" : s.verdict();
+            case "verdict" -> ServerStats.verdictFor(
+                s.inWorld(), s.tps(), attributedLatency(s, ctx));
             case "playercount" -> s.inWorld() ? String.valueOf(s.players()) : UNAVAILABLE;
             case "maxplayers" -> s.hasMaxPlayers()
                 ? String.valueOf(s.maxPlayers()) : UNAVAILABLE;
@@ -257,13 +258,22 @@ public final class StatusTemplate {
     /**
      * The latency to show for {@code {ping}}.
      *
-     * <p>The requester's own figure wins when it could be read. It falls back to the client's own
-     * reading only when nobody in particular asked, which is the case for a preview or a local
-     * readout by the local player.
+     * <p>The requester's own figure wins when it could be read. When a named player asked but their
+     * figure could not be read the answer is {@code n/a}: this client's latency was never theirs, so
+     * substituting it would report a measurement of the wrong connection. Only when nobody in
+     * particular asked — a preview or a local readout — does this client's own figure stand in.
      */
     private static String ping(ServerStats s, Context ctx) {
-        int latency = ctx.requesterPing() >= 0 ? ctx.requesterPing() : s.latency();
+        int latency = attributedLatency(s, ctx);
         return latency < 0 ? UNAVAILABLE : String.valueOf(latency);
+    }
+
+    /** The latency that belongs to whoever asked, or a negative value when it is not known. */
+    public static int attributedLatency(ServerStats s, Context ctx) {
+        if (ctx == null) return s == null ? -1 : s.latency();
+        if (ctx.requesterPing() >= 0) return ctx.requesterPing();
+        if (ctx.requester().isBlank()) return s == null ? -1 : s.latency();
+        return -1;
     }
 
     /** {@code connected}, {@code single-player} or {@code offline}. */

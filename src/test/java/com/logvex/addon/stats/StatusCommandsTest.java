@@ -90,7 +90,10 @@ class StatusCommandsTest {
     @Test
     @DisplayName("!status summarises the server and the connection")
     void statusOverview() {
-        String text = StatusCommands.answer("status", live(), defaults(), "Alex")
+        // The live player's own figure is passed in, the way the runtime supplies it; a name alone
+        // carries no measurement and would honestly report n/a.
+        String text = StatusCommands.answer("status", live(), defaults(),
+            new StatusTemplate.Context("Alex", live().latency()))
             .orElseThrow().text();
         assertTrue(text.contains("mc.example.net"), text);
         assertTrue(text.contains("19.6"), text);
@@ -204,10 +207,14 @@ class StatusCommandsTest {
     void pingBelongsToTheRequester() {
         ServerStats mine = live();
         assertEquals("42", StatusTemplate.value("ping", mine,
-            new StatusTemplate.Context("Alex", -1)));
+            new StatusTemplate.Context("Alex", 42)),
+            "the local player's own reading is their figure");
         assertEquals("180", StatusTemplate.value("ping", mine,
             new StatusTemplate.Context("Stranger", 180)),
             "the tab list figure for the sender must win over this client's own reading");
+        assertEquals("n/a", StatusTemplate.value("ping", mine,
+            new StatusTemplate.Context("Stranger", -1)),
+            "an unreadable figure is n/a, never this client's number");
     }
 
     @Test

@@ -235,11 +235,17 @@ public final class Placeholders {
             ? "n/a" : ServerStats.formatTps(ctx.stats().tps()));
         grouped("Performance", "mspt", ctx -> ctx.stats().mspt() < 0f
             ? "n/a" : String.format(Locale.ROOT, "%.1f", ctx.stats().mspt()));
-        grouped("Performance", "ping", ctx -> ctx.stats().latency() < 0
-            ? "n/a" : ctx.stats().latency() + " ms");
+        // {ping} and {verdict} describe whoever typed the line. The tab list carries every visible
+        // player's latency, so the caller passes the asker's figure in; when it could not be read
+        // the answer is n/a rather than this client's number, which was never theirs.
+        grouped("Performance", "ping", ctx -> {
+            int latency = ctx.attributedLatency();
+            return latency < 0 ? "n/a" : latency + " ms";
+        });
         grouped("Server", "players", ctx -> String.valueOf(ctx.stats().players()));
         grouped("Client", "uptime", ctx -> ServerStats.formatUptime(ctx.stats().uptimeMs()));
-        grouped("Performance", "verdict", ctx -> ctx.stats().verdict());
+        grouped("Performance", "verdict", ctx -> ServerStats.verdictFor(
+            ctx.stats().inWorld(), ctx.stats().tps(), ctx.attributedLatency()));
 
         grouped("World", "dimension", ctx -> orQuestion(ctx.stats().dimension()));
         grouped("World", "world", ctx -> orQuestion(ctx.stats().world()));

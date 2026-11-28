@@ -174,6 +174,18 @@ public record ServerStats(
 
     /** A one-word verdict for the connection and the server's tick rate. */
     public String verdict() {
+        return verdictFor(inWorld, tps, latency);
+    }
+
+    /**
+     * The verdict for a given latency, so a figure that belongs to someone else can be judged
+     * without inventing a whole {@code ServerStats} for them.
+     *
+     * @param inWorld true when the client is in a world
+     * @param tps     the server's tick rate, or a non-positive value when unknown
+     * @param latency the round-trip latency in milliseconds, or a negative value when unknown
+     */
+    public static String verdictFor(boolean inWorld, float tps, int latency) {
         if (!inWorld) return "offline";
         if (tps > 0f && tps < LAG_TPS) return "lagging";
         if (latency < 0) return "unknown";

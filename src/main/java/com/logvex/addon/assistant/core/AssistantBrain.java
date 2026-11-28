@@ -338,13 +338,28 @@ public final class AssistantBrain {
     /** The decision for an already-matched trigger rule. */
     public Decision trigger(TriggerRule rule, String sender, String content,
                             AssistantConfig config, long now) {
-        return fromTrigger(rule, sender, content, config, now, ServerStats.OFFLINE);
+        return fromTrigger(rule, sender, content, config, now, ServerStats.OFFLINE, -1);
     }
 
     /** The decision for an already-matched trigger rule, with live figures for its template. */
     public Decision trigger(TriggerRule rule, String sender, String content,
                             AssistantConfig config, long now, ServerStats stats) {
-        return fromTrigger(rule, sender, content, config, now, stats);
+        return fromTrigger(rule, sender, content, config, now, stats, -1);
+    }
+
+    /**
+     * The decision for an already-matched trigger rule, with the speaker's own latency.
+     *
+     * <p>A shipped rule such as {@code !ping} answers with {@code {ping}} and {@code {verdict}},
+     * and those figures belong to the player who typed the line, not to this client. Only the
+     * caller can read them from the tab list, so they are passed in here.
+     *
+     * @param requesterPing the speaker's latency in milliseconds, or a negative value when unknown
+     */
+    public Decision trigger(TriggerRule rule, String sender, String content,
+                            AssistantConfig config, long now, ServerStats stats,
+                            int requesterPing) {
+        return fromTrigger(rule, sender, content, config, now, stats, requesterPing);
     }
 
     /** The decision for a memory command, or null when {@code content} is not one. */
@@ -424,10 +439,11 @@ public final class AssistantBrain {
     // ------------------------------------------------------------------ triggers
 
     private Decision fromTrigger(TriggerRule rule, String sender, String content,
-                                 AssistantConfig config, long now, ServerStats stats) {
+                                 AssistantConfig config, long now, ServerStats stats,
+                                 int requesterPing) {
         ResponseTemplate.Context context = new ResponseTemplate.Context(
             sender, content, stats.server(), memory, now, stats,
-            config.name(), config.commandPrefix());
+            config.name(), config.commandPrefix()).forRequester(requesterPing);
         String text = ResponseTemplate.expand(rule.chosenReply(null), context);
         text = clamp(text, config.maxReplyLength());
 
@@ -529,7 +545,8 @@ public final class AssistantBrain {
         ChatActivity observed = activity == null ? new ChatActivity() : activity;
         Decision decision = dispatch(identity, canonical, word, rest, config, now, stats,
             statusSettings, observed, perms, requesterPing);
-        decision = applyCommandDefaults(canonical, identity, rest, decision, now, stats);
+        decision = applyCommandDefaults(canonical, identity, rest, decision, now, stats,
+            requesterPing);
         if (decision == null) return null;
         // Only a command that actually ran is counted; a refusal is recorded separately so
         // `!activity` cannot report a command as used when the gate turned it away.
@@ -549,7 +566,8 @@ public final class AssistantBrain {
      * competing configurations with no rule for which wins.
      */
     private Decision applyCommandDefaults(String canonical, SenderIdentity identity, String rest,
-                                          Decision decision, long now, ServerStats stats) {
+                                          Decision decision, long now, ServerStats stats,
+                                          int requesterPing) {
         if (StatusCommand.find(canonical).isPresent()) return decision;
         CommandDefaults.Entry entry = commandEntry(canonical);
         if (!entry.enabled()) return Decision.NONE;
@@ -557,7 +575,8 @@ public final class AssistantBrain {
 
         String text = entry.customised()
             ? ResponseTemplate.expand(entry.template(), new ResponseTemplate.Context(
-                identity.name(), rest, stats.server(), memory, now, stats))
+                identity.name(), rest, stats.server(), memory, now, stats)
+                .forRequester(requesterPing))
             : decision.text();
         Delivery delivery = switch (entry.output()) {
             case CHAT -> Delivery.CHAT;
@@ -606,8 +625,8 @@ public final class AssistantBrain {
             case "memories" -> commandMemories(sender, config);
             case "forgetme" -> commandForgetMe(sender, config, now);
             case "history" -> commandHistory(config);
-            case "hello" -> commandHello(sender, config, now, stats);
-            case "gg" -> commandGoodGame(sender, config, now, stats);
+            case "hello" -> commandHello(sender, config, now, stats, requesterPing);
+            case "gg" -> commandGoodGame(sender, config, now, stats, requesterPing);
             case "whoami" -> commandWhoAmI(sender, config);
             case "macros" -> commandMacros(config, rest);
             case "triggers" -> commandTriggers(identity, config, rest);
@@ -652,11 +671,9 @@ public final class AssistantBrain {
                                    AssistantConfig config, ServerStats stats,
                                    StatusCommands.Settings settings, int requesterPing) {
         ServerStats live = stats == null ? ServerStats.OFFLINE : stats;
-        // Only the local player's own figure is this client's reading; for anyone else the tab list
-        // is the only source, and the caller passes it in. A negative value means "not known".
-        int ping = requesterPing >= 0 ? requesterPing
-            : (identity.local() ? live.latency() : -1);
-        StatusTemplate.Context context = new StatusTemplate.Context(identity.name(), ping,
+        // Already resolved by the caller: the local player's own reading, or the tab-list figure for
+        // whoever else asked. A negative value means it could not be read, and is reported as n/a.
+        StatusTemplate.Context context = new StatusTemplate.Context(identity.name(), requesterPing,
             config.name(), config.commandPrefix());
         java.util.Optional<StatusCommands.Answer> answer =
             StatusCommands.answer(canonical, live, settings, context);
@@ -709,26 +726,31 @@ public final class AssistantBrain {
      * <p>Drawn from the same pools the join greeting uses, so a user configures the wording once.
      */
     private Decision commandHello(String sender, AssistantConfig config, long now,
-                                  ServerStats stats) {
+                                  ServerStats stats, int requesterPing) {
         java.time.LocalTime clock = java.time.LocalTime.now();
         String template = GreetingPools.greeting(greetingPools, clock, null);
-        return templated(template, sender, config, now, stats);
+        return templated(template, sender, config, now, stats, requesterPing);
     }
 
     /** {@code !gg}: the configured good-game line. */
     private Decision commandGoodGame(String sender, AssistantConfig config, long now,
-                                     ServerStats stats) {
-        return templated(goodGameReply, sender, config, now, stats);
+                                     ServerStats stats, int requesterPing) {
+        return templated(goodGameReply, sender, config, now, stats, requesterPing);
     }
 
-    /** Expands one configured template and delivers it, or declines when it comes out blank. */
+    /**
+     * Expands one configured template and delivers it, or declines when it comes out blank.
+     *
+     * <p>The speaker's latency travels with the context so a customised {@code !hello} or
+     * {@code !gg} that mentions {@code {ping}} still answers about the person who asked.
+     */
     private Decision templated(String template, String sender, AssistantConfig config, long now,
-                               ServerStats stats) {
+                               ServerStats stats, int requesterPing) {
         if (template == null || template.isBlank()) return Decision.NONE;
         ResponseTemplate.Context context = new ResponseTemplate.Context(
             sender == null ? "" : sender, "", "", memory, now,
             stats == null ? ServerStats.OFFLINE : stats,
-            config.name(), config.commandPrefix());
+            config.name(), config.commandPrefix()).forRequester(requesterPing);
         String text = clamp(ResponseTemplate.expand(template, context), config.maxReplyLength());
         if (text.isBlank()) return Decision.NONE;
         return reply(config.memoryReplyMode(), text, false);

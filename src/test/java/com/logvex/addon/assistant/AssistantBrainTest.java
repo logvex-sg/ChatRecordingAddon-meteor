@@ -40,10 +40,29 @@ class AssistantBrainTest {
             "minecraft:overworld", "overworld", "plains", 6_000L,
             17.5f, 20f, 15, 120.4, 64.0, -35.9, "north", 5.43, 144, 512L, 4096L);
 
-        AssistantBrain.Decision decision = runtime.handle("Notch", "status", 1_000L, stats, null);
+        AssistantBrain.Decision decision = runtime.handle("Notch", "status", 1_000L, stats, null,
+            stats.latency());
 
         assertTrue(decision.acts());
         assertEquals("Notch on mc.example.net: 19.6 tps, 42 ms ping, plains", decision.text());
+    }
+
+    @Test
+    @DisplayName("a trigger reply for a remote player never borrows this client's ping")
+    void triggerReplyDoesNotLeakTheClientPing() {
+        AssistantRuntime runtime = runtime(
+            TriggerRule.of("status", "{player}: {ping} ping"));
+        com.logvex.addon.stats.ServerStats stats = new com.logvex.addon.stats.ServerStats(
+            true, "mc.example.net", 19.6f, 42, 12, 60, 7_500_000L,
+            "minecraft:overworld", "overworld", "plains", 6_000L,
+            17.5f, 20f, 15, 120.4, 64.0, -35.9, "north", 5.43, 144, 512L, 4096L);
+
+        AssistantBrain.Decision decision = runtime.handle("Stranger", "status", 1_000L, stats, null,
+            -1);
+
+        assertTrue(decision.acts());
+        assertEquals("Stranger: n/a ping", decision.text(),
+            "an unreadable figure is n/a, not the operator's 42ms");
     }
 
     @Test

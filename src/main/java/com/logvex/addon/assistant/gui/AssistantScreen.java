@@ -712,9 +712,13 @@ public class AssistantScreen extends WindowScreen {
             new StatusCommands.Settings(true, StatusOutput.decodeAll(stored));
 
         WVerticalList previews = add(theme.verticalList()).expandX().widget();
+        // The preview is about the local player, so it carries their real latency; passing none
+        // would show n/a for {ping} and misrepresent what a local readout actually says.
+        StatusTemplate.Context previewContext = new StatusTemplate.Context(
+            module.selfName(), stats.latency());
         for (StatusCommand.Definition command : StatusCommand.all()) {
             StatusCommands.Answer answer =
-                StatusCommands.answer(command.name(), stats, settings, module.selfName())
+                StatusCommands.answer(command.name(), stats, settings, previewContext)
                     .orElse(null);
             String badge = answer == null ? "off" : answer.localOnly() ? "local" : "chat";
             keyValue(previews, module.config().commandPrefix() + command.name() + " [" + badge + "]",
